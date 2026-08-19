@@ -2,7 +2,7 @@
 
 ## Team Members
 1. Team Lead - Chris Musselman
-2. Nikhil Akula - Angular Developer
+2. Angular Developer - Nikhil Akula
 3. Developer - Yahia Elsaad
 
 ## Branching Strategy
