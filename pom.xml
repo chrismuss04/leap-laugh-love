@@ -12,7 +12,7 @@
     </properties>
 
     <build>
-        <finalName>leap-laugh-love-app</finalName>
+        <finalName>team-skeleton</finalName>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -21,7 +21,7 @@
                 <configuration>
                     <archive>
                         <manifest>
-                            <mainClass>com.leap.leaplaughlove.Main</mainClass>
+                            <mainClass>Main</mainClass>
                         </manifest>
                     </archive>
                 </configuration>
