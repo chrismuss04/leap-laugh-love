@@ -1,14 +1,21 @@
 pipeline {
-    agent {
-        docker {
-            image 'maven:3.9.9-eclipse-temurin-21'
-            reuseNode true
-        }
+    agent any
+    tools {
+        maven 'MavenLab'
+    }
+    environment {
+        DOCKER_IMAGE = 'leap-laugh-love-app'
+        DOCKER_TAG = "${env.BUILD_NUMBER}"
     }
     stages {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+        stage('Docker Check') {
+            steps {
+                sh 'docker version'
             }
         }
         stage('Build') {
@@ -25,6 +32,12 @@ pipeline {
                 always {
                     junit 'target/surefire-reports/*.xml'
                 }
+            }
+        }
+        stage('Build Docker Image') {
+            steps {
+                sh 'docker build -t ${DOCKER_IMAGE}:${DOCKER_TAG} -f Dockerfile .'
+                sh 'docker images | grep ${DOCKER_IMAGE}'
             }
         }
         stage('Archive') {
