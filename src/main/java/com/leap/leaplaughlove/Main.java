@@ -1,3 +1,5 @@
+package com.leap.leaplaughlove;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
