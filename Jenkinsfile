@@ -1,9 +1,16 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = "team-skeleton"
+    }
+
     stages {
         stage('Checkout') {
             steps {
+                // Checks out the branch/PR that triggered this build.
+                // In a Multibranch Pipeline this covers main, feature branches,
+                // and PRs automatically — no per-branch configuration needed.
                 checkout scm
             }
         }
@@ -21,7 +28,9 @@ pipeline {
         
         stage('Build image') {
             steps {
-                sh 'docker build -t team-skeleton .'
+                // Tags with the Jenkins build number so every build/branch produces a
+                // uniquely tagged image — avoids overwriting previous builds' artefacts.
+                sh "docker build -t ${IMAGE_NAME}:${BUILD_NUMBER} ."
             }
         }
 
@@ -37,6 +46,12 @@ pipeline {
     post {
         always {
             sh 'docker image prune -f'
+        }
+        failure {
+            echo "Build ${BUILD_NUMBER} failed — check console output."
+        }
+        success {
+            echo "Build ${BUILD_NUMBER} passed."
         }
     }
 }
