@@ -35,10 +35,25 @@ pipeline {
         }
 
         stage('Verify container starts') {
+            environment {
+                // EXECUTOR_NUMBER is unique among builds running concurrently on the
+                // same node, so parallel branch builds never bind the same host port.
+                DB_PORT = "${5432 + (env.EXECUTOR_NUMBER as Integer)}"
+            }
             steps {
-                sh 'docker-compose up -d'
-                sh 'docker-compose ps'
-                sh 'docker-compose down -v'
+                // Unique project name per build so concurrent/parallel branch builds
+                // don't collide on container names, and a leftover from an aborted
+                // run is torn down before starting a fresh one.
+                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
+                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} up -d"
+                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} ps"
+            }
+            post {
+                // Always tear down, even if the steps above fail, so the host port
+                // isn't left bound for the next build.
+                always {
+                    sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
+                }
             }
         }
     }

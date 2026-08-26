@@ -21,7 +21,9 @@ services:
       # Only db is reachable from the host. app is not. This mirrors a real
       # deployment where the database is internal but needs to be accessible
       # to DBA tooling running on the developer's machine during development.
-      - "5432:5432"
+      # DB_PORT is overridable so concurrent CI builds don't fight over the
+      # same host port; defaults to 5432 for local dev.
+      - "${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
 
