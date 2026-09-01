@@ -1,0 +1,21 @@
+spring:
+  application:
+    name: leap-laugh-love-app
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:paysprint}
+    username: ${DB_USER:paysprint}
+    password: ${DB_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 0
