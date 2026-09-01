@@ -1,15 +1,25 @@
 spring:
+  application:
+    name: leap-laugh-love-app
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
     username: ${SPRING_DATASOURCE_USERNAME:paysprint}
     password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+    driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
     hibernate:
-      ddl-auto: validate
+      ddl-auto: none
     properties:
       hibernate:
-        format_sql: false
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    show-sql: false
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
 
 app:
   jwt:
