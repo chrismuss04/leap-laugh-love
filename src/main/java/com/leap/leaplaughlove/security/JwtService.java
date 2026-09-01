@@ -21,6 +21,12 @@ public class JwtService {
 
     public JwtService(@Value("${app.jwt.secret}") String secret,
                        @Value("${app.jwt.expiration-minutes}") long expirationMinutes) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalArgumentException("app.jwt.secret must not be blank");
+        }
+        if (expirationMinutes <= 0) {
+            throw new IllegalArgumentException("app.jwt.expiration-minutes must be > 0");
+        }
         this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expirationMinutes = expirationMinutes;
     }

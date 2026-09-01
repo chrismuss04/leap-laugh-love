@@ -13,6 +13,7 @@ import java.util.UUID;
 public class CashLedgerEntry {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "cash_ledger_id")
     private UUID cashLedgerId;
 
