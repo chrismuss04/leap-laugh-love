@@ -10,13 +10,14 @@ import java.util.UUID;
 
 public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUID> {
 
-    /** Projection for the grouped-by-account sum below; accounts with no entries are simply absent. */
+    /** Projection for the grouped-by-account/currency sum below; missing (accountId, currency) pairs have no entries. */
     interface AccountTotal {
         UUID getAccountId();
+        String getCurrency();
         BigDecimal getTotal();
     }
 
-    @Query("SELECT c.accountId AS accountId, SUM(c.amount) AS total FROM CashLedgerEntry c " +
-            "WHERE c.accountId IN :accountIds GROUP BY c.accountId")
+    @Query("SELECT c.accountId AS accountId, c.currency AS currency, SUM(c.amount) AS total FROM CashLedgerEntry c " +
+            "WHERE c.accountId IN :accountIds GROUP BY c.accountId, c.currency")
     List<AccountTotal> sumAmountsByAccountIds(@Param("accountIds") List<UUID> accountIds);
 }

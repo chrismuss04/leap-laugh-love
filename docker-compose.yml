@@ -28,6 +28,9 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+      # Postgres only runs *.sql in this dir on first init (empty data dir);
+      # ddl-auto=validate needs the schema to already exist, hence this.
+      - ./src/main/resources/db/leap_laugh_love_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
 
 volumes:
   db_data:

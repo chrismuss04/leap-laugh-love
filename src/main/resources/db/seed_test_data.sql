@@ -1,6 +1,9 @@
 -- Manual test seed data for the login + balance stories.
 -- Test login: email 'jane.doe@example.com' / password 'TestPassword123!'
--- Run with: psql -U postgres -h localhost -d leaplaughlove -f seed_test_data.sql
+-- Run against whichever DB has the schema loaded and matches your app's
+-- SPRING_DATASOURCE_URL/USERNAME (the docker-compose default is db "paysprint",
+-- user "paysprint" — substitute your own DB name/user/host below):
+-- psql -U <user> -h <host> -d <db> -f seed_test_data.sql
 
 INSERT INTO iam.clients (client_id, email, phone, status)
 VALUES ('11111111-1111-1111-1111-111111111111', 'jane.doe@example.com', '+15550001111', 'ACTIVE')

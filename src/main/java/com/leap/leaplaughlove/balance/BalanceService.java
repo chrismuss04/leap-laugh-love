@@ -28,10 +28,12 @@ public class BalanceService {
         List<Account> accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);
         List<UUID> accountIds = accounts.stream().map(Account::getAccountId).toList();
 
-        Map<UUID, BigDecimal> totalsByAccountId = accountIds.isEmpty()
+        // Keyed by (accountId, currency) — an account should only be credited for entries in its own currency.
+        Map<AccountCurrencyKey, BigDecimal> totalsByAccountAndCurrency = accountIds.isEmpty()
                 ? Map.of()
                 : cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()
-                        .collect(Collectors.toMap(CashLedgerRepository.AccountTotal::getAccountId,
+                        .collect(Collectors.toMap(
+                                total -> new AccountCurrencyKey(total.getAccountId(), total.getCurrency()),
                                 CashLedgerRepository.AccountTotal::getTotal));
 
         List<AccountBalance> balances = accounts.stream()
@@ -39,7 +41,9 @@ public class BalanceService {
                         account.getAccountId(),
                         account.getAccountNumber(),
                         account.getBaseCurrency(),
-                        totalsByAccountId.getOrDefault(account.getAccountId(), BigDecimal.ZERO)))
+                        totalsByAccountAndCurrency.getOrDefault(
+                                new AccountCurrencyKey(account.getAccountId(), account.getBaseCurrency()),
+                                BigDecimal.ZERO)))
                 .toList();
 
         Map<String, BigDecimal> totalsByCurrency = balances.stream()
@@ -48,5 +52,8 @@ public class BalanceService {
                         Collectors.reducing(BigDecimal.ZERO, AccountBalance::balance, BigDecimal::add)));
 
         return new BalanceResponse(balances, totalsByCurrency);
+    }
+
+    private record AccountCurrencyKey(UUID accountId, String currency) {
     }
 }
