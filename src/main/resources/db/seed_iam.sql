@@ -11,7 +11,8 @@ INSERT INTO iam.clients (email, phone, status) VALUES
     ('grace.wilson@leap.com', '+1-212-555-0107', 'LOCKED'),
     ('henry.taylor@leap.com', '+1-212-555-0108', 'ACTIVE'),
     ('iris.anderson@leap.com', '+1-212-555-0109', 'ACTIVE'),
-    ('jack.thomas@leap.com', '+1-212-555-0110', 'ACTIVE');
+    ('jack.thomas@leap.com', '+1-212-555-0110', 'ACTIVE')
+ON CONFLICT (email) DO NOTHING;
 
 -- Insert client profiles (one per client)
 INSERT INTO iam.client_profile (client_id, full_name, date_of_birth, ssn, address_line_1, city, state_region, postal_code, country_code, experience_level, initial_deposit_amount)
