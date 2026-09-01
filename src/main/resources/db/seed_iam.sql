@@ -33,7 +33,18 @@ SELECT c.client_id, 'Henry Taylor', '1986-08-20'::DATE, '123-45-6796', '123 Main
 UNION ALL
 SELECT c.client_id, 'Iris Anderson', '1993-12-05'::DATE, '123-45-6797', '123 Main Street', 'Dallas', 'TX', '10001', 'US', 'ADVANCED', 200000.00 FROM iam.clients c WHERE c.email = 'iris.anderson@leap.com'
 UNION ALL
-SELECT c.client_id, 'Jack Thomas', '1984-06-12'::DATE, '123-45-6798', '123 Main Street', 'San Jose', 'CA', '10001', 'US', 'INTERMEDIATE', 40000.00 FROM iam.clients c WHERE c.email = 'jack.thomas@leap.com';
+SELECT c.client_id, 'Jack Thomas', '1984-06-12'::DATE, '123-45-6798', '123 Main Street', 'San Jose', 'CA', '10001', 'US', 'INTERMEDIATE', 40000.00 FROM iam.clients c WHERE c.email = 'jack.thomas@leap.com'
+ON CONFLICT (client_id) DO UPDATE SET
+    full_name = EXCLUDED.full_name,
+    date_of_birth = EXCLUDED.date_of_birth,
+    ssn = EXCLUDED.ssn,
+    address_line_1 = EXCLUDED.address_line_1,
+    city = EXCLUDED.city,
+    state_region = EXCLUDED.state_region,
+    postal_code = EXCLUDED.postal_code,
+    country_code = EXCLUDED.country_code,
+    experience_level = EXCLUDED.experience_level,
+    initial_deposit_amount = EXCLUDED.initial_deposit_amount;
 
 -- Insert client credentials (one per client)
 INSERT INTO iam.client_credentials (client_id, password_hash, failed_sign_in_attempts)
@@ -55,4 +66,7 @@ SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c 
 UNION ALL
 SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'iris.anderson@leap.com'
 UNION ALL
-SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'jack.thomas@leap.com';
+SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'jack.thomas@leap.com'
+ON CONFLICT (client_id) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    failed_sign_in_attempts = EXCLUDED.failed_sign_in_attempts;
