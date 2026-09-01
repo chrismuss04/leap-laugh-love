@@ -32,7 +32,8 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
-    @Transactional
+    // Failed-attempt/lockout updates must persist even when the method throws, so don't roll those back.
+    @Transactional(noRollbackFor = InvalidCredentialsException.class)
     public LoginResponse login(String email, String rawPassword) {
         Client client = clientRepository.findByEmailIgnoreCase(email)
                 .filter(c -> "ACTIVE".equals(c.getStatus()))

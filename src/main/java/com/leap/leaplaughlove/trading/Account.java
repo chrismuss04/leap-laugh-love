@@ -37,6 +37,18 @@ public class Account {
     protected Account() {
     }
 
+    /** Not used by JPA (which hydrates via the no-arg constructor + field access); for tests/manual construction. */
+    public Account(UUID accountId, UUID clientId, String accountNumber, String status,
+                   String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {
+        this.accountId = accountId;
+        this.clientId = clientId;
+        this.accountNumber = accountNumber;
+        this.status = status;
+        this.baseCurrency = baseCurrency;
+        this.tradingEnabled = tradingEnabled;
+        this.createdAt = createdAt;
+    }
+
     public UUID getAccountId() {
         return accountId;
     }

@@ -13,5 +13,5 @@ spring:
 
 app:
   jwt:
-    secret: ${JWT_SECRET:please-override-this-secret-in-every-environment-0123456789}
+    secret: ${JWT_SECRET}
     expiration-minutes: ${JWT_EXPIRATION_MINUTES:60}

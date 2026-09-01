@@ -8,8 +8,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.lang.reflect.Field;
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -25,25 +25,39 @@ class BalanceServiceTest {
     private CashLedgerRepository cashLedgerRepository;
 
     @Test
-    void aggregatesBalancesAcrossAccountsByCurrency() throws Exception {
+    void aggregatesBalancesAcrossAccountsByCurrency() {
         BalanceService balanceService = new BalanceService(accountRepository, cashLedgerRepository);
         UUID clientId = UUID.randomUUID();
 
-        Account usdAccount = newAccount(UUID.randomUUID(), clientId, "ACC-1", "USD");
-        Account eurAccount = newAccount(UUID.randomUUID(), clientId, "ACC-2", "EUR");
+        Account usdAccount = newAccount(clientId, "ACC-1", "USD");
+        Account eurAccount = newAccount(clientId, "ACC-2", "EUR");
 
         when(accountRepository.findByClientIdAndStatus(clientId, "ACTIVE"))
                 .thenReturn(List.of(usdAccount, eurAccount));
-        when(cashLedgerRepository.sumAmountByAccountId(usdAccount.getAccountId()))
-                .thenReturn(new BigDecimal("150.00"));
-        when(cashLedgerRepository.sumAmountByAccountId(eurAccount.getAccountId()))
-                .thenReturn(new BigDecimal("75.50"));
+        when(cashLedgerRepository.sumAmountsByAccountIds(List.of(usdAccount.getAccountId(), eurAccount.getAccountId())))
+                .thenReturn(List.of(
+                        accountTotal(usdAccount.getAccountId(), new BigDecimal("150.00")),
+                        accountTotal(eurAccount.getAccountId(), new BigDecimal("75.50"))));
 
         BalanceResponse response = balanceService.getBalanceForClient(clientId);
 
         assertEquals(2, response.accounts().size());
         assertEquals(new BigDecimal("150.00"), response.totalsByCurrency().get("USD"));
         assertEquals(new BigDecimal("75.50"), response.totalsByCurrency().get("EUR"));
+    }
+
+    @Test
+    void returnsZeroBalanceForAccountWithNoLedgerEntries() {
+        BalanceService balanceService = new BalanceService(accountRepository, cashLedgerRepository);
+        UUID clientId = UUID.randomUUID();
+        Account account = newAccount(clientId, "ACC-1", "USD");
+
+        when(accountRepository.findByClientIdAndStatus(clientId, "ACTIVE")).thenReturn(List.of(account));
+        when(cashLedgerRepository.sumAmountsByAccountIds(List.of(account.getAccountId()))).thenReturn(List.of());
+
+        BalanceResponse response = balanceService.getBalanceForClient(clientId);
+
+        assertEquals(BigDecimal.ZERO, response.accounts().get(0).balance());
     }
 
     @Test
@@ -58,21 +72,21 @@ class BalanceServiceTest {
         assertEquals(0, response.totalsByCurrency().size());
     }
 
-    private static Account newAccount(UUID accountId, UUID clientId, String accountNumber, String currency) throws Exception {
-        var constructor = Account.class.getDeclaredConstructor();
-        constructor.setAccessible(true);
-        Account account = constructor.newInstance();
-        setField(account, "accountId", accountId);
-        setField(account, "clientId", clientId);
-        setField(account, "accountNumber", accountNumber);
-        setField(account, "baseCurrency", currency);
-        setField(account, "status", "ACTIVE");
-        return account;
+    private static Account newAccount(UUID clientId, String accountNumber, String currency) {
+        return new Account(UUID.randomUUID(), clientId, accountNumber, "ACTIVE", currency, true, OffsetDateTime.now());
     }
 
-    private static void setField(Object target, String fieldName, Object value) throws Exception {
-        Field field = target.getClass().getDeclaredField(fieldName);
-        field.setAccessible(true);
-        field.set(target, value);
+    private static CashLedgerRepository.AccountTotal accountTotal(UUID accountId, BigDecimal total) {
+        return new CashLedgerRepository.AccountTotal() {
+            @Override
+            public UUID getAccountId() {
+                return accountId;
+            }
+
+            @Override
+            public BigDecimal getTotal() {
+                return total;
+            }
+        };
     }
 }

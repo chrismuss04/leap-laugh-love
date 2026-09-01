@@ -26,13 +26,20 @@ public class BalanceService {
 
     public BalanceResponse getBalanceForClient(UUID clientId) {
         List<Account> accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);
+        List<UUID> accountIds = accounts.stream().map(Account::getAccountId).toList();
+
+        Map<UUID, BigDecimal> totalsByAccountId = accountIds.isEmpty()
+                ? Map.of()
+                : cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()
+                        .collect(Collectors.toMap(CashLedgerRepository.AccountTotal::getAccountId,
+                                CashLedgerRepository.AccountTotal::getTotal));
 
         List<AccountBalance> balances = accounts.stream()
                 .map(account -> new AccountBalance(
                         account.getAccountId(),
                         account.getAccountNumber(),
                         account.getBaseCurrency(),
-                        cashLedgerRepository.sumAmountByAccountId(account.getAccountId())))
+                        totalsByAccountId.getOrDefault(account.getAccountId(), BigDecimal.ZERO)))
                 .toList();
 
         Map<String, BigDecimal> totalsByCurrency = balances.stream()
