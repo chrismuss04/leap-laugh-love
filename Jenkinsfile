@@ -39,6 +39,10 @@ pipeline {
                 // EXECUTOR_NUMBER is unique among builds running concurrently on the
                 // same node, so parallel branch builds never bind the same host port.
                 DB_PORT = "${5432 + (env.EXECUTOR_NUMBER as Integer)}"
+                // Not a real secret — this stage only checks the container boots,
+                // it never handles real client tokens/data. Unique per build so
+                // concurrent builds don't share a value.
+                JWT_SECRET = "ci-smoke-test-secret-${BUILD_NUMBER}-do-not-use-in-prod"
             }
             steps {
                 // Unique project name per build so concurrent/parallel branch builds
