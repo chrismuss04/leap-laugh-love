@@ -42,14 +42,19 @@ class TradingSchemaIntegrationTest {
         
         assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS trading.accounts"),
             "Schema should define trading.accounts table");
-        assertTrue(schema.contains("client_id UUID NOT NULL") &&
-                   schema.contains("REFERENCES iam.clients"),
+
+        String accountsSection = schema.substring(
+            schema.indexOf("CREATE TABLE IF NOT EXISTS trading.accounts"),
+            schema.indexOf("CREATE TABLE IF NOT EXISTS trading.instruments")
+        );
+
+        assertTrue(accountsSection.contains("client_id UUID NOT NULL") &&
+                   accountsSection.contains("REFERENCES iam.clients"),
             "accounts should have client_id FK to iam.clients");
-        assertTrue(schema.contains("account_number TEXT NOT NULL UNIQUE"),
+        assertTrue(accountsSection.contains("account_number TEXT NOT NULL UNIQUE"),
             "accounts should have unique account_number");
-        assertTrue(schema.contains("CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED'))"),
+        assertTrue(accountsSection.contains("CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED'))"),
             "accounts status should be constrained");
-    }
 
     @Test
     @DisplayName("Schema should define trading.orders table with audit-safe constraints")
