@@ -55,6 +55,7 @@ class TradingSchemaIntegrationTest {
             "accounts should have unique account_number");
         assertTrue(accountsSection.contains("CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED'))"),
             "accounts status should be constrained");
+    }
 
     @Test
     @DisplayName("Schema should define trading.orders table with audit-safe constraints")
