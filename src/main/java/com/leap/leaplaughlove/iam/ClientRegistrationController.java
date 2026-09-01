@@ -51,6 +51,11 @@ public class ClientRegistrationController {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
     }
 
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<String> handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body("email or ssn already registered");
+    }
+
     public record RegistrationRequest(
             @NotBlank @Email String email,
             String phone,
