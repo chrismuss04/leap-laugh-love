@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Backs the account lookup by client_id used by the order history query.
+CREATE INDEX IF NOT EXISTS idx_accounts_client_id
+    ON trading.accounts (client_id);
+
 CREATE TABLE IF NOT EXISTS trading.instruments (
     instrument_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     symbol TEXT NOT NULL,
@@ -80,6 +84,10 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     filled_at TIMESTAMPTZ,
     rejection_reason TEXT
 );
+
+-- Backs OrderRepository's chronological (newest-first) paginated history lookup by account.
+CREATE INDEX IF NOT EXISTS idx_orders_account_submitted_at_order_id
+    ON trading.orders (account_id, submitted_at DESC, order_id DESC);
 
 CREATE TABLE IF NOT EXISTS trading.executions (
     execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
