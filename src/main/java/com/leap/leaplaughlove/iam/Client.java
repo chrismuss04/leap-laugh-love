@@ -15,6 +15,7 @@ import java.util.UUID;
 public class Client {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "client_id")
     private UUID clientId;
 
@@ -100,7 +101,15 @@ public class Client {
         return email;
     }
 
+    public String getPhone() {
+        return phone;
+    }
+
     public String getStatus() {
         return status;
+    }
+
+    public OffsetDateTime getCreatedAt() {
+        return createdAt;
     }
 }
