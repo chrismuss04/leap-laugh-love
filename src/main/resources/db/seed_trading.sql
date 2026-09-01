@@ -42,14 +42,19 @@ ON CONFLICT DO NOTHING;
 
 -- Insert orders: 4 total (3 successful, 1 rejected)
 -- Order 1: Alice buys 100 AAPL (will be filled)
-INSERT INTO trading.orders (account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
 SELECT 
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
     (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
     (SELECT instrument_id FROM trading.instruments WHERE symbol = 'AAPL'),
     'BUY', 100, 'FILLED',
     NOW() - INTERVAL '2 days',
     NOW() - INTERVAL '1 day'
-ON CONFLICT DO NOTHING;
+ON CONFLICT (order_id) DO UPDATE SET
+    quantity = EXCLUDED.quantity,
+    status = EXCLUDED.status,
+    accepted_at = EXCLUDED.accepted_at,
+    filled_at = EXCLUDED.filled_at;
 
 -- Order 2: Bob buys 50 MSFT (will be filled)
 INSERT INTO trading.orders (account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
