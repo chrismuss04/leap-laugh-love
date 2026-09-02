@@ -17,8 +17,8 @@ pipeline {
 
         stage('Test') {
             steps {
-                // Docker socket is mounted so Testcontainers (used by the order history
-                // integration test) can launch its own containers from inside this build container.
+                // Docker socket is mounted so Testcontainers-based tests can launch
+                // their own containers from inside this build container.
                 sh 'docker run --rm -v "$WORKSPACE":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app maven:3.9-eclipse-temurin-21 mvn -B test'
             }
             post {
