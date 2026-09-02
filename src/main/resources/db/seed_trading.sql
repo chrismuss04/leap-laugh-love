@@ -46,7 +46,7 @@ SELECT
         WHEN 'ACC-007-01' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee0007'::UUID
         WHEN 'ACC-008-01' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee0008'::UUID
         WHEN 'ACC-009-01' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee0009'::UUID
-        WHEN 'ACC-009-02' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee00091'::UUID
+        WHEN 'ACC-009-02' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee0091'::UUID
         WHEN 'ACC-010-01' THEN 'dddddddd-dddd-dddd-dddd-eeeeeeee0010'::UUID
     END,
     a.account_id, 'DEPOSIT', cp.initial_deposit_amount, 'USD', 'Initial account funding'
@@ -121,7 +121,7 @@ ON CONFLICT (order_id) DO UPDATE SET
 -- Execution 1: Alice's AAPL order filled at $150.25
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
 VALUES 
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb1'::UUID,
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
      100, 150.25, 'FILLED', 'Executed at market price')
 ON CONFLICT (execution_id) DO UPDATE SET
@@ -133,7 +133,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 -- Execution 2: Bob's MSFT order filled at $380.50
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
 VALUES 
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb2'::UUID,
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'::UUID,
      50, 380.50, 'FILLED', 'Executed at market price')
 ON CONFLICT (execution_id) DO UPDATE SET
@@ -145,7 +145,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 -- Execution 3: Carol's GOOGL order filled at $140.75
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
 VALUES 
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb3'::UUID,
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3'::UUID,
      25, 140.75, 'FILLED', 'Executed at market price')
 ON CONFLICT (execution_id) DO UPDATE SET
@@ -157,7 +157,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 -- Execution 4: Henry's TSLA order REJECTED - recorded as failed execution
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
 VALUES 
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb4'::UUID,
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4'::UUID,
      NULL, NULL, 'REJECTED', 'Insufficient funds - order rejected')
 ON CONFLICT (execution_id) DO UPDATE SET
@@ -170,10 +170,10 @@ ON CONFLICT (execution_id) DO UPDATE SET
 -- Alice's AAPL purchase settlement
 INSERT INTO trading.cash_ledger (cash_ledger_id, account_id, order_id, execution_id, entry_type, amount, currency, description)
 VALUES 
-    ('cccccccc-cccc-cccc-cccc-cccccccccccc1'::UUID,
+    ('cccccccc-cccc-cccc-cccc-ccccccccccc1'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb1'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'::UUID,
      'BUY_SETTLEMENT',
      -15025.00,
      'USD',
@@ -186,10 +186,10 @@ ON CONFLICT (cash_ledger_id) DO UPDATE SET
 -- Bob's MSFT purchase settlement
 INSERT INTO trading.cash_ledger (cash_ledger_id, account_id, order_id, execution_id, entry_type, amount, currency, description)
 VALUES 
-    ('cccccccc-cccc-cccc-cccc-cccccccccccc2'::UUID,
+    ('cccccccc-cccc-cccc-cccc-ccccccccccc2'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-002-01'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb2'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2'::UUID,
      'BUY_SETTLEMENT',
      -19025.00,
      'USD',
@@ -202,10 +202,10 @@ ON CONFLICT (cash_ledger_id) DO UPDATE SET
 -- Carol's GOOGL purchase settlement
 INSERT INTO trading.cash_ledger (cash_ledger_id, account_id, order_id, execution_id, entry_type, amount, currency, description)
 VALUES 
-    ('cccccccc-cccc-cccc-cccc-cccccccccccc3'::UUID,
+    ('cccccccc-cccc-cccc-cccc-ccccccccccc3'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-003-01'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb3'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3'::UUID,
      'BUY_SETTLEMENT',
      -3518.75,
      'USD',
@@ -219,11 +219,11 @@ ON CONFLICT (cash_ledger_id) DO UPDATE SET
 -- Alice's position in AAPL
 INSERT INTO trading.position_movements (movement_id, account_id, instrument_id, order_id, execution_id, movement_type, quantity_delta, cost_delta)
 VALUES 
-    ('dddddddd-dddd-dddd-dddd-dddddddddddd1'::UUID,
+    ('dddddddd-dddd-dddd-dddd-ddddddddddd1'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
      (SELECT instrument_id FROM trading.instruments WHERE symbol = 'AAPL'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb1'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'::UUID,
      'BUY_FILL',
      100,
      15025.00)
@@ -235,11 +235,11 @@ ON CONFLICT (movement_id) DO UPDATE SET
 -- Bob's position in MSFT
 INSERT INTO trading.position_movements (movement_id, account_id, instrument_id, order_id, execution_id, movement_type, quantity_delta, cost_delta)
 VALUES 
-    ('dddddddd-dddd-dddd-dddd-dddddddddddd2'::UUID,
+    ('dddddddd-dddd-dddd-dddd-ddddddddddd2'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-002-01'),
      (SELECT instrument_id FROM trading.instruments WHERE symbol = 'MSFT'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb2'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2'::UUID,
      'BUY_FILL',
      50,
      19025.00)
@@ -251,11 +251,11 @@ ON CONFLICT (movement_id) DO UPDATE SET
 -- Carol's position in GOOGL
 INSERT INTO trading.position_movements (movement_id, account_id, instrument_id, order_id, execution_id, movement_type, quantity_delta, cost_delta)
 VALUES 
-    ('dddddddd-dddd-dddd-dddd-dddddddddddd3'::UUID,
+    ('dddddddd-dddd-dddd-dddd-ddddddddddd3'::UUID,
      (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-003-01'),
      (SELECT instrument_id FROM trading.instruments WHERE symbol = 'GOOGL'),
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3'::UUID,
-     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb3'::UUID,
+     'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3'::UUID,
      'BUY_FILL',
      25,
      3518.75)
