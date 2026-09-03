@@ -20,11 +20,22 @@ public class BalanceController {
         this.balanceService = balanceService;
     }
 
+    /**
+     * Retrieves the balance for the authenticated client.
+     * @param void
+     * @return ResponseEntity containing the balance information for the authenticated client.
+     */
     @GetMapping
     public ResponseEntity<BalanceResponse> getBalance() {
         return ResponseEntity.ok(balanceService.getBalanceForClient());
     }
 
+    /**
+     * executes a deposit action for the specified account.
+     * @param accountId 
+     * @param request 
+     * @return ResponseEntity containing the result of the deposit transaction
+     */
     @PostMapping("/accounts/{accountId}/deposit")
     public ResponseEntity<CashTransactionResponse> deposit(
             @PathVariable UUID accountId,
@@ -32,6 +43,12 @@ public class BalanceController {
         return ResponseEntity.ok(balanceService.deposit(accountId, request));
     }
 
+    /**
+     * executes a withdrawal action for the specified account.
+     * @param accountId 
+     * @param request 
+     * @return ResponseEntity containing the result of the withdrawal transaction
+     */
     @PostMapping("/accounts/{accountId}/withdrawal")
     public ResponseEntity<CashTransactionResponse> withdraw(
             @PathVariable UUID accountId,
