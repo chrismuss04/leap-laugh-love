@@ -33,7 +33,24 @@ public class CashLedgerEntry {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "description")
+    private String description;
+
     protected CashLedgerEntry() {
+    }
+
+    public CashLedgerEntry(UUID accountId,
+                           String entryType,
+                           BigDecimal amount,
+                           String currency,
+                           OffsetDateTime createdAt,
+                           String description) {
+        this.accountId = accountId;
+        this.entryType = entryType;
+        this.amount = amount;
+        this.currency = currency;
+        this.createdAt = createdAt;
+        this.description = description;
     }
 
     public UUID getCashLedgerId() {
@@ -58,5 +75,9 @@ public class CashLedgerEntry {
 
     public OffsetDateTime getCreatedAt() {
         return createdAt;
+    }
+
+    public String getDescription() {
+        return description;
     }
 }
