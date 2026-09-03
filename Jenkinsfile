@@ -50,23 +50,20 @@ pipeline {
                 // run is torn down before starting a fresh one.
                 sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
                 sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} up -d"
-                // `ps` alone never fails the build even if the app crashed on boot;
-                // poll the container's actual HEALTHCHECK status (app has no host
-                // port, so we can't curl it directly) and fail fast if it never
-                // becomes healthy.
+                // `ps` alone never fails the build even if the app crashed on boot.
+                // Rather than trust the image's own HEALTHCHECK metadata (which may
+                // not be present/working depending on what got built), probe the
+                // actuator endpoint directly from inside the app container via
+                // `exec` — app has no host port mapping, so this is the only way
+                // to reach it from the Jenkins agent.
                 sh '''
                     set -e
-                    cid=$(docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} ps -q app)
                     for i in $(seq 1 30); do
-                        status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "unknown")
-                        echo "app health: $status"
-                        if [ "$status" = "healthy" ]; then
+                        if docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} exec -T app wget -q --spider http://localhost:8080/actuator/health; then
+                            echo "app is healthy"
                             exit 0
                         fi
-                        if [ "$status" = "unhealthy" ]; then
-                            docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} logs app
-                            exit 1
-                        fi
+                        echo "app not ready yet (attempt $i/30)"
                         sleep 2
                     done
                     echo "app never became healthy in time"
