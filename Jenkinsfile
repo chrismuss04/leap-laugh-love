@@ -58,13 +58,13 @@ pipeline {
                 // to reach it from the Jenkins agent.
                 sh '''
                     set -e
-                    for i in $(seq 1 30); do
+                    for i in $(seq 1 60); do
                         if docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} exec -T app wget -q --spider http://localhost:8080/actuator/health; then
                             echo "app is healthy"
                             exit 0
                         fi
-                        echo "app not ready yet (attempt $i/30)"
-                        sleep 2
+                        echo "app not ready yet (attempt $i/60)"
+                        sleep 3
                     done
                     echo "app never became healthy in time"
                     docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} logs app
