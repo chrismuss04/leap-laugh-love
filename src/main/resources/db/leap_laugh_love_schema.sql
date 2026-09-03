@@ -135,3 +135,47 @@ CREATE TABLE IF NOT EXISTS trading.position_movements (
     cost_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Trade Record Archive - Retention: trade records must never be deleted or altered
+-- so that audit/compliance data is never lost.
+CREATE OR REPLACE FUNCTION trading.reject_delete_or_update()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 'Records in % are immutable and cannot be % for retention compliance',
+        TG_TABLE_NAME, TG_OP;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Orders may transition through statuses (SUBMITTED -> ACCEPTED/REJECTED -> FILLED)
+-- but must never be deleted once created.
+CREATE TRIGGER trg_orders_no_delete
+    BEFORE DELETE ON trading.orders
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+-- Executions, cash ledger entries, and position movements are append-only audit
+-- records and must never be updated or deleted once created.
+CREATE TRIGGER trg_executions_no_delete_or_update
+    BEFORE UPDATE OR DELETE ON trading.executions
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+CREATE TRIGGER trg_cash_ledger_no_delete_or_update
+    BEFORE UPDATE OR DELETE ON trading.cash_ledger
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+CREATE TRIGGER trg_position_movements_no_delete_or_update
+    BEFORE UPDATE OR DELETE ON trading.position_movements
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+-- Client identity records must never be deleted (profile fields and status may
+-- still be legitimately updated, e.g. address corrections, status transitions).
+CREATE TRIGGER trg_clients_no_delete
+    BEFORE DELETE ON iam.clients
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+CREATE TRIGGER trg_client_profile_no_delete
+    BEFORE DELETE ON iam.client_profile
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+CREATE TRIGGER trg_client_credentials_no_delete
+    BEFORE DELETE ON iam.client_credentials
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
