@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.order;
 
+import com.leap.leaplaughlove.trading.Account;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
