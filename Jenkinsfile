@@ -50,7 +50,29 @@ pipeline {
                 // run is torn down before starting a fresh one.
                 sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
                 sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} up -d"
-                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} ps"
+                // `ps` alone never fails the build even if the app crashed on boot;
+                // poll the container's actual HEALTHCHECK status (app has no host
+                // port, so we can't curl it directly) and fail fast if it never
+                // becomes healthy.
+                sh '''
+                    set -e
+                    cid=$(docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} ps -q app)
+                    for i in $(seq 1 30); do
+                        status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null || echo "unknown")
+                        echo "app health: $status"
+                        if [ "$status" = "healthy" ]; then
+                            exit 0
+                        fi
+                        if [ "$status" = "unhealthy" ]; then
+                            docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} logs app
+                            exit 1
+                        fi
+                        sleep 2
+                    done
+                    echo "app never became healthy in time"
+                    docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} logs app
+                    exit 1
+                '''
             }
             post {
                 // Always tear down, even if the steps above fail, so the host port

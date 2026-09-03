@@ -5,7 +5,8 @@ services:
     # host. It can reach `db` by the service name "db" (Docker bridge DNS),
     # but nothing outside Docker can reach `app` unless a ports: entry is added.
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
@@ -19,6 +20,13 @@ services:
       POSTGRES_DB: paysprint
       POSTGRES_USER: paysprint
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    healthcheck:
+      # depends_on: condition: service_healthy (above) waits for this instead
+      # of just "container started", so app doesn't race Postgres's init.
+      test: ["CMD-SHELL", "pg_isready -U paysprint -d paysprint"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
     ports:
       # Only db is reachable from the host. app is not. This mirrors a real
       # deployment where the database is internal but needs to be accessible
@@ -28,9 +36,13 @@ services:
       - "${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      # Postgres only runs *.sql in this dir on first init (empty data dir);
-      # ddl-auto=validate needs the schema to already exist, hence this.
+      # Postgres only runs *.sql in this dir on first init (empty data dir),
+      # in filename order, so every teammate gets an identical schema + seed
+      # dataset from a fresh volume instead of running seed scripts by hand.
+      # ddl-auto=validate needs the schema to already exist, hence 01-schema.
       - ./src/main/resources/db/leap_laugh_love_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./src/main/resources/db/seed_iam.sql:/docker-entrypoint-initdb.d/02-seed-iam.sql:ro
+      - ./src/main/resources/db/seed_trading.sql:/docker-entrypoint-initdb.d/03-seed-trading.sql:ro
 
 volumes:
   db_data:

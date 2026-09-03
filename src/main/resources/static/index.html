@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Leap Laugh Love - Local Test UI</title>
+<style>
+  body { font-family: sans-serif; max-width: 480px; margin: 40px auto; }
+  fieldset { margin-bottom: 20px; }
+  label { display: block; margin-top: 8px; }
+  input { width: 100%; padding: 6px; box-sizing: border-box; }
+  button { margin-top: 12px; padding: 8px 16px; }
+  pre { background: #f4f4f4; padding: 12px; overflow-x: auto; white-space: pre-wrap; }
+  .error { color: #b00020; }
+</style>
+</head>
+<body>
+  <h1>Local Test UI</h1>
+
+  <fieldset>
+    <legend>Login</legend>
+    <label>Email <input id="email" type="email" value="alice.johnson@leap.com"></label>
+    <label>Password <input id="password" type="password" value="Password123!"></label>
+    <button id="loginBtn">Login</button>
+    <pre id="loginResult"></pre>
+  </fieldset>
+
+  <fieldset>
+    <legend>Balance</legend>
+    <button id="balanceBtn" disabled>Get Balance</button>
+    <pre id="balanceResult"></pre>
+  </fieldset>
+
+<script>
+let accessToken = null;
+
+const loginBtn = document.getElementById('loginBtn');
+const balanceBtn = document.getElementById('balanceBtn');
+const loginResult = document.getElementById('loginResult');
+const balanceResult = document.getElementById('balanceResult');
+
+loginBtn.addEventListener('click', async () => {
+  loginResult.textContent = 'Logging in...';
+  loginResult.className = '';
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: document.getElementById('email').value,
+        password: document.getElementById('password').value
+      })
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(body));
+    accessToken = body.accessToken;
+    loginResult.textContent = JSON.stringify(body, null, 2);
+    balanceBtn.disabled = false;
+  } catch (err) {
+    loginResult.textContent = err.message;
+    loginResult.className = 'error';
+    balanceBtn.disabled = true;
+  }
+});
+
+balanceBtn.addEventListener('click', async () => {
+  balanceResult.textContent = 'Loading...';
+  balanceResult.className = '';
+  try {
+    const res = await fetch('/api/balance', {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(body));
+    balanceResult.textContent = JSON.stringify(body, null, 2);
+  } catch (err) {
+    balanceResult.textContent = err.message;
+    balanceResult.className = 'error';
+  }
+});
+</script>
+</body>
+</html>

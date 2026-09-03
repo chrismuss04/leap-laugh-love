@@ -30,4 +30,7 @@ USER appuser
 COPY --from=build /app/target/team-skeleton.jar app.jar
 
 EXPOSE 8080
+# Lets `docker ps` / compose report actual container health instead of just "running".
+HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/actuator/health || exit 1
 ENTRYPOINT ["java", "-jar", "app.jar"]
