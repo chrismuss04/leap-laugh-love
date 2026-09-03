@@ -43,13 +43,23 @@ pipeline {
                 // it never handles real client tokens/data. Unique per build so
                 // concurrent builds don't share a value.
                 JWT_SECRET = "ci-smoke-test-secret-${BUILD_NUMBER}-do-not-use-in-prod"
+                // BUILD_NUMBER alone is NOT unique across a Multibranch Pipeline —
+                // each branch has its own counter, so two branches can easily be at
+                // the same build number at the same time. Without JOB_NAME in the
+                // mix, concurrent builds from different branches can collide on the
+                // same compose project name and silently reuse each other's
+                // containers/images instead of their own.
+                COMPOSE_PROJECT = "${(env.JOB_NAME + '-' + env.BUILD_NUMBER).toLowerCase().replaceAll('[^a-z0-9]+', '-')}"
             }
             steps {
-                // Unique project name per build so concurrent/parallel branch builds
-                // don't collide on container names, and a leftover from an aborted
-                // run is torn down before starting a fresh one.
-                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
-                sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} up -d"
+                // Unique project name per job+build so concurrent/parallel branch
+                // builds never collide on container names, and a leftover from an
+                // aborted run is torn down before starting a fresh one.
+                sh "docker-compose -p ${COMPOSE_PROJECT} down -v || true"
+                // --build forces a fresh image build under this project name rather
+                // than silently reusing whatever image (possibly stale, possibly from
+                // another build) already happens to exist under it.
+                sh "docker-compose -p ${COMPOSE_PROJECT} up -d --build"
                 // `ps` alone never fails the build even if the app crashed on boot.
                 // Rather than trust the image's own HEALTHCHECK metadata (which may
                 // not be present/working depending on what got built), probe the
@@ -59,7 +69,7 @@ pipeline {
                 sh '''
                     set -e
                     for i in $(seq 1 60); do
-                        if docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} exec -T app wget -q -O /dev/null http://localhost:8080/actuator/health; then
+                        if docker-compose -p ${COMPOSE_PROJECT} exec -T app wget -q -O /dev/null http://localhost:8080/actuator/health; then
                             echo "app is healthy"
                             exit 0
                         fi
@@ -67,7 +77,7 @@ pipeline {
                         sleep 3
                     done
                     echo "app never became healthy in time"
-                    docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} logs app
+                    docker-compose -p ${COMPOSE_PROJECT} logs app
                     exit 1
                 '''
             }
@@ -75,7 +85,7 @@ pipeline {
                 // Always tear down, even if the steps above fail, so the host port
                 // isn't left bound for the next build.
                 always {
-                    sh "docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} down -v || true"
+                    sh "docker-compose -p ${COMPOSE_PROJECT} down -v || true"
                 }
             }
         }
