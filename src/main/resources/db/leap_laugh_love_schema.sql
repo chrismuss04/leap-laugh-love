@@ -143,6 +143,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     RAISE EXCEPTION 'Records in % are immutable and cannot be % for retention compliance',
         TG_TABLE_NAME, TG_OP;
+    RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
