@@ -59,7 +59,7 @@ pipeline {
                 sh '''
                     set -e
                     for i in $(seq 1 60); do
-                        if docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} exec -T app wget -q --spider http://localhost:8080/actuator/health; then
+                        if docker-compose -p ${IMAGE_NAME}-${BUILD_NUMBER} exec -T app wget -q -O /dev/null http://localhost:8080/actuator/health; then
                             echo "app is healthy"
                             exit 0
                         fi
