@@ -148,6 +148,14 @@ $$ LANGUAGE plpgsql;
 
 -- Orders may transition through statuses (SUBMITTED -> ACCEPTED/REJECTED -> FILLED)
 -- but must never be deleted once created.
+DROP TRIGGER IF EXISTS trg_orders_no_delete ON trading.orders;
+DROP TRIGGER IF EXISTS trg_executions_no_delete_or_update ON trading.executions;
+DROP TRIGGER IF EXISTS trg_cash_ledger_no_delete_or_update ON trading.cash_ledger;
+DROP TRIGGER IF EXISTS trg_position_movements_no_delete_or_update ON trading.position_movements;
+DROP TRIGGER IF EXISTS trg_clients_no_delete ON iam.clients;
+DROP TRIGGER IF EXISTS trg_client_profile_no_delete ON iam.client_profile;
+DROP TRIGGER IF EXISTS trg_client_credentials_no_delete ON iam.client_credentials;
+
 CREATE TRIGGER trg_orders_no_delete
     BEFORE DELETE ON trading.orders
     FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
