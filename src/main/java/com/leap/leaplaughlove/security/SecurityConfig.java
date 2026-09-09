@@ -29,7 +29,10 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**", "/actuator/health").permitAll()
+                        // Fixed bug while implementing LLL-117: registration has to be reachable without a token,
+                        // since a brand-new applicant doesn't have an account (or a JWT) yet. Without this,
+                        // nobody could ever actually register - the endpoint always returned 401.
+                        .requestMatchers("/api/auth/**", "/actuator/health", "/api/v1/clients/register").permitAll()
                         // Local manual-test UI only; served as a static resource, not an API.
                         .requestMatchers("/", "/index.html").permitAll()
                         .anyRequest().authenticated())
