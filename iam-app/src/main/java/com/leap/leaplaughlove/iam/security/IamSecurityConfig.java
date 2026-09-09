@@ -29,6 +29,7 @@ public class IamSecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
+                        // LLL-117: registration must stay public - a new applicant has no JWT yet.
                         .requestMatchers("/api/iam/auth/**", "/api/iam/v1/clients/register", "/actuator/health").permitAll()
                         // commment local manual-test ui only
                         .requestMatchers("/", "/index.html").permitAll()

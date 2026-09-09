@@ -18,8 +18,12 @@ CREATE TABLE IF NOT EXISTS iam.client_profile (
     full_name TEXT NOT NULL,
     date_of_birth DATE NOT NULL,
     ssn CHAR(11) NOT NULL UNIQUE,
-    address_line_1 TEXT NOT NULL,
-    address_line_2 TEXT,
+    -- LLL-117: renamed from address_line_1/address_line_2 to match the column names
+    -- Client.java's @Column mappings actually use (address_line1/address_line2) - the
+    -- underscored names here didn't match the entity, so registration failed with a
+    -- "column not found" error against a real database.
+    address_line1 TEXT NOT NULL,
+    address_line2 TEXT,
     city TEXT NOT NULL,
     state_region TEXT,
     postal_code TEXT NOT NULL,
