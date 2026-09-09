@@ -15,7 +15,8 @@ INSERT INTO iam.clients (email, phone, status) VALUES
 ON CONFLICT (email) DO NOTHING;
 
 -- Insert client profiles (one per client)
-INSERT INTO iam.client_profile (client_id, full_name, date_of_birth, ssn, address_line_1, city, state_region, postal_code, country_code, experience_level, initial_deposit_amount)
+-- LLL-117: address_line_1 renamed to address_line1 to match the client_profile schema fix.
+INSERT INTO iam.client_profile (client_id, full_name, date_of_birth, ssn, address_line1, city, state_region, postal_code, country_code, experience_level, initial_deposit_amount)
 SELECT c.client_id, 'Alice Johnson', '1985-03-15'::DATE, '123-45-6789', '123 Main Street', 'New York', 'NY', '10001', 'US', 'ADVANCED', 50000.00 FROM iam.clients c WHERE c.email = 'alice.johnson@leap.com'
 UNION ALL
 SELECT c.client_id, 'Bob Smith', '1990-07-22'::DATE, '123-45-6790', '123 Main Street', 'Los Angeles', 'CA', '10001', 'US', 'INTERMEDIATE', 25000.00 FROM iam.clients c WHERE c.email = 'bob.smith@leap.com'
@@ -39,7 +40,7 @@ ON CONFLICT (client_id) DO UPDATE SET
     full_name = EXCLUDED.full_name,
     date_of_birth = EXCLUDED.date_of_birth,
     ssn = EXCLUDED.ssn,
-    address_line_1 = EXCLUDED.address_line_1,
+    address_line1 = EXCLUDED.address_line1,
     city = EXCLUDED.city,
     state_region = EXCLUDED.state_region,
     postal_code = EXCLUDED.postal_code,
