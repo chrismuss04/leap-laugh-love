@@ -4,7 +4,7 @@ services:
       context: .
       dockerfile: iam-app/Dockerfile
     ports:
-      - "8081:8081"
+      - "${IAM_PORT:-8081}:8081"
     depends_on:
       db:
         condition: service_healthy
@@ -19,7 +19,7 @@ services:
       context: .
       dockerfile: trading-app/Dockerfile
     ports:
-      - "8082:8082"
+      - "${TRADING_PORT:-8082}:8082"
     depends_on:
       db:
         condition: service_healthy
