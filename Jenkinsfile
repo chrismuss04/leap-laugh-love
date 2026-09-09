@@ -34,6 +34,8 @@ pipeline {
         stage('Verify container starts') {
             environment {
                 DB_PORT = "${5432 + (env.EXECUTOR_NUMBER as Integer)}"
+                IAM_PORT = "${8081 + (env.EXECUTOR_NUMBER as Integer)}"
+                TRADING_PORT = "${8082 + (env.EXECUTOR_NUMBER as Integer)}"
                 JWT_SECRET = "ci-smoke-test-secret-${BUILD_NUMBER}-do-not-use-in-prod"
                 COMPOSE_PROJECT = "${(env.JOB_NAME + '-' + env.BUILD_NUMBER).toLowerCase().replaceAll('[^a-z0-9]+', '-')}"
             }
