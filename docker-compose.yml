@@ -1,9 +1,10 @@
 services:
-  app:
-    build: .
-    # No ports: mapping — the app service is intentionally unreachable from the
-    # host. It can reach `db` by the service name "db" (Docker bridge DNS),
-    # but nothing outside Docker can reach `app` unless a ports: entry is added.
+  iam-app:
+    build:
+      context: .
+      dockerfile: iam-app/Dockerfile
+    ports:
+      - "${IAM_PORT:-8081}:8081"
     depends_on:
       db:
         condition: service_healthy
@@ -11,7 +12,21 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
-      # No insecure default here on purpose — set JWT_SECRET in your shell/CI before running.
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+
+  trading-app:
+    build:
+      context: .
+      dockerfile: trading-app/Dockerfile
+    ports:
+      - "${TRADING_PORT:-8082}:8082"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
+      SPRING_DATASOURCE_USERNAME: paysprint
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
 
   db:
@@ -21,31 +36,17 @@ services:
       POSTGRES_USER: paysprint
       POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
     healthcheck:
-      # depends_on: condition: service_healthy (above) waits for this instead
-      # of just "container started", so app doesn't race Postgres's init.
       test: ["CMD-SHELL", "pg_isready -U paysprint -d paysprint"]
       interval: 5s
       timeout: 3s
       retries: 10
     ports:
-      # Only db is reachable from the host. app is not. This mirrors a real
-      # deployment where the database is internal but needs to be accessible
-      # to DBA tooling running on the developer's machine during development.
-      # DB_PORT is overridable so concurrent CI builds don't fight over the
-      # same host port; defaults to 5432 for local dev.
       - "${DB_PORT:-5432}:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
-      # Postgres only runs *.sql in this dir on first init (empty data dir),
-      # in filename order, so every teammate gets an identical schema + seed
-      # dataset from a fresh volume instead of running seed scripts by hand.
-      # ddl-auto=validate needs the schema to already exist, hence 01-schema.
-      - ./src/main/resources/db/leap_laugh_love_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
-      - ./src/main/resources/db/seed_iam.sql:/docker-entrypoint-initdb.d/02-seed-iam.sql:ro
-      - ./src/main/resources/db/seed_trading.sql:/docker-entrypoint-initdb.d/03-seed-trading.sql:ro
+      - ./iam-app/src/main/resources/db/leap_laugh_love_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./iam-app/src/main/resources/db/seed_iam.sql:/docker-entrypoint-initdb.d/02-seed-iam.sql:ro
+      - ./iam-app/src/main/resources/db/seed_trading.sql:/docker-entrypoint-initdb.d/03-seed-trading.sql:ro
 
 volumes:
   db_data:
-    # Named volume: persists Postgres data across `docker compose down` and
-    # `docker compose up`. Use `docker compose down -v` to also remove this
-    # volume, which wipes the database and starts fresh on the next `up`.
