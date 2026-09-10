@@ -1,0 +1,166 @@
+.orders-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.orders-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.orders-header h1 {
+  margin: 0;
+  color: #333;
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: #d32f2f;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-logout:hover {
+  background: #b71c1c;
+}
+
+.loading {
+  text-align: center;
+  color: #666;
+  padding: 40px;
+}
+
+.error-message {
+  background: #ffebee;
+  color: #d32f2f;
+  padding: 12px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+}
+
+.no-orders {
+  text-align: center;
+  color: #999;
+  padding: 40px;
+}
+
+.orders-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 20px;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: white;
+}
+
+.orders-table thead {
+  background: #f5f5f5;
+  font-weight: bold;
+}
+
+.orders-table th,
+.orders-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.order-row {
+  cursor: pointer;
+}
+
+.order-row.buy-row {
+  background: #e8f5e9;
+}
+
+.order-row.buy-row:hover {
+  background: #c8e6c9;
+}
+
+.order-row.sell-row {
+  background: #ffebee;
+}
+
+.order-row.sell-row:hover {
+  background: #ffcdd2;
+}
+
+.expand-icon {
+  width: 30px;
+  text-align: center;
+  font-weight: bold;
+}
+
+.fills-row {
+  background: #fafafa;
+}
+
+.fills-row td {
+  padding: 20px 12px;
+}
+
+.fills-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fills-table th {
+  background: #f0f0f0;
+  font-weight: bold;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid #ddd;
+}
+
+.fills-table td {
+  padding: 8px;
+  border: 1px solid #ddd;
+}
+
+.no-fills {
+  color: #999;
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #005a9e;
+}
+
+.btn-secondary:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-weight: bold;
+  color: #333;
+  min-width: 200px;
+  text-align: center;
+}
