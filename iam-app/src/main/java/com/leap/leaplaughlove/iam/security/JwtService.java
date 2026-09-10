@@ -13,6 +13,10 @@ import java.time.temporal.ChronoUnit;
 import java.util.Date;
 import java.util.UUID;
 
+/**
+ * Service for generating and validating JSON Web Tokens (JWTs).
+ * Provides methods to generate JWT tokens, retrieve their expiration time, and parse and validate them.
+ */
 @Service
 public class JwtService {
 
@@ -31,6 +35,12 @@ public class JwtService {
         this.expirationMinutes = expirationMinutes;
     }
 
+    /**
+     * Generates a JSON Web Token for the given clientId and email.
+     * @param clientId
+     * @param email
+     * @return serialized JWT token as a String
+     */
     public String generateToken(UUID clientId, String email) {
         Instant now = Instant.now();
         return Jwts.builder()
@@ -42,11 +52,19 @@ public class JwtService {
                 .compact();
     }
 
+    /**
+     * Gets the expiration time of the JWT token in seconds.
+     * @return expiration time in seconds
+     */
     public long getExpirationSeconds() {
         return expirationMinutes * 60;
     }
 
-    // commment parse and validate jwt token
+    /**
+     * Parses and validates the given JWT token.
+     * @param token the JWT token to parse and validate
+     * @return the clientId extracted from the token
+     */
     public UUID parseAndValidate(String token) {
         Claims claims = Jwts.parser()
                 .verifyWith(signingKey)

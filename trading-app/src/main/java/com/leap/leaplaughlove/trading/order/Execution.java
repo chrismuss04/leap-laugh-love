@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
-
+/**
+ * Represents the execution of an order in the trading system
+ */
 @Entity
 @Table(name = "executions", schema = "trading")
 public class Execution {

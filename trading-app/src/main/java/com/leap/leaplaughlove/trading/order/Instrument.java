@@ -3,6 +3,9 @@ package com.leap.leaplaughlove.trading.order;
 import jakarta.persistence.*;
 import java.util.UUID;
 
+/**
+ * Represents a financial instrument in the trading system.
+ */
 @Entity
 @Table(name = "instruments", schema = "trading")
 public class Instrument {

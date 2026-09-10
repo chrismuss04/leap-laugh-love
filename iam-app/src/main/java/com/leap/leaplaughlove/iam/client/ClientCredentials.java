@@ -4,6 +4,9 @@ import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * Represents the client credentials for authentication purposes.
+ */
 @Entity
 @Table(name = "client_credentials", schema = "iam")
 public class ClientCredentials {

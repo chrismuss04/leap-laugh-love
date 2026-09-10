@@ -33,6 +33,10 @@ public class BalanceService {
         this.cashLedgerRepository = cashLedgerRepository;
     }
 
+    /**
+     * Retrieves the balance information for the authenticated client.
+     * @return the balance response containing account balances and totals by currency
+     */
     public BalanceResponse getBalanceForClient() {
         UUID clientId = getAuthenticatedClientId();
         List<Account> accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);
@@ -64,6 +68,12 @@ public class BalanceService {
         return new BalanceResponse(balances, totalsByCurrency);
     }
 
+    /**
+     * Deposits the specified amount into the given account
+     * @param accountId
+     * @param request
+     * @return the response containing details of the cash transaction
+     */
     @Transactional
     public CashTransactionResponse deposit(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
@@ -81,6 +91,13 @@ public class BalanceService {
         return toResponse(saved, currentBalance.add(amount));
     }
 
+    /**
+     * Withdraws the specified amount from the given account
+     * @param accountId
+     * @param request
+     * @throws ResponseStatusException if the withdrawal amount exceeds available balance
+     * @return the response containing details of the cash transaction
+     */
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());

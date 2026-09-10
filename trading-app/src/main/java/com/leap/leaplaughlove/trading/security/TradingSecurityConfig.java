@@ -20,15 +20,30 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import java.util.List;
 import java.util.Map;
-
+/**
+ * Security configuration for the Trading app
+ * Includes CORS, CSRF, Session Management, and JWT Authentication
+ */
 @Configuration
 public class TradingSecurityConfig {
 
+    /**
+     * Provides a PasswordEncoder bean for encoding passwords.
+     * @return BCryptPasswordEncoder the password encoder bean
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Provides the security filter chain for the Trading app.
+     * @param http the HttpSecurity object to configure
+     * @param jwtService the JwtService for handling JWT tokens
+     * @param objectMapper the ObjectMapper for writing JSON responses
+     * @return SecurityFilterChain the configured security filter chain
+     * @throws Exception if an error occurs while configuring security
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
         http
@@ -45,6 +60,10 @@ public class TradingSecurityConfig {
         return http.build();
     }
 
+    /**
+     * Provides the CORS configuration source for the Trading app.
+     * @return CorsConfigurationSource the configured CORS source
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();

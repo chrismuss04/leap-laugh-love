@@ -32,6 +32,11 @@ public class ClientRegistrationController {
         this.clientRepository = clientRepository;
     }
 
+    /**
+     * Handles client registration requests
+     * @param RegistrationRequest request  the client registration request containing all necessary client details
+     * @return RegistrationResponse containing the registration response with client ID, email, and status
+     */
     @PostMapping("/register")
     @Transactional
     public ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request) {
@@ -55,11 +60,21 @@ public class ClientRegistrationController {
                 .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));
     }
 
+    /**
+     * Handles duplicate client exceptions thrown when client already exists
+     * @param DuplicateClientException ex
+     * @return ResponseEntity containing the error message and HTTP status code
+     */
     @ExceptionHandler(DuplicateClientException.class)
     public ResponseEntity<String> handleDuplicate(DuplicateClientException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
     }
 
+    /**
+     * Handles attempts to violate data integrity constraints, such as duplicate email or SSN entries.
+     * @param DataIntegrityViolationException ex
+     * @return ResponseEntity containing the error message and HTTP status code
+     */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity<String> handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT).body("email or ssn already registered");
@@ -113,11 +128,21 @@ public class ClientRegistrationController {
 
             private int minimumAge;
 
+            /**
+             * Initializes the validator with the minimum age specified in the annotation.
+             * @param MinimumAge annotation 
+             */
             @Override
             public void initialize(MinimumAge annotation) {
                 this.minimumAge = annotation.value();
             }
 
+            /**            
+             * Checks if the given DOB meets minimum age requirement
+             * @param dateOfBirth the date of birth to validate
+             * @param context the context in which the constraint is evaluated
+             * @return true if the date of birth meets the minimum age requirement, false otherwise
+             */
             @Override
             public boolean isValid(LocalDate dateOfBirth, ConstraintValidatorContext context) {
                 // Let @NotNull handle a missing date of birth - we only judge dates that are actually present.

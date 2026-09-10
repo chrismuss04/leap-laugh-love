@@ -32,6 +32,14 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
+    /**
+     * Authenticates a client using their email and password. 
+     * @param email the email of the client attempting to authenticate
+     * @param rawPassword the raw password provided by the client
+     * @throws InvalidCredentialsException if the email or password is incorrect
+     * @throws AccountLockedException if the account is locked due to too many failed login attempts
+     * @return a LoginResponse containing the authentication token and related information
+     */
     @Transactional
     public LoginResponse authenticate(String email, String rawPassword) {
         Client client = clientRepository.findByEmail(email)

@@ -14,15 +14,30 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.util.Map;
-
+/**
+ * Security configuration for the IAM application 
+ * This class defines the JWT authentication and CORS settings, security filter chain, password encoder, and exception handling for unauthorized access.
+ */
 @Configuration
 public class IamSecurityConfig {
 
+    /**
+     * Provides a password encoder bean for the IAM application.
+     * @return BCryptPasswordEncoder instance
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Defines the security filter chain for the IAM application.
+     * @param http the HttpSecurity object to configure
+     * @param jwtService the JWT service for authentication
+     * @param objectMapper the ObjectMapper for JSON serialization
+     * @return the configured SecurityFilterChain
+     * @throws Exception if an error occurs while configuring the security filter chain
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
         http

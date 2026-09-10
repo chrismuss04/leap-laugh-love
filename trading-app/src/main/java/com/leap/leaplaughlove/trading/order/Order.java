@@ -9,6 +9,10 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * Represents a trading order placed by an account for a specific instrument.
+ * Contains details such as side, type, quantity, limit price, status, and timestamps.
+ */
 @Entity
 @Table(name = "orders", schema = "trading")
 public class Order {
