@@ -1,0 +1,91 @@
+<div class="orders-container">
+  <div class="orders-header">
+    <h1>📊 Order History</h1>
+    <button (click)="logout()" class="btn-logout">Logout</button>
+  </div>
+
+  <div *ngIf="loading" class="loading">Loading orders...</div>
+  
+  <div *ngIf="error" class="error-message">{{ error }}</div>
+
+  <div *ngIf="!loading && orders.length === 0 && !error" class="no-orders">
+    No orders found
+  </div>
+
+  <div *ngIf="!loading && orders.length > 0" class="orders-table-wrapper">
+    <table class="orders-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Symbol</th>
+          <th>Side</th>
+          <th>Quantity</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>Filled At</th>
+          <th>Fills</th>
+        </tr>
+      </thead>
+      <tbody>
+        <ng-container *ngFor="let order of orders">
+          <tr
+            [ngClass]="order.side === 'BUY' ? 'buy-row' : 'sell-row'"
+            class="order-row expandable"
+            (click)="toggleExpand(order.orderId)"
+          >
+            <td class="expand-icon">
+              {{ expandedOrderId === order.orderId ? '▼' : '▶' }}
+            </td>
+            <td>{{ order.symbol }}</td>
+            <td>{{ order.side }}</td>
+            <td>{{ order.quantity | number: '1.2-4' }}</td>
+            <td>{{ order.status }}</td>
+            <td>{{ order.submittedAt | date: 'short' }}</td>
+            <td>{{ (order.filledAt | date: 'short') ?? '--' }}</td>
+            <td>{{ order.executions.length }}</td>
+          </tr>
+          
+          <!-- Fills row -->
+          <tr *ngIf="expandedOrderId === order.orderId" class="fills-row">
+            <td colspan="8">
+              <div *ngIf="order.executions.length === 0" class="no-fills">
+                No fills for this order
+              </div>
+              
+              <table *ngIf="order.executions.length > 0" class="fills-table">
+                <thead>
+                  <tr>
+                    <th>Execution ID</th>
+                    <th>Quantity</th>
+                    <th>Price</th>
+                    <th>Executed At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let exec of order.executions">
+                    <td>{{ exec.executionId | slice: 0:8 }}...</td>
+                    <td>{{ exec.quantity | number: '1.2-4' }}</td>
+                    <td>${{ exec.price | number: '1.2-2' }}</td>
+                    <td>{{ exec.executedAt | date: 'short' }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+        </ng-container>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  <div *ngIf="!loading && totalPages > 1" class="pagination">
+    <button (click)="prevPage()" [disabled]="currentPage === 0" class="btn-secondary">
+      ← Previous
+    </button>
+    <span class="page-info">Page {{ currentPage + 1 }} of {{ totalPages }}</span>
+    <button (click)="nextPage()" [disabled]="currentPage >= totalPages - 1" class="btn-secondary">
+      Next →
+    </button>
+  </div>
+</div>
+

@@ -3,12 +3,22 @@ server:
 
 spring:
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
-    username: ${SPRING_DATASOURCE_USERNAME:paysprint}
-    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+    url: jdbc:h2:mem:testdb;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driverClassName: org.h2.Driver
+    username: sa
+    password: 
+  sql:
+    init:
+      mode: always
+      continue-on-error: false
+  h2:
+    console:
+      enabled: true
   jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
-      ddl-auto: none
+      ddl-auto: create-drop
+    show-sql: false
     open-in-view: false
 
 app:

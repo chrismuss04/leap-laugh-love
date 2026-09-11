@@ -1,0 +1,39 @@
+<div class="login-container">
+  <div class="login-card">
+    <h1>📊 Order History</h1>
+    <p class="subtitle">Sign in to view your orders and fills</p>
+
+    <form (ngSubmit)="login()">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input
+          id="email"
+          type="email"
+          [(ngModel)]="email"
+          name="email"
+          required
+          [disabled]="loading"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input
+          id="password"
+          type="password"
+          [(ngModel)]="password"
+          name="password"
+          required
+          [disabled]="loading"
+        />
+      </div>
+
+      <button type="submit" [disabled]="loading" class="btn-primary">
+        {{ loading ? 'Logging in...' : 'Login' }}
+      </button>
+    </form>
+
+    <div *ngIf="error" class="error-message">{{ error }}</div>
+  </div>
+</div>
+
