@@ -212,8 +212,8 @@ erDiagram
     CLIENT_CREDENTIALS {
         uuid client_id "PK, FK"
         text password_hash
-        int failed_sign_in_attempts
-        timestamptz locked_until
+        int failed_attempts
+        timestamptz last_login_at
     }
     ACCOUNTS {
         uuid account_id PK

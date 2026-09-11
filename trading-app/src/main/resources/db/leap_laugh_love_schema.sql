@@ -34,8 +34,8 @@ CREATE TABLE IF NOT EXISTS iam.client_credentials (
     client_id UUID PRIMARY KEY
         REFERENCES iam.clients (client_id) ON DELETE CASCADE,
     password_hash TEXT NOT NULL,
-    failed_sign_in_attempts INTEGER NOT NULL DEFAULT 0,
-    locked_until TIMESTAMPTZ,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    last_login_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

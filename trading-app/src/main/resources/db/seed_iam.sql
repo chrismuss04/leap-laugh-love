@@ -48,7 +48,7 @@ ON CONFLICT (client_id) DO UPDATE SET
     initial_deposit_amount = EXCLUDED.initial_deposit_amount;
 
 -- Insert client credentials (one per client)
-INSERT INTO iam.client_credentials (client_id, password_hash, failed_sign_in_attempts)
+INSERT INTO iam.client_credentials (client_id, password_hash, failed_attempts)
 SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'alice.johnson@leap.com'
 UNION ALL
 SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'bob.smith@leap.com'
@@ -70,4 +70,4 @@ UNION ALL
 SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c WHERE c.email = 'jack.thomas@leap.com'
 ON CONFLICT (client_id) DO UPDATE SET
     password_hash = EXCLUDED.password_hash,
-    failed_sign_in_attempts = EXCLUDED.failed_sign_in_attempts;
+    failed_attempts = EXCLUDED.failed_attempts;
