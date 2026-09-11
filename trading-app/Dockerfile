@@ -4,6 +4,7 @@ WORKDIR /app
 COPY pom.xml .
 COPY iam-app/pom.xml iam-app/
 COPY trading-app/pom.xml trading-app/
+COPY market-data-app/pom.xml market-data-app/
 COPY iam-app/src iam-app/src
 COPY trading-app/src trading-app/src
 RUN mvn -B clean package -DskipTests -pl trading-app -am
