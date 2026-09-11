@@ -15,9 +15,9 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
 
 @Service
 public class MarketSimulationEngine {
@@ -42,7 +42,7 @@ public class MarketSimulationEngine {
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
         for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {
-            RandomGenerator random = RandomGeneratorFactory.of("L64X128MixRandom").create(instrument.getRngSeed());
+            RandomGenerator random = new Random(instrument.getRngSeed());
             PriceState initialState = new PriceState(
                     instrument.getSymbol(),
                     instrument.getInitialPrice().setScale(PRICE_SCALE, RoundingMode.HALF_UP),

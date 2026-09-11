@@ -3,8 +3,8 @@ package com.leap.leaplaughlove.marketdata.simulation;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.Random;
 import java.util.random.RandomGenerator;
-import java.util.random.RandomGeneratorFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class GbmPriceGeneratorTest {
 
     private RandomGenerator seededRandom(long seed) {
-        return RandomGeneratorFactory.of("L64X128MixRandom").create(seed);
+        return new Random(seed);
     }
 
     @Test
