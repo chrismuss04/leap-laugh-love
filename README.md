@@ -18,6 +18,7 @@ The repository is structured as a **Multi-Module Maven Project** splitting ident
 
 1. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
 2. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
+3. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
 
 ```mermaid
 flowchart TB
@@ -39,27 +40,45 @@ flowchart TB
             BalC["BalanceController\n/api/trading/balance"]
             OrderC["OrderHistoryController\n/api/trading/orders/history"]
         end
+
+        subgraph MARKETDATA["market-data-app (Port 8083)"]
+            MdApp["MarketDataApplication @Import(JwtService) @EnableScheduling"]
+            MdSec["MarketDataSecurityConfig (CORS Enabled)"]
+            SimEngine["MarketSimulationEngine\n(GBM @Scheduled tick)"]
+            CandleAcc["PriceCandleAccumulator\n(ticks -> OHLC candles)"]
+            PriceC["PriceController\n/api/marketdata/prices"]
+            StreamC["PriceStreamController\n/api/marketdata/stream (SSE)"]
+        end
     end
 
     subgraph PG["PostgreSQL"]
         IAM_DB[("iam schema")]
         TRADING_DB[("trading schema")]
+        MARKETDATA_DB[("marketdata schema")]
     end
 
     UI -->|"HTTP / JSON (8081)"| IamSec
     UI -->|"HTTP / JSON (8082)"| TradeSec
+    UI -->|"HTTP / JSON / SSE (8083)"| MdSec
 
     IamSec --> AuthC
     IamSec --> RegC
     TradeSec --> BalC
     TradeSec --> OrderC
+    MdSec --> PriceC
+    MdSec --> StreamC
+    SimEngine --> PriceC
+    SimEngine --> StreamC
+    SimEngine --> CandleAcc
 
     TRADING -- "Classpath Dependency (JwtService)" --> IAM
+    MARKETDATA -- "Classpath Dependency (JwtService)" --> IAM
 
     AuthC --> IAM_DB
     RegC --> IAM_DB
     BalC --> TRADING_DB
     OrderC --> TRADING_DB
+    CandleAcc --> MARKETDATA_DB
 ```
 
 ---
@@ -76,6 +95,11 @@ flowchart TB
 | **Trading** | `POST /api/trading/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT required |
 | **Trading** | `GET /api/trading/orders/history` | Paginated order history | Bearer JWT required |
 | **Trading** | `GET /actuator/health` | Trading service health check | Permitted |
+| **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument | Bearer JWT required |
+| **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT required |
+| **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history | Bearer JWT required |
+| **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT required |
+| **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
 
 ---
 
@@ -97,11 +121,14 @@ mvn -pl iam-app test
 
 # Test Trading module (with dependency building)
 mvn -pl trading-app -am test
+
+# Test Market Data module (with dependency building)
+mvn -pl market-data-app -am test
 ```
 
 ### 2. Launch Services via Docker Compose (Recommended)
 
-Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`):
+Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`, `market-data-app`):
 
 ```bash
 export JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars"
@@ -113,6 +140,7 @@ docker-compose up -d --build
 Services will be exposed on:
 - **IAM Application**: `http://localhost:8081`
 - **Trading Application**: `http://localhost:8082`
+- **Market Data Application**: `http://localhost:8083`
 - **PostgreSQL Database**: `localhost:5432`
 
 To stop containers and clean up volumes:
@@ -133,6 +161,11 @@ mvn -pl iam-app spring-boot:run
 Run Trading App (in a separate terminal):
 ```bash
 mvn -pl trading-app spring-boot:run
+```
+
+Run Market Data App (in a separate terminal):
+```bash
+mvn -pl market-data-app spring-boot:run
 ```
 
 ---
@@ -243,4 +276,4 @@ erDiagram
     }
 ```
 
-Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in two Postgres schemas — `iam` (clients, profiles, credentials) and `trading` (accounts, instruments, orders, executions, cash ledger, positions). Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.
+Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in three Postgres schemas — `iam` (clients, profiles, credentials), `trading` (accounts, instruments, orders, executions, cash ledger, positions), and `marketdata` (simulated instruments and OHLC price candles — decoupled from `trading.instruments`, matched only by symbol). Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.
