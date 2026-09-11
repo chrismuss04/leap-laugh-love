@@ -18,6 +18,7 @@
     <modules>
         <module>iam-app</module>
         <module>trading-app</module>
+        <module>market-data-app</module>
     </modules>
 
     <properties>

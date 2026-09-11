@@ -6,12 +6,12 @@ COPY iam-app/pom.xml iam-app/
 COPY trading-app/pom.xml trading-app/
 COPY market-data-app/pom.xml market-data-app/
 COPY iam-app/src iam-app/src
-COPY trading-app/src trading-app/src
-RUN mvn -B clean package -DskipTests -pl trading-app -am
+COPY market-data-app/src market-data-app/src
+RUN mvn -B clean package -DskipTests -pl market-data-app -am
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /app/trading-app/target/*.jar app.jar
-EXPOSE 8082
+COPY --from=build /app/market-data-app/target/*.jar app.jar
+EXPOSE 8083
 ENTRYPOINT ["java", "-jar", "app.jar"]

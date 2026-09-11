@@ -1,4 +1,4 @@
-package com.leap.leaplaughlove.trading.security;
+package com.leap.leaplaughlove.marketdata.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leap.leaplaughlove.iam.security.JwtAuthenticationFilter;
@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 @Configuration
-public class TradingSecurityConfig {
+public class MarketDataSecurityConfig {
 
     @Bean
     public PasswordEncoder passwordEncoder() {

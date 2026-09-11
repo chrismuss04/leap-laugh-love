@@ -69,7 +69,7 @@ class IamSchemaIntegrationTest {
             "client_credentials should have client_id as FK to clients table");
         assertTrue(schema.contains("password_hash TEXT NOT NULL"),
             "client_credentials should have password_hash");
-        assertTrue(schema.contains("failed_sign_in_attempts INTEGER NOT NULL DEFAULT 0"),
+        assertTrue(schema.contains("failed_attempts INTEGER NOT NULL DEFAULT 0"),
             "client_credentials should track failed sign-in attempts");
     }
 
@@ -131,7 +131,7 @@ class IamSchemaIntegrationTest {
             "Seed data should insert client credentials");
         assertTrue(seed.contains("password_hash"),
             "Credentials seed should include password_hash");
-        assertTrue(seed.contains("failed_sign_in_attempts"),
+        assertTrue(seed.contains("failed_attempts"),
             "Credentials seed should track failed attempts");
     }
 
