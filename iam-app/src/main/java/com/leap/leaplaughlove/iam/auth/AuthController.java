@@ -15,6 +15,10 @@ public class AuthController {
 
     private final AuthService authService;
 
+    /**
+     * Constructs a new AuthController with the specified AuthService.
+     * @param authService the authentication service to be used by this controller
+     */
     public AuthController(AuthService authService) {
         this.authService = authService;
     }

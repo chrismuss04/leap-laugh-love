@@ -21,20 +21,27 @@ import java.time.OffsetDateTime;
 import java.time.Period;
 import java.util.UUID;
 
-/** PB-02: receives client registration submissions and persists them (iam.clients + iam.client_profile). */
+/** 
+ * Controller responsible for handling client registration requests and managing related exceptions.
+ * maps to the /api/iam/v1/clients endpoint.
+ */
 @RestController
 @RequestMapping("/api/iam/v1/clients")
 public class ClientRegistrationController {
 
     private final ClientRepository clientRepository;
 
+    /**
+     * Constructs a new ClientRegistrationController with the specified client repository.
+     * @param clientRepository the client repository used for persisting and retrieving client data
+     */
     public ClientRegistrationController(ClientRepository clientRepository) {
         this.clientRepository = clientRepository;
     }
 
     /**
      * Handles client registration requests
-     * @param RegistrationRequest request  the client registration request containing all necessary client details
+     * @param  request the client registration request containing all necessary client details
      * @return RegistrationResponse containing the registration response with client ID, email, and status
      */
     @PostMapping("/register")
@@ -62,7 +69,7 @@ public class ClientRegistrationController {
 
     /**
      * Handles duplicate client exceptions thrown when client already exists
-     * @param DuplicateClientException ex
+     * @param  ex the exception thrown when a duplicate client is detected
      * @return ResponseEntity containing the error message and HTTP status code
      */
     @ExceptionHandler(DuplicateClientException.class)
@@ -72,7 +79,7 @@ public class ClientRegistrationController {
 
     /**
      * Handles attempts to violate data integrity constraints, such as duplicate email or SSN entries.
-     * @param DataIntegrityViolationException ex
+     * @param  ex the exception thrown when a data integrity violation occurs
      * @return ResponseEntity containing the error message and HTTP status code
      */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
@@ -80,6 +87,9 @@ public class ClientRegistrationController {
         return ResponseEntity.status(HttpStatus.CONFLICT).body("email or ssn already registered");
     }
 
+    /**
+     * Represents the client registration request containing all necessary client details for registering a new client in the IAM system.
+     */
     public record RegistrationRequest(
             @NotBlank @Email String email,
             String phone,
@@ -98,6 +108,12 @@ public class ClientRegistrationController {
             @NotNull @DecimalMin("0.00") BigDecimal initialDepositAmount) {
     }
 
+    /**
+     * Represents the response returned after a successful client registration.
+     * @param clientId the unique identifier of the newly registered client
+     * @param email the email of the newly registered client
+     * @param status the registration status of the client
+     */
     public record RegistrationResponse(UUID clientId, String email, String status) {
     }
 

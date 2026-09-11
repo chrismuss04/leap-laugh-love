@@ -18,6 +18,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Service for handling balance-related operations such as retrieving account balances,
+ * performing deposits, and executing withdrawals.
+ * Provides methods for calculating totals by currency and ensuring account authorization.
+ */
 @Service
 public class BalanceService {
 
@@ -28,6 +33,11 @@ public class BalanceService {
     private final AccountRepository accountRepository;
     private final CashLedgerRepository cashLedgerRepository;
 
+    /**
+     * Constructs a new BalanceService with the specified repositories.
+     * @param accountRepository the repository for managing account entities
+     * @param cashLedgerRepository the repository for managing cash ledger entries
+     */
     public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
         this.accountRepository = accountRepository;
         this.cashLedgerRepository = cashLedgerRepository;
@@ -70,8 +80,8 @@ public class BalanceService {
 
     /**
      * Deposits the specified amount into the given account
-     * @param accountId
-     * @param request
+     * @param accountId the unique identifier of the account to deposit into
+     * @param request the cash movement request containing the deposit details
      * @return the response containing details of the cash transaction
      */
     @Transactional
@@ -93,8 +103,8 @@ public class BalanceService {
 
     /**
      * Withdraws the specified amount from the given account
-     * @param accountId
-     * @param request
+     * @param accountId the unique identifier of the account to withdraw from
+     * @param request the cash movement request containing the withdrawal details
      * @throws ResponseStatusException if the withdrawal amount exceeds available balance
      * @return the response containing details of the cash transaction
      */

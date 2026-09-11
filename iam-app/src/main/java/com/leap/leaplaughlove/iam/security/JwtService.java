@@ -23,6 +23,11 @@ public class JwtService {
     private final SecretKey signingKey;
     private final long expirationMinutes;
 
+    /**
+     * Constructs a new JwtService with the specified secret key and expiration time.
+     * @param secret the secret key used for signing JWT tokens
+     * @param expirationMinutes the expiration time of JWT tokens in minutes
+     */
     public JwtService(@Value("${app.jwt.secret}") String secret,
                        @Value("${app.jwt.expiration-minutes}") long expirationMinutes) {
         if (secret == null || secret.isBlank()) {

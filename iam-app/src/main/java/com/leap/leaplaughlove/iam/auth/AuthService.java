@@ -11,6 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 
+/**
+ * Service for handling authentication logic, including login and account lock management.
+ * Provides methods for authenticating clients and managing failed login attempts.
+ */
 @Service
 public class AuthService {
 
@@ -22,6 +26,13 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
+    /**
+     * Constructs a new AuthService with the specified dependencies.
+     * @param clientRepository the repository for managing client entities
+     * @param credentialsRepository the repository for managing client credentials
+     * @param passwordEncoder the password encoder for verifying client passwords
+     * @param jwtService the service for generating JWT tokens
+     */
     public AuthService(ClientRepository clientRepository,
                        ClientCredentialsRepository credentialsRepository,
                        PasswordEncoder passwordEncoder,

@@ -16,9 +16,16 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    /**
+     * Constructs a new GlobalExceptionHandler instance.
+     */
+    protected GlobalExceptionHandler() {
+    }
+
     /**
      * Handles InvalidCredentialsException
-     * @param InvalidCredentialsException ex
+     * @param  ex the exception indicating invalid credentials
      * @return ResponseEntity the response entity containing the error details
      */
     @ExceptionHandler(InvalidCredentialsException.class)
@@ -30,7 +37,7 @@ public class GlobalExceptionHandler {
 
     /**
      * Handles the AccountLockedException
-     * @param AccountLockedException ex
+     * @param  ex the exception indicating the account is locked
      * @return ResponseEntity the response entity containing the error details
      */
     @ExceptionHandler(AccountLockedException.class)
@@ -42,7 +49,7 @@ public class GlobalExceptionHandler {
 
     /**
      * Handles the MethodArgumentNotValidException
-     * @param MethodArgumentNotValidException ex
+     * @param  ex the exception containing validation errors
      * @return ResponseEntity the response entity containing the error details
      */
     @ExceptionHandler(MethodArgumentNotValidException.class)

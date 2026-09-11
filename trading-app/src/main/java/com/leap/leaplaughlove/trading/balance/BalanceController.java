@@ -10,12 +10,21 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
+/**
+ * Controller for handling balance-related operations such as retrieving the current balance,
+ * performing deposits, and executing withdrawals.
+ * maps to the /api/trading/balance endpoint.
+ */
 @RestController
 @RequestMapping("/api/trading/balance")
 public class BalanceController {
 
     private final BalanceService balanceService;
 
+    /**
+     * Constructs a new BalanceController with the specified BalanceService.
+     * @param balanceService the service for handling balance-related operations
+     */
     public BalanceController(BalanceService balanceService) {
         this.balanceService = balanceService;
     }

@@ -22,6 +22,12 @@ import java.util.Map;
 public class IamSecurityConfig {
 
     /**
+     * Constructs a new IamSecurityConfig instance.
+     */
+    protected IamSecurityConfig() {
+    }
+
+    /**
      * Provides a password encoder bean for the IAM application.
      * @return BCryptPasswordEncoder instance
      */

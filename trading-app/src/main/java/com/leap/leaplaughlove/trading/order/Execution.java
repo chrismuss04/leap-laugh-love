@@ -29,9 +29,20 @@ public class Execution {
     @Column(name = "executed_at", nullable = false)
     private OffsetDateTime executedAt;
 
+    /**
+     * Protected no-argument constructor for JPA.
+     */
     protected Execution() {
     }
 
+    /**
+     * Method to create a new Execution entity with the specified details.
+     * @param executionId the unique identifier of the execution
+     * @param order the order associated with this execution
+     * @param quantity the quantity executed
+     * @param price the price at which the execution occurred
+     * @param executedAt the timestamp when the execution took place
+     */
     public Execution(UUID executionId, Order order, BigDecimal quantity, BigDecimal price, OffsetDateTime executedAt) {
         this.executionId = executionId;
         this.order = order;
@@ -39,10 +50,32 @@ public class Execution {
         this.price = price;
         this.executedAt = executedAt;
     }
-
+    /**
+     * Gets the unique identifier of the execution.
+     * @return the execution ID
+     */
     public UUID getExecutionId() { return executionId; }
+    /**
+     * Gets the order associated with this execution.
+     * @return the order
+     */
     public Order getOrder() { return order; }
+
+    /**
+     * Gets the quantity executed.
+     * @return the quantity
+     */
     public BigDecimal getQuantity() { return quantity; }
+
+    /**
+     * Gets the price at which the execution occurred.
+     * @return the price
+     */
     public BigDecimal getPrice() { return price; }
+
+    /**
+     * Gets the timestamp when the execution took place.
+     * @return the execution timestamp
+     */
     public OffsetDateTime getExecutedAt() { return executedAt; }
 }
