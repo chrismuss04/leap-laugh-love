@@ -28,6 +28,13 @@ public class SimulatedQuoteFeedFormatter {
 
     private final Map<String, AtomicLong> sequenceBySymbol = new ConcurrentHashMap<>();
 
+    /**
+     * Creates a new SimulatedQuoteFeedFormatter with the given spread, lot size, and
+     * exchange tag.
+     * @param spreadBps the full bid/ask spread to apply, in basis points of the last price
+     * @param lotSize the size to report for every bid/ask/last quote
+     * @param exchange the exchange tag to report on every formatted line
+     */
     public SimulatedQuoteFeedFormatter(
             @Value("${marketdata.ingestion.spread-bps:5}") long spreadBps,
             @Value("${marketdata.ingestion.default-lot-size:100}") long lotSize,
@@ -39,6 +46,12 @@ public class SimulatedQuoteFeedFormatter {
         this.exchange = exchange;
     }
 
+    /**
+     * Formats a simulation tick as a raw pipe-delimited quote feed line, deriving a bid/ask
+     * spread around the tick's price and assigning the next per-symbol sequence number.
+     * @param state the simulation tick to format
+     * @return the raw quote feed line
+     */
     public String format(PriceState state) {
         BigDecimal lastPrice = state.price();
         BigDecimal spread = lastPrice.multiply(halfSpreadFraction).setScale(PRICE_SCALE, RoundingMode.HALF_UP);

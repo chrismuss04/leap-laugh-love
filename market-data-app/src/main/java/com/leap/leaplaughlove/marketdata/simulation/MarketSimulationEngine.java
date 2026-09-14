@@ -19,6 +19,10 @@ import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.random.RandomGenerator;
 
+/**
+ * Simulates instrument prices using Geometric Brownian Motion, ticking every active
+ * instrument on a fixed schedule and publishing a {@link PriceTickEvent} per tick.
+ */
 @Service
 public class MarketSimulationEngine {
 
@@ -31,6 +35,12 @@ public class MarketSimulationEngine {
 
     private final Map<String, InstrumentSimState> statesBySymbol = new ConcurrentHashMap<>();
 
+    /**
+     * Creates a new MarketSimulationEngine with the given collaborators and tick interval.
+     * @param instrumentRepository repository used to look up active instruments at startup
+     * @param eventPublisher publisher used to broadcast {@link PriceTickEvent}s
+     * @param tickIntervalMs the interval, in milliseconds, between simulation ticks
+     */
     public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
                                    ApplicationEventPublisher eventPublisher,
                                    @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs) {
@@ -39,6 +49,10 @@ public class MarketSimulationEngine {
         this.tickIntervalMs = tickIntervalMs;
     }
 
+    /**
+     * Seeds the simulation state for every active instrument from its initial price, once
+     * the application context is ready.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
         for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {
@@ -55,6 +69,10 @@ public class MarketSimulationEngine {
         }
     }
 
+    /**
+     * Advances every active instrument's simulated price by one GBM step and publishes a
+     * {@link PriceTickEvent} for each.
+     */
     @Scheduled(fixedRateString = "${marketdata.simulation.tick-interval-ms:1000}")
     public void tick() {
         double dt = tickIntervalMs / 1000.0 / SECONDS_PER_YEAR;
@@ -70,14 +88,27 @@ public class MarketSimulationEngine {
         });
     }
 
+    /**
+     * Gets the latest simulated price for a single instrument symbol.
+     * @param symbol the instrument symbol to look up
+     * @return the latest price state for the symbol, if it is being simulated
+     */
     public Optional<PriceState> latest(String symbol) {
         return Optional.ofNullable(statesBySymbol.get(symbol)).map(InstrumentSimState::current);
     }
 
+    /**
+     * Gets the latest simulated price for every actively-simulated instrument.
+     * @return the latest price state for each simulated instrument
+     */
     public List<PriceState> latestAll() {
         return statesBySymbol.values().stream().map(InstrumentSimState::current).toList();
     }
 
+    /**
+     * Per-instrument simulation state: its GBM parameters, random generator, and the most
+     * recently simulated price.
+     */
     private static final class InstrumentSimState {
         private final double drift;
         private final double volatility;

@@ -11,6 +11,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
+/**
+ * Exposes the quotes accepted by the market quote ingestion pipeline.
+ */
 @RestController
 @RequestMapping("/api/marketdata/quotes")
 public class QuoteController {
@@ -21,11 +24,22 @@ public class QuoteController {
         this.quoteIngestionService = quoteIngestionService;
     }
 
+    /**
+     * Retrieves the latest quote for every instrument seen by the ingestion pipeline.
+     * @return the latest quote for each instrument
+     */
     @GetMapping
     public List<QuoteResponse> getLatestQuotes() {
         return quoteIngestionService.latestAll().stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Retrieves the latest quote for a single instrument symbol.
+     * @param symbol the instrument symbol to look up
+     * @return the latest quote for the symbol
+     * @throws ResponseStatusException with a 404 status if no quote has been ingested for
+     *     the symbol
+     */
     @GetMapping("/{symbol}")
     public QuoteResponse getLatestQuote(@PathVariable String symbol) {
         return quoteIngestionService.latest(symbol.toUpperCase())

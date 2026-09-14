@@ -21,14 +21,31 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Configures Spring Security for the market data service: stateless JWT authentication
+ * (reusing iam-app's {@link JwtService}) for every endpoint except health and error.
+ */
 @Configuration
 public class MarketDataSecurityConfig {
 
+    /**
+     * Provides the password encoder used by this service.
+     * @return a BCrypt password encoder
+     */
     @Bean
     public PasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
 
+    /**
+     * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
+     * JSON 401 response for unauthenticated requests.
+     * @param http the security configuration builder
+     * @param jwtService the JWT service used to validate bearer tokens
+     * @param objectMapper the object mapper used to write the JSON 401 response body
+     * @return the configured security filter chain
+     * @throws Exception if the security configuration cannot be built
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
         http
@@ -48,6 +65,10 @@ public class MarketDataSecurityConfig {
         return http.build();
     }
 
+    /**
+     * Provides the CORS configuration applied to every endpoint.
+     * @return the CORS configuration source
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
@@ -60,6 +81,12 @@ public class MarketDataSecurityConfig {
         return source;
     }
 
+    /**
+     * Writes a JSON 401 Unauthorized response body.
+     * @param response the response to write to
+     * @param objectMapper the object mapper used to serialize the response body
+     * @throws java.io.IOException if writing the response fails
+     */
     private void writeUnauthorized(HttpServletResponse response, ObjectMapper objectMapper) throws java.io.IOException {
         response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);

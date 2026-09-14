@@ -17,6 +17,15 @@ public final class QuoteFeedMessageParser {
     private QuoteFeedMessageParser() {
     }
 
+    /**
+     * Parses a raw pipe-delimited quote feed line into a {@link QuoteFeedMessage}.
+     * @param rawLine the raw feed line, in
+     *     symbol|bidPrice|bidSize|askPrice|askSize|lastPrice|lastSize|exchange|sequenceNumber|quoteTimestamp
+     *     format
+     * @return the parsed, structurally-valid quote feed message
+     * @throws QuoteParseException if the line is blank, has the wrong number of fields, or
+     *     any field fails to parse or fails its structural validation
+     */
     public static QuoteFeedMessage parse(String rawLine) {
         if (rawLine == null || rawLine.isBlank()) {
             throw new QuoteParseException(rawLine, "line is blank");
@@ -42,6 +51,14 @@ public final class QuoteFeedMessageParser {
                 lastPrice, lastSize, exchange, sequenceNumber, quoteTimestamp);
     }
 
+    /**
+     * Validates that a field is present and non-blank.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the trimmed field value
+     * @throws QuoteParseException if the value is null or blank
+     */
     private static String requireNonBlank(String rawLine, String value, String fieldName) {
         if (value == null || value.isBlank()) {
             throw new QuoteParseException(rawLine, fieldName + " must not be blank");
@@ -49,6 +66,14 @@ public final class QuoteFeedMessageParser {
         return value.trim();
     }
 
+    /**
+     * Parses a price field, requiring it to be a positive number.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the parsed price
+     * @throws QuoteParseException if the value is not a number or is not positive
+     */
     private static BigDecimal parsePositivePrice(String rawLine, String value, String fieldName) {
         BigDecimal price;
         try {
@@ -62,6 +87,14 @@ public final class QuoteFeedMessageParser {
         return price;
     }
 
+    /**
+     * Parses a size field, requiring it to be a non-negative integer.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the parsed size
+     * @throws QuoteParseException if the value is not an integer or is negative
+     */
     private static long parseNonNegativeSize(String rawLine, String value, String fieldName) {
         long size;
         try {
@@ -75,6 +108,13 @@ public final class QuoteFeedMessageParser {
         return size;
     }
 
+    /**
+     * Parses the sequence number field.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @return the parsed sequence number
+     * @throws QuoteParseException if the value is not an integer
+     */
     private static long parseSequenceNumber(String rawLine, String value) {
         try {
             return Long.parseLong(value.trim());
@@ -83,6 +123,13 @@ public final class QuoteFeedMessageParser {
         }
     }
 
+    /**
+     * Parses the quote timestamp field.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value, in ISO-8601 offset date-time format
+     * @return the parsed timestamp
+     * @throws QuoteParseException if the value is not a valid ISO-8601 timestamp
+     */
     private static OffsetDateTime parseTimestamp(String rawLine, String value) {
         try {
             return OffsetDateTime.parse(value.trim());

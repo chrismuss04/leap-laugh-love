@@ -39,6 +39,18 @@ public class QuoteIngestionService {
     private final Map<String, QuoteState> latestBySymbol = new ConcurrentHashMap<>();
     private final Map<String, Long> lastSequenceBySymbol = new ConcurrentHashMap<>();
 
+    /**
+     * Creates a new QuoteIngestionService with the given collaborators and validation
+     * thresholds.
+     * @param instrumentRepository repository used to look up active instruments at startup
+     * @param quoteRepository repository used to persist accepted quotes
+     * @param feedFormatter formatter used to turn simulation ticks into raw feed lines
+     * @param eventPublisher publisher used to broadcast {@link QuoteIngestedEvent}s
+     * @param maxClockSkewSeconds how far into the future a quote's timestamp may be before
+     *     it is rejected
+     * @param staleAfterSeconds how far into the past a quote's timestamp may be before it is
+     *     rejected as stale
+     */
     public QuoteIngestionService(SimulatedInstrumentRepository instrumentRepository,
                                   QuoteRepository quoteRepository,
                                   SimulatedQuoteFeedFormatter feedFormatter,
@@ -53,12 +65,20 @@ public class QuoteIngestionService {
         this.staleAfterSeconds = staleAfterSeconds;
     }
 
+    /**
+     * Loads every active instrument into the in-memory lookup used to validate incoming
+     * quote symbols, once the application context is ready.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
         instrumentRepository.findByActiveTrue()
                 .forEach(instrument -> instrumentsBySymbol.put(instrument.getSymbol(), instrument));
     }
 
+    /**
+     * Formats the given simulation tick as a raw feed line and ingests it.
+     * @param event the simulation tick event to derive a quote message from
+     */
     @EventListener
     public void onPriceTick(PriceTickEvent event) {
         ingest(feedFormatter.format(event.priceState()));
@@ -104,6 +124,12 @@ public class QuoteIngestionService {
         eventPublisher.publishEvent(new QuoteIngestedEvent(quoteState));
     }
 
+    /**
+     * Validates business rules for a structurally-valid quote message: bid/ask ordering,
+     * timestamp freshness, and sequence-number ordering.
+     * @param message the parsed quote message to validate
+     * @return a human-readable rejection reason, or {@code null} if the message is valid
+     */
     private String validate(QuoteFeedMessage message) {
         if (message.askPrice().compareTo(message.bidPrice()) < 0) {
             return "crossed quote: ask (" + message.askPrice() + ") < bid (" + message.bidPrice() + ")";
@@ -126,10 +152,19 @@ public class QuoteIngestionService {
         return null;
     }
 
+    /**
+     * Gets the latest accepted quote for the given instrument symbol.
+     * @param symbol the instrument symbol
+     * @return the latest quote state for the symbol, if any has been ingested
+     */
     public Optional<QuoteState> latest(String symbol) {
         return Optional.ofNullable(latestBySymbol.get(symbol));
     }
 
+    /**
+     * Gets the latest accepted quote for every symbol seen so far.
+     * @return the latest quote state for each symbol
+     */
     public List<QuoteState> latestAll() {
         return List.copyOf(latestBySymbol.values());
     }

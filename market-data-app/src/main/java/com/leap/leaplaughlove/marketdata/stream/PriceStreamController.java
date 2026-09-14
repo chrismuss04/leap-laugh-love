@@ -9,6 +9,9 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+/**
+ * Exposes the live simulation tick stream as a Server-Sent Events endpoint.
+ */
 @RestController
 public class PriceStreamController {
 
@@ -18,6 +21,12 @@ public class PriceStreamController {
         this.broadcaster = broadcaster;
     }
 
+    /**
+     * Subscribes the caller to the live tick stream, optionally filtered to a comma-separated
+     * list of symbols.
+     * @param symbols a comma-separated list of symbols to filter to, or null/blank for all
+     * @return the SSE emitter streaming ticks to the caller
+     */
     @GetMapping("/api/marketdata/stream")
     public SseEmitter stream(@RequestParam(required = false) String symbols) {
         Set<String> symbolFilter = symbols == null || symbols.isBlank()
