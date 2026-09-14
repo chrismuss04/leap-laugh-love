@@ -2,10 +2,11 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY pom.xml .
+COPY common-security/pom.xml common-security/
 COPY iam-app/pom.xml iam-app/
 COPY trading-app/pom.xml trading-app/
 COPY market-data-app/pom.xml market-data-app/
-COPY iam-app/src iam-app/src
+COPY common-security/src common-security/src
 COPY trading-app/src trading-app/src
 RUN mvn -B clean package -DskipTests -pl trading-app -am
 
