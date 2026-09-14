@@ -21,11 +21,14 @@ pipeline {
             steps {
                 sh '''
                     cd frontend
-                    npm install
+                    npm ci
                     npm run build
                 '''
             }
             post {
+                always {
+                    sh 'rm -rf frontend/node_modules || true'
+                }
                 success {
                     echo "Frontend build successful"
                 }
@@ -93,7 +96,11 @@ pipeline {
 
     post {
         always {
-            sh 'docker image prune -f'
+            sh """
+                docker rmi ${IAM_IMAGE}:${BUILD_NUMBER} ${TRADING_IMAGE}:${BUILD_NUMBER} ${MARKETDATA_IMAGE}:${BUILD_NUMBER} || true
+                docker system prune -f
+            """
+            cleanWs()
         }
         failure {
             echo "Build ${BUILD_NUMBER} failed — check console output."
