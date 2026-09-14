@@ -12,6 +12,12 @@ import org.springframework.context.annotation.Import;
 @Import(JwtService.class)
 public class IamApplication {
     /**
+     * Default constructor for the IAM application.
+     */
+    public IamApplication() {
+    }
+
+    /**
      * The main entry point for the IAM Spring Boot application.
      * @param args the command-line arguments passed to the application
      */
