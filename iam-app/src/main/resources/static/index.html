@@ -30,6 +30,26 @@
     <pre id="balanceResult"></pre>
   </fieldset>
 
+  <fieldset>
+    <legend>Market Data (Simulated)</legend>
+    <button id="marketDataStartBtn" disabled>Start</button>
+    <button id="marketDataStopBtn" disabled>Stop</button>
+    <pre id="marketDataStatus"></pre>
+    <table id="priceTable" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align: left; border-bottom: 1px solid #ccc;">Symbol</th>
+          <th style="text-align: right; border-bottom: 1px solid #ccc;">Price</th>
+          <th style="text-align: right; border-bottom: 1px solid #ccc;">As Of</th>
+        </tr>
+      </thead>
+      <tbody id="priceTableBody"></tbody>
+    </table>
+    <p style="margin-bottom: 4px; color: #555;">% change since polling started:</p>
+    <canvas id="priceChart" width="480" height="220" style="width: 100%; border: 1px solid #ddd;"></canvas>
+    <div id="priceChartLegend" style="margin-top: 8px; font-size: 13px;"></div>
+  </fieldset>
+
 <script>
 let accessToken = null;
 
@@ -55,10 +75,12 @@ loginBtn.addEventListener('click', async () => {
     accessToken = body.accessToken;
     loginResult.textContent = JSON.stringify(body, null, 2);
     balanceBtn.disabled = false;
+    marketDataStartBtn.disabled = false;
   } catch (err) {
     loginResult.textContent = err.message;
     loginResult.className = 'error';
     balanceBtn.disabled = true;
+    marketDataStartBtn.disabled = true;
   }
 });
 
@@ -77,6 +99,136 @@ balanceBtn.addEventListener('click', async () => {
     balanceResult.className = 'error';
   }
 });
+
+const MARKETDATA_BASE = 'http://localhost:8083';
+const MARKETDATA_POLL_MS = 1000;
+const MARKETDATA_HISTORY_LENGTH = 60;
+const SYMBOL_COLORS = {
+  AAPL: '#2563eb',
+  MSFT: '#16a34a',
+  GOOGL: '#d97706',
+  TSLA: '#dc2626',
+  BTCUSD: '#7c3aed'
+};
+
+const marketDataStartBtn = document.getElementById('marketDataStartBtn');
+const marketDataStopBtn = document.getElementById('marketDataStopBtn');
+const marketDataStatus = document.getElementById('marketDataStatus');
+const priceTableBody = document.getElementById('priceTableBody');
+const priceChart = document.getElementById('priceChart');
+const priceChartLegend = document.getElementById('priceChartLegend');
+
+let marketDataTimer = null;
+const priceHistory = new Map();
+
+marketDataStartBtn.addEventListener('click', () => {
+  priceHistory.clear();
+  marketDataStatus.textContent = 'Polling...';
+  marketDataStatus.className = '';
+  pollPrices();
+  marketDataTimer = setInterval(pollPrices, MARKETDATA_POLL_MS);
+  marketDataStartBtn.disabled = true;
+  marketDataStopBtn.disabled = false;
+});
+
+marketDataStopBtn.addEventListener('click', () => {
+  clearInterval(marketDataTimer);
+  marketDataTimer = null;
+  marketDataStatus.textContent = 'Stopped.';
+  marketDataStartBtn.disabled = false;
+  marketDataStopBtn.disabled = true;
+});
+
+async function pollPrices() {
+  try {
+    const res = await fetch(`${MARKETDATA_BASE}/api/marketdata/prices`, {
+      headers: { 'Authorization': `Bearer ${accessToken}` }
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(JSON.stringify(body));
+    renderPriceTable(body);
+    updatePriceHistory(body);
+    drawPriceChart();
+    marketDataStatus.textContent = `Last update: ${new Date().toLocaleTimeString()}`;
+    marketDataStatus.className = '';
+  } catch (err) {
+    marketDataStatus.textContent = err.message;
+    marketDataStatus.className = 'error';
+  }
+}
+
+function renderPriceTable(prices) {
+  const sorted = [...prices].sort((a, b) => a.symbol.localeCompare(b.symbol));
+  priceTableBody.innerHTML = sorted.map(p => `
+    <tr>
+      <td>${p.symbol}</td>
+      <td style="text-align: right;">${Number(p.price).toFixed(2)}</td>
+      <td style="text-align: right;">${new Date(p.asOf).toLocaleTimeString()}</td>
+    </tr>
+  `).join('');
+}
+
+function updatePriceHistory(prices) {
+  for (const p of prices) {
+    if (!priceHistory.has(p.symbol)) {
+      priceHistory.set(p.symbol, []);
+    }
+    const series = priceHistory.get(p.symbol);
+    series.push(Number(p.price));
+    if (series.length > MARKETDATA_HISTORY_LENGTH) {
+      series.shift();
+    }
+  }
+}
+
+function drawPriceChart() {
+  const ctx = priceChart.getContext('2d');
+  const w = priceChart.width;
+  const h = priceChart.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const pctSeries = new Map();
+  let maxAbsPct = 0.5;
+  for (const [symbol, series] of priceHistory) {
+    if (series.length < 2) continue;
+    const base = series[0];
+    const pct = series.map(price => ((price - base) / base) * 100);
+    pctSeries.set(symbol, pct);
+    for (const v of pct) {
+      maxAbsPct = Math.max(maxAbsPct, Math.abs(v));
+    }
+  }
+
+  ctx.strokeStyle = '#ccc';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, h / 2);
+  ctx.lineTo(w, h / 2);
+  ctx.stroke();
+
+  for (const [symbol, pct] of pctSeries) {
+    ctx.strokeStyle = SYMBOL_COLORS[symbol] || '#333';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    pct.forEach((v, i) => {
+      const x = (i / (MARKETDATA_HISTORY_LENGTH - 1)) * w;
+      const y = h / 2 - (v / maxAbsPct) * (h / 2 - 10);
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    });
+    ctx.stroke();
+  }
+
+  priceChartLegend.innerHTML = [...pctSeries.keys()].map(symbol => `
+    <span style="margin-right: 12px;">
+      <span style="display: inline-block; width: 10px; height: 10px; background: ${SYMBOL_COLORS[symbol] || '#333'};"></span>
+      ${symbol}
+    </span>
+  `).join('');
+}
 </script>
 </body>
 </html>

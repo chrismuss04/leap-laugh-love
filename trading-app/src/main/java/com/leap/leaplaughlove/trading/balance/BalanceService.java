@@ -106,14 +106,10 @@ public class BalanceService {
 
     private Account getAuthorizedAccount(UUID accountId) {
         UUID clientId = getAuthenticatedClientId();
-        Account account = accountRepository.findById(accountId)
+        Account account = accountRepository.findByAccountIdAndClientId(accountId, clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
         if (!ACTIVE_STATUS.equals(account.getStatus())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not active");
-        }
-        if (!account.getClientId().equals(clientId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
-                    "Authenticated user is not permitted to modify this account");
         }
         return account;
     }
