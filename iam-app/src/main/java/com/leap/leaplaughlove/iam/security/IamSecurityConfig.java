@@ -2,6 +2,9 @@ package com.leap.leaplaughlove.iam.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletResponse;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
@@ -60,16 +63,8 @@ public class IamSecurityConfig {
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
-                                writeUnauthorized(response, objectMapper)))
+                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
-    }
-
-    private void writeUnauthorized(HttpServletResponse response, ObjectMapper objectMapper) throws java.io.IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getWriter(), Map.of(
-                "error", "UNAUTHORIZED",
-                "message", "A valid bearer token is required"));
     }
 }

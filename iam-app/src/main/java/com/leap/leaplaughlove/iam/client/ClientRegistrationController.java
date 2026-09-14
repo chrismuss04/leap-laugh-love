@@ -89,6 +89,19 @@ public class ClientRegistrationController {
 
     /**
      * Represents the client registration request containing all necessary client details for registering a new client in the IAM system.
+     * @param email applicant email address
+     * @param phone applicant phone number
+     * @param fullName applicant full name
+     * @param dateOfBirth applicant date of birth (must be at least 21)
+     * @param ssn applicant Social Security Number in XXX-XX-XXXX format
+     * @param addressLine1 primary address line
+     * @param addressLine2 secondary address line (optional)
+     * @param city address city
+     * @param stateRegion address state or region
+     * @param postalCode address postal code
+     * @param countryCode two-letter ISO country code
+     * @param experienceLevel investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
+     * @param initialDepositAmount initial deposit amount (minimum 0.00)
      */
     public record RegistrationRequest(
             @NotBlank @Email String email,

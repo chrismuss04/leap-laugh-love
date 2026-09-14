@@ -1,4 +1,4 @@
-package com.leap.leaplaughlove.iam.security;
+package com.leap.leaplaughlove.common.security;
 
 import io.jsonwebtoken.JwtException;
 import jakarta.servlet.FilterChain;
@@ -59,3 +59,4 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 }
+

@@ -14,21 +14,27 @@ We are using the Trunk branching strategy because it best fits our development s
 
 ## Architecture Overview
 
-The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices:
+The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices along with a shared security library:
 
-1. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
-2. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
-3. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
+1. **`common-security` (Shared Security Library)**: Contains reusable JWT token handling (`JwtService`, `JwtAuthenticationFilter`), 401 JSON error formatting (`JwtAuthenticationEntryPoint`), and shared CORS configuration (`CommonCorsConfiguration`). Packaged as a standard library JAR.
+2. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
+3. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
+4. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
 
 ```mermaid
 flowchart TB
     UI["Static test UI / API Client"]
 
     subgraph PARENT["Parent Aggregator POM (leap-laugh-love-app)"]
-        subgraph IAM["iam-app (Port 8081)"]
-            IamApp["IamApplication"]
-            IamSec["IamSecurityConfig"]
+        subgraph SEC["common-security (Shared Library)"]
             JwtS["JwtService & JwtAuthenticationFilter"]
+            JwtEP["JwtAuthenticationEntryPoint"]
+            CorsCfg["CommonCorsConfiguration"]
+        end
+
+        subgraph IAM["iam-app (Port 8081)"]
+            IamApp["IamApplication @Import(JwtService)"]
+            IamSec["IamSecurityConfig"]
             AuthC["AuthController\n/api/iam/auth"]
             RegC["ClientRegistrationController\n/api/iam/v1/clients"]
         end
@@ -71,8 +77,9 @@ flowchart TB
     SimEngine --> StreamC
     SimEngine --> CandleAcc
 
-    TRADING -- "Classpath Dependency (JwtService)" --> IAM
-    MARKETDATA -- "Classpath Dependency (JwtService)" --> IAM
+    IAM -- "Library Dependency" --> SEC
+    TRADING -- "Library Dependency" --> SEC
+    MARKETDATA -- "Library Dependency" --> SEC
 
     AuthC --> IAM_DB
     RegC --> IAM_DB
@@ -85,7 +92,7 @@ flowchart TB
 
 ## UML Class Diagrams
 
-Entities, repositories, services and controllers for each module (test sources and DTO getters omitted for legibility). Both `market-data-app` and `trading-app` reuse `JwtService` / `JwtAuthenticationFilter` from `iam-app` — those classes are marked `<<from iam-app>>` where they appear.
+Entities, repositories, services and controllers for each module (test sources and DTO getters omitted for legibility). Microservices (`iam-app`, `trading-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear.
 
 **Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
 
@@ -94,11 +101,39 @@ Entities, repositories, services and controllers for each module (test sources a
 ```mermaid
 flowchart LR
     classDef mod fill:transparent,stroke-width:1.4px;
+    CS["common-security<br/>(jwt · auth filter · cors)"]:::mod
     IAM["iam-app<br/>(clients · auth · jwt)"]:::mod
     MD["market-data-app<br/>(instruments · simulation · candles)"]:::mod
     TR["trading-app<br/>(accounts · orders · positions)"]:::mod
-    MD -- "depends on" --> IAM
-    TR -- "depends on" --> IAM
+    IAM -- "depends on" --> CS
+    MD -- "depends on" --> CS
+    TR -- "depends on" --> CS
+```
+
+### Common Security — `common-security`
+
+`com.leap.leaplaughlove.common.security` — lightweight shared security library providing JWT creation and validation, request authentication filtering, entry point 401 error response handling, and centralized CORS configuration across all services.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class JwtService {
+        +generateToken(UUID, String) String
+        +parseAndValidate(String) UUID
+        +getExpirationSeconds() long
+    }
+    class JwtAuthenticationFilter {
+        +doFilterInternal(...)
+    }
+    class JwtAuthenticationEntryPoint {
+        +commence(...)
+    }
+    class CommonCorsConfiguration {
+        +applyDefaults(CorsConfiguration) CorsConfiguration$
+    }
+
+    JwtAuthenticationFilter --> JwtService : uses
 ```
 
 ### Identity & Access — `iam-app`
@@ -269,8 +304,9 @@ classDiagram
     class MarketDataSecurityConfig {
         +filterChain(...) SecurityFilterChain
     }
-    class JwtService { <<from iam-app>> }
-    class JwtAuthenticationFilter { <<from iam-app>> }
+    class JwtService { <<from common-security>> }
+    class JwtAuthenticationFilter { <<from common-security>> }
+    class JwtAuthenticationEntryPoint { <<from common-security>> }
 
     PriceCandle "many" --> "1" SimulatedInstrument : instrument
     SimulatedInstrumentRepository ..> SimulatedInstrument : manages
@@ -291,6 +327,7 @@ classDiagram
     PriceController ..> PriceCandleResponse : returns
     MarketDataSecurityConfig ..> JwtService : uses
     MarketDataSecurityConfig ..> JwtAuthenticationFilter : registers
+    MarketDataSecurityConfig ..> JwtAuthenticationEntryPoint : registers
 ```
 
 ### Trading — `trading-app`
@@ -393,8 +430,9 @@ classDiagram
     class TradingSecurityConfig {
         +filterChain(...) SecurityFilterChain
     }
-    class JwtService { <<from iam-app>> }
-    class JwtAuthenticationFilter { <<from iam-app>> }
+    class JwtService { <<from common-security>> }
+    class JwtAuthenticationFilter { <<from common-security>> }
+    class JwtAuthenticationEntryPoint { <<from common-security>> }
 
     Account "1" --> "many" Order : places
     Account "1" --> "many" CashLedgerEntry : ledger
@@ -419,6 +457,7 @@ classDiagram
     PositionController --> PositionService : uses
     TradingSecurityConfig ..> JwtService : uses
     TradingSecurityConfig ..> JwtAuthenticationFilter : registers
+    TradingSecurityConfig ..> JwtAuthenticationEntryPoint : registers
 ```
 
 ---
@@ -456,8 +495,11 @@ mvn clean verify
 To build or test individual modules:
 
 ```bash
-# Test only IAM module
-mvn -pl iam-app test
+# Test Common Security module
+mvn -pl common-security test
+
+# Test IAM module (with dependency building)
+mvn -pl iam-app -am test
 
 # Test Trading module (with dependency building)
 mvn -pl trading-app -am test
@@ -466,7 +508,23 @@ mvn -pl trading-app -am test
 mvn -pl market-data-app -am test
 ```
 
-### 2. Launch Services via Docker Compose (Recommended)
+### 2. Javadoc Documentation Generation
+
+Generate Javadoc documentation across all modules from the repository root:
+
+```bash
+mvn compile javadoc:javadoc
+```
+
+> [!NOTE]
+> In a multi-module Maven project where `iam-app`, `trading-app`, and `market-data-app` depend on the sibling library module `common-security`, invoking `compile` prior to `javadoc:javadoc` (or ensuring artifacts are installed in the local repository) ensures that class files for dependencies in the reactor are built so the Javadoc compiler can resolve classpath types across modules.
+> 
+> To generate Javadocs for a single module:
+> ```bash
+> mvn compile javadoc:javadoc -pl iam-app -am
+> ```
+
+### 3. Launch Services via Docker Compose (Recommended)
 
 Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`, `market-data-app`):
 
@@ -489,7 +547,7 @@ To stop containers and clean up volumes:
 docker-compose down -v
 ```
 
-### 3. Launch Services Locally (Spring Boot)
+### 4. Launch Services Locally (Spring Boot)
 
 Ensure PostgreSQL is running locally on port `5432` with the database `paysprint` (or use active Spring profiles).
 

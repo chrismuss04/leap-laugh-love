@@ -1,25 +1,18 @@
 package com.leap.leaplaughlove.marketdata.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leap.leaplaughlove.iam.security.JwtAuthenticationFilter;
-import com.leap.leaplaughlove.iam.security.JwtService;
-import jakarta.servlet.http.HttpServletResponse;
+import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
-import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
-import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
-
-import java.util.List;
-import java.util.Map;
 
 /**
  * Configures Spring Security for the market data service: stateless JWT authentication
@@ -27,15 +20,6 @@ import java.util.Map;
  */
 @Configuration
 public class MarketDataSecurityConfig {
-
-    /**
-     * Provides the password encoder used by this service.
-     * @return a BCrypt password encoder
-     */
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
 
     /**
      * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
@@ -60,7 +44,7 @@ public class MarketDataSecurityConfig {
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
-                                writeUnauthorized(response, objectMapper)))
+                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
@@ -71,27 +55,6 @@ public class MarketDataSecurityConfig {
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration config = new CorsConfiguration();
-        config.setAllowedOriginPatterns(List.of("*"));
-        config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
-        config.setAllowedHeaders(List.of("*"));
-        config.setAllowCredentials(true);
-        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/**", config);
-        return source;
-    }
-
-    /**
-     * Writes a JSON 401 Unauthorized response body.
-     * @param response the response to write to
-     * @param objectMapper the object mapper used to serialize the response body
-     * @throws java.io.IOException if writing the response fails
-     */
-    private void writeUnauthorized(HttpServletResponse response, ObjectMapper objectMapper) throws java.io.IOException {
-        response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-        response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        objectMapper.writeValue(response.getWriter(), Map.of(
-                "error", "UNAUTHORIZED",
-                "message", "A valid bearer token is required"));
+        return CommonCorsConfiguration.corsConfigurationSource();
     }
 }

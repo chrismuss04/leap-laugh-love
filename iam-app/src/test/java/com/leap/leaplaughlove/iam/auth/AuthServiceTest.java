@@ -4,7 +4,7 @@ import com.leap.leaplaughlove.iam.client.Client;
 import com.leap.leaplaughlove.iam.client.ClientCredentials;
 import com.leap.leaplaughlove.iam.client.ClientCredentialsRepository;
 import com.leap.leaplaughlove.iam.client.ClientRepository;
-import com.leap.leaplaughlove.iam.security.JwtService;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
