@@ -21,3 +21,9 @@ marketdata:
     tick-interval-ms: 1000
     candle-bucket-seconds: 60
     candle-flush-interval-ms: 5000
+  ingestion:
+    spread-bps: 5
+    default-lot-size: 100
+    exchange: SIMULATED
+    max-clock-skew-seconds: 5
+    stale-after-seconds: 30
