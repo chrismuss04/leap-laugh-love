@@ -14,6 +14,24 @@ pipeline {
             }
         }
 
+        stage('Test Frontend') {
+            steps {
+                sh '''
+                    cd frontend
+                    npm install
+                    npm run build
+                '''
+            }
+            post {
+                success {
+                    echo "Frontend build successful"
+                }
+                failure {
+                    echo "Frontend build failed"
+                }
+            }
+        }
+
         stage('Test') {
             steps {
                 sh 'docker run --rm -v "$WORKSPACE":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app maven:3.9-eclipse-temurin-21 mvn -B test'
