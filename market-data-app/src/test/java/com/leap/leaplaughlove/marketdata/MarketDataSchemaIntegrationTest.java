@@ -57,6 +57,31 @@ class MarketDataSchemaIntegrationTest {
     }
 
     @Test
+    @DisplayName("Schema should define marketdata.quotes table with FK to instruments")
+    void testQuotesTableSchema() throws Exception {
+        String schema = readFile(SCHEMA_FILE);
+
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS marketdata.quotes"),
+                "Schema should define marketdata.quotes table");
+
+        String quotesSection = schema.substring(
+                schema.indexOf("CREATE TABLE IF NOT EXISTS marketdata.quotes"));
+
+        assertTrue(quotesSection.contains("REFERENCES marketdata.instruments") &&
+                        quotesSection.contains("ON DELETE RESTRICT"),
+                "quotes should restrict cascading deletes from instruments");
+        assertTrue(quotesSection.contains("bid_price") && quotesSection.contains("ask_price")
+                        && quotesSection.contains("last_price"),
+                "quotes should store bid/ask/last prices");
+        assertTrue(quotesSection.contains("sequence_number BIGINT NOT NULL"),
+                "quotes should track a sequence number for ordering/dedup");
+        assertTrue(quotesSection.contains("CHECK (ask_price >= bid_price)"),
+                "quotes should reject crossed quotes at the database level");
+        assertTrue(schema.contains("idx_quotes_instrument_quote_timestamp"),
+                "Schema should index quotes by instrument and quote_timestamp");
+    }
+
+    @Test
     @DisplayName("Seed data should insert the five simulated instruments")
     void testSeedDataInstruments() throws Exception {
         String seed = readFile(SEED_FILE);

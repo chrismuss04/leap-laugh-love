@@ -14,9 +14,22 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.web.cors.CorsConfigurationSource;
 
+/**
+ * Configures Spring Security for the market data service: stateless JWT authentication
+ * (reusing iam-app's {@link JwtService}) for every endpoint except health and error.
+ */
 @Configuration
 public class MarketDataSecurityConfig {
 
+    /**
+     * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
+     * JSON 401 response for unauthenticated requests.
+     * @param http the security configuration builder
+     * @param jwtService the JWT service used to validate bearer tokens
+     * @param objectMapper the object mapper used to write the JSON 401 response body
+     * @return the configured security filter chain
+     * @throws Exception if the security configuration cannot be built
+     */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
         http
@@ -36,6 +49,10 @@ public class MarketDataSecurityConfig {
         return http.build();
     }
 
+    /**
+     * Provides the CORS configuration applied to every endpoint.
+     * @return the CORS configuration source
+     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         return CommonCorsConfiguration.corsConfigurationSource();

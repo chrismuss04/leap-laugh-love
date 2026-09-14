@@ -1,5 +1,8 @@
 pipeline {
     agent any
+    tools {
+        nodejs 'NodeJS'
+    }
 
     environment {
         IAM_IMAGE = "iam-app"
@@ -11,6 +14,24 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+            }
+        }
+
+        stage('Test Frontend') {
+            steps {
+                sh '''
+                    cd frontend
+                    npm install
+                    npm run build
+                '''
+            }
+            post {
+                success {
+                    echo "Frontend build successful"
+                }
+                failure {
+                    echo "Frontend build failed"
+                }
             }
         }
 

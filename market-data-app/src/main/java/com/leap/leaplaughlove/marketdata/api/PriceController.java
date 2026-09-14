@@ -17,6 +17,9 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+/**
+ * Exposes the simulated latest prices and OHLC candle history for instruments.
+ */
 @RestController
 @RequestMapping("/api/marketdata/prices")
 public class PriceController {
@@ -31,11 +34,21 @@ public class PriceController {
         this.candleRepository = candleRepository;
     }
 
+    /**
+     * Retrieves the latest simulated price for every active instrument.
+     * @return the latest price for each active instrument
+     */
     @GetMapping
     public List<PriceResponse> getLatestPrices() {
         return simulationEngine.latestAll().stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Retrieves the latest simulated price for a single instrument symbol.
+     * @param symbol the instrument symbol to look up
+     * @return the latest price for the symbol
+     * @throws ResponseStatusException with a 404 status if the symbol is unknown
+     */
     @GetMapping("/{symbol}")
     public PriceResponse getLatestPrice(@PathVariable String symbol) {
         return simulationEngine.latest(symbol.toUpperCase())
@@ -44,6 +57,18 @@ public class PriceController {
                         "Unknown instrument symbol: " + symbol));
     }
 
+    /**
+     * Retrieves a paginated, newest-first page of OHLC candle history for an instrument
+     * symbol within a time range.
+     * @param symbol the instrument symbol to look up
+     * @param from the start of the time range (defaults to one day before {@code to})
+     * @param to the end of the time range (defaults to now)
+     * @param page the zero-based page number to retrieve
+     * @param size the page size, between 1 and {@value #MAX_HISTORY_PAGE_SIZE}
+     * @return the requested page of candle history
+     * @throws ResponseStatusException with a 400 status if the paging or range parameters
+     *     are invalid
+     */
     @GetMapping("/{symbol}/history")
     public Page<PriceCandleResponse> getHistory(
             @PathVariable String symbol,
