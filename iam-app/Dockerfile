@@ -12,5 +12,6 @@ RUN mvn -B clean package -DskipTests -pl iam-app -am
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 COPY --from=build /app/iam-app/target/*-exec.jar app.jar
+COPY --from=build /app/iam-app/target/*.jar app.jar
 EXPOSE 8081
 ENTRYPOINT ["java", "-jar", "app.jar"]
