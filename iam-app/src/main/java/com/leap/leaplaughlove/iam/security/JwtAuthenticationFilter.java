@@ -15,16 +15,31 @@ import java.io.IOException;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Filter that authenticates requests using JWT tokens
+ */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
     private final JwtService jwtService;
 
+    /**
+     * Constructs a new JwtAuthenticationFilter with the specified JwtService.
+     * @param jwtService the JwtService used to parse and validate JWT tokens
+     */
     public JwtAuthenticationFilter(JwtService jwtService) {
         this.jwtService = jwtService;
     }
 
+    /**
+     * Filters incoming HTTP requests and authenticates them using JWT tokens.
+     * @param request the HTTP request
+     * @param response the HTTP response
+     * @param filterChain the filter chain
+     * @throws ServletException if an error occurs during filtering
+     * @throws IOException if an I/O error occurs during filtering
+     */
     @Override
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                      @NonNull HttpServletResponse response,

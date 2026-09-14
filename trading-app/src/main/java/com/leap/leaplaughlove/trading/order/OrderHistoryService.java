@@ -18,6 +18,13 @@ public class OrderHistoryService {
         this.orderRepository = orderRepository;
     }
 
+    /**
+     * Retrieves the order history for the specified client.
+     * @param clientId the ID of the client whose order history is being retrieved
+     * @param page the page number to retrieve
+     * @param size the number of items per page
+     * @return a paginated list of order history items for the specified client
+     */
     public Page<OrderHistoryItem> getOrderHistory(UUID clientId, int page, int size) {
         if (page < 0) {
             throw new IllegalArgumentException("page must not be negative");

@@ -22,6 +22,12 @@ public class OrderHistoryController {
         this.orderHistoryService = orderHistoryService;
     }
 
+    /**
+     * Retrieves the order history for the authenticated client.
+     * @param page the page number to retrieve
+     * @param size the number of items per page
+     * @return a paginated list of order history items for the authenticated client
+     */
     @GetMapping("/api/trading/orders/history")
     public Page<OrderHistoryItem> getOrderHistory(
             @RequestParam(defaultValue = "0") int page,
