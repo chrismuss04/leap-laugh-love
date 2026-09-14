@@ -15,7 +15,6 @@
     <dependencies>
         <dependency>
             <groupId>com.leap.leaplaughlove</groupId>
-            <artifactId>iam-app</artifactId>
             <artifactId>common-security</artifactId>
             <version>${project.version}</version>
         </dependency>
