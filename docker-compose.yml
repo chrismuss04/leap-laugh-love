@@ -29,6 +29,21 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
 
+  market-data-app:
+    build:
+      context: .
+      dockerfile: market-data-app/Dockerfile
+    ports:
+      - "${MARKETDATA_PORT:-8083}:8083"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
+      SPRING_DATASOURCE_USERNAME: paysprint
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+
   db:
     image: postgres:16-alpine
     environment:
@@ -47,6 +62,7 @@ services:
       - ./iam-app/src/main/resources/db/leap_laugh_love_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./iam-app/src/main/resources/db/seed_iam.sql:/docker-entrypoint-initdb.d/02-seed-iam.sql:ro
       - ./iam-app/src/main/resources/db/seed_trading.sql:/docker-entrypoint-initdb.d/03-seed-trading.sql:ro
+      - ./iam-app/src/main/resources/db/seed_marketdata.sql:/docker-entrypoint-initdb.d/04-seed-marketdata.sql:ro
 
 volumes:
   db_data:

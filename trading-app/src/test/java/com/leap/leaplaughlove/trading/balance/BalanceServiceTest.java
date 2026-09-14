@@ -56,7 +56,7 @@ class BalanceServiceTest {
     void testDeposit_Success() {
         var request = new CashMovementRequest(new BigDecimal("100.00"), "Deposit test");
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("250.00"));
 
@@ -84,7 +84,7 @@ class BalanceServiceTest {
     void testWithdraw_Success() {
         var request = new CashMovementRequest(new BigDecimal("50.00"), "Withdrawal test");
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("200.00"));
 
@@ -108,7 +108,7 @@ class BalanceServiceTest {
     void testWithdraw_ExceedsBalance() {
         var request = new CashMovementRequest(new BigDecimal("300.00"), "Overdraft");
 
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("100.00"));
 
@@ -117,14 +117,14 @@ class BalanceServiceTest {
     }
 
     @Test
-    @DisplayName("deposit — throws Forbidden when client does not own account")
-    void testDeposit_Forbidden() {
-        UUID otherClientId = UUID.randomUUID();
-        Account unownedAccount = new Account(accountId, otherClientId, "ACC-999", "ACTIVE", "USD", true, OffsetDateTime.now());
-        when(accountRepository.findById(accountId)).thenReturn(Optional.of(unownedAccount));
+    @DisplayName("deposit — throws Not Found when client does not own account")
+    void testDeposit_NotFoundForUnownedAccount() {
+        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.empty());
 
         var request = new CashMovementRequest(new BigDecimal("50.00"), "Unauthorized");
 
-        assertThrows(ResponseStatusException.class, () -> balanceService.deposit(accountId, request));
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> balanceService.deposit(accountId, request));
+        assertEquals(404, ex.getStatusCode().value());
     }
 }

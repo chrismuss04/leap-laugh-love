@@ -18,6 +18,7 @@
     <modules>
         <module>iam-app</module>
         <module>trading-app</module>
+        <module>market-data-app</module>
     </modules>
 
     <properties>
@@ -28,17 +29,7 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Override Spring Boot's managed Byte Buddy so local JDKs newer than the CI JDK still work. -->
-            <dependency>
-                <groupId>net.bytebuddy</groupId>
-                <artifactId>byte-buddy</artifactId>
-                <version>1.15.10</version>
-            </dependency>
-            <dependency>
-                <groupId>net.bytebuddy</groupId>
-                <artifactId>byte-buddy-agent</artifactId>
-                <version>1.15.10</version>
-            </dependency>
+            <!-- JWT -->
             <dependency>
                 <groupId>io.jsonwebtoken</groupId>
                 <artifactId>jjwt-api</artifactId>
@@ -55,6 +46,17 @@
                 <artifactId>jjwt-jackson</artifactId>
                 <version>${jjwt.version}</version>
                 <scope>runtime</scope>
+            </dependency>
+            <!-- Override Spring Boot's managed Byte Buddy so local JDKs newer than the CI JDK still work. -->
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>1.15.10</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-agent</artifactId>
+                <version>1.15.10</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
