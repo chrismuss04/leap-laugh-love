@@ -16,9 +16,6 @@ export class AuthService {
   private accessTokenSubject = new BehaviorSubject<string | null>(null);
   private clientIdSubject = new BehaviorSubject<string | null>(null);
 
-  accessToken$ = this.accessTokenSubject.asObservable();
-  clientId$ = this.clientIdSubject.asObservable();
-
   constructor(private http: HttpClient) {
     const stored = localStorage.getItem('accessToken');
     if (stored) {
@@ -37,7 +34,6 @@ export class AuthService {
           this.accessTokenSubject.next(response.accessToken);
           const clientId = this.extractClientIdFromToken(response.accessToken);
           if (clientId) {
-            localStorage.setItem('clientId', clientId);
             this.clientIdSubject.next(clientId);
           }
         })
@@ -46,7 +42,6 @@ export class AuthService {
 
   logout(): void {
     localStorage.removeItem('accessToken');
-    localStorage.removeItem('clientId');
     this.accessTokenSubject.next(null);
     this.clientIdSubject.next(null);
   }

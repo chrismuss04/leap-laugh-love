@@ -2,8 +2,6 @@ package com.leap.leaplaughlove.trading.order;
 
 import com.leap.leaplaughlove.trading.account.Account;
 import jakarta.persistence.*;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -73,12 +71,9 @@ public class Order {
     }
 
     public UUID getOrderId() { return orderId; }
-    public Account getAccount() { return account; }
     public Instrument getInstrument() { return instrument; }
     public Side getSide() { return side; }
-    public Type getType() { return type; }
     public BigDecimal getQuantity() { return quantity; }
-    public BigDecimal getLimitPrice() { return limitPrice; }
     public Status getStatus() { return status; }
     public OffsetDateTime getSubmittedAt() { return submittedAt; }
     public OffsetDateTime getFilledAt() { return filledAt; }

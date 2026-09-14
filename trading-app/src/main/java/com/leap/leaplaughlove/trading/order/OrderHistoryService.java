@@ -5,7 +5,10 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class OrderHistoryService {
@@ -13,9 +16,11 @@ public class OrderHistoryService {
     private static final int MAX_PAGE_SIZE = 100;
 
     private final OrderRepository orderRepository;
+    private final ExecutionRepository executionRepository;
 
-    public OrderHistoryService(OrderRepository orderRepository) {
+    public OrderHistoryService(OrderRepository orderRepository, ExecutionRepository executionRepository) {
         this.orderRepository = orderRepository;
+        this.executionRepository = executionRepository;
     }
 
     public Page<OrderHistoryItem> getOrderHistory(UUID clientId, int page, int size) {
@@ -26,12 +31,20 @@ public class OrderHistoryService {
             throw new IllegalArgumentException("size must be between 1 and " + MAX_PAGE_SIZE);
         }
         Pageable pageable = PageRequest.of(page, size);
-        return orderRepository
-                .findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, pageable)
-                .map(this::toHistoryItem);
+        Page<Order> orders = orderRepository
+                .findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, pageable);
+
+        List<UUID> orderIds = orders.map(Order::getOrderId).getContent();
+        Map<UUID, List<ExecutionItem>> executionsByOrderId = executionRepository
+                .findByOrder_OrderIdInOrderByExecutedAtAsc(orderIds).stream()
+                .collect(Collectors.groupingBy(
+                        execution -> execution.getOrder().getOrderId(),
+                        Collectors.mapping(this::toExecutionItem, Collectors.toList())));
+
+        return orders.map(order -> toHistoryItem(order, executionsByOrderId));
     }
 
-    private OrderHistoryItem toHistoryItem(Order order) {
+    private OrderHistoryItem toHistoryItem(Order order, Map<UUID, List<ExecutionItem>> executionsByOrderId) {
         return new OrderHistoryItem(
                 order.getOrderId(),
                 order.getInstrument().getSymbol(),
@@ -39,6 +52,15 @@ public class OrderHistoryService {
                 order.getQuantity(),
                 order.getStatus().name(),
                 order.getSubmittedAt(),
-                order.getFilledAt());
+                order.getFilledAt(),
+                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));
+    }
+
+    private ExecutionItem toExecutionItem(Execution execution) {
+        return new ExecutionItem(
+                execution.getExecutionId(),
+                execution.getQuantity(),
+                execution.getPrice(),
+                execution.getExecutedAt());
     }
 }

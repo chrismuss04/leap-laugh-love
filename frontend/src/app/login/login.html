@@ -1,0 +1,109 @@
+<div class="auth-page">
+  <div class="marketing-panel">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+          <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+          <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+        </svg>
+      </div>
+      <span class="brand-name">Leapfolio</span>
+    </div>
+
+    <div class="marketing-content">
+      <p class="eyebrow">Trading Portfolio</p>
+      <h1 class="font-display headline">
+        <em>Leap</em> into<br />
+        <strong>Portfolio</strong><br />
+        <em>Growth.</em>
+      </h1>
+      <p class="marketing-subtext">
+        Track, grow, and manage your investments — all in one intelligent portfolio built for serious traders.
+      </p>
+    </div>
+
+    <div class="testimonial-card">
+      <span class="quote-mark">&ldquo;</span>
+      <p class="quote-text">
+        Leapfolio gave me clarity I never had with my old broker dashboard. My portfolio performance is up 34% since switching.
+      </p>
+      <div class="testimonial-author">
+        <div class="avatar">EH</div>
+        <div>
+          <div class="author-name">Eleanor Hartwall</div>
+          <div class="author-role">Independent Trader, London</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="auth-panel">
+    <div class="auth-content">
+      <div class="tabs">
+        <button type="button" class="tab active">Sign in</button>
+        <button type="button" class="tab" disabled title="Registration is not available yet">Create account</button>
+      </div>
+
+      <h2 class="font-display">Welcome back</h2>
+      <p class="auth-subtitle">Sign in to access your client portal.</p>
+
+      <form (ngSubmit)="login()">
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <input
+            id="email"
+            type="email"
+            [(ngModel)]="email"
+            name="email"
+            required
+            [disabled]="loading()"
+            placeholder="you@company.com"
+          />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="password-field">
+            <input
+              [type]="showPassword() ? 'text' : 'password'"
+              id="password"
+              [(ngModel)]="password"
+              name="password"
+              required
+              [disabled]="loading()"
+              placeholder="••••••••"
+            />
+            <button
+              type="button"
+              class="toggle-visibility"
+              (click)="showPassword.set(!showPassword())"
+              [attr.aria-label]="showPassword() ? 'Hide password' : 'Show password'"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label class="checkbox-label">
+            <input type="checkbox" [(ngModel)]="rememberMe" name="rememberMe" />
+            Remember me
+          </label>
+          <button type="button" class="link">Forgot password?</button>
+        </div>
+
+        <button type="submit" [disabled]="loading()" class="btn-primary">
+          {{ loading() ? 'Signing in...' : 'Sign in' }}
+        </button>
+      </form>
+
+      <p class="signup-line">Don't have an account? <button type="button" class="link">Sign up</button></p>
+
+      <div *ngIf="error()" class="error-message">{{ error() }}</div>
+    </div>
+  </div>
+</div>

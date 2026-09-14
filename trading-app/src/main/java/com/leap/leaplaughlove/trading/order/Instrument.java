@@ -31,8 +31,5 @@ public class Instrument {
         this.assetClass = assetClass;
     }
 
-    public UUID getInstrumentId() { return instrumentId; }
     public String getSymbol() { return symbol; }
-    public String getName() { return name; }
-    public String getAssetClass() { return assetClass; }
 }

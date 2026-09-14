@@ -1,0 +1,48 @@
+/* You can add global styles to this file, and also import other style files */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --background: #0d0d0f;
+  --foreground: #f0ede8;
+  --card: #141417;
+  --card-foreground: #f0ede8;
+  --primary: #2dd4bf;
+  --primary-foreground: #0d0d0f;
+  --secondary: #1e1e23;
+  --secondary-foreground: #9999aa;
+  --muted: #1a1a1f;
+  --muted-foreground: #6b6b7a;
+  --accent: #2dd4bf;
+  --accent-foreground: #0d0d0f;
+  --border: #242430;
+  --ring: #2dd4bf;
+  --radius: 2px;
+  --danger: #ff6b6b;
+  --danger-foreground: #2a0d0d;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-display {
+  font-family: 'Fraunces', serif;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0px 1000px var(--muted) inset;
+  -webkit-text-fill-color: var(--foreground);
+  caret-color: var(--foreground);
+  transition: background-color 5000s ease-in-out 0s;
+}

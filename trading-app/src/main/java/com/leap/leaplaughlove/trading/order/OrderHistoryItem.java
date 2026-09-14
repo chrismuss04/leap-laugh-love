@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.trading.order;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 public record OrderHistoryItem(
@@ -11,5 +12,6 @@ public record OrderHistoryItem(
         BigDecimal quantity,
         String status,
         OffsetDateTime submittedAt,
-        OffsetDateTime filledAt
+        OffsetDateTime filledAt,
+        List<ExecutionItem> executions
 ) {}

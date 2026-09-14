@@ -81,7 +81,8 @@ class OrderHistoryControllerTest {
         OffsetDateTime submitted = OffsetDateTime.now();
 
         OrderHistoryItem item = new OrderHistoryItem(
-                orderId, "AAPL", "BUY", new BigDecimal("10.0000"), "FILLED", submitted, submitted.plusSeconds(30));
+                orderId, "AAPL", "BUY", new BigDecimal("10.0000"), "FILLED", submitted, submitted.plusSeconds(30),
+                List.of());
 
         when(orderHistoryService.getOrderHistory(clientId, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(item)));
@@ -112,7 +113,7 @@ class OrderHistoryControllerTest {
                         .param("page", "-1")
                         .param("size", "20"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$").value("page must not be negative"));
+                .andExpect(jsonPath("$.message").value("page must not be negative"));
     }
 
     @Test
