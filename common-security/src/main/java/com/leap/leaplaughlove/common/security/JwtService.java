@@ -1,4 +1,4 @@
-package com.leap.leaplaughlove.iam.security;
+package com.leap.leaplaughlove.common.security;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
@@ -79,3 +79,4 @@ public class JwtService {
         return UUID.fromString(claims.getSubject());
     }
 }
+
