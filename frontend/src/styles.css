@@ -1,4 +1,20 @@
 /* Global Styles for LeapLaugh Frontend */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --background: #0d0d0f;
+  --foreground: #f0ede8;
+  --card: #141417;
+  --primary: #2dd4bf;
+  --primary-foreground: #0d0d0f;
+  --muted: #1a1a1f;
+  --muted-foreground: #6b6b7a;
+  --border: #242430;
+  --ring: #2dd4bf;
+  --radius: 2px;
+  --danger: #ff6b6b;
+  --danger-foreground: #2a0d0d;
+}
 
 * {
   margin: 0;
@@ -12,12 +28,16 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #0a0e27;
-  color: #ffffff;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+}
+
+.font-display {
+  font-family: 'Fraunces', serif;
 }
 
 /* Remove default button styles */
@@ -36,7 +56,7 @@ input, textarea, select {
 button:focus-visible,
 input:focus-visible,
 a:focus-visible {
-  outline: 2px solid #1dd1a1;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -47,11 +67,11 @@ html {
 
 /* Selection color */
 ::selection {
-  background-color: #1dd1a1;
-  color: #0a0e27;
+  background-color: var(--primary);
+  color: var(--background);
 }
 
 ::-moz-selection {
-  background-color: #1dd1a1;
-  color: #0a0e27;
+  background-color: var(--primary);
+  color: var(--background);
 }
