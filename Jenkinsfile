@@ -7,7 +7,16 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                // Reclaim ownership of anything root-owned left behind by the Test
+                // stage's maven container (it bind-mounts and writes to this workspace
+                // as root) before git clean runs, so a bad prior build can't
+                // permanently wedge every build after it.
+                sh 'docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app || true'
                 checkout scm
+                // Removes untracked/ignored leftovers (e.g. stale target/ dirs from
+                // before packages were restructured) that would otherwise persist
+                // across builds on a reused workspace and pollute test results.
+                sh 'git clean -fdx'
             }
         }
 
@@ -81,6 +90,12 @@ pipeline {
                         -w /app \
                         -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
                         maven:3.9-eclipse-temurin-21 mvn -B test
+
+                    # The maven container above runs as root, so anything it writes into the
+                    # bind-mounted workspace (target/, surefire-reports/) ends up root-owned
+                    # and can't be removed by later steps (e.g. git clean) running as the
+                    # Jenkins agent user. Hand ownership back.
+                    docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app
                 '''
             }
             post {
@@ -95,6 +110,19 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+
+                    # A stale container from an earlier build (crashed, aborted, or whose own
+                    # cleanup step failed) can still be bound to this executor's ports under a
+                    # different COMPOSE_PROJECT name, which "docker-compose down" here would
+                    # never find. Free the ports we're about to use before claiming them.
+                    for p in "$DB_PORT" "$IAM_PORT" "$TRADING_PORT" "$MARKETDATA_PORT"; do
+                        cid=$(docker ps -q --filter "publish=$p")
+                        if [ -n "$cid" ]; then
+                            echo "Port $p is held by container $cid from a previous build; removing it"
+                            docker rm -f "$cid"
+                        fi
+                    done
+
                     docker-compose -p "$COMPOSE_PROJECT" up -d db
                     echo "Waiting for PostgreSQL and schema initialization..."
                     for i in $(seq 1 60); do
