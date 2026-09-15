@@ -37,7 +37,8 @@ pipeline {
 
         stage('Test') {
             steps {
-                sh 'docker run --rm -v "$WORKSPACE":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app maven:3.9-eclipse-temurin-21 mvn -B test'
+                sh 'docker run --rm -v "$WORKSPACE":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app --user "$(id -u):$(id -g)" maven:3.9-eclipse-temurin-21 mvn -B test'
+
             }
             post {
                 always {
