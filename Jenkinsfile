@@ -7,6 +7,11 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
+                // Reclaim ownership of anything root-owned left behind by the Test
+                // stage's maven container (it bind-mounts and writes to this workspace
+                // as root) before git clean runs, so a bad prior build can't
+                // permanently wedge every build after it.
+                sh 'docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app || true'
                 checkout scm
                 // Removes untracked/ignored leftovers (e.g. stale target/ dirs from
                 // before packages were restructured) that would otherwise persist
@@ -85,6 +90,12 @@ pipeline {
                         -w /app \
                         -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
                         maven:3.9-eclipse-temurin-21 mvn -B test
+
+                    # The maven container above runs as root, so anything it writes into the
+                    # bind-mounted workspace (target/, surefire-reports/) ends up root-owned
+                    # and can't be removed by later steps (e.g. git clean) running as the
+                    # Jenkins agent user. Hand ownership back.
+                    docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app
                 '''
             }
             post {
