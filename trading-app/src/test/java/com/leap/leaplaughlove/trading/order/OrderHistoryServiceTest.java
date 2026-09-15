@@ -12,13 +12,13 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,26 +28,36 @@ class OrderHistoryServiceTest {
     @Mock
     private OrderRepository orderRepository;
 
+    @Mock
+    private ExecutionRepository executionRepository;
+
     private OrderHistoryService orderHistoryService;
+
+    private UUID clientId;
+    private Account account;
+    private Instrument aapl;
+    private Instrument msft;
+    private OffsetDateTime baseTime;
 
     @BeforeEach
     void setUp() {
-        orderHistoryService = new OrderHistoryService(orderRepository);
+        orderHistoryService = new OrderHistoryService(orderRepository, executionRepository);
+        lenient().when(executionRepository.findByOrder_OrderIdInOrderByExecutedAtAsc(any())).thenReturn(List.of());
+
+        clientId = UUID.randomUUID();
+        account = new Account(UUID.randomUUID(), clientId, "ACCT-123", "ACTIVE", "USD", true, OffsetDateTime.now());
+        aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY");
+        msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corp.", "EQUITY");
+        baseTime = OffsetDateTime.now();
     }
 
     @Test
-    @DisplayName("getOrderHistory maps Order entities to OrderHistoryItem projection correctly")
+    @DisplayName("maps Order entities to OrderHistoryItem projection, including fills")
     void testGetOrderHistorySuccess() {
-        UUID clientId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
-
-        Account account = new Account(UUID.randomUUID(), clientId, "ACCT-123", "ACTIVE", "USD", true, OffsetDateTime.now());
-        Instrument instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY");
-        OffsetDateTime now = OffsetDateTime.now();
-
         Order order = new Order(
-                orderId, account, instrument, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("10.5000"), null, Order.Status.FILLED, now, now.plusSeconds(5));
+                orderId, account, aapl, Order.Side.BUY,
+                10L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -59,25 +69,75 @@ class OrderHistoryServiceTest {
         assertEquals(orderId, item.orderId());
         assertEquals("AAPL", item.symbol());
         assertEquals("BUY", item.side());
-        assertEquals(new BigDecimal("10.5000"), item.quantity());
+        assertEquals(10L, item.quantity());
         assertEquals("FILLED", item.status());
-        assertEquals(now, item.submittedAt());
-        assertEquals(now.plusSeconds(5), item.filledAt());
+        assertEquals(baseTime, item.submittedAt());
+        assertEquals(baseTime.plusSeconds(5), item.filledAt());
+        assertEquals(List.of(), item.executions());
 
         verify(orderRepository).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20));
     }
 
     @Test
-    @DisplayName("getOrderHistory throws IllegalArgumentException when page is negative")
+    @DisplayName("preserves repository ordering (newest first)")
+    void testOrdersOrderedNewestFirst() {
+        Order newer = new Order(
+                UUID.randomUUID(), account, msft, Order.Side.SELL,
+                50L, Order.Status.FILLED,
+                baseTime.plusMinutes(10), baseTime.plusMinutes(11));
+        Order older = new Order(
+                UUID.randomUUID(), account, aapl, Order.Side.BUY,
+                100L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
+
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(newer, older)));
+
+        List<OrderHistoryItem> items = orderHistoryService.getOrderHistory(clientId, 0, 20).getContent();
+
+        assertEquals(2, items.size());
+        assertEquals("MSFT", items.get(0).symbol());
+        assertEquals("AAPL", items.get(1).symbol());
+    }
+
+    @Test
+    @DisplayName("carries pagination metadata through")
+    void testPaginationMetadata() {
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(1, 5)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 5), 12));
+
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(clientId, 1, 5);
+
+        assertEquals(1, page.getNumber());
+        assertEquals(5, page.getSize());
+        assertEquals(12, page.getTotalElements());
+        assertEquals(3, page.getTotalPages());
+    }
+
+    @Test
+    @DisplayName("unfilled orders return null filledAt")
+    void testUnfilledOrderHasNullFilledAt() {
+        Order pending = new Order(
+                UUID.randomUUID(), account, aapl, Order.Side.BUY,
+                10L, Order.Status.SUBMITTED, baseTime, null);
+
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(pending)));
+
+        OrderHistoryItem item = orderHistoryService.getOrderHistory(clientId, 0, 20).getContent().get(0);
+
+        assertEquals("SUBMITTED", item.status());
+        assertNull(item.filledAt());
+    }
+
+    @Test
+    @DisplayName("throws IllegalArgumentException when page is negative")
     void testNegativePageThrows() {
-        UUID clientId = UUID.randomUUID();
         assertThrows(IllegalArgumentException.class, () -> orderHistoryService.getOrderHistory(clientId, -1, 20));
     }
 
     @Test
-    @DisplayName("getOrderHistory throws IllegalArgumentException when size exceeds max")
+    @DisplayName("throws IllegalArgumentException when size exceeds max")
     void testExcessiveSizeThrows() {
-        UUID clientId = UUID.randomUUID();
         assertThrows(IllegalArgumentException.class, () -> orderHistoryService.getOrderHistory(clientId, 0, 101));
     }
 }

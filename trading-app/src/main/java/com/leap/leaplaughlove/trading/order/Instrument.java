@@ -44,26 +44,5 @@ public class Instrument {
         this.assetClass = assetClass;
     }
 
-    /**
-     * Retrieves the unique identifier of the instrument.
-     * @return the instrumentId
-     */
-    public UUID getInstrumentId() { return instrumentId; }
-    /**
-     * Retrieves the trading symbol of the instrument.
-     * @return the symbol
-     */
     public String getSymbol() { return symbol; }
-
-    /**
-     * Retrieves the name of the instrument.
-     * @return the name
-     */
-    public String getName() { return name; }
-
-    /**
-     * Retrieves the asset class of the instrument.
-     * @return the assetClass
-     */
-    public String getAssetClass() { return assetClass; }
 }

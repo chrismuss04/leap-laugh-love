@@ -1,2 +1,2 @@
-<app-sign-in></app-sign-in>
-<router-outlet></router-outlet>
+<app-sign-in *ngIf="!(authService.isAuthenticated$ | async)"></app-sign-in>
+<router-outlet *ngIf="authService.isAuthenticated$ | async"></router-outlet>
