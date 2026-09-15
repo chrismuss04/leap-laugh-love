@@ -12,8 +12,7 @@ import java.util.UUID;
 public class Order {
 
     public enum Side { BUY, SELL }
-    public enum Type { MARKET, LIMIT }
-    public enum Status { PENDING, FILLED, PARTIALLY_FILLED, CANCELLED, REJECTED }
+    public enum Status { SUBMITTED, ACCEPTED, REJECTED, FILLED }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -32,15 +31,8 @@ public class Order {
     @Column(name = "side", nullable = false)
     private Side side;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "order_type", nullable = false)
-    private Type type;
-
     @Column(name = "quantity", nullable = false, precision = 15, scale = 4)
     private BigDecimal quantity;
-
-    @Column(name = "limit_price", precision = 15, scale = 4)
-    private BigDecimal limitPrice;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -55,16 +47,14 @@ public class Order {
     protected Order() {
     }
 
-    public Order(UUID orderId, Account account, Instrument instrument, Side side, Type type,
-                 BigDecimal quantity, BigDecimal limitPrice, Status status,
+    public Order(UUID orderId, Account account, Instrument instrument, Side side,
+                 BigDecimal quantity, Status status,
                  OffsetDateTime submittedAt, OffsetDateTime filledAt) {
         this.orderId = orderId;
         this.account = account;
         this.instrument = instrument;
         this.side = side;
-        this.type = type;
         this.quantity = quantity;
-        this.limitPrice = limitPrice;
         this.status = status;
         this.submittedAt = submittedAt;
         this.filledAt = filledAt;

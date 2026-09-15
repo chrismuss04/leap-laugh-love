@@ -18,10 +18,10 @@ public class Execution {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @Column(name = "quantity", nullable = false, precision = 15, scale = 4)
+    @Column(name = "fill_quantity", nullable = false, precision = 15, scale = 4)
     private BigDecimal quantity;
 
-    @Column(name = "price", nullable = false, precision = 15, scale = 4)
+    @Column(name = "fill_price", nullable = false, precision = 15, scale = 4)
     private BigDecimal price;
 
     @Column(name = "executed_at", nullable = false)

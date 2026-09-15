@@ -80,32 +80,7 @@ pipeline {
             sh 'docker-compose -p ${COMPOSE_PROJECT} down -v || true'
         }
         success {
-            echo ""
-            echo "╔════════════════════════════════════════╗"
-            echo "║  ✓ BUILD ${BUILD_NUMBER} SUCCESSFUL    ║"
-            echo "╚════════════════════════════════════════╝"
-            echo ""
-            echo "🎨 VIEW YOUR FRONTEND:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   URL: http://localhost:8081"
-            echo ""
-            echo "🔐 LOGIN CREDENTIALS:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   Email:    alice.johnson@leap.com"
-            echo "   Password: Password123!"
-            echo ""
-            echo "📊 VIEW ORDER HISTORY:"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "   1. Click Login"
-            echo "   2. View chronological orders table"
-            echo "   3. Click any order to expand fills"
-            echo "   4. Use pagination to navigate pages"
-            echo ""
-            echo "📦 SERVICES RUNNING:"
             sh 'docker-compose -p ${COMPOSE_PROJECT} ps'
-            echo ""
-            echo "ℹ️  Services will remain running for 1 hour"
-            echo "    For logs: docker-compose -p ${COMPOSE_PROJECT} logs -f"
         }
     }
 }

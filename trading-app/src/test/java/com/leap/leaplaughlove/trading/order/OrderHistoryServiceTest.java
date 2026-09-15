@@ -57,8 +57,8 @@ class OrderHistoryServiceTest {
     void testGetOrderHistorySuccess() {
         UUID orderId = UUID.randomUUID();
         Order order = new Order(
-                orderId, account, aapl, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("10.5000"), null, Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
+                orderId, account, aapl, Order.Side.BUY,
+                new BigDecimal("10.5000"), Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -83,12 +83,12 @@ class OrderHistoryServiceTest {
     @DisplayName("preserves repository ordering (newest first)")
     void testOrdersOrderedNewestFirst() {
         Order newer = new Order(
-                UUID.randomUUID(), account, msft, Order.Side.SELL, Order.Type.LIMIT,
-                new BigDecimal("50.0000"), new BigDecimal("320.0000"), Order.Status.FILLED,
+                UUID.randomUUID(), account, msft, Order.Side.SELL,
+                new BigDecimal("50.0000"), Order.Status.FILLED,
                 baseTime.plusMinutes(10), baseTime.plusMinutes(11));
         Order older = new Order(
-                UUID.randomUUID(), account, aapl, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("100.0000"), null, Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
+                UUID.randomUUID(), account, aapl, Order.Side.BUY,
+                new BigDecimal("100.0000"), Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(newer, older)));
@@ -118,15 +118,15 @@ class OrderHistoryServiceTest {
     @DisplayName("unfilled orders return null filledAt")
     void testUnfilledOrderHasNullFilledAt() {
         Order pending = new Order(
-                UUID.randomUUID(), account, aapl, Order.Side.BUY, Order.Type.LIMIT,
-                new BigDecimal("10.0000"), new BigDecimal("150.0000"), Order.Status.PENDING, baseTime, null);
+                UUID.randomUUID(), account, aapl, Order.Side.BUY,
+                new BigDecimal("10.0000"), Order.Status.SUBMITTED, baseTime, null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(pending)));
 
         OrderHistoryItem item = orderHistoryService.getOrderHistory(clientId, 0, 20).getContent().get(0);
 
-        assertEquals("PENDING", item.status());
+        assertEquals("SUBMITTED", item.status());
         assertNull(item.filledAt());
     }
 
