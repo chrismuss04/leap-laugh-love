@@ -9,6 +9,10 @@ import com.leap.leaplaughlove.trading.position.PositionId;
 import com.leap.leaplaughlove.trading.position.PositionMovement;
 import com.leap.leaplaughlove.trading.position.PositionMovementRepository;
 import com.leap.leaplaughlove.trading.position.PositionRepository;
+import com.leap.leaplaughlove.trading.quote.CurrentQuoteService;
+import com.leap.leaplaughlove.trading.quote.QuoteSnapshot;
+import com.leap.leaplaughlove.trading.quote.QuoteUnavailableException;
+import com.leap.leaplaughlove.trading.quote.StaleQuoteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,13 +24,9 @@ import java.time.OffsetDateTime;
 import java.util.Optional;
 
 /**
- * Service orchestrating the order submission lifecycle:
- * 1. Client authentication & trading account authorization
- * 2. Immediate order creation with status SUBMITTED
- * 3. Whole-share trade validation (sufficient cash for BUY / sufficient holdings for SELL)
- * 4. Immediate execution recording (FILLED or REJECTED) for retention and audit compliance
- * 5. State transition: ACCEPTED -> FILLED, or REJECTED
- * 6. Atomic propagation to cash ledger (balance), position ledger (position movements), and positions
+ * Service to orchestrate the order submission and immediate execution lifecycle.
+ * Lifecycle: SUBMITTED -> ACCEPTED or REJECTED -> FILLED.
+ * All orders and executions are persisted for audit retention.
  */
 @Service
 public class OrderSubmissionService {
@@ -39,7 +39,7 @@ public class OrderSubmissionService {
     private final PositionMovementRepository positionMovementRepository;
     private final PositionRepository positionRepository;
     private final TradeValidationService tradeValidationService;
-    private final MarketDataPriceService marketDataPriceService;
+    private final CurrentQuoteService currentQuoteService;
 
     public OrderSubmissionService(AccountAuthorizationService accountAuthorizationService,
                                   InstrumentRepository instrumentRepository,
@@ -49,7 +49,7 @@ public class OrderSubmissionService {
                                   PositionMovementRepository positionMovementRepository,
                                   PositionRepository positionRepository,
                                   TradeValidationService tradeValidationService,
-                                  MarketDataPriceService marketDataPriceService) {
+                                  CurrentQuoteService currentQuoteService) {
         this.accountAuthorizationService = accountAuthorizationService;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -58,7 +58,7 @@ public class OrderSubmissionService {
         this.positionMovementRepository = positionMovementRepository;
         this.positionRepository = positionRepository;
         this.tradeValidationService = tradeValidationService;
-        this.marketDataPriceService = marketDataPriceService;
+        this.currentQuoteService = currentQuoteService;
     }
 
     /**
@@ -82,33 +82,26 @@ public class OrderSubmissionService {
         // 2. Resolve instrument
         Instrument instrument = resolveInstrument(request);
 
-        // 3. Resolve execution price (either supplied in request or fetched from market data service)
-        BigDecimal executionPrice = resolvePrice(request, instrument);
-
-        // 4. Store order immediately with status SUBMITTED
+        // 3. Store order immediately with status SUBMITTED for audit retention
         OffsetDateTime now = OffsetDateTime.now();
         Order order = new Order(account, instrument, request.side(), request.quantity(), now);
         order = orderRepository.saveAndFlush(order);
+
+        // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
+        BigDecimal executionPrice;
+        try {
+            executionPrice = resolvePrice(request, instrument);
+        } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {
+            String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();
+            return rejectOrder(order, account, rejectReason != null ? rejectReason : "Market quote unavailable");
+        }
 
         // 5. Execute Trade Validation Stub
         TradeValidationResult validationResult = tradeValidationService.validateTrade(
                 account, instrument, request.side(), request.quantity(), executionPrice);
 
         if (!validationResult.isValid()) {
-            // Rejection flow: update order to REJECTED
-            OffsetDateTime rejectTime = OffsetDateTime.now();
-            order.markRejected(validationResult.reason(), rejectTime);
-            order = orderRepository.saveAndFlush(order);
-
-            // Record execution as REJECTED for audit retention
-            Execution execution = new Execution(
-                    order, null, null, Execution.Status.REJECTED, validationResult.reason(), rejectTime);
-            execution = executionRepository.saveAndFlush(execution);
-
-            BigDecimal currentBalance = cashLedgerRepository.sumAmountByAccountIdAndCurrency(
-                    account.getAccountId(), account.getBaseCurrency());
-
-            return toResponse(order, execution, currentBalance);
+            return rejectOrder(order, account, validationResult.reason());
         }
 
         // Acceptance flow: transition order to ACCEPTED
@@ -138,6 +131,21 @@ public class OrderSubmissionService {
         return toResponse(order, execution, balanceAfter);
     }
 
+    private OrderSubmissionResponse rejectOrder(Order order, Account account, String reason) {
+        OffsetDateTime rejectTime = OffsetDateTime.now();
+        order.markRejected(reason, rejectTime);
+        order = orderRepository.saveAndFlush(order);
+
+        Execution execution = new Execution(
+                order, null, null, Execution.Status.REJECTED, reason, rejectTime);
+        execution = executionRepository.saveAndFlush(execution);
+
+        BigDecimal currentBalance = cashLedgerRepository.sumAmountByAccountIdAndCurrency(
+                account.getAccountId(), account.getBaseCurrency());
+
+        return toResponse(order, execution, currentBalance);
+    }
+
     private Instrument resolveInstrument(OrderSubmissionRequest request) {
         if (request.instrumentId() != null) {
             return instrumentRepository.findById(request.instrumentId())
@@ -155,7 +163,30 @@ public class OrderSubmissionService {
         if (request.price() != null && request.price().compareTo(BigDecimal.ZERO) > 0) {
             return request.price().setScale(4, RoundingMode.HALF_UP);
         }
-        return marketDataPriceService.getPrice(instrument.getSymbol(), request.side());
+
+        QuoteSnapshot quote = currentQuoteService.getCurrentQuote(instrument.getSymbol());
+        if (quote == null) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No quote returned for symbol: " + instrument.getSymbol());
+        }
+
+        BigDecimal price;
+        if (request.side() == Order.Side.BUY) {
+            price = (quote.askPrice() != null && quote.askPrice().compareTo(BigDecimal.ZERO) > 0)
+                    ? quote.askPrice()
+                    : quote.lastPrice();
+        } else {
+            price = (quote.bidPrice() != null && quote.bidPrice().compareTo(BigDecimal.ZERO) > 0)
+                    ? quote.bidPrice()
+                    : quote.lastPrice();
+        }
+
+        if (price == null || price.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
+                    "No valid executable price found for symbol: " + instrument.getSymbol());
+        }
+
+        return price.setScale(4, RoundingMode.HALF_UP);
     }
 
     private void propagateCashLedger(Account account, Order order, Execution execution,
