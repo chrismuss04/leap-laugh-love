@@ -110,6 +110,19 @@ pipeline {
             steps {
                 sh '''
                     set -eu
+
+                    # A stale container from an earlier build (crashed, aborted, or whose own
+                    # cleanup step failed) can still be bound to this executor's ports under a
+                    # different COMPOSE_PROJECT name, which "docker-compose down" here would
+                    # never find. Free the ports we're about to use before claiming them.
+                    for p in "$DB_PORT" "$IAM_PORT" "$TRADING_PORT" "$MARKETDATA_PORT"; do
+                        cid=$(docker ps -q --filter "publish=$p")
+                        if [ -n "$cid" ]; then
+                            echo "Port $p is held by container $cid from a previous build; removing it"
+                            docker rm -f "$cid"
+                        fi
+                    done
+
                     docker-compose -p "$COMPOSE_PROJECT" up -d db
                     echo "Waiting for PostgreSQL and schema initialization..."
                     for i in $(seq 1 60); do
