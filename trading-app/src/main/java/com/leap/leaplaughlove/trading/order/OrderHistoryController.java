@@ -20,6 +20,12 @@ public class OrderHistoryController {
         this.orderHistoryService = orderHistoryService;
     }
 
+    /**
+     * Retrieves the order history for the authenticated client.
+     * @param page the page number to retrieve
+     * @param size the number of items per page
+     * @return a paginated list of order history items for the authenticated client
+     */
     @GetMapping("/api/trading/orders/history")
     public Page<OrderHistoryItem> getOrderHistory(
             @RequestParam(defaultValue = "0") int page,
@@ -30,23 +36,9 @@ public class OrderHistoryController {
 
     private UUID getAuthenticatedClientId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                    "A valid authenticated principal is required");
-        }
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof UUID clientId) {
+        if (authentication != null && authentication.getPrincipal() instanceof UUID clientId) {
             return clientId;
         }
-        if (principal instanceof String principalString && !principalString.isBlank()
-                && !"anonymousUser".equals(principalString)) {
-            try {
-                return UUID.fromString(principalString);
-            } catch (IllegalArgumentException ignored) {
-                // commment fall through to unauthorized
-            }
-        }
-        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                "Authenticated principal is invalid for this operation");
+        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "A valid authenticated principal is required");
     }
 }

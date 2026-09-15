@@ -54,7 +54,7 @@
               </td>
               <td>{{ order.symbol }}</td>
               <td>{{ order.side }}</td>
-              <td>{{ order.quantity | number: '1.2-4' }}</td>
+              <td>{{ order.quantity | number: '1.0-0' }}</td>
               <td>{{ order.status }}</td>
               <td>{{ order.submittedAt | date: 'short' }}</td>
               <td>{{ (order.filledAt | date: 'short') ?? '--' }}</td>
@@ -80,7 +80,7 @@
                   <tbody>
                     <tr *ngFor="let exec of order.executions">
                       <td>{{ exec.executionId | slice: 0:8 }}...</td>
-                      <td>{{ exec.quantity | number: '1.2-4' }}</td>
+                      <td>{{ exec.quantity | number: '1.0-0' }}</td>
                       <td>${{ exec.price | number: '1.2-2' }}</td>
                       <td>{{ exec.executedAt | date: 'short' }}</td>
                     </tr>

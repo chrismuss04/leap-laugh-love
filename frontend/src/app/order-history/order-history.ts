@@ -1,7 +1,6 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { Router } from '@angular/router';
-import { AuthService } from '../services/auth';
+import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
 
 @Component({
@@ -21,28 +20,20 @@ export class OrderHistoryComponent implements OnInit {
 
   private authService = inject(AuthService);
   private orderService = inject(OrderService);
-  private router = inject(Router);
 
   ngOnInit() {
     if (!this.authService.isAuthenticated()) {
-      this.router.navigate(['/login']);
       return;
     }
     this.loadOrders();
   }
 
   loadOrders(page: number = 0) {
-    const clientId = this.authService.getClientId();
-    if (!clientId) {
-      this.error.set('Client ID not found');
-      return;
-    }
-
     this.loading.set(true);
     this.error.set(null);
     this.expandedOrderId.set(null);
 
-    this.orderService.getOrderHistory(clientId, page, 20).subscribe({
+    this.orderService.getOrderHistory(page, 20).subscribe({
       next: (response: OrderHistoryPage) => {
         this.orders.set(response.content);
         this.currentPage.set(response.number);
@@ -74,7 +65,6 @@ export class OrderHistoryComponent implements OnInit {
 
   logout() {
     this.authService.logout();
-    this.router.navigate(['/login']);
   }
 }
 

@@ -1,0 +1,138 @@
+<div class="auth-page">
+  <!-- Left Side: Branding & Quote -->
+  <div class="marketing-panel">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+          <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+          <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+        </svg>
+      </div>
+      <span class="brand-name">Leapfolio</span>
+    </div>
+
+    <div class="marketing-content">
+      <p class="eyebrow">Trading Portfolio</p>
+      <h1 class="font-display headline">
+        <em>Leap</em> into<br />
+        <strong>Portfolio</strong><br />
+        <em>Growth.</em>
+      </h1>
+      <p class="brand-subtitle">
+        Track, grow, and manage your investments — all in one intelligent portfolio built for serious traders.
+      </p>
+    </div>
+
+    <div class="testimonial-card">
+      <span class="quote-mark">&ldquo;</span>
+      <blockquote class="quote-text">
+        Leapfolio gave me clarity I never had with my old broker dashboard. My portfolio performance is up 34% since switching.
+      </blockquote>
+      <div class="quote-author">
+        <div class="author-avatar">EH</div>
+        <div class="author-info">
+          <p class="author-name">Eleanor Hartwell</p>
+          <p class="author-title">Independent Trader, London</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Side: Sign In Form -->
+  <div class="auth-panel">
+    <div class="signin-form-wrapper">
+      <div class="tabs">
+        <button type="button" class="tab active">Sign in</button>
+        <button type="button" class="tab" disabled title="Registration is not available yet">Create account</button>
+      </div>
+
+      <div class="form-header">
+        <h2 class="font-display">Welcome back</h2>
+        <p>Sign in to access your client portal.</p>
+      </div>
+
+      <form [formGroup]="signinForm" (ngSubmit)="onSignIn()" class="signin-form">
+        <!-- Email Field -->
+        <div class="form-group">
+          <label for="email" class="form-label">Email Address</label>
+          <input
+            type="email"
+            id="email"
+            formControlName="email"
+            class="form-input"
+            placeholder="you@company.com"
+            [class.error]="isFieldInvalid('email')"
+          />
+          <span class="error-message" *ngIf="isFieldInvalid('email')">
+            {{ getErrorMessage('email') }}
+          </span>
+        </div>
+
+        <!-- Password Field -->
+        <div class="form-group">
+          <label for="password" class="form-label">Password</label>
+          <div class="password-input-wrapper">
+            <input
+              [type]="showPassword ? 'text' : 'password'"
+              id="password"
+              formControlName="password"
+              class="form-input"
+              placeholder="••••••••"
+              [class.error]="isFieldInvalid('password')"
+            />
+            <button
+              type="button"
+              class="password-toggle"
+              (click)="togglePasswordVisibility()"
+              [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+              tabindex="-1"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
+                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+              </svg>
+            </button>
+          </div>
+          <span class="error-message" *ngIf="isFieldInvalid('password')">
+            {{ getErrorMessage('password') }}
+          </span>
+        </div>
+
+        <!-- Remember Me & Forgot Password -->
+        <div class="form-actions">
+          <label class="checkbox-label">
+            <input type="checkbox" formControlName="rememberMe" />
+            <span>Remember me</span>
+          </label>
+          <a href="#" class="forgot-password">Forgot password?</a>
+        </div>
+
+        <!-- Sign In Button -->
+        <button
+          type="submit"
+          class="signin-button"
+          [disabled]="isLoading"
+        >
+          <span *ngIf="!isLoading">Sign in</span>
+          <span *ngIf="isLoading" class="loading-spinner"></span>
+        </button>
+
+        <!-- Error Message -->
+        <div class="error-alert" *ngIf="errorMessage">
+          {{ errorMessage }}
+        </div>
+
+        <!-- Success Message -->
+        <div class="success-alert" *ngIf="successMessage">
+          {{ successMessage }}
+        </div>
+      </form>
+
+      <!-- Sign Up Link -->
+      <div class="signup-link">
+        Don't have an account? <a href="#">Sign up</a>
+      </div>
+    </div>
+  </div>
+</div>

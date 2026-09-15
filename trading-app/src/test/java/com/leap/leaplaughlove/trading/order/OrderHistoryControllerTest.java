@@ -7,15 +7,13 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -36,41 +34,8 @@ class OrderHistoryControllerTest {
     private OrderHistoryService orderHistoryService;
 
     private static Authentication createAuthenticationWithClientId(UUID clientId) {
-        return new Authentication() {
-            @Override
-            public Collection<? extends GrantedAuthority> getAuthorities() {
-                return List.of(new SimpleGrantedAuthority("ROLE_CLIENT"));
-            }
-
-            @Override
-            public Object getCredentials() {
-                return null;
-            }
-
-            @Override
-            public Object getDetails() {
-                return null;
-            }
-
-            @Override
-            public Object getPrincipal() {
-                return clientId;
-            }
-
-            @Override
-            public boolean isAuthenticated() {
-                return true;
-            }
-
-            @Override
-            public void setAuthenticated(boolean isAuthenticated) throws IllegalArgumentException {
-            }
-
-            @Override
-            public String getName() {
-                return clientId.toString();
-            }
-        };
+        return new UsernamePasswordAuthenticationToken(
+                clientId, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
     }
 
     @Test
@@ -81,7 +46,7 @@ class OrderHistoryControllerTest {
         OffsetDateTime submitted = OffsetDateTime.now();
 
         OrderHistoryItem item = new OrderHistoryItem(
-                orderId, "AAPL", "BUY", new BigDecimal("10.0000"), "FILLED", submitted, submitted.plusSeconds(30),
+                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30),
                 List.of());
 
         when(orderHistoryService.getOrderHistory(clientId, 0, 20))

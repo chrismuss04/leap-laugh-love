@@ -75,7 +75,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     instrument_id UUID NOT NULL
         REFERENCES trading.instruments (instrument_id) ON DELETE RESTRICT,
     side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
-    quantity NUMERIC(15,4) NOT NULL CHECK (quantity > 0),
+    quantity BIGINT NOT NULL CHECK (quantity > 0),
     status TEXT NOT NULL
         CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED')),
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -93,8 +93,8 @@ CREATE TABLE IF NOT EXISTS trading.executions (
     execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL
         REFERENCES trading.orders (order_id) ON DELETE RESTRICT,
-    fill_quantity NUMERIC(15,4),
-    fill_price NUMERIC(15,4),
+    fill_quantity BIGINT,
+    fill_price NUMERIC(18,6),
     status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     reason TEXT

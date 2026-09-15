@@ -1,7 +1,6 @@
 import { Injectable } from '@angular/core';
-import { HttpClient, HttpHeaders } from '@angular/common/http';
+import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { AuthService } from './auth';
 
 export interface ExecutionItem {
   executionId: string;
@@ -37,23 +36,13 @@ export interface OrderHistoryPage {
 export class OrderService {
   private readonly API_URL = 'http://localhost:8082/api/trading';
 
-  constructor(
-    private http: HttpClient,
-    private authService: AuthService
-  ) {}
+  constructor(private http: HttpClient) {}
 
-  getOrderHistory(clientId: string, page: number = 0, size: number = 20): Observable<OrderHistoryPage> {
-    const token = this.authService.getAccessToken();
-    const headers = new HttpHeaders({
-      'Authorization': `Bearer ${token}`
-    });
-
+  getOrderHistory(page: number = 0, size: number = 20): Observable<OrderHistoryPage> {
     return this.http.get<OrderHistoryPage>(
       `${this.API_URL}/orders/history`,
       {
-        headers,
         params: {
-          clientId,
           page: page.toString(),
           size: size.toString()
         }

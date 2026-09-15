@@ -4,13 +4,17 @@ import com.leap.leaplaughlove.iam.client.Client;
 import com.leap.leaplaughlove.iam.client.ClientCredentials;
 import com.leap.leaplaughlove.iam.client.ClientCredentialsRepository;
 import com.leap.leaplaughlove.iam.client.ClientRepository;
-import com.leap.leaplaughlove.iam.security.JwtService;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 
+/**
+ * Service for handling authentication logic, including login and account lock management.
+ * Provides methods for authenticating clients and managing failed login attempts.
+ */
 @Service
 public class AuthService {
 
@@ -22,6 +26,13 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
 
+    /**
+     * Constructs a new AuthService with the specified dependencies.
+     * @param clientRepository the repository for managing client entities
+     * @param credentialsRepository the repository for managing client credentials
+     * @param passwordEncoder the password encoder for verifying client passwords
+     * @param jwtService the service for generating JWT tokens
+     */
     public AuthService(ClientRepository clientRepository,
                        ClientCredentialsRepository credentialsRepository,
                        PasswordEncoder passwordEncoder,
@@ -32,6 +43,14 @@ public class AuthService {
         this.jwtService = jwtService;
     }
 
+    /**
+     * Authenticates a client using their email and password. 
+     * @param email the email of the client attempting to authenticate
+     * @param rawPassword the raw password provided by the client
+     * @throws InvalidCredentialsException if the email or password is incorrect
+     * @throws AccountLockedException if the account is locked due to too many failed login attempts
+     * @return a LoginResponse containing the authentication token and related information
+     */
     @Transactional
     public LoginResponse authenticate(String email, String rawPassword) {
         Client client = clientRepository.findByEmail(email)

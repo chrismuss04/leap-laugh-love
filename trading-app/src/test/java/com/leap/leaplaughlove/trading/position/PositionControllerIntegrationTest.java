@@ -1,6 +1,6 @@
 package com.leap.leaplaughlove.trading.position;
 
-import com.leap.leaplaughlove.iam.security.JwtService;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

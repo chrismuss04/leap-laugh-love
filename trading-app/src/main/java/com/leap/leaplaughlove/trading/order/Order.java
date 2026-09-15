@@ -3,10 +3,12 @@ package com.leap.leaplaughlove.trading.order;
 import com.leap.leaplaughlove.trading.account.Account;
 import jakarta.persistence.*;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+/**
+ * Represents a trading order placed by an account for a specific instrument.
+ */
 @Entity
 @Table(name = "orders", schema = "trading")
 public class Order {
@@ -31,8 +33,8 @@ public class Order {
     @Column(name = "side", nullable = false)
     private Side side;
 
-    @Column(name = "quantity", nullable = false, precision = 15, scale = 4)
-    private BigDecimal quantity;
+    @Column(name = "quantity", nullable = false)
+    private Long quantity;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
@@ -44,11 +46,14 @@ public class Order {
     @Column(name = "filled_at")
     private OffsetDateTime filledAt;
 
+    /**
+     * Protected no-argument constructor for JPA.
+     */
     protected Order() {
     }
 
     public Order(UUID orderId, Account account, Instrument instrument, Side side,
-                 BigDecimal quantity, Status status,
+                 Long quantity, Status status,
                  OffsetDateTime submittedAt, OffsetDateTime filledAt) {
         this.orderId = orderId;
         this.account = account;
@@ -63,7 +68,7 @@ public class Order {
     public UUID getOrderId() { return orderId; }
     public Instrument getInstrument() { return instrument; }
     public Side getSide() { return side; }
-    public BigDecimal getQuantity() { return quantity; }
+    public Long getQuantity() { return quantity; }
     public Status getStatus() { return status; }
     public OffsetDateTime getSubmittedAt() { return submittedAt; }
     public OffsetDateTime getFilledAt() { return filledAt; }

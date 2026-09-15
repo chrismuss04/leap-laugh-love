@@ -2,10 +2,10 @@
 
 ## Team Members
 1. Software Developer - Chris Musselman
-2. Team Lead - Nikhil Akula
-3. Developer - Yahia Elsaad
-4. Database Manager - Lauren Sanday
-5. Scrum Master - Elisa Paul
+2. Software Developer - Nikhil Akula
+3. Tech Lead - Yahia Elsaad
+4. Scrum Master - Lauren Sanday
+5. Software Developer - Elisa Paul
 
 ## Branching Strategy
 We are using the Trunk branching strategy because it best fits our development strategy and schedule.
@@ -14,21 +14,27 @@ We are using the Trunk branching strategy because it best fits our development s
 
 ## Architecture Overview
 
-The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices:
+The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices along with a shared security library:
 
-1. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
-2. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
-3. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
+1. **`common-security` (Shared Security Library)**: Contains reusable JWT token handling (`JwtService`, `JwtAuthenticationFilter`), 401 JSON error formatting (`JwtAuthenticationEntryPoint`), and shared CORS configuration (`CommonCorsConfiguration`). Packaged as a standard library JAR.
+2. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
+3. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
+4. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
 
 ```mermaid
 flowchart TB
     UI["Static test UI / API Client"]
 
     subgraph PARENT["Parent Aggregator POM (leap-laugh-love-app)"]
-        subgraph IAM["iam-app (Port 8081)"]
-            IamApp["IamApplication"]
-            IamSec["IamSecurityConfig"]
+        subgraph SEC["common-security (Shared Library)"]
             JwtS["JwtService & JwtAuthenticationFilter"]
+            JwtEP["JwtAuthenticationEntryPoint"]
+            CorsCfg["CommonCorsConfiguration"]
+        end
+
+        subgraph IAM["iam-app (Port 8081)"]
+            IamApp["IamApplication @Import(JwtService)"]
+            IamSec["IamSecurityConfig"]
             AuthC["AuthController\n/api/iam/auth"]
             RegC["ClientRegistrationController\n/api/iam/v1/clients"]
         end
@@ -71,14 +77,387 @@ flowchart TB
     SimEngine --> StreamC
     SimEngine --> CandleAcc
 
-    TRADING -- "Classpath Dependency (JwtService)" --> IAM
-    MARKETDATA -- "Classpath Dependency (JwtService)" --> IAM
+    IAM -- "Library Dependency" --> SEC
+    TRADING -- "Library Dependency" --> SEC
+    MARKETDATA -- "Library Dependency" --> SEC
 
     AuthC --> IAM_DB
     RegC --> IAM_DB
     BalC --> TRADING_DB
     OrderC --> TRADING_DB
     CandleAcc --> MARKETDATA_DB
+```
+
+---
+
+## UML Class Diagrams
+
+Entities, repositories, services and controllers for each module (test sources and DTO getters omitted for legibility). Microservices (`iam-app`, `trading-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear.
+
+**Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
+
+### Reactor overview
+
+```mermaid
+flowchart LR
+    classDef mod fill:transparent,stroke-width:1.4px;
+    CS["common-security<br/>(jwt · auth filter · cors)"]:::mod
+    IAM["iam-app<br/>(clients · auth · jwt)"]:::mod
+    MD["market-data-app<br/>(instruments · simulation · candles)"]:::mod
+    TR["trading-app<br/>(accounts · orders · positions)"]:::mod
+    IAM -- "depends on" --> CS
+    MD -- "depends on" --> CS
+    TR -- "depends on" --> CS
+```
+
+### Common Security — `common-security`
+
+`com.leap.leaplaughlove.common.security` — lightweight shared security library providing JWT creation and validation, request authentication filtering, entry point 401 error response handling, and centralized CORS configuration across all services.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class JwtService {
+        +generateToken(UUID, String) String
+        +parseAndValidate(String) UUID
+        +getExpirationSeconds() long
+    }
+    class JwtAuthenticationFilter {
+        +doFilterInternal(...)
+    }
+    class JwtAuthenticationEntryPoint {
+        +commence(...)
+    }
+    class CommonCorsConfiguration {
+        +applyDefaults(CorsConfiguration) CorsConfiguration$
+    }
+
+    JwtAuthenticationFilter --> JwtService : uses
+```
+
+### Identity & Access — `iam-app`
+
+`com.leap.leaplaughlove.iam.{client, auth, security, common}` — registers clients (`PB-02`), authenticates with BCrypt plus a failed-attempt lockout, and mints the JWTs every other module verifies.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Client {
+        -UUID clientId
+        -String email
+        -String phone
+        -String status
+        -String fullName
+        -LocalDate dateOfBirth
+        -String ssn
+        -BigDecimal initialDepositAmount
+        +getStatus() String
+        +setStatus(String)
+    }
+    class ClientCredentials {
+        -UUID clientId
+        -String passwordHash
+        -int failedAttempts
+        -OffsetDateTime lastLoginAt
+        +incrementFailedAttempts()
+        +resetFailedAttempts()
+    }
+    class ClientRepository {
+        <<interface>>
+        +findByEmail(String) Optional~Client~
+        +existsByEmail(String) boolean
+        +existsBySsn(String) boolean
+    }
+    class ClientCredentialsRepository {
+        <<interface>>
+        +findByClientId(UUID) Optional~ClientCredentials~
+    }
+    class ClientRegistrationController {
+        +register(RegistrationRequest) RegistrationResponse
+    }
+    class AuthController {
+        +login(LoginRequest) LoginResponse
+    }
+    class AuthService {
+        +authenticate(String, String) LoginResponse
+    }
+    class JwtService {
+        +generateToken(UUID, String) String
+        +parseAndValidate(String) UUID
+        +getExpirationSeconds() long
+    }
+    class JwtAuthenticationFilter {
+        +doFilterInternal(...)
+    }
+    class IamSecurityConfig {
+        +filterChain(...) SecurityFilterChain
+    }
+    class GlobalExceptionHandler {
+        <<@RestControllerAdvice>>
+    }
+    class AccountLockedException
+    class InvalidCredentialsException
+    class LoginRequest {
+        <<record>>
+        +String email
+        +String password
+    }
+    class LoginResponse {
+        <<record>>
+        +String accessToken
+        +String tokenType
+        +long expiresInSeconds
+    }
+
+    Client "1" --> "1" ClientCredentials : secures
+    ClientRepository ..> Client : manages
+    ClientCredentialsRepository ..> ClientCredentials : manages
+    ClientRegistrationController --> ClientRepository : uses
+    ClientRegistrationController ..> Client : creates
+    AuthController --> AuthService : uses
+    AuthController ..> LoginRequest : accepts
+    AuthController ..> LoginResponse : returns
+    AuthService --> ClientRepository : uses
+    AuthService --> ClientCredentialsRepository : uses
+    AuthService --> JwtService : uses
+    AuthService ..> AccountLockedException : throws
+    AuthService ..> InvalidCredentialsException : throws
+    JwtAuthenticationFilter --> JwtService : uses
+    IamSecurityConfig ..> JwtAuthenticationFilter : registers
+    GlobalExceptionHandler ..> AccountLockedException : handles
+    GlobalExceptionHandler ..> InvalidCredentialsException : handles
+```
+
+### Market Data — `market-data-app`
+
+`com.leap.leaplaughlove.marketdata.{instrument, simulation, history, stream, api}` — simulates prices with discretized Geometric Brownian Motion on a scheduler, publishes ticks as Spring events, streams them over SSE, and rolls them up into OHLC candles.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class SimulatedInstrument {
+        -UUID instrumentId
+        -String symbol
+        -String displayName
+        -BigDecimal initialPrice
+        -BigDecimal drift
+        -BigDecimal volatility
+        -long rngSeed
+        -boolean active
+    }
+    class PriceCandle {
+        -UUID candleId
+        -OffsetDateTime bucketStart
+        -BigDecimal open
+        -BigDecimal high
+        -BigDecimal low
+        -BigDecimal close
+    }
+    class SimulatedInstrumentRepository {
+        <<interface>>
+        +findByActiveTrue() List~SimulatedInstrument~
+    }
+    class PriceCandleRepository {
+        <<interface>>
+        +findByInstrument_SymbolAndBucketStartBetween(...) Page~PriceCandle~
+    }
+    class MarketSimulationEngine {
+        +tick()
+        +latest(String) Optional~PriceState~
+        +latestAll() List~PriceState~
+    }
+    class GbmPriceGenerator {
+        <<utility>>
+        +nextPrice(double, double, double, double, RandomGenerator)$ double
+    }
+    class PriceState {
+        <<record>>
+        +String symbol
+        +BigDecimal price
+        +OffsetDateTime asOf
+    }
+    class PriceTickEvent {
+        <<record>>
+        +PriceState priceState
+    }
+    class PriceCandleAccumulator {
+        +onPriceTick(PriceTickEvent)
+        +flushStaleBuckets()
+    }
+    class PriceStreamBroadcaster {
+        +subscribe(Set~String~) SseEmitter
+        +onPriceTick(PriceTickEvent)
+    }
+    class PriceStreamController {
+        +stream(String) SseEmitter
+    }
+    class PriceController {
+        +getLatestPrices() List~PriceResponse~
+        +getLatestPrice(String) PriceResponse
+        +getHistory(...) Page~PriceCandleResponse~
+    }
+    class PriceResponse { <<record>> }
+    class PriceCandleResponse { <<record>> }
+    class MarketDataSecurityConfig {
+        +filterChain(...) SecurityFilterChain
+    }
+    class JwtService { <<from common-security>> }
+    class JwtAuthenticationFilter { <<from common-security>> }
+    class JwtAuthenticationEntryPoint { <<from common-security>> }
+
+    PriceCandle "many" --> "1" SimulatedInstrument : instrument
+    SimulatedInstrumentRepository ..> SimulatedInstrument : manages
+    PriceCandleRepository ..> PriceCandle : manages
+    MarketSimulationEngine --> SimulatedInstrumentRepository : uses
+    MarketSimulationEngine --> GbmPriceGenerator : uses
+    MarketSimulationEngine ..> PriceState : produces
+    MarketSimulationEngine ..> PriceTickEvent : publishes
+    PriceCandleAccumulator --> SimulatedInstrumentRepository : uses
+    PriceCandleAccumulator --> PriceCandleRepository : uses
+    PriceCandleAccumulator ..> PriceTickEvent : listens
+    PriceCandleAccumulator ..> PriceCandle : creates
+    PriceStreamBroadcaster ..> PriceTickEvent : listens
+    PriceStreamController --> PriceStreamBroadcaster : uses
+    PriceController --> MarketSimulationEngine : uses
+    PriceController --> PriceCandleRepository : uses
+    PriceController ..> PriceResponse : returns
+    PriceController ..> PriceCandleResponse : returns
+    MarketDataSecurityConfig ..> JwtService : uses
+    MarketDataSecurityConfig ..> JwtAuthenticationFilter : registers
+    MarketDataSecurityConfig ..> JwtAuthenticationEntryPoint : registers
+```
+
+### Trading — `trading-app`
+
+`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, and per-account positions; every endpoint resolves the client from the JWT principal already on the security context.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Account {
+        -UUID accountId
+        -UUID clientId
+        -String accountNumber
+        -String status
+        -String baseCurrency
+        -boolean tradingEnabled
+    }
+    class CashLedgerEntry {
+        -UUID cashLedgerId
+        -UUID accountId
+        -String entryType
+        -BigDecimal amount
+        -String currency
+        -OffsetDateTime createdAt
+        -String description
+    }
+    class Instrument {
+        -UUID instrumentId
+        -String symbol
+        -String name
+        -String assetClass
+    }
+    class Order {
+        -UUID orderId
+        -BigDecimal quantity
+        -BigDecimal limitPrice
+        -OffsetDateTime submittedAt
+        -OffsetDateTime filledAt
+    }
+    class Side { <<enumeration>> BUY SELL }
+    class Type { <<enumeration>> MARKET LIMIT }
+    class Status { <<enumeration>> PENDING FILLED PARTIALLY_FILLED CANCELLED REJECTED }
+    class Execution {
+        -UUID executionId
+        -BigDecimal quantity
+        -BigDecimal price
+        -OffsetDateTime executedAt
+    }
+    class Position {
+        -long quantity
+        -BigDecimal avgCost
+        -OffsetDateTime updatedAt
+    }
+    class PositionId {
+        <<composite key>>
+        -UUID accountId
+        -UUID instrumentId
+    }
+    class AccountRepository {
+        <<interface>>
+        +findByClientIdAndStatus(UUID, String) List~Account~
+        +findByAccountIdAndClientId(UUID, UUID) Optional~Account~
+    }
+    class CashLedgerRepository {
+        <<interface>>
+        +sumAmountsByAccountIds(List~UUID~) List~AccountTotal~
+        +sumAmountByAccountIdAndCurrency(UUID, String) BigDecimal
+    }
+    class OrderRepository {
+        <<interface>>
+        +findByAccount_ClientIdOrderBySubmittedAtDesc(...) Page~Order~
+    }
+    class PositionRepository {
+        <<interface>>
+        +findPositionsByAccountId(UUID) List~PositionRow~
+    }
+    class BalanceService {
+        +getBalanceForClient() BalanceResponse
+        +deposit(UUID, CashMovementRequest) CashTransactionResponse
+        +withdraw(UUID, CashMovementRequest) CashTransactionResponse
+    }
+    class BalanceController {
+        +getBalance() BalanceResponse
+        +deposit(UUID, CashMovementRequest)
+        +withdraw(UUID, CashMovementRequest)
+    }
+    class OrderHistoryService {
+        +getOrderHistory(UUID, int, int) Page~OrderHistoryItem~
+    }
+    class OrderHistoryController {
+        +getOrderHistory(int, int) Page~OrderHistoryItem~
+    }
+    class PositionService {
+        +getPositionsForAuthenticatedClientAccount(UUID) PositionsResponse
+    }
+    class PositionController {
+        +getPositionsForAccount(UUID) PositionsResponse
+    }
+    class TradingSecurityConfig {
+        +filterChain(...) SecurityFilterChain
+    }
+    class JwtService { <<from common-security>> }
+    class JwtAuthenticationFilter { <<from common-security>> }
+    class JwtAuthenticationEntryPoint { <<from common-security>> }
+
+    Account "1" --> "many" Order : places
+    Account "1" --> "many" CashLedgerEntry : ledger
+    Order "many" --> "1" Instrument : instrument
+    Order "1" --> "many" Execution : fills
+    Order --> Side
+    Order --> Type
+    Order --> Status
+    Position "many" --> "1" Instrument : instrument
+    Position ..> PositionId : identified by
+    AccountRepository ..> Account : manages
+    CashLedgerRepository ..> CashLedgerEntry : manages
+    OrderRepository ..> Order : manages
+    PositionRepository ..> Position : manages
+    BalanceService --> AccountRepository : uses
+    BalanceService --> CashLedgerRepository : uses
+    BalanceController --> BalanceService : uses
+    OrderHistoryService --> OrderRepository : uses
+    OrderHistoryController --> OrderHistoryService : uses
+    PositionService --> AccountRepository : uses
+    PositionService --> PositionRepository : uses
+    PositionController --> PositionService : uses
+    TradingSecurityConfig ..> JwtService : uses
+    TradingSecurityConfig ..> JwtAuthenticationFilter : registers
+    TradingSecurityConfig ..> JwtAuthenticationEntryPoint : registers
 ```
 
 ---
@@ -116,8 +495,11 @@ mvn clean verify
 To build or test individual modules:
 
 ```bash
-# Test only IAM module
-mvn -pl iam-app test
+# Test Common Security module
+mvn -pl common-security test
+
+# Test IAM module (with dependency building)
+mvn -pl iam-app -am test
 
 # Test Trading module (with dependency building)
 mvn -pl trading-app -am test
@@ -126,7 +508,23 @@ mvn -pl trading-app -am test
 mvn -pl market-data-app -am test
 ```
 
-### 2. Launch Services via Docker Compose (Recommended)
+### 2. Javadoc Documentation Generation
+
+Generate Javadoc documentation across all modules from the repository root:
+
+```bash
+mvn compile javadoc:javadoc
+```
+
+> [!NOTE]
+> In a multi-module Maven project where `iam-app`, `trading-app`, and `market-data-app` depend on the sibling library module `common-security`, invoking `compile` prior to `javadoc:javadoc` (or ensuring artifacts are installed in the local repository) ensures that class files for dependencies in the reactor are built so the Javadoc compiler can resolve classpath types across modules.
+> 
+> To generate Javadocs for a single module:
+> ```bash
+> mvn compile javadoc:javadoc -pl iam-app -am
+> ```
+
+### 3. Launch Services via Docker Compose (Recommended)
 
 Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`, `market-data-app`):
 
@@ -149,7 +547,7 @@ To stop containers and clean up volumes:
 docker-compose down -v
 ```
 
-### 3. Launch Services Locally (Spring Boot)
+### 4. Launch Services Locally (Spring Boot)
 
 Ensure PostgreSQL is running locally on port `5432` with the database `paysprint` (or use active Spring profiles).
 

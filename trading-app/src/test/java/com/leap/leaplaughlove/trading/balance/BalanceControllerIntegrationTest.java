@@ -1,7 +1,7 @@
 package com.leap.leaplaughlove.trading.balance;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.leap.leaplaughlove.iam.security.JwtService;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

@@ -18,6 +18,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Service for handling balance-related operations such as retrieving account balances,
+ * performing deposits, and executing withdrawals.
+ * Provides methods for calculating totals by currency and ensuring account authorization.
+ */
 @Service
 public class BalanceService {
 
@@ -28,11 +33,20 @@ public class BalanceService {
     private final AccountRepository accountRepository;
     private final CashLedgerRepository cashLedgerRepository;
 
+    /**
+     * Constructs a new BalanceService with the specified repositories.
+     * @param accountRepository the repository for managing account entities
+     * @param cashLedgerRepository the repository for managing cash ledger entries
+     */
     public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
         this.accountRepository = accountRepository;
         this.cashLedgerRepository = cashLedgerRepository;
     }
 
+    /**
+     * Retrieves the balance information for the authenticated client.
+     * @return the balance response containing account balances and totals by currency
+     */
     public BalanceResponse getBalanceForClient() {
         UUID clientId = getAuthenticatedClientId();
         List<Account> accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);
@@ -64,6 +78,12 @@ public class BalanceService {
         return new BalanceResponse(balances, totalsByCurrency);
     }
 
+    /**
+     * Deposits the specified amount into the given account
+     * @param accountId the unique identifier of the account to deposit into
+     * @param request the cash movement request containing the deposit details
+     * @return the response containing details of the cash transaction
+     */
     @Transactional
     public CashTransactionResponse deposit(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
@@ -81,6 +101,13 @@ public class BalanceService {
         return toResponse(saved, currentBalance.add(amount));
     }
 
+    /**
+     * Withdraws the specified amount from the given account
+     * @param accountId the unique identifier of the account to withdraw from
+     * @param request the cash movement request containing the withdrawal details
+     * @throws ResponseStatusException if the withdrawal amount exceeds available balance
+     * @return the response containing details of the cash transaction
+     */
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());

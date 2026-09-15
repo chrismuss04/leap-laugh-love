@@ -11,11 +11,20 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
+/**
+ * Broadcasts live simulation ticks to subscribed clients over Server-Sent Events, optionally
+ * filtered to a subset of symbols per subscriber.
+ */
 @Component
 public class PriceStreamBroadcaster {
 
     private final List<Subscription> subscriptions = new CopyOnWriteArrayList<>();
 
+    /**
+     * Registers a new SSE subscriber, optionally filtered to a set of symbols.
+     * @param symbolFilter the symbols to send to this subscriber, or empty to send all
+     * @return the emitter the subscriber should be returned to the client
+     */
     public SseEmitter subscribe(Set<String> symbolFilter) {
         SseEmitter emitter = new SseEmitter(0L);
         Subscription subscription = new Subscription(emitter, symbolFilter);
@@ -26,6 +35,11 @@ public class PriceStreamBroadcaster {
         return emitter;
     }
 
+    /**
+     * Sends a simulation tick to every subscriber whose symbol filter matches it, removing
+     * any subscriber whose emitter fails.
+     * @param event the simulation tick event to broadcast
+     */
     @EventListener
     public void onPriceTick(PriceTickEvent event) {
         PriceState state = event.priceState();
@@ -42,7 +56,17 @@ public class PriceStreamBroadcaster {
         }
     }
 
+    /**
+     * One SSE subscriber and the symbol filter it registered with.
+     * @param emitter the subscriber's SSE emitter
+     * @param symbolFilter the symbols to send to this subscriber, or empty to send all
+     */
     private record Subscription(SseEmitter emitter, Set<String> symbolFilter) {
+        /**
+         * Checks whether a symbol should be sent to this subscriber.
+         * @param symbol the instrument symbol of the tick being broadcast
+         * @return true if this subscriber's filter is empty or contains the symbol
+         */
         boolean matches(String symbol) {
             return symbolFilter.isEmpty() || symbolFilter.contains(symbol);
         }

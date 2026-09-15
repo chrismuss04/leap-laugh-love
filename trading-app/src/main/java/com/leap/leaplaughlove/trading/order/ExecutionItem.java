@@ -6,7 +6,7 @@ import java.util.UUID;
 
 public record ExecutionItem(
         UUID executionId,
-        BigDecimal quantity,
+        Long quantity,
         BigDecimal price,
         OffsetDateTime executedAt
 ) {}

@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     instrument_id UUID NOT NULL
         REFERENCES trading.instruments (instrument_id) ON DELETE RESTRICT,
     side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
-    quantity NUMERIC(15,4) NOT NULL CHECK (quantity > 0),
+    quantity BIGINT NOT NULL CHECK (quantity > 0),
     status TEXT NOT NULL
         CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED')),
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -98,8 +98,8 @@ CREATE TABLE IF NOT EXISTS trading.executions (
     execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL
         REFERENCES trading.orders (order_id) ON DELETE RESTRICT,
-    fill_quantity NUMERIC(15,4),
-    fill_price NUMERIC(15,4),
+    fill_quantity BIGINT,
+    fill_price NUMERIC(18,6),
     status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     reason TEXT
@@ -233,3 +233,29 @@ CREATE TABLE IF NOT EXISTS marketdata.price_candles (
 -- Backs the history endpoint's per-symbol, newest-first, time-bounded query.
 CREATE INDEX IF NOT EXISTS idx_price_candles_instrument_bucket
     ON marketdata.price_candles (instrument_id, bucket_start DESC);
+
+-- Quote Feed Ingestion: one row per parsed+validated quote message accepted from the feed
+-- (today, a simulated wire format derived from the GBM tick stream; swappable for a real
+-- feed later without changing this table). quote_timestamp is the feed's own timestamp,
+-- received_at is when this backend ingested it - kept separate so staleness can be judged
+-- against either.
+CREATE TABLE IF NOT EXISTS marketdata.quotes (
+    quote_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instrument_id UUID NOT NULL
+        REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
+    bid_price NUMERIC(18,6) NOT NULL CHECK (bid_price > 0),
+    bid_size BIGINT NOT NULL CHECK (bid_size >= 0),
+    ask_price NUMERIC(18,6) NOT NULL CHECK (ask_price > 0),
+    ask_size BIGINT NOT NULL CHECK (ask_size >= 0),
+    last_price NUMERIC(18,6) NOT NULL CHECK (last_price > 0),
+    last_size BIGINT NOT NULL CHECK (last_size >= 0),
+    exchange TEXT NOT NULL,
+    sequence_number BIGINT NOT NULL,
+    quote_timestamp TIMESTAMPTZ NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (ask_price >= bid_price)
+);
+
+-- Backs the "latest quote for a symbol" lookup used by QuoteIngestionService/QuoteController.
+CREATE INDEX IF NOT EXISTS idx_quotes_instrument_quote_timestamp
+    ON marketdata.quotes (instrument_id, quote_timestamp DESC);

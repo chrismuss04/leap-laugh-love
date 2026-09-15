@@ -3,6 +3,9 @@ package com.leap.leaplaughlove.trading.order;
 import jakarta.persistence.*;
 import java.util.UUID;
 
+/**
+ * Represents a financial instrument in the trading system.
+ */
 @Entity
 @Table(name = "instruments", schema = "trading")
 public class Instrument {
@@ -21,9 +24,19 @@ public class Instrument {
     @Column(name = "asset_class", nullable = false)
     private String assetClass;
 
+    /**
+     * No-argument constructor for use by JPA.
+     */
     protected Instrument() {
     }
 
+    /**
+     * Method to create a new Instrument entity with the specified details.
+     * @param instrumentId the unique identifier of the instrument
+     * @param symbol the trading symbol of the instrument
+     * @param name the name of the instrument
+     * @param assetClass the asset class of the instrument (e.g., equity, bond)
+     */
     public Instrument(UUID instrumentId, String symbol, String name, String assetClass) {
         this.instrumentId = instrumentId;
         this.symbol = symbol;

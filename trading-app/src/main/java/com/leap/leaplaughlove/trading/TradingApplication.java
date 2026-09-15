@@ -1,10 +1,13 @@
 package com.leap.leaplaughlove.trading;
 
-import com.leap.leaplaughlove.iam.security.JwtService;
+import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Import;
 
+/**
+ * Main entry point for the trading application.    
+ */
 @SpringBootApplication
 @Import(JwtService.class)
 public class TradingApplication {

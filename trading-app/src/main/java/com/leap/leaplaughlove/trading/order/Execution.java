@@ -4,7 +4,9 @@ import jakarta.persistence.*;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
-
+/**
+ * Represents the execution of an order in the trading system
+ */
 @Entity
 @Table(name = "executions", schema = "trading")
 public class Execution {
@@ -18,19 +20,22 @@ public class Execution {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @Column(name = "fill_quantity", nullable = false, precision = 15, scale = 4)
-    private BigDecimal quantity;
+    @Column(name = "fill_quantity")
+    private Long quantity;
 
-    @Column(name = "fill_price", nullable = false, precision = 15, scale = 4)
+    @Column(name = "fill_price", precision = 18, scale = 6)
     private BigDecimal price;
 
     @Column(name = "executed_at", nullable = false)
     private OffsetDateTime executedAt;
 
+    /**
+     * Protected no-argument constructor for JPA.
+     */
     protected Execution() {
     }
 
-    public Execution(UUID executionId, Order order, BigDecimal quantity, BigDecimal price, OffsetDateTime executedAt) {
+    public Execution(UUID executionId, Order order, Long quantity, BigDecimal price, OffsetDateTime executedAt) {
         this.executionId = executionId;
         this.order = order;
         this.quantity = quantity;
@@ -40,7 +45,7 @@ public class Execution {
 
     public UUID getExecutionId() { return executionId; }
     public Order getOrder() { return order; }
-    public BigDecimal getQuantity() { return quantity; }
+    public Long getQuantity() { return quantity; }
     public BigDecimal getPrice() { return price; }
     public OffsetDateTime getExecutedAt() { return executedAt; }
 }

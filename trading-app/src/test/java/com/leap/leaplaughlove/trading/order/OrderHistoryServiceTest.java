@@ -12,7 +12,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -58,7 +57,7 @@ class OrderHistoryServiceTest {
         UUID orderId = UUID.randomUUID();
         Order order = new Order(
                 orderId, account, aapl, Order.Side.BUY,
-                new BigDecimal("10.5000"), Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
+                10L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -70,7 +69,7 @@ class OrderHistoryServiceTest {
         assertEquals(orderId, item.orderId());
         assertEquals("AAPL", item.symbol());
         assertEquals("BUY", item.side());
-        assertEquals(new BigDecimal("10.5000"), item.quantity());
+        assertEquals(10L, item.quantity());
         assertEquals("FILLED", item.status());
         assertEquals(baseTime, item.submittedAt());
         assertEquals(baseTime.plusSeconds(5), item.filledAt());
@@ -84,11 +83,11 @@ class OrderHistoryServiceTest {
     void testOrdersOrderedNewestFirst() {
         Order newer = new Order(
                 UUID.randomUUID(), account, msft, Order.Side.SELL,
-                new BigDecimal("50.0000"), Order.Status.FILLED,
+                50L, Order.Status.FILLED,
                 baseTime.plusMinutes(10), baseTime.plusMinutes(11));
         Order older = new Order(
                 UUID.randomUUID(), account, aapl, Order.Side.BUY,
-                new BigDecimal("100.0000"), Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
+                100L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(newer, older)));
@@ -119,7 +118,7 @@ class OrderHistoryServiceTest {
     void testUnfilledOrderHasNullFilledAt() {
         Order pending = new Order(
                 UUID.randomUUID(), account, aapl, Order.Side.BUY,
-                new BigDecimal("10.0000"), Order.Status.SUBMITTED, baseTime, null);
+                10L, Order.Status.SUBMITTED, baseTime, null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(pending)));
