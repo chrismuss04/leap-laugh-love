@@ -1,5 +1,6 @@
 services:
   iam-app:
+    image: "iam-app:${IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: iam-app/Dockerfile
@@ -15,6 +16,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
 
   trading-app:
+    image: "trading-app:${IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: trading-app/Dockerfile
@@ -28,8 +30,10 @@ services:
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      MARKET_DATA_BASE_URL: http://market-data-app:8083
 
   market-data-app:
+    image: "market-data-app:${IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: market-data-app/Dockerfile
