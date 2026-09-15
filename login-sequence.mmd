@@ -1,0 +1,67 @@
+---
+id: 70fcc327-9add-41a0-8744-6e4bbd1baa00
+---
+sequenceDiagram
+    autonumber
+    actor Client as Client
+    participant Ctrl as AuthController
+    participant Svc as AuthService
+    participant CRepo as ClientRepository
+    participant CredRepo as ClientCredentialsRepository
+    participant Enc as PasswordEncoder
+    participant JWT as JwtService
+    participant ExHandler as GlobalExceptionHandler
+
+    Client->>Ctrl: POST /api/iam/auth/login (LoginRequest)
+    Ctrl->>Svc: authenticate(email, rawPassword)
+
+    %% 1. Lookup Client
+    Svc->>CRepo: findByEmail(email)
+    alt Client Not Found
+        CRepo-->>Svc: Optional.empty()
+        Svc-->>ExHandler: throws InvalidCredentialsException
+        ExHandler-->>Client: 401 Unauthorized { "error": "INVALID_CREDENTIALS" }
+    else Client Found
+        CRepo-->>Svc: Client entity
+        
+        %% 2. Lookup Credentials
+        Svc->>CredRepo: findByClientId(client.getId())
+        CredRepo-->>Svc: ClientCredentials entity
+
+        %% 3. Check Lockout Status
+        alt Status is LOCKED
+            Svc-->>ExHandler: throws AccountLockedException
+            ExHandler-->>Client: 423 Locked { "error": "ACCOUNT_LOCKED" }
+        else Status is ACTIVE
+            
+            %% 4. Match Password
+            Svc->>Enc: matches(rawPassword, passwordHash)
+            alt Password Does Not Match
+                Enc-->>Svc: false
+                Svc->>Svc: creds.incrementFailedAttempts()
+                
+                opt failedAttempts >= 5
+                    Svc->>Svc: client.setStatus("LOCKED")
+                    Svc->>CRepo: save(client)
+                end
+                
+                Svc->>CredRepo: save(creds)
+                Svc-->>ExHandler: throws InvalidCredentialsException
+                ExHandler-->>Client: 401 Unauthorized { "error": "INVALID_CREDENTIALS" }
+            else Password Matches
+                Enc-->>Svc: true
+                Svc->>Svc: creds.resetFailedAttempts()
+                Svc->>Svc: creds.setLastLoginAt(now)
+                Svc->>CredRepo: save(creds)
+                
+                %% 5. Generate JWT Token
+                Svc->>JWT: generateToken(clientId, email)
+                JWT-->>Svc: token string
+                Svc->>JWT: getExpirationSeconds()
+                JWT-->>Svc: expiresIn
+                
+                Svc-->>Ctrl: LoginResponse(token, "Bearer", expiresIn)
+                Ctrl-->>Client: 200 OK { accessToken, tokenType, expiresInSeconds }
+            end
+        end
+    end
