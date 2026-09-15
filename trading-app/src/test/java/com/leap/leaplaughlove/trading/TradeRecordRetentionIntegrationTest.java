@@ -114,42 +114,65 @@ class TradeRecordRetentionIntegrationTest {
         return DriverManager.getConnection(DB_URL, DB_USER, password);
     }
 
+    // These rows commit as they are inserted and the retention triggers forbid deleting them,
+    // so every identifier below is randomised to stay unique across repeated runs.
+    private UUID insertClient(Connection conn) throws SQLException {
+        UUID clientId = UUID.randomUUID();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO iam.clients (client_id, email, status) VALUES (?, ?, 'ACTIVE')")) {
+            ps.setObject(1, clientId);
+            ps.setString(2, "test-" + clientId + "@example.com");
+            ps.executeUpdate();
+        }
+        return clientId;
+    }
+
+    private UUID insertAccount(Connection conn, UUID clientId) throws SQLException {
+        UUID accountId = UUID.randomUUID();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO trading.accounts (account_id, client_id, account_number, status) " +
+                "VALUES (?, ?, ?, 'ACTIVE')")) {
+            ps.setObject(1, accountId);
+            ps.setObject(2, clientId);
+            ps.setString(3, "TEST-ACCT-" + accountId.toString().substring(0, 8));
+            ps.executeUpdate();
+        }
+        return accountId;
+    }
+
+    private UUID insertInstrument(Connection conn) throws SQLException {
+        UUID instrumentId = UUID.randomUUID();
+        String suffix = instrumentId.toString().substring(0, 8);
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO trading.instruments (instrument_id, symbol, instrument_name, asset_class, market, currency) " +
+                "VALUES (?, ?, 'Test Instrument', 'EQUITY', ?, 'USD')")) {
+            ps.setObject(1, instrumentId);
+            ps.setString(2, "TST-" + suffix);
+            ps.setString(3, "TEST-MKT-" + suffix);
+            ps.executeUpdate();
+        }
+        return instrumentId;
+    }
+
+    private UUID insertOrder(Connection conn, UUID accountId, UUID instrumentId) throws SQLException {
+        UUID orderId = UUID.randomUUID();
+        try (PreparedStatement ps = conn.prepareStatement(
+                "INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status) " +
+                "VALUES (?, ?, ?, 'BUY', 100, 'FILLED')")) {
+            ps.setObject(1, orderId);
+            ps.setObject(2, accountId);
+            ps.setObject(3, instrumentId);
+            ps.executeUpdate();
+        }
+        return orderId;
+    }
+
     @Test
     @DisplayName("Attempting to DELETE from trading.orders throws exception")
     void testDeleteOrderThrowsException() throws SQLException {
         try (Connection conn = getConnection()) {
-            UUID testOrderId = UUID.randomUUID();
-            UUID testAccountId = UUID.randomUUID();
-            UUID testInstrumentId = UUID.randomUUID();
-
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO trading.accounts (account_id, client_id, account_number, status) " +
-                    "VALUES (?, ?, ?, 'ACTIVE') ON CONFLICT DO NOTHING")) {
-                ps.setObject(1, testAccountId);
-                ps.setObject(2, UUID.randomUUID());
-                ps.setString(3, "TEST-ACCT-" + System.currentTimeMillis());
-                ps.executeUpdate();
-            }
-
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO trading.instruments (instrument_id, symbol, market, asset_class, currency) " +
-                    "VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING")) {
-                ps.setObject(1, testInstrumentId);
-                ps.setString(2, "TEST");
-                ps.setString(3, "NYSE");
-                ps.setString(4, "EQUITY");
-                ps.setString(5, "USD");
-                ps.executeUpdate();
-            }
-
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status) " +
-                    "VALUES (?, ?, ?, 'BUY', 100, 'FILLED')")) {
-                ps.setObject(1, testOrderId);
-                ps.setObject(2, testAccountId);
-                ps.setObject(3, testInstrumentId);
-                ps.executeUpdate();
-            }
+            UUID testAccountId = insertAccount(conn, insertClient(conn));
+            UUID testOrderId = insertOrder(conn, testAccountId, insertInstrument(conn));
 
             SQLException thrown = assertThrows(SQLException.class, () -> {
                 try (PreparedStatement ps = conn.prepareStatement("DELETE FROM trading.orders WHERE order_id = ?")) {
@@ -170,7 +193,7 @@ class TradeRecordRetentionIntegrationTest {
     void testUpdateExecutionThrowsException() throws SQLException {
         try (Connection conn = getConnection()) {
             UUID testExecutionId = UUID.randomUUID();
-            UUID testOrderId = UUID.randomUUID();
+            UUID testOrderId = insertOrder(conn, insertAccount(conn, insertClient(conn)), insertInstrument(conn));
 
             try (PreparedStatement ps = conn.prepareStatement(
                     "INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status) " +
