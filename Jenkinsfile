@@ -36,13 +36,57 @@ pipeline {
             }
         }
 
-        stage('Test Backend') {
+        stage('Test') {
+            environment {
+                // Throwaway CI database credentials; the container is destroyed after the stage.
+                TEST_DB_PASSWORD = "ci-test-password"
+                PG_CONTAINER = "pg-test-${BUILD_NUMBER}-${EXECUTOR_NUMBER}"
+            }
             steps {
-                sh 'docker run --rm -v "$WORKSPACE":/app -v /var/run/docker.sock:/var/run/docker.sock -w /app maven:3.9-eclipse-temurin-21 mvn -B test'
+                sh '''
+                    set -e
+                    docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
+
+                    docker run -d --name "${PG_CONTAINER}" \
+                        -e POSTGRES_DB=paysprint \
+                        -e POSTGRES_USER=paysprint \
+                        -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
+                        -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
+                        postgres:16-alpine
+
+                    # Poll for a schema table rather than pg_isready: the server answers on its
+                    # unix socket while the init scripts are still running, so pg_isready can
+                    # report ready before the schema exists.
+                    echo "waiting for postgres schema to load..."
+                    for i in $(seq 1 45); do
+                        if docker exec "${PG_CONTAINER}" psql -U paysprint -d paysprint \
+                                -c "SELECT 1 FROM trading.orders LIMIT 1;" >/dev/null 2>&1; then
+                            echo "postgres ready"
+                            break
+                        fi
+                        if [ "$i" = "45" ]; then
+                            echo "postgres never became ready"
+                            docker logs "${PG_CONTAINER}"
+                            exit 1
+                        fi
+                        sleep 2
+                    done
+
+                    # Sharing the postgres container's network namespace makes the database
+                    # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
+                    docker run --rm \
+                        --network "container:${PG_CONTAINER}" \
+                        -v "$WORKSPACE":/app \
+                        -v /var/run/docker.sock:/var/run/docker.sock \
+                        -w /app \
+                        -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
+                        maven:3.9-eclipse-temurin-21 mvn -B test
+                '''
             }
             post {
                 always {
                     junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
                 }
             }
         }

@@ -30,6 +30,7 @@ services:
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      MARKET_DATA_BASE_URL: http://market-data-app:8083
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"
