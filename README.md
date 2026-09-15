@@ -45,6 +45,7 @@ flowchart TB
             TradeEx["TradingGlobalExceptionHandler"]
             BalC["BalanceController\n/api/trading/balance"]
             OrderC["OrderHistoryController\n/api/trading/orders/history"]
+            QuoteSvc["CurrentQuoteService\n(non-stale quote at execution)"]
         end
 
         subgraph MARKETDATA["market-data-app (Port 8083)"]
@@ -54,6 +55,7 @@ flowchart TB
             CandleAcc["PriceCandleAccumulator\n(ticks -> OHLC candles)"]
             PriceC["PriceController\n/api/marketdata/prices"]
             StreamC["PriceStreamController\n/api/marketdata/stream (SSE)"]
+            QuoteC["QuoteController\n/api/marketdata/quotes"]
         end
     end
 
@@ -73,6 +75,8 @@ flowchart TB
     TradeSec --> OrderC
     MdSec --> PriceC
     MdSec --> StreamC
+    MdSec --> QuoteC
+    QuoteSvc -->|"HTTP / JSON (8083)\ncaller's JWT forwarded"| MdSec
     SimEngine --> PriceC
     SimEngine --> StreamC
     SimEngine --> CandleAcc
@@ -105,7 +109,6 @@ flowchart LR
     IAM["iam-app<br/>(clients · auth · jwt)"]:::mod
     MD["market-data-app<br/>(instruments · simulation · candles)"]:::mod
     TR["trading-app<br/>(accounts · orders · positions)"]:::mod
-    IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
     TR -- "depends on" --> CS
 ```
@@ -332,7 +335,7 @@ classDiagram
 
 ### Trading — `trading-app`
 
-`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, and per-account positions; every endpoint resolves the client from the JWT principal already on the security context.
+`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, quote, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, per-account positions, and the current-quote lookup orders are priced against; every endpoint resolves the client from the JWT principal already on the security context.
 
 ```mermaid
 classDiagram
@@ -427,6 +430,22 @@ classDiagram
     class PositionController {
         +getPositionsForAccount(UUID) PositionsResponse
     }
+    class QuoteSnapshot {
+        -String symbol
+        -BigDecimal bidPrice
+        -BigDecimal askPrice
+        -BigDecimal lastPrice
+        -OffsetDateTime quoteTimestamp
+    }
+    class CurrentQuoteClient {
+        +fetchLatest(String) Optional~QuoteSnapshot~
+    }
+    class CurrentQuoteService {
+        +getCurrentQuote(String) QuoteSnapshot
+    }
+    class MarketDataClientConfig {
+        +marketDataRestClient(...) RestClient
+    }
     class TradingSecurityConfig {
         +filterChain(...) SecurityFilterChain
     }
@@ -455,6 +474,9 @@ classDiagram
     PositionService --> AccountRepository : uses
     PositionService --> PositionRepository : uses
     PositionController --> PositionService : uses
+    CurrentQuoteService --> CurrentQuoteClient : uses
+    CurrentQuoteClient ..> QuoteSnapshot : returns
+    MarketDataClientConfig ..> CurrentQuoteClient : configures RestClient for
     TradingSecurityConfig ..> JwtService : uses
     TradingSecurityConfig ..> JwtAuthenticationFilter : registers
     TradingSecurityConfig ..> JwtAuthenticationEntryPoint : registers
