@@ -12,7 +12,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -42,12 +41,12 @@ class OrderHistoryServiceTest {
         UUID orderId = UUID.randomUUID();
 
         Account account = new Account(UUID.randomUUID(), clientId, "ACCT-123", "ACTIVE", "USD", true, OffsetDateTime.now());
-        Instrument instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY");
+        Instrument instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         OffsetDateTime now = OffsetDateTime.now();
 
         Order order = new Order(
-                orderId, account, instrument, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("10.5000"), null, Order.Status.FILLED, now, now.plusSeconds(5));
+                orderId, account, instrument, Order.Side.BUY,
+                10L, Order.Status.FILLED, now, now.plusSeconds(1), null, now.plusSeconds(5), null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -59,7 +58,7 @@ class OrderHistoryServiceTest {
         assertEquals(orderId, item.orderId());
         assertEquals("AAPL", item.symbol());
         assertEquals("BUY", item.side());
-        assertEquals(new BigDecimal("10.5000"), item.quantity());
+        assertEquals(10L, item.quantity());
         assertEquals("FILLED", item.status());
         assertEquals(now, item.submittedAt());
         assertEquals(now.plusSeconds(5), item.filledAt());

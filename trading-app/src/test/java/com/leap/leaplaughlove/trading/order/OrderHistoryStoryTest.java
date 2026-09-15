@@ -12,7 +12,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -44,8 +43,8 @@ class OrderHistoryStoryTest {
         aliceClientId = UUID.randomUUID();
         aliceAccount = new Account(UUID.randomUUID(), aliceClientId, "ACC-ALICE-1", "ACTIVE", "USD", true, OffsetDateTime.now());
 
-        aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY");
-        msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corp.", "EQUITY");
+        aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
+        msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corp.", "EQUITY", "NASDAQ", "USD", true);
 
         baseTime = OffsetDateTime.now();
     }
@@ -54,8 +53,8 @@ class OrderHistoryStoryTest {
     @DisplayName("AC1: Returns only orders belonging to the requested client")
     void testAC1_OnlyRequestedClientOrdersReturned() {
         Order aliceOrder = new Order(
-                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("100.0000"), null, Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
+                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY,
+                100L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(aliceOrder)));
@@ -70,14 +69,14 @@ class OrderHistoryStoryTest {
     @DisplayName("AC2: Orders ordered newest to oldest by submittedAt")
     void testAC2_OrderedNewestToOldest() {
         Order newerOrder = new Order(
-                UUID.randomUUID(), aliceAccount, msft, Order.Side.SELL, Order.Type.LIMIT,
-                new BigDecimal("50.0000"), new BigDecimal("320.0000"), Order.Status.FILLED,
-                baseTime.plusMinutes(10), baseTime.plusMinutes(11));
+                UUID.randomUUID(), aliceAccount, msft, Order.Side.SELL,
+                50L, Order.Status.FILLED,
+                baseTime.plusMinutes(10), baseTime.plusMinutes(10).plusSeconds(1), null, baseTime.plusMinutes(11), null);
 
         Order olderOrder = new Order(
-                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("100.0000"), null, Order.Status.FILLED,
-                baseTime, baseTime.plusSeconds(2));
+                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY,
+                100L, Order.Status.FILLED,
+                baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(newerOrder, olderOrder)));
@@ -99,8 +98,8 @@ class OrderHistoryStoryTest {
         OffsetDateTime filled = baseTime.plusSeconds(5);
 
         Order order = new Order(
-                orderId, aliceAccount, aapl, Order.Side.BUY, Order.Type.MARKET,
-                new BigDecimal("25.5000"), null, Order.Status.FILLED, submitted, filled);
+                orderId, aliceAccount, aapl, Order.Side.BUY,
+                25L, Order.Status.FILLED, submitted, submitted.plusSeconds(1), null, filled, null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(order)));
@@ -111,7 +110,7 @@ class OrderHistoryStoryTest {
         assertEquals(orderId, item.orderId());
         assertEquals("AAPL", item.symbol());
         assertEquals("BUY", item.side());
-        assertEquals(new BigDecimal("25.5000"), item.quantity());
+        assertEquals(25L, item.quantity());
         assertEquals("FILLED", item.status());
         assertEquals(submitted, item.submittedAt());
         assertEquals(filled, item.filledAt());
@@ -134,18 +133,18 @@ class OrderHistoryStoryTest {
     @Test
     @DisplayName("AC5: Unfilled orders return null filledAt")
     void testAC5_UnfilledOrderHasNullFilledAt() {
-        Order pendingOrder = new Order(
-                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY, Order.Type.LIMIT,
-                new BigDecimal("10.0000"), new BigDecimal("150.0000"), Order.Status.PENDING,
-                baseTime, null);
+        Order unfilledOrder = new Order(
+                UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY,
+                10L, Order.Status.SUBMITTED,
+                baseTime, null, null, null, null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
-                .thenReturn(new PageImpl<>(List.of(pendingOrder)));
+                .thenReturn(new PageImpl<>(List.of(unfilledOrder)));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20);
 
         OrderHistoryItem item = page.getContent().get(0);
-        assertEquals("PENDING", item.status());
+        assertEquals("SUBMITTED", item.status());
         assertNull(item.filledAt());
     }
 }

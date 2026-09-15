@@ -13,7 +13,6 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -79,9 +78,8 @@ class OrderHistoryControllerTest {
         UUID clientId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
         OffsetDateTime submitted = OffsetDateTime.now();
-
         OrderHistoryItem item = new OrderHistoryItem(
-                orderId, "AAPL", "BUY", new BigDecimal("10.0000"), "FILLED", submitted, submitted.plusSeconds(30));
+                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30));
 
         when(orderHistoryService.getOrderHistory(clientId, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(item)));
