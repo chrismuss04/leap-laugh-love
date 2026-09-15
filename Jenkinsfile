@@ -8,6 +8,10 @@ pipeline {
         stage('Checkout') {
             steps {
                 checkout scm
+                // Removes untracked/ignored leftovers (e.g. stale target/ dirs from
+                // before packages were restructured) that would otherwise persist
+                // across builds on a reused workspace and pollute test results.
+                sh 'git clean -fdx'
             }
         }
 
