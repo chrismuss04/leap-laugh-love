@@ -18,7 +18,7 @@ public class Instrument {
     @Column(name = "symbol", nullable = false, unique = true)
     private String symbol;
 
-    @Column(name = "name", nullable = false)
+    @Column(name = "instrument_name", nullable = false)
     private String name;
 
     @Column(name = "asset_class", nullable = false)
