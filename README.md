@@ -506,6 +506,33 @@ classDiagram
 
 ## Building and Running
 
+### Quick Start
+
+The database, all three services and the Angular UI, in two commands. Docker is the only
+prerequisite - you do not need Node, Java or Maven installed to run the stack.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then open **http://localhost:4200** and sign in with a seeded account:
+
+| Email | Password |
+| --- | --- |
+| `alice.johnson@leap.com` | `Password123!` |
+
+The first run builds the service images and installs the frontend dependencies, so expect a
+few minutes; later runs start in seconds. Frontend edits hot-reload. Backend edits need
+`docker compose up --build` to rebuild the image.
+
+Stop with `docker compose down`, or `docker compose down -v` to also drop the database and
+force a fresh frontend dependency install next time.
+
+> [!NOTE]
+> `.env.example` carries working local-dev defaults, including a placeholder `JWT_SECRET`.
+> They are not secrets and are not suitable for any shared or deployed environment.
+
 ### 1. Build and Run Tests (Maven)
 
 Build all modules and execute the full test suite from the repository root:
@@ -548,20 +575,36 @@ mvn compile javadoc:javadoc
 
 ### 3. Launch Services via Docker Compose (Recommended)
 
-Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`, `market-data-app`):
+Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
+container - `db`, `iam-app`, `trading-app`, `market-data-app` and `frontend`:
 
 ```bash
-export JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars"
-export DB_PASSWORD="changeme"
+docker compose up -d --build
+```
 
-docker-compose up -d --build
+Override any value by editing `.env`, or per-invocation:
+
+```bash
+JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars" docker compose up -d --build
 ```
 
 Services will be exposed on:
+- **Frontend (Angular dev server)**: `http://localhost:4200`
 - **IAM Application**: `http://localhost:8081`
 - **Trading Application**: `http://localhost:8082`
 - **Market Data Application**: `http://localhost:8083`
 - **PostgreSQL Database**: `localhost:5432`
+
+The browser talks to `iam-app` and `trading-app` directly on the ports above, so those stay
+published even though the `frontend` container itself never calls them. On a remote or
+headless host, forward `4200`, `8081` and `8082` - forwarding `4200` alone yields a UI that
+cannot sign in.
+
+To run the frontend on its own against an already-running backend:
+
+```bash
+docker compose up frontend
+```
 
 To stop containers and clean up volumes:
 
