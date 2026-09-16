@@ -20,10 +20,10 @@ public class Execution {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @Column(name = "quantity", nullable = false, precision = 15, scale = 4)
-    private BigDecimal quantity;
+    @Column(name = "fill_quantity")
+    private Long quantity;
 
-    @Column(name = "price", nullable = false, precision = 15, scale = 4)
+    @Column(name = "fill_price", precision = 18, scale = 6)
     private BigDecimal price;
 
     @Column(name = "executed_at", nullable = false)
@@ -35,47 +35,17 @@ public class Execution {
     protected Execution() {
     }
 
-    /**
-     * Method to create a new Execution entity with the specified details.
-     * @param executionId the unique identifier of the execution
-     * @param order the order associated with this execution
-     * @param quantity the quantity executed
-     * @param price the price at which the execution occurred
-     * @param executedAt the timestamp when the execution took place
-     */
-    public Execution(UUID executionId, Order order, BigDecimal quantity, BigDecimal price, OffsetDateTime executedAt) {
+    public Execution(UUID executionId, Order order, Long quantity, BigDecimal price, OffsetDateTime executedAt) {
         this.executionId = executionId;
         this.order = order;
         this.quantity = quantity;
         this.price = price;
         this.executedAt = executedAt;
     }
-    /**
-     * Gets the unique identifier of the execution.
-     * @return the execution ID
-     */
+
     public UUID getExecutionId() { return executionId; }
-    /**
-     * Gets the order associated with this execution.
-     * @return the order
-     */
     public Order getOrder() { return order; }
-
-    /**
-     * Gets the quantity executed.
-     * @return the quantity
-     */
-    public BigDecimal getQuantity() { return quantity; }
-
-    /**
-     * Gets the price at which the execution occurred.
-     * @return the price
-     */
+    public Long getQuantity() { return quantity; }
     public BigDecimal getPrice() { return price; }
-
-    /**
-     * Gets the timestamp when the execution took place.
-     * @return the execution timestamp
-     */
     public OffsetDateTime getExecutedAt() { return executedAt; }
 }
