@@ -245,6 +245,18 @@ pipeline {
                         "market-data-app:$IMAGE_TAG" >/dev/null 2>&1 || true
                 fi
             '''
+            // Must run after the teardown above, never before: "docker-compose down" reads
+            // docker-compose.yml out of the workspace, so emptying it first would strand
+            // this build's containers and volumes on the agent.
+            //
+            // The "git clean -fdx" in Checkout only clears a workspace at the START of the
+            // next build of the same branch, which never comes for a merged or abandoned
+            // one. Without this every branch that ever built parks its last
+            // frontend/node_modules (~366MB) on the agent indefinitely.
+            //
+            // notFailBuild: a workspace that won't delete is a disk problem to chase down,
+            // not a reason to turn a green build red.
+            cleanWs(notFailBuild: true)
         }
     }
 }
