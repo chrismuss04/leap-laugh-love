@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -42,25 +43,31 @@ class OrderHistoryServiceTest {
     @BeforeEach
     void setUp() {
         orderHistoryService = new OrderHistoryService(orderRepository, executionRepository);
-        lenient().when(executionRepository.findByOrder_OrderIdInOrderByExecutedAtAsc(any())).thenReturn(List.of());
+        lenient().when(executionRepository.findByOrder_OrderIdIn(any())).thenReturn(List.of());
 
         clientId = UUID.randomUUID();
         account = new Account(UUID.randomUUID(), clientId, "ACCT-123", "ACTIVE", "USD", true, OffsetDateTime.now());
-        aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY");
-        msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corp.", "EQUITY");
+        aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
+        msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corp.", "EQUITY", "NASDAQ", "USD", true);
         baseTime = OffsetDateTime.now();
     }
 
     @Test
-    @DisplayName("maps Order entities to OrderHistoryItem projection, including fills")
+    @DisplayName("maps Order entities to OrderHistoryItem projection, including execution fill details")
     void testGetOrderHistorySuccess() {
         UUID orderId = UUID.randomUUID();
         Order order = new Order(
                 orderId, account, aapl, Order.Side.BUY,
-                10L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(5));
+                10L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(5), null);
+
+        Execution execution = new Execution(
+                order, 10L, new BigDecimal("150.25"), Execution.Status.FILLED,
+                "Executed at market price", baseTime.plusSeconds(5));
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
+        when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
+                .thenReturn(List.of(execution));
 
         Page<OrderHistoryItem> result = orderHistoryService.getOrderHistory(clientId, 0, 20);
 
@@ -73,9 +80,41 @@ class OrderHistoryServiceTest {
         assertEquals("FILLED", item.status());
         assertEquals(baseTime, item.submittedAt());
         assertEquals(baseTime.plusSeconds(5), item.filledAt());
-        assertEquals(List.of(), item.executions());
+
+        assertNotNull(item.execution());
+        assertEquals(10L, item.execution().quantity());
+        assertEquals(new BigDecimal("150.25"), item.execution().price());
+        assertEquals(baseTime.plusSeconds(5), item.execution().executedAt());
+        assertEquals(1, item.executions().size());
 
         verify(orderRepository).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20));
+    }
+
+    @Test
+    @DisplayName("rejected orders are returned in order history with REJECTED status and no fill execution")
+    void testRejectedOrdersReturnedInHistory() {
+        UUID orderId = UUID.randomUUID();
+        Order rejectedOrder = new Order(
+                orderId, account, aapl, Order.Side.BUY,
+                1000000L, Order.Status.REJECTED, baseTime, null, baseTime.plusSeconds(1), null, "Insufficient funds");
+
+        Execution rejectedExec = new Execution(
+                rejectedOrder, null, null, Execution.Status.REJECTED,
+                "Insufficient funds", baseTime.plusSeconds(1));
+
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(rejectedOrder)));
+        when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
+                .thenReturn(List.of(rejectedExec));
+
+        Page<OrderHistoryItem> result = orderHistoryService.getOrderHistory(clientId, 0, 20);
+
+        assertEquals(1, result.getTotalElements());
+        OrderHistoryItem item = result.getContent().get(0);
+        assertEquals("REJECTED", item.status());
+        assertNull(item.filledAt());
+        assertNull(item.execution());
+        assertTrue(item.executions().isEmpty());
     }
 
     @Test
@@ -84,10 +123,11 @@ class OrderHistoryServiceTest {
         Order newer = new Order(
                 UUID.randomUUID(), account, msft, Order.Side.SELL,
                 50L, Order.Status.FILLED,
-                baseTime.plusMinutes(10), baseTime.plusMinutes(11));
+                baseTime.plusMinutes(10), baseTime.plusMinutes(10).plusSeconds(1), null, baseTime.plusMinutes(11), null);
         Order older = new Order(
                 UUID.randomUUID(), account, aapl, Order.Side.BUY,
-                100L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(2));
+                100L, Order.Status.FILLED,
+                baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(newer, older)));
@@ -114,11 +154,11 @@ class OrderHistoryServiceTest {
     }
 
     @Test
-    @DisplayName("unfilled orders return null filledAt")
+    @DisplayName("unfilled orders return null filledAt and null execution")
     void testUnfilledOrderHasNullFilledAt() {
         Order pending = new Order(
                 UUID.randomUUID(), account, aapl, Order.Side.BUY,
-                10L, Order.Status.SUBMITTED, baseTime, null);
+                10L, Order.Status.SUBMITTED, baseTime, null, null, null, null);
 
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(pending)));
@@ -127,6 +167,8 @@ class OrderHistoryServiceTest {
 
         assertEquals("SUBMITTED", item.status());
         assertNull(item.filledAt());
+        assertNull(item.execution());
+        assertTrue(item.executions().isEmpty());
     }
 
     @Test

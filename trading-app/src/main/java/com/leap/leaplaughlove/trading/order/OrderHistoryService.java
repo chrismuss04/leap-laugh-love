@@ -42,16 +42,18 @@ public class OrderHistoryService {
                 .findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, pageable);
 
         List<UUID> orderIds = orders.map(Order::getOrderId).getContent();
-        Map<UUID, List<ExecutionItem>> executionsByOrderId = executionRepository
-                .findByOrder_OrderIdInOrderByExecutedAtAsc(orderIds).stream()
-                .collect(Collectors.groupingBy(
+        Map<UUID, ExecutionItem> executionByOrderId = executionRepository
+                .findByOrder_OrderIdIn(orderIds).stream()
+                .filter(execution -> execution.getStatus() == Execution.Status.FILLED)
+                .collect(Collectors.toMap(
                         execution -> execution.getOrder().getOrderId(),
-                        Collectors.mapping(this::toExecutionItem, Collectors.toList())));
+                        this::toExecutionItem,
+                        (existing, replacement) -> existing));
 
-        return orders.map(order -> toHistoryItem(order, executionsByOrderId));
+        return orders.map(order -> toHistoryItem(order, executionByOrderId));
     }
 
-    private OrderHistoryItem toHistoryItem(Order order, Map<UUID, List<ExecutionItem>> executionsByOrderId) {
+    private OrderHistoryItem toHistoryItem(Order order, Map<UUID, ExecutionItem> executionByOrderId) {
         return new OrderHistoryItem(
                 order.getOrderId(),
                 order.getInstrument().getSymbol(),
@@ -60,14 +62,14 @@ public class OrderHistoryService {
                 order.getStatus().name(),
                 order.getSubmittedAt(),
                 order.getFilledAt(),
-                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));
+                executionByOrderId.get(order.getOrderId()));
     }
 
     private ExecutionItem toExecutionItem(Execution execution) {
         return new ExecutionItem(
                 execution.getExecutionId(),
-                execution.getQuantity(),
-                execution.getPrice(),
+                execution.getFillQuantity(),
+                execution.getFillPrice(),
                 execution.getExecutedAt());
     }
 }
