@@ -51,8 +51,12 @@ services:
   # Angular dev server with hot reload. Runs straight off the node image rather than a
   # Dockerfile, so there is nothing to rebuild when frontend code changes.
   #
-  # Deliberately no depends_on: the browser calls iam-app and trading-app directly on the
-  # published host ports, this container never does, so it has no real dependency on them.
+  # It also proxies the browser's /api/** calls to the backends (see frontend/proxy.conf.js),
+  # so 4200 is the only port that has to be reachable from the browser - the app works over
+  # SSH port forwarding or against a remote host, not just on the Docker host itself.
+  #
+  # Still no depends_on: the proxy resolves its targets per request, so a backend that is
+  # slower to start only affects calls made before it is up, not this container's startup.
   frontend:
     image: node:20-alpine
     working_dir: /app
@@ -69,6 +73,10 @@ services:
     environment:
       HOME: /tmp
       npm_config_cache: /tmp/.npm
+      # Override proxy.conf.js's localhost defaults with the compose service names.
+      IAM_PROXY_TARGET: http://iam-app:8081
+      TRADING_PROXY_TARGET: http://trading-app:8082
+      MARKETDATA_PROXY_TARGET: http://market-data-app:8083
     # --poll: inotify events do not cross a bind mount on Docker Desktop, so without it
     # hot reload silently does nothing for everyone not on linux.
     command: >
