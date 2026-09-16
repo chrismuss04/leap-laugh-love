@@ -34,7 +34,8 @@ export interface OrderHistoryPage {
   providedIn: 'root'
 })
 export class OrderService {
-  private readonly API_URL = 'http://localhost:8082/api/trading';
+  // Same-origin path, proxied to trading-app - see proxy.conf.js.
+  private readonly API_URL = '/api/trading';
 
   constructor(private http: HttpClient) {}
 

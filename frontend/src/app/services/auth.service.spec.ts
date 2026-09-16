@@ -5,7 +5,7 @@ import { AuthService, LoginResponse } from './auth.service';
 describe('AuthService', () => {
   let service: AuthService;
   let httpMock: HttpTestingController;
-  const apiUrl = 'http://localhost:8081/api/iam/auth';
+  const apiUrl = '/api/iam/auth';
 
   beforeEach(() => {
     TestBed.configureTestingModule({
