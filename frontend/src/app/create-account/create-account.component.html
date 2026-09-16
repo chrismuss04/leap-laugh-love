@@ -1,0 +1,209 @@
+<div class="form-header">
+  <h2 class="font-display">Open your account</h2>
+  <p>Complete the form below to begin your application.</p>
+</div>
+
+<form [formGroup]="registrationForm" (ngSubmit)="onSubmit()" class="registration-form">
+  <!-- Personal Info -->
+  <div class="section-divider"><span>Personal Info</span></div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="firstName" class="form-label">First Name</label>
+      <input
+        type="text"
+        id="firstName"
+        formControlName="firstName"
+        class="form-input"
+        placeholder="Eleanor"
+        [class.error]="isFieldInvalid('firstName')"
+      />
+      <span class="error-message" *ngIf="isFieldInvalid('firstName')">{{ getErrorMessage('firstName') }}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="lastName" class="form-label">Last Name</label>
+      <input
+        type="text"
+        id="lastName"
+        formControlName="lastName"
+        class="form-input"
+        placeholder="Hartwell"
+        [class.error]="isFieldInvalid('lastName')"
+      />
+      <span class="error-message" *ngIf="isFieldInvalid('lastName')">{{ getErrorMessage('lastName') }}</span>
+    </div>
+  </div>
+
+  <!-- Date of Birth -->
+  <div class="section-divider"><span>Date of Birth</span></div>
+
+  <div class="form-group">
+    <input
+      type="date"
+      id="dateOfBirth"
+      formControlName="dateOfBirth"
+      class="form-input"
+      placeholder="mm/dd/yyyy"
+      [class.error]="isFieldInvalid('dateOfBirth')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('dateOfBirth')">{{ getErrorMessage('dateOfBirth') }}</span>
+  </div>
+
+  <!-- Contact -->
+  <div class="section-divider"><span>Contact</span></div>
+
+  <div class="form-group">
+    <label for="email" class="form-label">Email Address</label>
+    <input
+      type="email"
+      id="email"
+      formControlName="email"
+      class="form-input"
+      placeholder="you@company.com"
+      [class.error]="isFieldInvalid('email')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('email')">{{ getErrorMessage('email') }}</span>
+  </div>
+
+  <div class="form-group">
+    <label for="phone" class="form-label">Phone Number</label>
+    <input
+      type="tel"
+      id="phone"
+      formControlName="phone"
+      class="form-input"
+      placeholder="(555) 123-4567"
+      [class.error]="isFieldInvalid('phone')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('phone')">{{ getErrorMessage('phone') }}</span>
+  </div>
+
+  <!-- Address -->
+  <div class="section-divider"><span>Address</span></div>
+
+  <div class="form-group">
+    <label for="streetAddress" class="form-label">Street Address</label>
+    <input
+      type="text"
+      id="streetAddress"
+      formControlName="streetAddress"
+      class="form-input"
+      placeholder="123 Market Street, Apt 4B"
+      [class.error]="isFieldInvalid('streetAddress')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('streetAddress')">{{ getErrorMessage('streetAddress') }}</span>
+  </div>
+
+  <div class="form-row">
+    <div class="form-group">
+      <label for="city" class="form-label">City</label>
+      <input
+        type="text"
+        id="city"
+        formControlName="city"
+        class="form-input"
+        placeholder="New York"
+        [class.error]="isFieldInvalid('city')"
+      />
+      <span class="error-message" *ngIf="isFieldInvalid('city')">{{ getErrorMessage('city') }}</span>
+    </div>
+
+    <div class="form-group">
+      <label for="postalCode" class="form-label">Postal Code</label>
+      <input
+        type="text"
+        id="postalCode"
+        formControlName="postalCode"
+        class="form-input"
+        placeholder="10001"
+        [class.error]="isFieldInvalid('postalCode')"
+      />
+      <span class="error-message" *ngIf="isFieldInvalid('postalCode')">{{ getErrorMessage('postalCode') }}</span>
+    </div>
+  </div>
+
+  <div class="form-group">
+    <label for="country" class="form-label">Country</label>
+    <select
+      id="country"
+      formControlName="country"
+      class="form-input"
+      [class.error]="isFieldInvalid('country')"
+      [class.placeholder-selected]="!registrationForm.get('country')?.value"
+    >
+      <option value="" disabled selected hidden>Select country</option>
+      <option *ngFor="let country of countries" [value]="country.code">{{ country.name }}</option>
+    </select>
+    <span class="error-message" *ngIf="isFieldInvalid('country')">{{ getErrorMessage('country') }}</span>
+  </div>
+
+  <!-- Identity Verification -->
+  <div class="section-divider"><span>Identity Verification</span></div>
+
+  <div class="form-group">
+    <label for="ssn" class="form-label">SSN / Tax ID</label>
+    <div class="ssn-input-wrapper">
+      <input
+        type="text"
+        id="ssn"
+        formControlName="ssn"
+        class="form-input"
+        placeholder="XXX-XX-XXXX"
+        inputmode="numeric"
+        maxlength="11"
+        (input)="onSsnInput($event)"
+        [class.error]="isFieldInvalid('ssn')"
+      />
+      <svg class="ssn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5l-8-3Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" />
+        <path d="m9 12 2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </div>
+    <span class="error-message" *ngIf="isFieldInvalid('ssn')">{{ getErrorMessage('ssn') }}</span>
+    <span class="field-hint">All encrypted and never stored in plaintext. Required for regulatory compliance.</span>
+  </div>
+
+  <!-- Trading Experience -->
+  <div class="section-divider"><span>Trading Experience</span></div>
+
+  <div class="form-group">
+    <label class="form-label">Experience Level</label>
+    <div class="experience-grid">
+      <button
+        type="button"
+        *ngFor="let level of experienceLevels"
+        class="experience-option"
+        [class.selected]="isExperienceSelected(level)"
+        (click)="selectExperience(level)"
+      >
+        {{ level }}
+      </button>
+    </div>
+    <span class="error-message" *ngIf="isFieldInvalid('experienceLevel')">{{ getErrorMessage('experienceLevel') }}</span>
+  </div>
+
+  <!-- Terms -->
+  <label class="checkbox-label terms-row">
+    <input type="checkbox" formControlName="agreeToTerms" />
+    <span>
+      I agree to the <a href="#" (click)="$event.stopPropagation()">Terms of Service</a> and
+      <a href="#" (click)="$event.stopPropagation()">Privacy Policy</a> and consent to the collection of my
+      personal information for account verification purposes.
+    </span>
+  </label>
+  <span class="error-message" *ngIf="isFieldInvalid('agreeToTerms')">You must accept the terms to continue</span>
+
+  <!-- Submit -->
+  <button type="submit" class="btn-primary" [disabled]="isLoading">
+    <span *ngIf="!isLoading">Submit application</span>
+    <span *ngIf="isLoading" class="loading-spinner"></span>
+  </button>
+
+  <div class="error-alert" *ngIf="errorMessage">{{ errorMessage }}</div>
+  <div class="success-alert" *ngIf="successMessage">{{ successMessage }}</div>
+</form>
+
+<div class="auth-footer-link">
+  Already have an account? <a (click)="switchToSignIn.emit()">Sign in</a>
+</div>

@@ -14,6 +14,7 @@ export class SignInComponent implements OnInit {
   errorMessage: string = '';
   successMessage: string = '';
   showPassword: boolean = false;
+  activeTab: 'signin' | 'create-account' = 'signin';
 
   constructor(
     private formBuilder: FormBuilder,

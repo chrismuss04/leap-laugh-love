@@ -8,13 +8,15 @@ import { RouterModule } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
+import { CreateAccountComponent } from './create-account/create-account.component';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 @NgModule({
   declarations: [
     AppComponent,
-    SignInComponent
+    SignInComponent,
+    CreateAccountComponent
   ],
   imports: [
     BrowserModule,
