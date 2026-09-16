@@ -1,4 +1,20 @@
 /* Global Styles for LeapLaugh Frontend */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,400;0,600;1,400;1,600&family=DM+Sans:wght@300;400;500;600&display=swap');
+
+:root {
+  --background: #0d0d0f;
+  --foreground: #f0ede8;
+  --card: #141417;
+  --primary: #2dd4bf;
+  --primary-foreground: #0d0d0f;
+  --muted: #1a1a1f;
+  --muted-foreground: #6b6b7a;
+  --border: #242430;
+  --ring: #2dd4bf;
+  --radius: 2px;
+  --danger: #ff6b6b;
+  --danger-foreground: #2a0d0d;
+}
 
 * {
   margin: 0;
@@ -12,12 +28,16 @@ html, body {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  background-color: #0a0e27;
-  color: #ffffff;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
+}
+
+.font-display {
+  font-family: 'Fraunces', serif;
 }
 
 /* Remove default button styles */
@@ -36,7 +56,7 @@ input, textarea, select {
 button:focus-visible,
 input:focus-visible,
 a:focus-visible {
-  outline: 2px solid #1dd1a1;
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
 
@@ -47,11 +67,202 @@ html {
 
 /* Selection color */
 ::selection {
-  background-color: #1dd1a1;
-  color: #0a0e27;
+  background-color: var(--primary);
+  color: var(--background);
 }
 
 ::-moz-selection {
-  background-color: #1dd1a1;
-  color: #0a0e27;
+  background-color: var(--primary);
+  color: var(--background);
+}
+
+/* ============================================
+   Shared Auth Form Primitives
+   Used by the sign-in and create-account forms
+   ============================================ */
+
+.form-header {
+  margin-bottom: 28px;
+}
+
+.form-header h2 {
+  font-size: 26px;
+  font-weight: 600;
+  margin: 0 0 6px;
+  color: var(--foreground);
+}
+
+.form-header p {
+  font-size: 14px;
+  color: var(--muted-foreground);
+  margin: 0;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.form-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.form-input {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background-color: var(--muted);
+  color: var(--foreground);
+  font-size: 14px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+  color-scheme: dark;
+}
+
+.form-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--ring);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ring) 25%, transparent);
+}
+
+.form-input.error {
+  border-color: var(--danger);
+}
+
+.form-input.error:focus {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
+}
+
+/* Hide native browser password-reveal/clear icons so only our custom toggle shows */
+.form-input::-ms-reveal,
+.form-input::-ms-clear {
+  display: none;
+}
+
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236b6b7a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  padding-right: 36px;
+}
+
+select.form-input:invalid,
+select.form-input.placeholder-selected {
+  color: var(--muted-foreground);
+}
+
+.error-message {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 6px;
+  display: block;
+}
+
+.error-alert {
+  padding: 12px;
+  background-color: var(--danger-foreground);
+  border-radius: var(--radius);
+  color: var(--danger);
+  font-size: 13px;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.success-alert {
+  padding: 12px;
+  background-color: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius);
+  color: var(--primary);
+  font-size: 13px;
+  text-align: center;
+  margin-top: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  color: var(--muted-foreground);
+  user-select: none;
+}
+
+.checkbox-label input[type='checkbox'] {
+  width: auto;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.btn-primary {
+  width: 100%;
+  padding: 12px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.2s ease;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-primary:disabled {
+  background-color: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid color-mix(in srgb, var(--primary-foreground) 30%, transparent);
+  border-top-color: var(--primary-foreground);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.auth-footer-link {
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  margin-top: 20px;
+}
+
+.auth-footer-link a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-footer-link a:hover {
+  text-decoration: underline;
 }

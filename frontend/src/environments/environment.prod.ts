@@ -5,6 +5,7 @@ export const environment = {
   apiEndpoints: {
     auth: '/api/auth',
     users: '/api/users',
+    clients: '/api/iam/v1/clients',
     portfolio: '/api/portfolio',
     trading: '/api/trading',
     marketData: '/api/market-data'

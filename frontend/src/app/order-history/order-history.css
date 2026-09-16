@@ -1,0 +1,256 @@
+.orders-page {
+  min-height: 100vh;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 35%),
+    linear-gradient(color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 48px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-name {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.btn-logout:hover {
+  background: var(--danger-foreground);
+}
+
+.orders-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 48px;
+}
+
+.orders-header {
+  margin-bottom: 32px;
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+.headline-page {
+  font-size: 32px;
+  color: var(--foreground);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.headline-page em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.page-subtext {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  margin: 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 40px;
+}
+
+.error-message {
+  background: var(--danger-foreground);
+  color: var(--danger);
+  padding: 12px;
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+.no-orders {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 40px;
+}
+
+.orders-table-wrapper {
+  overflow-x: auto;
+  margin-bottom: 20px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+}
+
+.orders-table thead {
+  background: var(--muted);
+}
+
+.orders-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.orders-table th,
+.orders-table td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.orders-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.order-row {
+  cursor: pointer;
+}
+
+.order-row.buy-row {
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+}
+
+.order-row.buy-row:hover {
+  background: color-mix(in srgb, var(--primary) 16%, var(--card));
+}
+
+.order-row.sell-row {
+  background: color-mix(in srgb, var(--danger) 10%, var(--card));
+}
+
+.order-row.sell-row:hover {
+  background: color-mix(in srgb, var(--danger) 18%, var(--card));
+}
+
+.expand-icon {
+  width: 30px;
+  text-align: center;
+  font-weight: bold;
+  color: var(--muted-foreground);
+}
+
+.fills-row {
+  background: var(--muted);
+}
+
+.fills-row td {
+  padding: 20px 12px;
+}
+
+.fills-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.fills-table th {
+  background: var(--secondary);
+  font-weight: 600;
+  padding: 8px;
+  text-align: left;
+  border: 1px solid var(--border);
+  color: var(--secondary-foreground);
+}
+
+.fills-table td {
+  padding: 8px;
+  border: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.no-fills {
+  color: var(--muted-foreground);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  align-items: center;
+  margin-top: 20px;
+}
+
+.btn-secondary {
+  padding: 8px 16px;
+  background: var(--secondary);
+  color: var(--secondary-foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--ring);
+  color: var(--foreground);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.page-info {
+  font-weight: 600;
+  color: var(--foreground);
+  min-width: 200px;
+  text-align: center;
+  font-size: 14px;
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    padding: 20px 24px;
+  }
+
+  .orders-container {
+    padding: 32px 24px;
+  }
+}

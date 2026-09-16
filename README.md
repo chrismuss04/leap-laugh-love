@@ -45,6 +45,7 @@ flowchart TB
             TradeEx["TradingGlobalExceptionHandler"]
             BalC["BalanceController\n/api/trading/balance"]
             OrderC["OrderHistoryController\n/api/trading/orders/history"]
+            QuoteSvc["CurrentQuoteService\n(non-stale quote at execution)"]
         end
 
         subgraph MARKETDATA["market-data-app (Port 8083)"]
@@ -54,6 +55,7 @@ flowchart TB
             CandleAcc["PriceCandleAccumulator\n(ticks -> OHLC candles)"]
             PriceC["PriceController\n/api/marketdata/prices"]
             StreamC["PriceStreamController\n/api/marketdata/stream (SSE)"]
+            QuoteC["QuoteController\n/api/marketdata/quotes"]
         end
     end
 
@@ -73,6 +75,8 @@ flowchart TB
     TradeSec --> OrderC
     MdSec --> PriceC
     MdSec --> StreamC
+    MdSec --> QuoteC
+    QuoteSvc -->|"HTTP / JSON (8083)\ncaller's JWT forwarded"| MdSec
     SimEngine --> PriceC
     SimEngine --> StreamC
     SimEngine --> CandleAcc
@@ -105,7 +109,6 @@ flowchart LR
     IAM["iam-app<br/>(clients · auth · jwt)"]:::mod
     MD["market-data-app<br/>(instruments · simulation · candles)"]:::mod
     TR["trading-app<br/>(accounts · orders · positions)"]:::mod
-    IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
     TR -- "depends on" --> CS
 ```
@@ -332,7 +335,7 @@ classDiagram
 
 ### Trading — `trading-app`
 
-`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, and per-account positions; every endpoint resolves the client from the JWT principal already on the security context.
+`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, quote, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, per-account positions, and the current-quote lookup orders are priced against; every endpoint resolves the client from the JWT principal already on the security context.
 
 ```mermaid
 classDiagram
@@ -427,6 +430,22 @@ classDiagram
     class PositionController {
         +getPositionsForAccount(UUID) PositionsResponse
     }
+    class QuoteSnapshot {
+        -String symbol
+        -BigDecimal bidPrice
+        -BigDecimal askPrice
+        -BigDecimal lastPrice
+        -OffsetDateTime quoteTimestamp
+    }
+    class CurrentQuoteClient {
+        +fetchLatest(String) Optional~QuoteSnapshot~
+    }
+    class CurrentQuoteService {
+        +getCurrentQuote(String) QuoteSnapshot
+    }
+    class MarketDataClientConfig {
+        +marketDataRestClient(...) RestClient
+    }
     class TradingSecurityConfig {
         +filterChain(...) SecurityFilterChain
     }
@@ -455,6 +474,9 @@ classDiagram
     PositionService --> AccountRepository : uses
     PositionService --> PositionRepository : uses
     PositionController --> PositionService : uses
+    CurrentQuoteService --> CurrentQuoteClient : uses
+    CurrentQuoteClient ..> QuoteSnapshot : returns
+    MarketDataClientConfig ..> CurrentQuoteClient : configures RestClient for
     TradingSecurityConfig ..> JwtService : uses
     TradingSecurityConfig ..> JwtAuthenticationFilter : registers
     TradingSecurityConfig ..> JwtAuthenticationEntryPoint : registers
@@ -483,6 +505,33 @@ classDiagram
 ---
 
 ## Building and Running
+
+### Quick Start
+
+The database, all three services and the Angular UI, in two commands. Docker is the only
+prerequisite - you do not need Node, Java or Maven installed to run the stack.
+
+```bash
+cp .env.example .env
+docker compose up --build
+```
+
+Then open **http://localhost:4200** and sign in with a seeded account:
+
+| Email | Password |
+| --- | --- |
+| `alice.johnson@leap.com` | `Password123!` |
+
+The first run builds the service images and installs the frontend dependencies, so expect a
+few minutes; later runs start in seconds. Frontend edits hot-reload. Backend edits need
+`docker compose up --build` to rebuild the image.
+
+Stop with `docker compose down`, or `docker compose down -v` to also drop the database and
+force a fresh frontend dependency install next time.
+
+> [!NOTE]
+> `.env.example` carries working local-dev defaults, including a placeholder `JWT_SECRET`.
+> They are not secrets and are not suitable for any shared or deployed environment.
 
 ### 1. Build and Run Tests (Maven)
 
@@ -526,20 +575,36 @@ mvn compile javadoc:javadoc
 
 ### 3. Launch Services via Docker Compose (Recommended)
 
-Set your environment variables and launch all containers (`db`, `iam-app`, `trading-app`, `market-data-app`):
+Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
+container - `db`, `iam-app`, `trading-app`, `market-data-app` and `frontend`:
 
 ```bash
-export JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars"
-export DB_PASSWORD="changeme"
+docker compose up -d --build
+```
 
-docker-compose up -d --build
+Override any value by editing `.env`, or per-invocation:
+
+```bash
+JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars" docker compose up -d --build
 ```
 
 Services will be exposed on:
+- **Frontend (Angular dev server)**: `http://localhost:4200`
 - **IAM Application**: `http://localhost:8081`
 - **Trading Application**: `http://localhost:8082`
 - **Market Data Application**: `http://localhost:8083`
 - **PostgreSQL Database**: `localhost:5432`
+
+The browser talks to `iam-app` and `trading-app` directly on the ports above, so those stay
+published even though the `frontend` container itself never calls them. On a remote or
+headless host, forward `4200`, `8081` and `8082` - forwarding `4200` alone yields a UI that
+cannot sign in.
+
+To run the frontend on its own against an already-running backend:
+
+```bash
+docker compose up frontend
+```
 
 To stop containers and clean up volumes:
 

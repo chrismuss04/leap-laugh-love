@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.trading.common;
 
+import com.leap.leaplaughlove.trading.quote.QuoteUnavailableException;
+import com.leap.leaplaughlove.trading.quote.StaleQuoteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -52,6 +54,30 @@ public class TradingGlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                 "error", "BAD_REQUEST",
+                "message", ex.getMessage()));
+    }
+
+    /**
+     * Handles StaleQuoteException and maps it to an appropriate HTTP response.
+     * @param ex the StaleQuoteException to handle
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(StaleQuoteException.class)
+    public ResponseEntity<Map<String, String>> handleStaleQuote(StaleQuoteException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", "STALE_QUOTE",
+                "message", ex.getMessage()));
+    }
+
+    /**
+     * Handles QuoteUnavailableException and maps it to an appropriate HTTP response.
+     * @param ex the QuoteUnavailableException to handle
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(QuoteUnavailableException.class)
+    public ResponseEntity<Map<String, String>> handleQuoteUnavailable(QuoteUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
+                "error", "QUOTE_UNAVAILABLE",
                 "message", ex.getMessage()));
     }
 }

@@ -1,12 +1,13 @@
 package com.leap.leaplaughlove.trading.balance;
 
+import com.leap.leaplaughlove.common.security.SecurityUtils;
 import com.leap.leaplaughlove.trading.account.Account;
+import com.leap.leaplaughlove.trading.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.trading.account.AccountRepository;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -32,15 +33,24 @@ public class BalanceService {
 
     private final AccountRepository accountRepository;
     private final CashLedgerRepository cashLedgerRepository;
+    private final AccountAuthorizationService accountAuthorizationService;
 
     /**
-     * Constructs a new BalanceService with the specified repositories.
-     * @param accountRepository the repository for managing account entities
-     * @param cashLedgerRepository the repository for managing cash ledger entries
+     * Constructs a new BalanceService with the specified repositories and authorization service.
      */
-    public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
+    @Autowired
+    public BalanceService(AccountRepository accountRepository,
+                          CashLedgerRepository cashLedgerRepository,
+                          AccountAuthorizationService accountAuthorizationService) {
         this.accountRepository = accountRepository;
         this.cashLedgerRepository = cashLedgerRepository;
+        this.accountAuthorizationService = accountAuthorizationService != null
+                ? accountAuthorizationService
+                : new AccountAuthorizationService(accountRepository);
+    }
+
+    public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
+        this(accountRepository, cashLedgerRepository, new AccountAuthorizationService(accountRepository));
     }
 
     /**
@@ -48,11 +58,10 @@ public class BalanceService {
      * @return the balance response containing account balances and totals by currency
      */
     public BalanceResponse getBalanceForClient() {
-        UUID clientId = getAuthenticatedClientId();
+        UUID clientId = SecurityUtils.getAuthenticatedClientId();
         List<Account> accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);
         List<UUID> accountIds = accounts.stream().map(Account::getAccountId).toList();
 
-        // commment keyed by (accountId, currency) — an account should only be credited for entries in its own currency
         Map<AccountCurrencyKey, BigDecimal> totalsByAccountAndCurrency = accountIds.isEmpty()
                 ? Map.of()
                 : cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()
@@ -87,7 +96,7 @@ public class BalanceService {
     @Transactional
     public CashTransactionResponse deposit(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
-        Account account = getAuthorizedAccount(accountId);
+        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);
         BigDecimal currentBalance = getCurrentBalance(account);
 
         CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(
@@ -111,7 +120,7 @@ public class BalanceService {
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
-        Account account = getAuthorizedAccount(accountId);
+        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);
         BigDecimal currentBalance = getCurrentBalance(account);
 
         if (amount.compareTo(currentBalance) > 0) {
@@ -129,38 +138,6 @@ public class BalanceService {
                 request.description()));
 
         return toResponse(saved, currentBalance.add(ledgerAmount));
-    }
-
-    private Account getAuthorizedAccount(UUID accountId) {
-        UUID clientId = getAuthenticatedClientId();
-        Account account = accountRepository.findByAccountIdAndClientId(accountId, clientId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
-        if (!ACTIVE_STATUS.equals(account.getStatus())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Account is not active");
-        }
-        return account;
-    }
-
-    private UUID getAuthenticatedClientId() {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication == null || !authentication.isAuthenticated()) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                    "A valid authenticated principal is required");
-        }
-        Object principal = authentication.getPrincipal();
-        if (principal instanceof UUID clientId) {
-            return clientId;
-        }
-        if (principal instanceof String principalString && !principalString.isBlank()
-                && !"anonymousUser".equals(principalString)) {
-            try {
-                return UUID.fromString(principalString);
-            } catch (IllegalArgumentException ignored) {
-                // commment fall through to unauthorized
-            }
-        }
-        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
-                "Authenticated principal is invalid for this operation");
     }
 
     private BigDecimal getCurrentBalance(Account account) {
