@@ -32,8 +32,9 @@ export interface LoginResponse {
   providedIn: 'root'
 })
 export class AuthService {
-  // API endpoint (adjust based on your backend configuration)
-  private apiUrl = 'http://localhost:8081/api/iam/auth';
+  // Same-origin path: the dev server (see proxy.conf.js) and any deployment reverse proxy
+  // forward /api/iam to iam-app, so this works wherever the browser is running.
+  private apiUrl = '/api/iam/auth';
 
   // BehaviorSubject to track authentication state
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasToken());
