@@ -112,7 +112,7 @@ class OrderSubmissionIntegrationTest {
         assertNotNull(savedOrder.getFilledAt());
 
         // 2. Verify Execution in DB
-        List<Execution> executions = executionRepository.findByOrder_OrderId(savedOrder.getOrderId());
+        List<Execution> executions = executionRepository.findByOrder_OrderIdIn(List.of(savedOrder.getOrderId()));
         assertEquals(1, executions.size());
         Execution execution = executions.get(0);
         assertEquals(Execution.Status.FILLED, execution.getStatus());

@@ -17,6 +17,7 @@ export interface OrderHistoryItem {
   status: string;
   submittedAt: string;
   filledAt: string | null;
+  execution?: ExecutionItem | null;
   executions: ExecutionItem[];
 }
 
