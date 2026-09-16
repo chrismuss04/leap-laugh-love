@@ -59,7 +59,7 @@ ON CONFLICT (cash_ledger_id) DO UPDATE SET
 -- Insert orders: 4 total (3 successful, 1 rejected)
 -- Order 1: Alice buys 100 AAPL (will be filled)
 INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
-SELECT 
+SELECT
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
     (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
     (SELECT instrument_id FROM trading.instruments WHERE symbol = 'AAPL'),
@@ -74,7 +74,7 @@ ON CONFLICT (order_id) DO UPDATE SET
 
 -- Order 2: Bob buys 50 MSFT (will be filled)
 INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
-SELECT 
+SELECT
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'::UUID,
     (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-002-01'),
     (SELECT instrument_id FROM trading.instruments WHERE symbol = 'MSFT'),
@@ -89,7 +89,7 @@ ON CONFLICT (order_id) DO UPDATE SET
 
 -- Order 3: Carol buys 25 GOOGL (will be filled)
 INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
-SELECT 
+SELECT
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3'::UUID,
     (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-003-01'),
     (SELECT instrument_id FROM trading.instruments WHERE symbol = 'GOOGL'),
@@ -104,7 +104,7 @@ ON CONFLICT (order_id) DO UPDATE SET
 
 -- Order 4: Henry tries to buy 1000000 TSLA (will be REJECTED - insufficient funds)
 INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, rejected_at, rejection_reason)
-SELECT 
+SELECT
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4'::UUID,
     (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-008-01'),
     (SELECT instrument_id FROM trading.instruments WHERE symbol = 'TSLA'),
@@ -120,7 +120,7 @@ ON CONFLICT (order_id) DO UPDATE SET
 -- Insert executions for the filled orders
 -- Execution 1: Alice's AAPL order filled at $150.25
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
-VALUES 
+VALUES
     ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'::UUID,
      100, 150.25, 'FILLED', 'Executed at market price')
@@ -132,7 +132,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 
 -- Execution 2: Bob's MSFT order filled at $380.50
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
-VALUES 
+VALUES
     ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2'::UUID,
      50, 380.50, 'FILLED', 'Executed at market price')
@@ -144,7 +144,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 
 -- Execution 3: Carol's GOOGL order filled at $140.75
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
-VALUES 
+VALUES
     ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb3'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3'::UUID,
      25, 140.75, 'FILLED', 'Executed at market price')
@@ -156,7 +156,7 @@ ON CONFLICT (execution_id) DO UPDATE SET
 
 -- Execution 4: Henry's TSLA order REJECTED - recorded as failed execution
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
-VALUES 
+VALUES
     ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'::UUID,
      'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4'::UUID,
      NULL, NULL, 'REJECTED', 'Insufficient funds - order rejected')

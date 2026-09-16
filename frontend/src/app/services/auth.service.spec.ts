@@ -5,7 +5,7 @@ import { AuthService, LoginResponse } from './auth.service';
 describe('AuthService', () => {
   let service: AuthService;
   let httpMock: HttpTestingController;
-  const apiUrl = 'http://localhost:8080/api/auth';
+  const apiUrl = 'http://localhost:8081/api/iam/auth';
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -42,7 +42,7 @@ describe('AuthService', () => {
       const mockEmail = 'test@example.com';
       const mockPassword = 'ValidPassword123';
       const mockResponse: LoginResponse = {
-        token: 'test-token',
+        accessToken: 'test-token',
         user: { id: '1', email: mockEmail, name: 'Test User' }
       };
 
@@ -60,7 +60,7 @@ describe('AuthService', () => {
       const mockEmail = 'test@example.com';
       const mockPassword = 'ValidPassword123';
       const mockResponse: LoginResponse = {
-        token: 'test-token-123',
+        accessToken: 'test-token-123',
         user: { id: '1', email: mockEmail, name: 'Test User' }
       };
 
@@ -77,7 +77,7 @@ describe('AuthService', () => {
       const mockPassword = 'ValidPassword123';
       const mockUser = { id: '1', email: mockEmail, name: 'Test User' };
       const mockResponse: LoginResponse = {
-        token: 'test-token',
+        accessToken: 'test-token',
         user: mockUser
       };
 
@@ -91,7 +91,7 @@ describe('AuthService', () => {
 
     it('should update isAuthenticated$ observable to true after successful login', (done) => {
       const mockResponse: LoginResponse = {
-        token: 'test-token',
+        accessToken: 'test-token',
         user: { id: '1', email: 'test@example.com', name: 'Test User' }
       };
 
@@ -111,7 +111,7 @@ describe('AuthService', () => {
     it('should update currentUser$ observable after successful login', (done) => {
       const mockUser = { id: '1', email: 'test@example.com', name: 'Test User' };
       const mockResponse: LoginResponse = {
-        token: 'test-token',
+        accessToken: 'test-token',
         user: mockUser
       };
 
@@ -272,12 +272,12 @@ describe('AuthService', () => {
 
       const req = httpMock.expectOne(`${apiUrl}/refresh`);
       expect(req.request.method).toBe('POST');
-      req.flush({ token: 'new-token', user: { id: '1', email: 'test@example.com', name: 'Test User' } });
+      req.flush({ accessToken: 'new-token', user: { id: '1', email: 'test@example.com', name: 'Test User' } });
     });
 
     it('should update token in localStorage after refresh', () => {
       const mockResponse: LoginResponse = {
-        token: 'new-token-456',
+        accessToken: 'new-token-456',
         user: { id: '1', email: 'test@example.com', name: 'Test User' }
       };
 
