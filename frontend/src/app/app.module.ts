@@ -8,6 +8,7 @@ import { RouterModule, Routes } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
+import { CreateAccountComponent } from './create-account/create-account.component';
 import { OrderHistoryComponent } from './order-history/order-history';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
@@ -20,7 +21,8 @@ const routes: Routes = [
 @NgModule({
   declarations: [
     AppComponent,
-    SignInComponent
+    SignInComponent,
+    CreateAccountComponent
   ],
   imports: [
     BrowserModule,
