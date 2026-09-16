@@ -1,21 +1,26 @@
 pipeline {
     agent any
+
     tools {
         nodejs 'NodeJS'
+    }
+
+    options {
+        // Two builds of the same branch/PR share one workspace and one executor's port
+        // range, so overlapping them corrupts both. Queue them instead.
+        disableConcurrentBuilds()
+        // A hung build holds this executor's ports and containers until someone notices;
+        // failing it releases them via the cleanup block below.
+        timeout(time: 45, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
     stages {
         stage('Checkout') {
             steps {
-                // Reclaim ownership of anything root-owned left behind by the Test
-                // stage's maven container (it bind-mounts and writes to this workspace
-                // as root) before git clean runs, so a bad prior build can't
-                // permanently wedge every build after it.
-                sh 'docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app || true'
                 checkout scm
-                // Removes untracked/ignored leftovers (e.g. stale target/ dirs from
-                // before packages were restructured) that would otherwise persist
-                // across builds on a reused workspace and pollute test results.
+                // Drop untracked/ignored leftovers (stale target/, node_modules/) so a
+                // reused workspace can't leak state from the previous build into this one.
                 sh 'git clean -fdx'
             }
         }
@@ -23,16 +28,27 @@ pipeline {
         stage('Configure Pipeline') {
             steps {
                 script {
-                    env.IMAGE_TAG = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
-                    env.COMPOSE_PROJECT = (env.JOB_NAME + '-' + env.BUILD_NUMBER)
-                        .toLowerCase().replaceAll('[^a-z0-9]+', '-')
+                    def commit = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                    // Tagging by commit alone would let two branches sitting on the same
+                    // commit overwrite each other's images, and make the cleanup block
+                    // delete an image a concurrent build is still using.
+                    env.IMAGE_TAG = "${commit}-${env.BUILD_NUMBER}"
+                    env.COMPOSE_PROJECT = "${env.JOB_NAME}-${env.BUILD_NUMBER}"
+                        .toLowerCase().replaceAll('[^a-z0-9]+', '-').replaceAll('^-+|-+$', '')
+
+                    // Deliberately far from the 5432/8081-8083 the services default to, so a
+                    // build never fights a stack someone is running locally on this host.
+                    // Nothing outside the containers connects to these - every check below
+                    // goes through "docker-compose exec" - they only need to be unique per
+                    // executor so parallel builds on this agent don't overlap.
                     def executor = env.EXECUTOR_NUMBER as Integer
-                    env.DB_PORT = (5432 + executor).toString()
-                    env.IAM_PORT = (8081 + executor).toString()
-                    env.TRADING_PORT = (8082 + executor).toString()
-                    env.MARKETDATA_PORT = (8083 + executor).toString()
+                    env.DB_PORT = (15432 + executor).toString()
+                    env.IAM_PORT = (18081 + executor).toString()
+                    env.TRADING_PORT = (18082 + executor).toString()
+                    env.MARKETDATA_PORT = (18083 + executor).toString()
+
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
-                    echo "Building commit ${env.IMAGE_TAG} (Jenkins build ${env.BUILD_NUMBER})"
+                    echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
                 }
             }
         }
@@ -53,7 +69,7 @@ pipeline {
             }
             steps {
                 sh '''
-                    set -e
+                    set -eu
                     docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
 
                     docker run -d --name "${PG_CONTAINER}" \
@@ -81,21 +97,22 @@ pipeline {
                         sleep 2
                     done
 
+                    # --user keeps target/ and surefire-reports/ owned by the agent account.
+                    # Without it Maven writes them as root and the next build's "git clean"
+                    # can't delete them, wedging this workspace permanently.
+                    # Maven needs a writable HOME to run as a non-root uid, hence user.home.
+                    #
                     # Sharing the postgres container's network namespace makes the database
                     # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
                     docker run --rm \
                         --network "container:${PG_CONTAINER}" \
+                        --user "$(id -u):$(id -g)" \
                         -v "$WORKSPACE":/app \
-                        -v /var/run/docker.sock:/var/run/docker.sock \
                         -w /app \
                         -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
-                        maven:3.9-eclipse-temurin-21 mvn -B test
-
-                    # The maven container above runs as root, so anything it writes into the
-                    # bind-mounted workspace (target/, surefire-reports/) ends up root-owned
-                    # and can't be removed by later steps (e.g. git clean) running as the
-                    # Jenkins agent user. Hand ownership back.
-                    docker run --rm -v "$WORKSPACE":/app alpine chown -R "$(id -u):$(id -g)" /app
+                        -e MAVEN_CONFIG=/tmp/.m2 \
+                        maven:3.9-eclipse-temurin-21 \
+                        mvn -B -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
                 '''
             }
             post {
@@ -144,7 +161,7 @@ pipeline {
                     set -eu
                     echo "Checking initialized database schemas..."
                     for i in $(seq 1 30); do
-                        ready=$(docker-compose -p "$COMPOSE_PROJECT" exec -T db psql -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.instruments') IS NOT NULL;" 2>/dev/null) || ready=
+                        ready=$(docker-compose -p "$COMPOSE_PROJECT" exec -T db psql -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
                         if [ "$ready" = "t" ]; then
                             echo "IAM, trading, and market-data schemas are initialized"
                             exit 0
@@ -162,7 +179,7 @@ pipeline {
                 sh '''
                     set -eu
                     docker-compose -p "$COMPOSE_PROJECT" build iam-app trading-app market-data-app
-                    echo "Built service images from commit $IMAGE_TAG"
+                    echo "Built service images tagged $IMAGE_TAG"
                 '''
             }
         }
@@ -214,12 +231,18 @@ pipeline {
             '''
         }
         success {
-            echo "Build ${env.BUILD_NUMBER} passed (commit ${env.IMAGE_TAG})."
+            echo "Build ${env.BUILD_NUMBER} passed (${env.IMAGE_TAG})."
         }
         cleanup {
             sh '''
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
-                    docker-compose -p "$COMPOSE_PROJECT" down -v || true
+                    docker-compose -p "$COMPOSE_PROJECT" down -v --remove-orphans || true
+                fi
+                # Every build produces three uniquely tagged images; without this the agent
+                # accumulates one set per build until the disk fills.
+                if [ -n "${IMAGE_TAG:-}" ]; then
+                    docker image rm -f "iam-app:$IMAGE_TAG" "trading-app:$IMAGE_TAG" \
+                        "market-data-app:$IMAGE_TAG" >/dev/null 2>&1 || true
                 fi
             '''
         }
