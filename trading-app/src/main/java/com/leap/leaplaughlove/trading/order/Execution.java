@@ -70,7 +70,7 @@ public class Execution {
                      Status status, String reason, OffsetDateTime executedAt) {
         this(null, order, fillQuantity, fillPrice, status, reason, executedAt);
     }
-
+    
     public UUID getExecutionId() { return executionId; }
     public Order getOrder() { return order; }
     public Long getFillQuantity() { return fillQuantity; }

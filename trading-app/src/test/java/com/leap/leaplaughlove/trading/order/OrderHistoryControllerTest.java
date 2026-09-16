@@ -7,14 +7,14 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.data.domain.PageImpl;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
-import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -35,41 +35,8 @@ class OrderHistoryControllerTest {
     private OrderHistoryService orderHistoryService;
 
     private static Authentication createAuthenticationWithClientId(UUID clientId) {
-        return new Authentication() {
-            @Override
-            public Collection<? extends GrantedAuthority> getAuthorities() {
-                return List.of(new SimpleGrantedAuthority("ROLE_CLIENT"));
-            }
-
-            @Override
-            public Object getCredentials() {
-                return null;
-            }
-
-            @Override
-            public Object getDetails() {
-                return null;
-            }
-
-            @Override
-            public Object getPrincipal() {
-                return clientId;
-            }
-
-            @Override
-            public boolean isAuthenticated() {
-                return true;
-            }
-
-            @Override
-            public void setAuthenticated(boolean isAuthenticated) throws IllegalArgumentException {
-            }
-
-            @Override
-            public String getName() {
-                return clientId.toString();
-            }
-        };
+        return new UsernamePasswordAuthenticationToken(
+                clientId, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
     }
 
     @Test
@@ -77,9 +44,13 @@ class OrderHistoryControllerTest {
     void testGetOrderHistorySuccess() throws Exception {
         UUID clientId = UUID.randomUUID();
         UUID orderId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
         OffsetDateTime submitted = OffsetDateTime.now();
+        BigDecimal price = new BigDecimal("150.25");
+
+        ExecutionItem execution = new ExecutionItem(executionId, 10L, price, submitted.plusSeconds(30));
         OrderHistoryItem item = new OrderHistoryItem(
-                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30));
+                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30), execution);
 
         when(orderHistoryService.getOrderHistory(clientId, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(item)));
@@ -93,7 +64,10 @@ class OrderHistoryControllerTest {
                 .andExpect(jsonPath("$.content[0].orderId").value(orderId.toString()))
                 .andExpect(jsonPath("$.content[0].symbol").value("AAPL"))
                 .andExpect(jsonPath("$.content[0].side").value("BUY"))
-                .andExpect(jsonPath("$.content[0].status").value("FILLED"));
+                .andExpect(jsonPath("$.content[0].status").value("FILLED"))
+                .andExpect(jsonPath("$.content[0].execution.executionId").value(executionId.toString()))
+                .andExpect(jsonPath("$.content[0].execution.quantity").value(10))
+                .andExpect(jsonPath("$.content[0].executions[0].executionId").value(executionId.toString()));
     }
 
     @Test
@@ -110,7 +84,7 @@ class OrderHistoryControllerTest {
                         .param("page", "-1")
                         .param("size", "20"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$").value("page must not be negative"));
+                .andExpect(jsonPath("$.message").value("page must not be negative"));
     }
 
     @Test

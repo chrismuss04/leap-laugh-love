@@ -17,7 +17,9 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -27,6 +29,9 @@ class OrderHistoryStoryTest {
 
     @Mock
     private OrderRepository orderRepository;
+
+    @Mock
+    private ExecutionRepository executionRepository;
 
     private OrderHistoryService orderHistoryService;
 
@@ -38,7 +43,8 @@ class OrderHistoryStoryTest {
 
     @BeforeEach
     void setUp() {
-        orderHistoryService = new OrderHistoryService(orderRepository);
+        orderHistoryService = new OrderHistoryService(orderRepository, executionRepository);
+        lenient().when(executionRepository.findByOrder_OrderIdIn(any())).thenReturn(List.of());
 
         aliceClientId = UUID.randomUUID();
         aliceAccount = new Account(UUID.randomUUID(), aliceClientId, "ACC-ALICE-1", "ACTIVE", "USD", true, OffsetDateTime.now());

@@ -14,9 +14,6 @@ import java.util.UUID;
 @Table(name = "orders", schema = "trading")
 public class Order {
 
-    /**
-     * The side of the order (BUY or SELL).
-     */
     public enum Side { BUY, SELL }
 
     /**

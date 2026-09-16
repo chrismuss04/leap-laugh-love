@@ -15,8 +15,8 @@ export interface LoginRequest {
  * Interface for login response
  */
 export interface LoginResponse {
-  token: string;
-  user: {
+  accessToken: string;
+  user?: {
     id: string;
     email: string;
     name: string;
@@ -33,7 +33,7 @@ export interface LoginResponse {
 })
 export class AuthService {
   // API endpoint (adjust based on your backend configuration)
-  private apiUrl = 'http://localhost:8080/api/auth';
+  private apiUrl = 'http://localhost:8081/api/iam/auth';
 
   // BehaviorSubject to track authentication state
   private isAuthenticatedSubject = new BehaviorSubject<boolean>(this.hasToken());
@@ -57,12 +57,14 @@ export class AuthService {
     ).pipe(
       tap(response => {
         // Store token in localStorage
-        localStorage.setItem('auth_token', response.token);
-        // Store user info
-        localStorage.setItem('current_user', JSON.stringify(response.user));
+        localStorage.setItem('auth_token', response.accessToken);
+        // Store user info, if the backend provided any
+        if (response.user) {
+          localStorage.setItem('current_user', JSON.stringify(response.user));
+        }
         // Update authentication state
         this.isAuthenticatedSubject.next(true);
-        this.currentUserSubject.next(response.user);
+        this.currentUserSubject.next(response.user ?? null);
       })
     );
   }
@@ -117,7 +119,7 @@ export class AuthService {
       {}
     ).pipe(
       tap(response => {
-        localStorage.setItem('auth_token', response.token);
+        localStorage.setItem('auth_token', response.accessToken);
         this.isAuthenticatedSubject.next(true);
       })
     );
