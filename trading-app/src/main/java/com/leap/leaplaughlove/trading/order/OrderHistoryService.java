@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ public class OrderHistoryService {
      * @param size the number of items per page
      * @return a paginated list of order history items for the specified client
      */
+    @Transactional(readOnly = true)
     public Page<OrderHistoryItem> getOrderHistory(UUID clientId, int page, int size) {
         if (page < 0) {
             throw new IllegalArgumentException("page must not be negative");

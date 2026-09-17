@@ -1,0 +1,99 @@
+@import '../shared/page-shell.css';
+
+.holdings-page {
+  min-height: 100vh;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 35%),
+    linear-gradient(color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+}
+
+.holdings-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 48px;
+}
+
+.holdings-header {
+  margin-bottom: 32px;
+}
+
+.no-holdings {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 40px;
+}
+
+.accounts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.account-block {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.account-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.account-number {
+  font-weight: 600;
+  color: var(--foreground);
+  font-size: 15px;
+}
+
+.account-currency {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.holdings-table-wrapper {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 4px);
+}
+
+.holdings-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--card);
+}
+
+.holdings-table thead {
+  background: var(--muted);
+}
+
+.holdings-table th {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.holdings-table th,
+.holdings-table td {
+  padding: 14px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  color: var(--foreground);
+}
+
+.holdings-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+@media (max-width: 640px) {
+  .holdings-container {
+    padding: 32px 24px;
+  }
+}

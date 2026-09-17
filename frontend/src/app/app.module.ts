@@ -10,11 +10,13 @@ import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
 import { CreateAccountComponent } from './create-account/create-account.component';
 import { OrderHistoryComponent } from './order-history/order-history';
+import { HoldingsComponent } from './holdings/holdings';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 const routes: Routes = [
   { path: 'dashboard', component: OrderHistoryComponent },
+  { path: 'holdings', component: HoldingsComponent },
   { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
 ];
 
@@ -32,7 +34,8 @@ const routes: Routes = [
     FormsModule,
     CommonModule,
     RouterModule.forRoot(routes),
-    OrderHistoryComponent
+    OrderHistoryComponent,
+    HoldingsComponent
   ],
   providers: [
     AuthService,

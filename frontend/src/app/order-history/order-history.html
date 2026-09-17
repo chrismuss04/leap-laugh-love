@@ -10,6 +10,10 @@
       </div>
       <span class="brand-name">Leapfolio</span>
     </div>
+    <nav class="top-nav">
+      <a routerLink="/dashboard" class="nav-link active">Orders</a>
+      <a routerLink="/holdings" class="nav-link">Holdings</a>
+    </nav>
     <button (click)="logout()" class="btn-logout">Logout</button>
   </div>
 
@@ -46,7 +50,7 @@
           <ng-container *ngFor="let order of orders()">
             <tr
               [ngClass]="order.side === 'BUY' ? 'buy-row' : 'sell-row'"
-              class="order-row expandable"
+              class="order-row"
               (click)="toggleExpand(order.orderId)"
             >
               <td class="expand-icon">
