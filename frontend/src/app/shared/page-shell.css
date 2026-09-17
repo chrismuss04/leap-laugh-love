@@ -1,0 +1,118 @@
+/* Shared "authenticated page" shell: top bar (brand, nav, logout), page header
+   typography, and loading/error states. Imported by every page rendered inside
+   the router-outlet (order-history, holdings) so they share one look without
+   duplicating the rules. Angular scopes component styles per-component, so this
+   never leaks into unrelated pages (e.g. sign-in) even though it's plain CSS. */
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24px 48px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.brand-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  background: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-name {
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.top-nav {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.nav-link {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.nav-link:hover {
+  color: var(--foreground);
+}
+
+.nav-link.active {
+  color: var(--primary);
+}
+
+.btn-logout {
+  padding: 8px 16px;
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: inherit;
+  font-size: 14px;
+}
+
+.btn-logout:hover {
+  background: var(--danger-foreground);
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+.headline-page {
+  font-size: 32px;
+  color: var(--foreground);
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.headline-page em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.page-subtext {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  margin: 0;
+}
+
+.loading {
+  text-align: center;
+  color: var(--muted-foreground);
+  padding: 40px;
+}
+
+.error-message {
+  background: var(--danger-foreground);
+  color: var(--danger);
+  padding: 12px;
+  border-radius: var(--radius);
+  margin-bottom: 20px;
+}
+
+@media (max-width: 640px) {
+  .top-bar {
+    padding: 20px 24px;
+  }
+}

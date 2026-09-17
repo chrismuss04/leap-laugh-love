@@ -13,6 +13,7 @@ import java.util.UUID;
 @Service
 public class PositionService {
 
+    private final AccountRepository accountRepository;
     private final PositionRepository positionRepository;
     private final AccountAuthorizationService accountAuthorizationService;
 
@@ -20,6 +21,7 @@ public class PositionService {
     public PositionService(AccountRepository accountRepository,
                            PositionRepository positionRepository,
                            AccountAuthorizationService accountAuthorizationService) {
+        this.accountRepository = accountRepository;
         this.positionRepository = positionRepository;
         this.accountAuthorizationService = accountAuthorizationService != null
                 ? accountAuthorizationService
@@ -32,7 +34,27 @@ public class PositionService {
 
     public PositionsResponse getPositionsForAuthenticatedClientAccount(UUID accountId) {
         Account account = accountAuthorizationService.getAuthorizedAccount(accountId);
+        return toPositionsResponse(account);
+    }
 
+    /**
+     * Retrieves current holdings across every active account belonging to the authenticated
+     * client, with no account ID required from the caller.
+     * @return the holdings response, one entry per active account
+     */
+    public ClientPositionsResponse getHoldingsForAuthenticatedClient() {
+        UUID clientId = SecurityUtils.getAuthenticatedClientId();
+        List<Account> accounts = accountRepository.findByClientIdAndStatus(
+                clientId, AccountAuthorizationService.ACTIVE_STATUS);
+
+        List<PositionsResponse> holdings = accounts.stream()
+                .map(this::toPositionsResponse)
+                .toList();
+
+        return new ClientPositionsResponse(holdings);
+    }
+
+    private PositionsResponse toPositionsResponse(Account account) {
         List<PositionItem> items = positionRepository.findPositionsByAccountId(account.getAccountId()).stream()
                 .map(row -> new PositionItem(
                         UUID.fromString(row.getInstrumentId()),

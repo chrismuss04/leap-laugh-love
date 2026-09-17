@@ -72,4 +72,22 @@ class PositionControllerIntegrationTest {
         mockMvc.perform(get("/api/trading/positions/accounts/{accountId}", ACCOUNT_OWNER_USD_ID))
                 .andExpect(status().isUnauthorized());
     }
+
+    @Test
+    @DisplayName("GET /api/trading/positions returns holdings for the authenticated client's own accounts, with no account ID required")
+    void testGetHoldings_Success() throws Exception {
+        mockMvc.perform(get("/api/trading/positions")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accounts", hasSize(1)))
+                .andExpect(jsonPath("$.accounts[0].accountId", is(ACCOUNT_OWNER_USD_ID)))
+                .andExpect(jsonPath("$.accounts[0].positions", hasSize(2)));
+    }
+
+    @Test
+    @DisplayName("GET /api/trading/positions returns 401 for unauthenticated request")
+    void testGetHoldings_Unauthenticated() throws Exception {
+        mockMvc.perform(get("/api/trading/positions"))
+                .andExpect(status().isUnauthorized());
+    }
 }

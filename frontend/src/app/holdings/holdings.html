@@ -1,0 +1,71 @@
+<div class="holdings-page">
+  <div class="top-bar">
+    <div class="brand">
+      <div class="brand-icon">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+          <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+          <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+        </svg>
+      </div>
+      <span class="brand-name">Leapfolio</span>
+    </div>
+    <nav class="top-nav">
+      <a routerLink="/dashboard" class="nav-link">Orders</a>
+      <a routerLink="/holdings" class="nav-link active">Holdings</a>
+    </nav>
+    <button (click)="logout()" class="btn-logout">Logout</button>
+  </div>
+
+  <div class="holdings-container">
+    <div class="holdings-header">
+      <p class="eyebrow">Portfolio</p>
+      <h1 class="font-display headline-page">Current <em>Holdings</em></h1>
+      <p class="page-subtext">See what you currently own, across all your accounts.</p>
+    </div>
+
+    <div *ngIf="loading()" class="loading">Loading holdings...</div>
+
+    <div *ngIf="error()" class="error-message">{{ error() }}</div>
+
+    <div *ngIf="!loading() && accounts().length === 0 && !error()" class="no-holdings">
+      No accounts found
+    </div>
+
+    <div *ngIf="!loading() && accounts().length > 0" class="accounts-list">
+      <div *ngFor="let account of accounts()" class="account-block">
+        <div class="account-heading">
+          <span class="account-number">{{ account.accountNumber }}</span>
+          <span class="account-currency">{{ account.baseCurrency }}</span>
+        </div>
+
+        <div *ngIf="account.positions.length === 0" class="no-holdings">
+          No holdings in this account
+        </div>
+
+        <div *ngIf="account.positions.length > 0" class="holdings-table-wrapper">
+          <table class="holdings-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Name</th>
+                <th>Asset Class</th>
+                <th>Quantity</th>
+                <th>Avg Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let position of account.positions">
+                <td>{{ position.symbol }}</td>
+                <td>{{ position.instrumentName }}</td>
+                <td>{{ position.assetClass }}</td>
+                <td>{{ position.quantity | number: '1.0-0' }}</td>
+                <td>${{ position.averageCost | number: '1.2-2' }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
