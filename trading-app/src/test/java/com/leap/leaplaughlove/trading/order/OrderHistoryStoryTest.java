@@ -65,7 +65,7 @@ class OrderHistoryStoryTest {
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(aliceOrder)));
 
-        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20);
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
 
         assertEquals(1, page.getTotalElements());
         verify(orderRepository).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20)));
@@ -87,7 +87,7 @@ class OrderHistoryStoryTest {
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(newerOrder, olderOrder)));
 
-        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20);
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
 
         List<OrderHistoryItem> items = page.getContent();
         assertEquals(2, items.size());
@@ -110,7 +110,7 @@ class OrderHistoryStoryTest {
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(order)));
 
-        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20);
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
 
         OrderHistoryItem item = page.getContent().get(0);
         assertEquals(orderId, item.orderId());
@@ -128,7 +128,7 @@ class OrderHistoryStoryTest {
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(1, 5))))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 5), 12));
 
-        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 1, 5);
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 1, 5, null, null, null);
 
         assertEquals(1, page.getNumber());
         assertEquals(5, page.getSize());
@@ -147,7 +147,7 @@ class OrderHistoryStoryTest {
         when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(unfilledOrder)));
 
-        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20);
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
 
         OrderHistoryItem item = page.getContent().get(0);
         assertEquals("SUBMITTED", item.status());

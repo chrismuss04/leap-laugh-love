@@ -4,6 +4,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -12,4 +13,7 @@ import java.util.UUID;
  */
 public interface OrderRepository extends JpaRepository<Order, UUID> {
     Page<Order> findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(UUID clientId, Pageable pageable);
+
+    Page<Order> findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+            UUID clientId, OffsetDateTime from, OffsetDateTime to, Pageable pageable);
 }
