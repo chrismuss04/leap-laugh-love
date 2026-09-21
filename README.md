@@ -18,8 +18,9 @@ The repository is structured as a **Multi-Module Maven Project** splitting ident
 
 1. **`common-security` (Shared Security Library)**: Contains reusable JWT token handling (`JwtService`, `JwtAuthenticationFilter`), 401 JSON error formatting (`JwtAuthenticationEntryPoint`), and shared CORS configuration (`CommonCorsConfiguration`). Packaged as a standard library JAR.
 2. **`iam-app` (Identity Access Management)**: Handles client registration, sign-in, and JWT token issuance. Runs on port `8081`.
-3. **`trading-app` (Trading Services)**: Handles account balances, deposits, withdrawals, order management, and trade history. Runs on port `8082`.
-4. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
+3. **`account-app` (Account & Portfolio Services)**: Handles client accounts, cash balances, deposits, withdrawals, and portfolio holdings/positions. Runs on port `8082`.
+4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation, execution processing, position movements audit trail, and order history. Runs on port `8084`.
+5. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument plus OHLC candle history, exposed via REST and an SSE push stream. Runs on port `8083`.
 
 ```mermaid
 flowchart TB
@@ -39,13 +40,22 @@ flowchart TB
             RegC["ClientRegistrationController\n/api/iam/v1/clients"]
         end
 
-        subgraph TRADING["trading-app (Port 8082)"]
-            TradeApp["TradingApplication @Import(JwtService)"]
-            TradeSec["TradingSecurityConfig (CORS Enabled)"]
-            TradeEx["TradingGlobalExceptionHandler"]
-            BalC["BalanceController\n/api/trading/balance"]
-            OrderC["OrderHistoryController\n/api/trading/orders/history"]
+        subgraph ACCOUNT["account-app (Port 8082)"]
+            AccountApp["AccountApplication @Import(JwtService)"]
+            AccountSec["AccountSecurityConfig (CORS Enabled)"]
+            BalC["BalanceController\n/api/account/balance"]
+            AcctC["AccountController\n/api/account/accounts"]
+            PosC["PositionController\n/api/account/accounts/{id}/positions"]
+            SettleC["AccountSettlementController\n/api/account/internal/accounts/{id}/settlement"]
+        end
+
+        subgraph ORDER["order-app (Port 8084)"]
+            OrderApp["OrderApplication @Import(JwtService)"]
+            OrderSec["OrderSecurityConfig (CORS Enabled)"]
+            OrderSubC["OrderSubmissionController\n/api/order/orders"]
+            OrderHistC["OrderHistoryController\n/api/order/orders/history"]
             QuoteSvc["CurrentQuoteService\n(non-stale quote at execution)"]
+            AcctClient["AccountClient\n(REST to account-app)"]
         end
 
         subgraph MARKETDATA["market-data-app (Port 8083)"]
@@ -96,7 +106,7 @@ flowchart TB
 
 ## UML Class Diagrams
 
-Entities, repositories, services and controllers for each module (test sources and DTO getters omitted for legibility). Microservices (`iam-app`, `trading-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear.
+Entities, repositories, services and controllers for each module (test sources and DTO getters omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear.
 
 **Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
 
@@ -108,9 +118,14 @@ flowchart LR
     CS["common-security<br/>(jwt · auth filter · cors)"]:::mod
     IAM["iam-app<br/>(clients · auth · jwt)"]:::mod
     MD["market-data-app<br/>(instruments · simulation · candles)"]:::mod
-    TR["trading-app<br/>(accounts · orders · positions)"]:::mod
+    ACCT["account-app<br/>(accounts · balance · positions)"]:::mod
+    ORD["order-app<br/>(orders · validation · executions)"]:::mod
+    IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
-    TR -- "depends on" --> CS
+    ACCT -- "depends on" --> CS
+    ORD -- "depends on" --> CS
+    ORD ..> ACCT
+    ORD ..> MD
 ```
 
 ### Common Security — `common-security`
@@ -503,11 +518,16 @@ classDiagram
 | **IAM** | `POST /api/iam/auth/login` | Client login, returns JWT token | Permitted |
 | **IAM** | `POST /api/iam/v1/clients/register` | Client registration | Permitted |
 | **IAM** | `GET /actuator/health` | IAM service health check | Permitted |
-| **Trading** | `GET /api/trading/balance` | Get balances for authenticated client | Bearer JWT required |
-| **Trading** | `POST /api/trading/balance/accounts/{id}/deposit` | Deposit funds | Bearer JWT required |
-| **Trading** | `POST /api/trading/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT required |
-| **Trading** | `GET /api/trading/orders/history` | Paginated order history | Bearer JWT required |
-| **Trading** | `GET /actuator/health` | Trading service health check | Permitted |
+| **Account** | `GET /api/account/accounts` | Get client trading accounts | Bearer JWT required |
+| **Account** | `GET /api/account/accounts/{id}` | Get specific trading account | Bearer JWT required |
+| **Account** | `GET /api/account/accounts/{id}/positions` | Get holdings/positions for account | Bearer JWT required |
+| **Account** | `GET /api/account/balance` | Get balances for authenticated client | Bearer JWT required |
+| **Account** | `POST /api/account/balance/accounts/{id}/deposit` | Deposit funds | Bearer JWT required |
+| **Account** | `POST /api/account/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT required |
+| **Account** | `GET /actuator/health` | Account service health check | Permitted |
+| **Order** | `POST /api/order/orders` | Place order (BUY/SELL) with immediate execution | Bearer JWT required |
+| **Order** | `GET /api/order/orders/history` | Paginated order history | Bearer JWT required |
+| **Order** | `GET /actuator/health` | Order service health check | Permitted |
 | **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT required |
@@ -562,8 +582,11 @@ mvn -pl common-security test
 # Test IAM module (with dependency building)
 mvn -pl iam-app -am test
 
-# Test Trading module (with dependency building)
-mvn -pl trading-app -am test
+# Test Account module (with dependency building)
+mvn -pl account-app -am test
+
+# Test Order module (with dependency building)
+mvn -pl order-app -am test
 
 # Test Market Data module (with dependency building)
 mvn -pl market-data-app -am test
@@ -578,7 +601,7 @@ mvn compile javadoc:javadoc
 ```
 
 > [!NOTE]
-> In a multi-module Maven project where `iam-app`, `trading-app`, and `market-data-app` depend on the sibling library module `common-security`, invoking `compile` prior to `javadoc:javadoc` (or ensuring artifacts are installed in the local repository) ensures that class files for dependencies in the reactor are built so the Javadoc compiler can resolve classpath types across modules.
+> In a multi-module Maven project where `iam-app`, `account-app`, `order-app`, and `market-data-app` depend on the sibling library module `common-security`, invoking `compile` prior to `javadoc:javadoc` (or ensuring artifacts are installed in the local repository) ensures that class files for dependencies in the reactor are built so the Javadoc compiler can resolve classpath types across modules.
 > 
 > To generate Javadocs for a single module:
 > ```bash
@@ -588,7 +611,7 @@ mvn compile javadoc:javadoc
 ### 3. Launch Services via Docker Compose (Recommended)
 
 Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
-container - `db`, `iam-app`, `trading-app`, `market-data-app` and `frontend`:
+container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app` and `frontend`:
 
 ```bash
 docker compose up -d --build
@@ -603,14 +626,12 @@ JWT_SECRET="your_jwt_secret_key_here_minimum_32_chars" docker compose up -d --bu
 Services will be exposed on:
 - **Frontend (Angular dev server)**: `http://localhost:4200`
 - **IAM Application**: `http://localhost:8081`
-- **Trading Application**: `http://localhost:8082`
+- **Account Application**: `http://localhost:8082`
+- **Order Application**: `http://localhost:8084`
 - **Market Data Application**: `http://localhost:8083`
 - **PostgreSQL Database**: `localhost:5432`
 
-The browser talks to `iam-app` and `trading-app` directly on the ports above, so those stay
-published even though the `frontend` container itself never calls them. On a remote or
-headless host, forward `4200`, `8081` and `8082` - forwarding `4200` alone yields a UI that
-cannot sign in.
+The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
 
 To run the frontend on its own against an already-running backend:
 
@@ -633,9 +654,14 @@ Run IAM App:
 mvn -pl iam-app spring-boot:run
 ```
 
-Run Trading App (in a separate terminal):
+Run Account App (in a separate terminal):
 ```bash
-mvn -pl trading-app spring-boot:run
+mvn -pl account-app spring-boot:run
+```
+
+Run Order App (in a separate terminal):
+```bash
+mvn -pl order-app spring-boot:run
 ```
 
 Run Market Data App (in a separate terminal):
@@ -801,7 +827,7 @@ the first.
 > data directory. After changing `db/seed_marketdata.sql` (or any other seed), run
 > `docker compose down -v` before `docker compose up` or the changes will not be applied. Note
 > that `docker-compose.yml` mounts the **`iam-app`** copy of the seed files; the copies under
-> `market-data-app` and `trading-app` are kept in step for module-local use.
+> `account-app`, `order-app`, and `market-data-app` are kept in step for module-local use.
 
 ---
 

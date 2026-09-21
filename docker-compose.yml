@@ -17,11 +17,31 @@ services:
 
   trading-app:
     image: "trading-app:${IMAGE_TAG:-latest}"
+  account-app:
+    image: "account-app:${IMAGE_TAG:-latest}"
     build:
       context: .
       dockerfile: trading-app/Dockerfile
+      dockerfile: account-app/Dockerfile
     ports:
       - "${TRADING_PORT:-8082}:8082"
+      - "${ACCOUNT_PORT:-8082}:8082"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
+      SPRING_DATASOURCE_USERNAME: paysprint
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+
+  order-app:
+    image: "order-app:${IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: order-app/Dockerfile
+    ports:
+      - "${ORDER_PORT:-8084}:8084"
     depends_on:
       db:
         condition: service_healthy
@@ -31,6 +51,7 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
+      ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"
@@ -76,6 +97,8 @@ services:
       # Override proxy.conf.js's localhost defaults with the compose service names.
       IAM_PROXY_TARGET: http://iam-app:8081
       TRADING_PROXY_TARGET: http://trading-app:8082
+      ACCOUNT_PROXY_TARGET: http://account-app:8082
+      ORDER_PROXY_TARGET: http://order-app:8084
       MARKETDATA_PROXY_TARGET: http://market-data-app:8083
     # --poll: inotify events do not cross a bind mount on Docker Desktop, so without it
     # hot reload silently does nothing for everyone not on linux.
