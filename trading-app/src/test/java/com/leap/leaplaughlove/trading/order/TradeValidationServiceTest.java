@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -126,6 +127,7 @@ class TradeValidationServiceTest {
 
         assertFalse(result.isValid());
         assertEquals("Account is not active", result.reason());
+        verifyNoInteractions(cashLedgerRepository, positionRepository);
     }
 
     @Test
