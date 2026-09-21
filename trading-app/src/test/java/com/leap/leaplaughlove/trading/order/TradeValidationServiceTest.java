@@ -116,6 +116,19 @@ class TradeValidationServiceTest {
     }
 
     @Test
+    @DisplayName("Trade on an inactive account is REJECTED")
+    void testInactiveAccount_Rejected() {
+        Account inactiveAccount = new Account(UUID.randomUUID(), activeAccount.getClientId(),
+                "ACC-INACTIVE", "BLOCKED", "USD", true, OffsetDateTime.now());
+
+        TradeValidationResult result = tradeValidationService.validateTrade(
+                inactiveAccount, tradableInstrument, Order.Side.BUY, 10, new BigDecimal("150.00"));
+
+        assertFalse(result.isValid());
+        assertEquals("Account is not active", result.reason());
+    }
+
+    @Test
     @DisplayName("Trade on locked/trading-disabled account is REJECTED")
     void testLockedAccount_Rejected() {
         TradeValidationResult result = tradeValidationService.validateTrade(
