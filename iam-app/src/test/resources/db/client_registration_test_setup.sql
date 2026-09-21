@@ -1,7 +1,7 @@
 -- LLL-117: minimal iam schema so ClientRegistrationControllerTest can register clients against H2.
 CREATE SCHEMA IF NOT EXISTS iam;
 
-DROP TABLE IF EXISTS iam.client_profile;
+DROP TABLE IF EXISTS iam.client_profile CASCADE;
 -- CASCADE defensively, in case another iam-app test suite sharing this in-memory DB already
 -- created a table with a foreign key into iam.clients.
 DROP TABLE IF EXISTS iam.clients CASCADE;
