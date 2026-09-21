@@ -7,6 +7,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.security.core.Authentication;
@@ -22,6 +23,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -119,6 +124,51 @@ class PriceControllerTest {
                         .with(csrf())
                         .with(authentication(authenticatedClient())))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /api/marketdata/prices/{symbol}/history - queries the requested candle width")
+    void testGetHistoryUsesRequestedInterval() throws Exception {
+        when(candleRepository.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(3600), any(), any(), any()))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/marketdata/prices/AAPL/history")
+                        .param("interval", "3600")
+                        .with(csrf())
+                        .with(authentication(authenticatedClient())))
+                .andExpect(status().isOk());
+
+        verify(candleRepository).findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(3600), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("GET /api/marketdata/prices/{symbol}/history - defaults to 60s candles")
+    void testGetHistoryDefaultsToMinuteCandles() throws Exception {
+        when(candleRepository.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(60), any(), any(), any()))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/marketdata/prices/AAPL/history")
+                        .with(csrf())
+                        .with(authentication(authenticatedClient())))
+                .andExpect(status().isOk());
+
+        verify(candleRepository).findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(60), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("GET /api/marketdata/prices/{symbol}/history - 400 for an unsupported interval")
+    void testGetHistoryRejectsUnsupportedInterval() throws Exception {
+        mockMvc.perform(get("/api/marketdata/prices/AAPL/history")
+                        .param("interval", "90")
+                        .with(csrf())
+                        .with(authentication(authenticatedClient())))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(candleRepository);
     }
 
     @Test

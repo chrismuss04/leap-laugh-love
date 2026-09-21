@@ -19,8 +19,22 @@ app:
 marketdata:
   simulation:
     tick-interval-ms: 1000
-    candle-bucket-seconds: 60
+    # Every width listed here is accumulated from the same tick stream, so a chart at any
+    # range reads candles that stay current. A candle is written only when its bucket rolls
+    # over, so the wide widths cost a handful of inserts a day.
+    candle-bucket-seconds: 60,300,3600,86400
     candle-flush-interval-ms: 5000
+  history:
+    backfill:
+      # Generates synthetic history on first boot for instruments that have none, so charts
+      # aren't limited to the current process's uptime. Skipped for any instrument that
+      # already has candles, so this is a no-op on later boots. Turn off to run against
+      # whatever history the database already holds.
+      enabled: true
+      step-seconds: 60
+      # bucketSeconds:lookbackDays - wider buckets reach further back, which is what keeps a
+      # year of history to a few thousand rows per instrument.
+      tiers: 86400:365,3600:90,300:7,60:2
   ingestion:
     spread-bps: 5
     default-lot-size: 100

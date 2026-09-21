@@ -50,7 +50,7 @@ class OrderHistoryControllerTest {
 
         ExecutionItem execution = new ExecutionItem(executionId, 10L, price, submitted.plusSeconds(30));
         OrderHistoryItem item = new OrderHistoryItem(
-                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30), execution);
+                orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30), List.of(execution));
 
         when(orderHistoryService.getOrderHistory(clientId, 0, 20))
                 .thenReturn(new PageImpl<>(List.of(item)));

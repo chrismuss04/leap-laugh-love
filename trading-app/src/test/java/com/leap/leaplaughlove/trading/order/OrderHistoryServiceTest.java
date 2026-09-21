@@ -91,6 +91,67 @@ class OrderHistoryServiceTest {
     }
 
     @Test
+    @DisplayName("an order filled by several executions reports every fill, oldest first")
+    void testPartiallyFilledOrderReportsAllExecutions() {
+        UUID orderId = UUID.randomUUID();
+        Order order = new Order(
+                orderId, account, aapl, Order.Side.BUY,
+                30L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(9), null);
+
+        Execution firstFill = new Execution(
+                order, 10L, new BigDecimal("150.25"), Execution.Status.FILLED,
+                "Partial fill", baseTime.plusSeconds(5));
+        Execution secondFill = new Execution(
+                order, 20L, new BigDecimal("150.75"), Execution.Status.FILLED,
+                "Partial fill", baseTime.plusSeconds(9));
+
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(order)));
+        // Returned newest-first to prove the service orders the fills rather than trusting the
+        // repository's order.
+        when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
+                .thenReturn(List.of(secondFill, firstFill));
+
+        OrderHistoryItem item = orderHistoryService.getOrderHistory(clientId, 0, 20).getContent().get(0);
+
+        assertEquals(2, item.executions().size(), "both fills should be reported");
+        assertEquals(10L, item.executions().get(0).quantity());
+        assertEquals(new BigDecimal("150.25"), item.executions().get(0).price());
+        assertEquals(20L, item.executions().get(1).quantity());
+        assertEquals(new BigDecimal("150.75"), item.executions().get(1).price());
+        assertEquals(30L, item.executions().stream().mapToLong(ExecutionItem::quantity).sum(),
+                "reported fills should account for the whole order quantity");
+        assertEquals(10L, item.execution().quantity(),
+                "the legacy single-execution accessor exposes the first fill");
+    }
+
+    @Test
+    @DisplayName("non-filled executions are excluded from the reported fills")
+    void testNonFilledExecutionsExcluded() {
+        UUID orderId = UUID.randomUUID();
+        Order order = new Order(
+                orderId, account, aapl, Order.Side.BUY,
+                10L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(5), null);
+
+        Execution rejected = new Execution(
+                order, 10L, new BigDecimal("150.00"), Execution.Status.REJECTED,
+                "Insufficient funds", baseTime.plusSeconds(3));
+        Execution filled = new Execution(
+                order, 10L, new BigDecimal("150.25"), Execution.Status.FILLED,
+                "Executed at market price", baseTime.plusSeconds(5));
+
+        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+                .thenReturn(new PageImpl<>(List.of(order)));
+        when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
+                .thenReturn(List.of(rejected, filled));
+
+        OrderHistoryItem item = orderHistoryService.getOrderHistory(clientId, 0, 20).getContent().get(0);
+
+        assertEquals(1, item.executions().size());
+        assertEquals(new BigDecimal("150.25"), item.executions().get(0).price());
+    }
+
+    @Test
     @DisplayName("rejected orders are returned in order history with REJECTED status and no fill execution")
     void testRejectedOrdersReturnedInHistory() {
         UUID orderId = UUID.randomUUID();

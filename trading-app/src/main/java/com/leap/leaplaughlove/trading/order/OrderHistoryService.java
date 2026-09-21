@@ -6,6 +6,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,18 +45,21 @@ public class OrderHistoryService {
                 .findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, pageable);
 
         List<UUID> orderIds = orders.map(Order::getOrderId).getContent();
-        Map<UUID, ExecutionItem> executionByOrderId = executionRepository
+        // Grouped, not collected into one-per-order: an order can fill in several executions,
+        // and keeping only the first reported a partial fill as if it were the whole order.
+        Map<UUID, List<ExecutionItem>> executionsByOrderId = executionRepository
                 .findByOrder_OrderIdIn(orderIds).stream()
                 .filter(execution -> execution.getStatus() == Execution.Status.FILLED)
-                .collect(Collectors.toMap(
+                .sorted(Comparator.comparing(Execution::getExecutedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .collect(Collectors.groupingBy(
                         execution -> execution.getOrder().getOrderId(),
-                        this::toExecutionItem,
-                        (existing, replacement) -> existing));
+                        Collectors.mapping(this::toExecutionItem, Collectors.toList())));
 
-        return orders.map(order -> toHistoryItem(order, executionByOrderId));
+        return orders.map(order -> toHistoryItem(order, executionsByOrderId));
     }
 
-    private OrderHistoryItem toHistoryItem(Order order, Map<UUID, ExecutionItem> executionByOrderId) {
+    private OrderHistoryItem toHistoryItem(Order order, Map<UUID, List<ExecutionItem>> executionsByOrderId) {
         return new OrderHistoryItem(
                 order.getOrderId(),
                 order.getInstrument().getSymbol(),
@@ -64,7 +68,7 @@ public class OrderHistoryService {
                 order.getStatus().name(),
                 order.getSubmittedAt(),
                 order.getFilledAt(),
-                executionByOrderId.get(order.getOrderId()));
+                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));
     }
 
     private ExecutionItem toExecutionItem(Execution execution) {

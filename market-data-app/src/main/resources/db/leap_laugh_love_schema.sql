@@ -218,21 +218,29 @@ CREATE TABLE IF NOT EXISTS marketdata.instruments (
 
 -- OHLC candles aggregated from the live GBM tick stream (not raw ticks) so table growth
 -- stays bounded: one row per instrument per bucket instead of one row per tick.
+--
+-- bucket_seconds is part of the key because the same instant is legitimately covered by
+-- several candles of different widths: the live accumulator writes 60s buckets, while the
+-- historical backfill also stores 5m/1h/1d rollups so a year of history costs thousands of
+-- rows instead of the ~525k/instrument a 60s-only year would need. Readers always filter on
+-- one width, so the widths never mix inside a single series.
 CREATE TABLE IF NOT EXISTS marketdata.price_candles (
     candle_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     instrument_id UUID NOT NULL
         REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
     bucket_start TIMESTAMPTZ NOT NULL,
+    bucket_seconds INTEGER NOT NULL DEFAULT 60 CHECK (bucket_seconds > 0),
     open NUMERIC(18,6) NOT NULL,
     high NUMERIC(18,6) NOT NULL,
     low NUMERIC(18,6) NOT NULL,
     close NUMERIC(18,6) NOT NULL,
-    UNIQUE (instrument_id, bucket_start)
+    UNIQUE (instrument_id, bucket_start, bucket_seconds)
 );
 
--- Backs the history endpoint's per-symbol, newest-first, time-bounded query.
+-- Backs the history endpoint's per-symbol, per-width, newest-first, time-bounded query.
+-- bucket_seconds leads bucket_start because every read pins the width first.
 CREATE INDEX IF NOT EXISTS idx_price_candles_instrument_bucket
-    ON marketdata.price_candles (instrument_id, bucket_start DESC);
+    ON marketdata.price_candles (instrument_id, bucket_seconds, bucket_start DESC);
 
 -- Quote Feed Ingestion: one row per parsed+validated quote message accepted from the feed
 -- (today, a simulated wire format derived from the GBM tick stream; swappable for a real
