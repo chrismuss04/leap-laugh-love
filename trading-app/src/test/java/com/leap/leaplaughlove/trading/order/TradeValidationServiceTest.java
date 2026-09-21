@@ -18,6 +18,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -113,6 +114,20 @@ class TradeValidationServiceTest {
 
         assertFalse(result.isValid());
         assertTrue(result.reason().contains("Insufficient position quantity"));
+    }
+
+    @Test
+    @DisplayName("Trade on an inactive account is REJECTED")
+    void testInactiveAccount_Rejected() {
+        Account inactiveAccount = new Account(UUID.randomUUID(), activeAccount.getClientId(),
+                "ACC-INACTIVE", "BLOCKED", "USD", true, OffsetDateTime.now());
+
+        TradeValidationResult result = tradeValidationService.validateTrade(
+                inactiveAccount, tradableInstrument, Order.Side.BUY, 10, new BigDecimal("150.00"));
+
+        assertFalse(result.isValid());
+        assertEquals("Account is not active", result.reason());
+        verifyNoInteractions(cashLedgerRepository, positionRepository);
     }
 
     @Test
