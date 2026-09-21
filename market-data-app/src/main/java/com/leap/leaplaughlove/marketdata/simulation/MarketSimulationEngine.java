@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.marketdata.simulation;
 
+import com.leap.leaplaughlove.marketdata.history.PriceCandle;
+import com.leap.leaplaughlove.marketdata.history.PriceCandleRepository;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,7 @@ public class MarketSimulationEngine {
     private static final double SECONDS_PER_YEAR = 365.0 * 24 * 60 * 60;
 
     private final SimulatedInstrumentRepository instrumentRepository;
+    private final PriceCandleRepository candleRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final long tickIntervalMs;
 
@@ -38,28 +41,42 @@ public class MarketSimulationEngine {
     /**
      * Creates a new MarketSimulationEngine with the given collaborators and tick interval.
      * @param instrumentRepository repository used to look up active instruments at startup
+     * @param candleRepository repository used to resume each instrument's last persisted price
      * @param eventPublisher publisher used to broadcast {@link PriceTickEvent}s
      * @param tickIntervalMs the interval, in milliseconds, between simulation ticks
      */
     public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
+                                   PriceCandleRepository candleRepository,
                                    ApplicationEventPublisher eventPublisher,
                                    @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs) {
         this.instrumentRepository = instrumentRepository;
+        this.candleRepository = candleRepository;
         this.eventPublisher = eventPublisher;
         this.tickIntervalMs = tickIntervalMs;
     }
 
     /**
-     * Seeds the simulation state for every active instrument from its initial price, once
-     * the application context is ready.
+     * Seeds the simulation state for every active instrument once the application context is
+     * ready, resuming from the newest persisted candle close where one exists and falling back
+     * to the instrument's configured initial price otherwise.
+     *
+     * <p>Resuming matters because this runs on every boot. Restarting each instrument at its
+     * seed price made the persisted series jump back to that price at every restart, so a chart
+     * drawn over the candle history showed a sawtooth no market movement produced. It is also
+     * what lets the historical backfill hand off continuously: the backfill's final close
+     * becomes the live feed's opening price.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void initialize() {
         for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {
             RandomGenerator random = new Random(instrument.getRngSeed());
+            BigDecimal startingPrice = candleRepository
+                    .findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc(instrument.getSymbol())
+                    .map(PriceCandle::getClose)
+                    .orElseGet(instrument::getInitialPrice);
             PriceState initialState = new PriceState(
                     instrument.getSymbol(),
-                    instrument.getInitialPrice().setScale(PRICE_SCALE, RoundingMode.HALF_UP),
+                    startingPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP),
                     OffsetDateTime.now());
             statesBySymbol.put(instrument.getSymbol(), new InstrumentSimState(
                     instrument.getDrift().doubleValue(),

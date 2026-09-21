@@ -235,7 +235,7 @@ classDiagram
 
 ### Market Data — `market-data-app`
 
-`com.leap.leaplaughlove.marketdata.{instrument, simulation, history, stream, api}` — simulates prices with discretized Geometric Brownian Motion on a scheduler, publishes ticks as Spring events, streams them over SSE, and rolls them up into OHLC candles.
+`com.leap.leaplaughlove.marketdata.{instrument, simulation, history, stream, api}` — simulates prices with discretized Geometric Brownian Motion on a scheduler, publishes ticks as Spring events, streams them over SSE, and rolls them up into OHLC candles at several widths. See [Price history and candle widths](#price-history-and-candle-widths) for how history is stored and generated.
 
 ```mermaid
 classDiagram
@@ -254,6 +254,7 @@ classDiagram
     class PriceCandle {
         -UUID candleId
         -OffsetDateTime bucketStart
+        -int bucketSeconds
         -BigDecimal open
         -BigDecimal high
         -BigDecimal low
@@ -265,9 +266,16 @@ classDiagram
     }
     class PriceCandleRepository {
         <<interface>>
-        +findByInstrument_SymbolAndBucketStartBetween(...) Page~PriceCandle~
+        +findByInstrument_SymbolAndBucketSecondsAndBucketStartBetween(...) Page~PriceCandle~
+        +findFirstByInstrument_SymbolOrderByBucketStartDesc(...) Optional~PriceCandle~
+        +existsByInstrument_InstrumentId(UUID) boolean
+    }
+    class PriceHistoryBackfill {
+        <<ApplicationRunner>>
+        +run(ApplicationArguments)
     }
     class MarketSimulationEngine {
+        +initialize()
         +tick()
         +latest(String) Optional~PriceState~
         +latestAll() List~PriceState~
@@ -315,6 +323,10 @@ classDiagram
     SimulatedInstrumentRepository ..> SimulatedInstrument : manages
     PriceCandleRepository ..> PriceCandle : manages
     MarketSimulationEngine --> SimulatedInstrumentRepository : uses
+    MarketSimulationEngine --> PriceCandleRepository : resumes last close from
+    PriceHistoryBackfill --> SimulatedInstrumentRepository : uses
+    PriceHistoryBackfill --> PriceCandleRepository : seeds
+    PriceHistoryBackfill --> GbmPriceGenerator : uses
     MarketSimulationEngine --> GbmPriceGenerator : uses
     MarketSimulationEngine ..> PriceState : produces
     MarketSimulationEngine ..> PriceTickEvent : publishes
@@ -498,7 +510,7 @@ classDiagram
 | **Trading** | `GET /actuator/health` | Trading service health check | Permitted |
 | **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT required |
-| **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history | Bearer JWT required |
+| **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT required |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
 
@@ -739,4 +751,58 @@ erDiagram
     }
 ```
 
-Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in three Postgres schemas — `iam` (clients, profiles, credentials), `trading` (accounts, instruments, orders, executions, cash ledger, positions), and `marketdata` (simulated instruments and OHLC price candles — decoupled from `trading.instruments`, matched only by symbol). Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.
+## Price history and candle widths
+
+The simulation ticks once a second, but ticks are never persisted. They are folded into OHLC
+candles at four widths in parallel - **60s, 5m, 1h and 1d** - and a candle is written only when
+its bucket rolls over, so a daily candle costs one insert a day rather than one per tick. Which
+widths are accumulated is configured by `marketdata.simulation.candle-bucket-seconds`.
+
+`bucket_seconds` is part of the primary key of `marketdata.price_candles` alongside
+`instrument_id` and `bucket_start`, because the same instant is legitimately covered by a candle
+at every width. Readers always pin one width: `GET /api/marketdata/prices/{symbol}/history` takes
+an `interval` parameter, and the width should be chosen to suit the range being charted - a day of
+60s candles is 1,440 points, the same day at `interval=300` is 288, which is what a chart can
+actually resolve.
+
+| Range charted | Suggested `interval` | Points |
+| --- | --- | --- |
+| 1 day | `300` | ~288 |
+| 1 week | `3600` | ~168 |
+| 1 month | `3600` | ~720 |
+| 3 months / 1 year | `86400` | ~90 / ~365 |
+
+Storing several widths is what makes long ranges affordable. A year of 60s candles is ~525,000
+rows *per instrument*; the same year of daily candles is 365.
+
+### Backfill on first boot
+
+Candle history would otherwise only cover the current process's uptime, leaving every range
+longer than that empty. On first boot, `PriceHistoryBackfill` generates a synthetic history for
+any instrument that has no candles: one GBM walk per instrument at 60s resolution across the
+lookback, with every width folded out of that single walk so the daily, hourly and minute series
+agree with each other. Seeded from each instrument's `rng_seed`, so every developer's database
+gets the same history.
+
+It runs as an `ApplicationRunner`, which Spring Boot invokes *before* `ApplicationReadyEvent`.
+That ordering matters: `MarketSimulationEngine.initialize()` resumes each instrument from its
+newest persisted candle close, so the live feed opens where the generated history ended instead
+of jumping back to the seed price. (Resuming also fixes a restart artifact that predates the
+backfill - every restart used to snap prices back to their seed value, leaving a sawtooth in the
+candle table that no market movement produced.)
+
+Configured under `marketdata.history.backfill`: `enabled` (default `true`), `step-seconds`, and
+`tiers` as `bucketSeconds:lookbackDays` pairs (default `86400:365,3600:90,300:7,60:2`, about
+7,400 rows per instrument). It is idempotent per instrument, so it is a no-op on every boot after
+the first.
+
+> [!NOTE]
+> Seed files are mounted into `/docker-entrypoint-initdb.d`, which Postgres only runs on an empty
+> data directory. After changing `db/seed_marketdata.sql` (or any other seed), run
+> `docker compose down -v` before `docker compose up` or the changes will not be applied. Note
+> that `docker-compose.yml` mounts the **`iam-app`** copy of the seed files; the copies under
+> `market-data-app` and `trading-app` are kept in step for module-local use.
+
+---
+
+Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in three Postgres schemas — `iam` (clients, profiles, credentials), `trading` (accounts, instruments, orders, executions, cash ledger, positions), and `marketdata` (simulated instruments and OHLC price candles — decoupled from `trading.instruments`, matched only by symbol; `marketdata.instruments` also carries index/benchmark symbols such as `SPX` and `VIX` that quote and chart but, having no `trading.instruments` row, can never be ordered). Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.

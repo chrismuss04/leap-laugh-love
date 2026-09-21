@@ -14,36 +14,51 @@ import com.leap.leaplaughlove.marketdata.simulation.PriceTickEvent;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Aggregates the live tick stream into fixed-width OHLC candles instead of persisting every
  * tick, keeping table growth predictable (bucket count/day instead of tick count/day).
+ *
+ * <p>Every configured bucket width is accumulated in parallel from the same tick stream, so a
+ * chart over any range reads candles that stay current rather than only the finest width. The
+ * wider rollups are what make long ranges affordable: a year of 60s candles is ~525k rows per
+ * instrument, the same year of daily candles is 365. A candle is written only when its bucket
+ * rolls over, so a daily candle costs one insert per day, not one per tick.
  */
 @Component
 public class PriceCandleAccumulator {
 
     private final SimulatedInstrumentRepository instrumentRepository;
     private final PriceCandleRepository candleRepository;
-    private final long candleBucketSeconds;
+    private final List<Integer> candleBucketSeconds;
 
     private final Map<String, SimulatedInstrument> instrumentsBySymbol = new ConcurrentHashMap<>();
-    private final Map<String, CandleAccumulation> openCandles = new HashMap<>();
+    private final Map<BucketKey, CandleAccumulation> openCandles = new HashMap<>();
 
     /**
-     * Creates a new PriceCandleAccumulator with the given collaborators and bucket width.
+     * Creates a new PriceCandleAccumulator with the given collaborators and bucket widths.
      * @param instrumentRepository repository used to look up active instruments at startup
      * @param candleRepository repository used to persist flushed candles
-     * @param candleBucketSeconds the width, in seconds, of each OHLC bucket
+     * @param candleBucketSeconds the widths, in seconds, of the OHLC buckets to accumulate
      */
     public PriceCandleAccumulator(SimulatedInstrumentRepository instrumentRepository,
                                    PriceCandleRepository candleRepository,
-                                   @Value("${marketdata.simulation.candle-bucket-seconds:60}") long candleBucketSeconds) {
+                                   @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}")
+                                   List<Integer> candleBucketSeconds) {
+        if (candleBucketSeconds.isEmpty()) {
+            throw new IllegalArgumentException("at least one candle bucket width must be configured");
+        }
+        if (candleBucketSeconds.stream().anyMatch(width -> width == null || width <= 0)) {
+            throw new IllegalArgumentException("candle bucket widths must be positive");
+        }
         this.instrumentRepository = instrumentRepository;
         this.candleRepository = candleRepository;
-        this.candleBucketSeconds = candleBucketSeconds;
+        this.candleBucketSeconds = List.copyOf(candleBucketSeconds);
     }
 
     /**
@@ -57,22 +72,25 @@ public class PriceCandleAccumulator {
     }
 
     /**
-     * Folds a simulation tick into the open candle for its symbol's current bucket, flushing
-     * the previous bucket first if the tick has rolled over into a new one.
+     * Folds a simulation tick into the open candle for each configured bucket width, flushing
+     * any bucket the tick has rolled past first.
      * @param event the simulation tick event to fold in
      */
     @EventListener
     public synchronized void onPriceTick(PriceTickEvent event) {
         PriceState state = event.priceState();
-        OffsetDateTime bucketStart = currentBucketStart(state.asOf());
-        CandleAccumulation existing = openCandles.get(state.symbol());
-        if (existing == null) {
-            openCandles.put(state.symbol(), CandleAccumulation.open(bucketStart, state.price()));
-        } else if (existing.bucketStart().equals(bucketStart)) {
-            openCandles.put(state.symbol(), existing.extend(state.price()));
-        } else {
-            flush(state.symbol(), existing);
-            openCandles.put(state.symbol(), CandleAccumulation.open(bucketStart, state.price()));
+        for (int width : candleBucketSeconds) {
+            BucketKey key = new BucketKey(state.symbol(), width);
+            OffsetDateTime bucketStart = bucketStart(state.asOf(), width);
+            CandleAccumulation existing = openCandles.get(key);
+            if (existing == null) {
+                openCandles.put(key, CandleAccumulation.open(bucketStart, state.price()));
+            } else if (existing.bucketStart().equals(bucketStart)) {
+                openCandles.put(key, existing.extend(state.price()));
+            } else {
+                flush(key, existing);
+                openCandles.put(key, CandleAccumulation.open(bucketStart, state.price()));
+            }
         }
     }
 
@@ -82,39 +100,50 @@ public class PriceCandleAccumulator {
      */
     @Scheduled(fixedRateString = "${marketdata.simulation.candle-flush-interval-ms:5000}")
     public synchronized void flushStaleBuckets() {
-        OffsetDateTime currentBucket = currentBucketStart(OffsetDateTime.now());
-        openCandles.forEach((symbol, accumulation) -> {
-            if (accumulation.bucketStart().isBefore(currentBucket)) {
-                flush(symbol, accumulation);
+        OffsetDateTime now = OffsetDateTime.now();
+        List<BucketKey> elapsed = new ArrayList<>();
+        openCandles.forEach((key, accumulation) -> {
+            if (accumulation.bucketStart().isBefore(bucketStart(now, key.bucketSeconds()))) {
+                flush(key, accumulation);
+                elapsed.add(key);
             }
         });
-        openCandles.values().removeIf(accumulation -> accumulation.bucketStart().isBefore(currentBucket));
+        elapsed.forEach(openCandles::remove);
     }
 
     /**
-     * Persists a completed candle accumulation for a symbol.
-     * @param symbol the instrument symbol the accumulation belongs to
+     * Persists a completed candle accumulation.
+     * @param key the symbol and bucket width the accumulation belongs to
      * @param accumulation the completed OHLC accumulation to persist
      */
-    private void flush(String symbol, CandleAccumulation accumulation) {
-        SimulatedInstrument instrument = instrumentsBySymbol.get(symbol);
+    private void flush(BucketKey key, CandleAccumulation accumulation) {
+        SimulatedInstrument instrument = instrumentsBySymbol.get(key.symbol());
         if (instrument == null) {
             return;
         }
         candleRepository.save(new PriceCandle(
-                instrument, accumulation.bucketStart(),
+                instrument, accumulation.bucketStart(), key.bucketSeconds(),
                 accumulation.open(), accumulation.high(), accumulation.low(), accumulation.close()));
     }
 
     /**
-     * Rounds a timestamp down to the start of its candle bucket.
+     * Rounds a timestamp down to the start of its bucket at the given width.
      * @param timestamp the timestamp to bucket
+     * @param bucketSeconds the bucket width, in seconds
      * @return the start of the bucket containing the timestamp
      */
-    private OffsetDateTime currentBucketStart(OffsetDateTime timestamp) {
+    private static OffsetDateTime bucketStart(OffsetDateTime timestamp, int bucketSeconds) {
         long epochSeconds = timestamp.toEpochSecond();
-        long bucketEpochSeconds = epochSeconds - Math.floorMod(epochSeconds, candleBucketSeconds);
+        long bucketEpochSeconds = epochSeconds - Math.floorMod(epochSeconds, (long) bucketSeconds);
         return OffsetDateTime.ofInstant(Instant.ofEpochSecond(bucketEpochSeconds), timestamp.getOffset());
+    }
+
+    /**
+     * Identifies one in-progress accumulation: a symbol at one bucket width.
+     * @param symbol the instrument symbol
+     * @param bucketSeconds the bucket width, in seconds
+     */
+    private record BucketKey(String symbol, int bucketSeconds) {
     }
 
     /**

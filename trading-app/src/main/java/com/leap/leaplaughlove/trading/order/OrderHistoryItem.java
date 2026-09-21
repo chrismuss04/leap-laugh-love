@@ -10,6 +10,11 @@ import java.util.UUID;
  * Record to represent an order history item in the trading system.
  * Has the order details including its status, timestamps, and execution details.
  *
+ * <p>An order may fill in more than one execution, so the list is the authoritative field.
+ * {@code execution} is kept as a derived accessor for callers written against the earlier
+ * single-execution shape; it exposes the first fill only and is not meaningful for an order
+ * that filled in several.
+ *
  * @param orderId the unique identifier of the order
  * @param symbol the trading symbol of the order
  * @param side the side of the order (e.g., buy or sell)
@@ -17,7 +22,8 @@ import java.util.UUID;
  * @param status the current status of the order
  * @param submittedAt the timestamp when the order was submitted
  * @param filledAt the timestamp when the order was filled
- * @param execution the single execution associated with this order (or null if unfilled/rejected)
+ * @param executions the executions that filled this order, oldest first (empty if
+ *     unfilled/rejected)
  */
 public record OrderHistoryItem(
         UUID orderId,
@@ -27,14 +33,21 @@ public record OrderHistoryItem(
         String status,
         OffsetDateTime submittedAt,
         OffsetDateTime filledAt,
-        ExecutionItem execution
+        List<ExecutionItem> executions
 ) {
     /**
-     * Serialized by Jackson as "executions" to maintain contract compatibility with
-     * the frontend's expandable fills table.
+     * Normalises a null execution list to an empty one, so callers never have to null-check it.
      */
-    @JsonProperty("executions")
-    public List<ExecutionItem> executions() {
-        return execution != null ? List.of(execution) : List.of();
+    public OrderHistoryItem {
+        executions = executions != null ? List.copyOf(executions) : List.of();
+    }
+
+    /**
+     * Gets the first execution that filled this order.
+     * @return the first execution, or null if the order has no fills
+     */
+    @JsonProperty("execution")
+    public ExecutionItem execution() {
+        return executions.isEmpty() ? null : executions.get(0);
     }
 }

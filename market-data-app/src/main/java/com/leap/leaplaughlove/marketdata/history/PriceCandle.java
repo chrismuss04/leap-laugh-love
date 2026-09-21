@@ -27,6 +27,9 @@ public class PriceCandle {
     @Column(name = "bucket_start", nullable = false)
     private OffsetDateTime bucketStart;
 
+    @Column(name = "bucket_seconds", nullable = false)
+    private int bucketSeconds;
+
     @Column(name = "open", nullable = false, precision = 18, scale = 6)
     private BigDecimal open;
 
@@ -46,15 +49,17 @@ public class PriceCandle {
      * Creates a new PriceCandle entity with the specified details.
      * @param instrument the instrument this candle is for
      * @param bucketStart the start of the candle's time bucket
+     * @param bucketSeconds the width, in seconds, of the candle's time bucket
      * @param open the opening price of the bucket
      * @param high the highest price of the bucket
      * @param low the lowest price of the bucket
      * @param close the closing price of the bucket
      */
-    public PriceCandle(SimulatedInstrument instrument, OffsetDateTime bucketStart,
+    public PriceCandle(SimulatedInstrument instrument, OffsetDateTime bucketStart, int bucketSeconds,
                         BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close) {
         this.instrument = instrument;
         this.bucketStart = bucketStart;
+        this.bucketSeconds = bucketSeconds;
         this.open = open;
         this.high = high;
         this.low = low;
@@ -76,6 +81,11 @@ public class PriceCandle {
      * @return the bucketStart of the candle
      */
     public OffsetDateTime getBucketStart() { return bucketStart; }
+    /**
+     * Gets the width, in seconds, of the candle's time bucket.
+     * @return the bucketSeconds of the candle
+     */
+    public int getBucketSeconds() { return bucketSeconds; }
     /**
      * Gets the opening price of the bucket.
      * @return the open price of the candle

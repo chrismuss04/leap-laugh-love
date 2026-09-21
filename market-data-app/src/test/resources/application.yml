@@ -20,5 +20,11 @@ app:
 marketdata:
   simulation:
     tick-interval-ms: 1000
-    candle-bucket-seconds: 60
+    candle-bucket-seconds: 60,300,3600,86400
     candle-flush-interval-ms: 5000
+  history:
+    backfill:
+      # Tests assert against data they set up themselves; generating a year of history on
+      # every context start would both slow them down and put rows they didn't write in
+      # front of them.
+      enabled: false

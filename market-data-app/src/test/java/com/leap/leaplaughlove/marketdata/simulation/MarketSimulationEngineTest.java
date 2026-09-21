@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.marketdata.simulation;
 
+import com.leap.leaplaughlove.marketdata.history.PriceCandle;
+import com.leap.leaplaughlove.marketdata.history.PriceCandleRepository;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +21,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -28,6 +31,9 @@ class MarketSimulationEngineTest {
 
     @Mock
     private SimulatedInstrumentRepository instrumentRepository;
+
+    @Mock
+    private PriceCandleRepository candleRepository;
 
     @Mock
     private ApplicationEventPublisher eventPublisher;
@@ -41,7 +47,7 @@ class MarketSimulationEngineTest {
                 new BigDecimal("150.00"), new BigDecimal("0.07"), new BigDecimal("0.25"), 42L, true);
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
 
-        engine = new MarketSimulationEngine(instrumentRepository, eventPublisher, 1000L);
+        engine = new MarketSimulationEngine(instrumentRepository, candleRepository, eventPublisher, 1000L);
         engine.initialize();
     }
 
@@ -52,6 +58,21 @@ class MarketSimulationEngineTest {
 
         assertTrue(state.isPresent());
         assertEquals(0, new BigDecimal("150.000000").compareTo(state.get().price()));
+    }
+
+    @Test
+    @DisplayName("initialize resumes from the newest persisted candle close instead of the seed price")
+    void testInitializeResumesFromLatestCandleClose() {
+        PriceCandle latest = mock(PriceCandle.class);
+        when(latest.getClose()).thenReturn(new BigDecimal("182.520000"));
+        when(candleRepository.findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc("AAPL"))
+                .thenReturn(Optional.of(latest));
+
+        engine.initialize();
+
+        BigDecimal price = engine.latest("AAPL").orElseThrow().price();
+        assertEquals(0, new BigDecimal("182.520000").compareTo(price),
+                "a restart must continue from the last persisted price, not jump back to the seed price");
     }
 
     @Test

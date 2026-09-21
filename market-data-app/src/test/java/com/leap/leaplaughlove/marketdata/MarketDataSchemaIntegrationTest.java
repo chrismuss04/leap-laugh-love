@@ -49,8 +49,10 @@ class MarketDataSchemaIntegrationTest {
         assertTrue(candlesSection.contains("REFERENCES marketdata.instruments") &&
                         candlesSection.contains("ON DELETE RESTRICT"),
                 "price_candles should restrict cascading deletes from instruments");
-        assertTrue(candlesSection.contains("UNIQUE (instrument_id, bucket_start)"),
-                "price_candles should be unique per instrument per bucket");
+        assertTrue(candlesSection.contains("UNIQUE (instrument_id, bucket_start, bucket_seconds)"),
+                "price_candles should be unique per instrument per bucket per bucket width");
+        assertTrue(candlesSection.contains("bucket_seconds INTEGER NOT NULL"),
+                "price_candles should record the width of each bucket");
         assertTrue(candlesSection.contains("open") && candlesSection.contains("high")
                         && candlesSection.contains("low") && candlesSection.contains("close"),
                 "price_candles should store OHLC values");
