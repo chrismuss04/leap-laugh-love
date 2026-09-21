@@ -3,6 +3,9 @@ package com.leap.leaplaughlove.marketdata.history;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.Optional;
@@ -47,4 +50,17 @@ public interface PriceCandleRepository extends JpaRepository<PriceCandle, UUID> 
      * @return true if the instrument already has at least one candle
      */
     boolean existsByInstrument_InstrumentId(UUID instrumentId);
+
+    /**
+     * Deletes every candle of one width older than a cutoff, in a single statement. Written as a
+     * bulk {@code @Modifying} query rather than a derived {@code deleteBy...}, which would load
+     * each row as an entity and delete it individually - the opposite of what a prune needs.
+     * @param bucketSeconds the bucket width to prune
+     * @param cutoff candles whose bucket starts strictly before this are deleted
+     * @return the number of candles deleted
+     */
+    @Modifying
+    @Query("DELETE FROM PriceCandle c WHERE c.bucketSeconds = :bucketSeconds AND c.bucketStart < :cutoff")
+    int deleteByBucketSecondsAndBucketStartBefore(@Param("bucketSeconds") int bucketSeconds,
+                                                   @Param("cutoff") OffsetDateTime cutoff);
 }
