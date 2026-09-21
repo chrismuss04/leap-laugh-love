@@ -72,6 +72,103 @@ ON CONFLICT (order_id) DO UPDATE SET
     accepted_at = EXCLUDED.accepted_at,
     filled_at = EXCLUDED.filled_at;
 
+-- Orders 1a-1h: Alice's older history on fixed dates (2025-2026, mixed sides/statuses,
+-- two same-day pairs) so the history day/month/year filters have data to narrow.
+-- Order 1a: Alice buys 20 MSFT on 2025-03-12 (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa11'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'MSFT'),
+    'BUY', 20, 'FILLED',
+    '2025-03-12 10:15:00+00'::TIMESTAMPTZ,
+    '2025-03-12 10:16:00+00'::TIMESTAMPTZ,
+    '2025-03-12 10:17:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1b: Alice buys 10 GOOGL on 2025-03-12, same day as 1a (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa12'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'GOOGL'),
+    'BUY', 10, 'FILLED',
+    '2025-03-12 14:40:00+00'::TIMESTAMPTZ,
+    '2025-03-12 14:41:00+00'::TIMESTAMPTZ,
+    '2025-03-12 14:42:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1c: Alice sells 20 MSFT on 2025-11-20 (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa13'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'MSFT'),
+    'SELL', 20, 'FILLED',
+    '2025-11-20 16:05:00+00'::TIMESTAMPTZ,
+    '2025-11-20 16:06:00+00'::TIMESTAMPTZ,
+    '2025-11-20 16:07:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1d: Alice tries to buy 500 BTC/USD on 2026-01-28 (REJECTED - insufficient funds)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, rejected_at, rejection_reason)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa15'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'BTC/USD'),
+    'BUY', 500, 'REJECTED',
+    '2026-01-28 11:45:00+00'::TIMESTAMPTZ,
+    '2026-01-28 11:46:00+00'::TIMESTAMPTZ,
+    'Insufficient funds'
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1e: Alice buys 50 AAPL on 2026-08-03 (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa16'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'AAPL'),
+    'BUY', 50, 'FILLED',
+    '2026-08-03 13:20:00+00'::TIMESTAMPTZ,
+    '2026-08-03 13:21:00+00'::TIMESTAMPTZ,
+    '2026-08-03 13:22:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1f: Alice sells 25 AAPL on 2026-08-03, same day as 1e (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa17'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'AAPL'),
+    'SELL', 25, 'FILLED',
+    '2026-08-03 15:55:00+00'::TIMESTAMPTZ,
+    '2026-08-03 15:56:00+00'::TIMESTAMPTZ,
+    '2026-08-03 15:57:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1g: Alice buys 30 GOOGL on 2026-08-19 (accepted, not yet filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa18'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'GOOGL'),
+    'BUY', 30, 'ACCEPTED',
+    '2026-08-19 10:10:00+00'::TIMESTAMPTZ,
+    '2026-08-19 10:11:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
+-- Order 1h: Alice sells 10 GOOGL on 2026-09-02 (filled)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at, filled_at)
+SELECT
+    'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa19'::UUID,
+    (SELECT account_id FROM trading.accounts WHERE account_number = 'ACC-001-01'),
+    (SELECT instrument_id FROM trading.instruments WHERE symbol = 'GOOGL'),
+    'SELL', 10, 'FILLED',
+    '2026-09-02 12:00:00+00'::TIMESTAMPTZ,
+    '2026-09-02 12:01:00+00'::TIMESTAMPTZ,
+    '2026-09-02 12:02:00+00'::TIMESTAMPTZ
+ON CONFLICT (order_id) DO NOTHING;
+
 -- Order 2: Bob buys 50 MSFT (will be filled)
 INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, accepted_at, filled_at)
 SELECT
@@ -129,6 +226,64 @@ ON CONFLICT (execution_id) DO UPDATE SET
     fill_price = EXCLUDED.fill_price,
     status = EXCLUDED.status,
     reason = EXCLUDED.reason;
+
+-- Executions 1a-1h: Alice's older orders (1g is only accepted, so it has no execution yet).
+-- Executions are append-only, so DO NOTHING keeps re-runs safe.
+-- Execution 1a: Alice's MSFT buy filled at $372.10
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb11'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa11'::UUID,
+     20, 372.10, 'FILLED', '2025-03-12 10:17:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1b: Alice's GOOGL buy filled at $165.40
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb12'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa12'::UUID,
+     10, 165.40, 'FILLED', '2025-03-12 14:42:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1c: Alice's MSFT sell filled at $391.85
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb13'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa13'::UUID,
+     20, 391.85, 'FILLED', '2025-11-20 16:07:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1d: Alice's BTC/USD order REJECTED - recorded as failed execution
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb15'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa15'::UUID,
+     NULL, NULL, 'REJECTED', '2026-01-28 11:46:00+00'::TIMESTAMPTZ, 'Insufficient funds - order rejected')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1e: Alice's AAPL buy filled at $187.60
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb16'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa16'::UUID,
+     50, 187.60, 'FILLED', '2026-08-03 13:22:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1f: Alice's AAPL sell filled at $189.15
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb17'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa17'::UUID,
+     25, 189.15, 'FILLED', '2026-08-03 15:57:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
+
+-- Execution 1h: Alice's GOOGL sell filled at $171.25
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+VALUES
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb19'::UUID,
+     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaa19'::UUID,
+     10, 171.25, 'FILLED', '2026-09-02 12:02:00+00'::TIMESTAMPTZ, 'Executed at market price')
+ON CONFLICT (execution_id) DO NOTHING;
 
 -- Execution 2: Bob's MSFT order filled at $380.50
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, reason)
