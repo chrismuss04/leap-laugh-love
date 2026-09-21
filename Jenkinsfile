@@ -33,22 +33,40 @@ pipeline {
                     // commit overwrite each other's images, and make the cleanup block
                     // delete an image a concurrent build is still using.
                     env.IMAGE_TAG = "${commit}-${env.BUILD_NUMBER}"
-                    env.COMPOSE_PROJECT = "${env.JOB_NAME}-${env.BUILD_NUMBER}"
+                    // Every compose project this job creates starts with this prefix, which is
+                    // what lets the stale-container sweep below tell "my own leftovers" from
+                    // "another branch's build that is running right now".
+                    env.COMPOSE_PROJECT_PREFIX = "${env.JOB_NAME}"
                         .toLowerCase().replaceAll('[^a-z0-9]+', '-').replaceAll('^-+|-+$', '')
+                    env.COMPOSE_PROJECT = "${env.COMPOSE_PROJECT_PREFIX}-${env.BUILD_NUMBER}"
 
                     // Deliberately far from the 5432/8081-8083 the services default to, so a
                     // build never fights a stack someone is running locally on this host.
                     // Nothing outside the containers connects to these - every check below
                     // goes through "docker-compose exec" - they only need to be unique per
                     // executor so parallel builds on this agent don't overlap.
+                    //
+                    // Each executor gets a BLOCK of ports, not a single offset. Adding the
+                    // executor number to per-service bases one apart overlapped the blocks:
+                    // executor 0 took 18081/18082/18083 while executor 1 took 18082/18083/18084,
+                    // so 18083 was claimed by three different executors and whichever build
+                    // started second failed with "port is already allocated". The block must
+                    // stay wider than the number of published services.
                     def executor = env.EXECUTOR_NUMBER as Integer
-                    env.DB_PORT = (15432 + executor).toString()
-                    env.IAM_PORT = (18081 + executor).toString()
-                    env.TRADING_PORT = (18082 + executor).toString()
-                    env.MARKETDATA_PORT = (18083 + executor).toString()
+                    def portBlock = executor * 10
+                    env.DB_PORT = (15432 + portBlock).toString()
+                    env.IAM_PORT = (18081 + portBlock).toString()
+                    env.TRADING_PORT = (18082 + portBlock).toString()
+                    env.MARKETDATA_PORT = (18083 + portBlock).toString()
+                    // Never started in CI, but docker-compose.yml defaults it to 4200, so an
+                    // unset value would put every concurrent build on the same host port the
+                    // moment someone adds "frontend" to the "up -d" list below.
+                    env.FRONTEND_PORT = (14200 + portBlock).toString()
 
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
+                    echo "Executor ${executor} ports: db=${env.DB_PORT} iam=${env.IAM_PORT} " +
+                        "trading=${env.TRADING_PORT} marketdata=${env.MARKETDATA_PORT}"
                 }
             }
         }
@@ -132,12 +150,39 @@ pipeline {
                     # cleanup step failed) can still be bound to this executor's ports under a
                     # different COMPOSE_PROJECT name, which "docker-compose down" here would
                     # never find. Free the ports we're about to use before claiming them.
+                    #
+                    # Only this job's own leftovers are ever removed. "docker ps" lists running
+                    # containers, so a port held by a live build of another branch looks exactly
+                    # like a stale one; force-removing it used to kill that build's containers
+                    # mid-run, which surfaced as unrelated-looking failures in the other job.
+                    # Anything we don't own is a hard error instead - with per-executor port
+                    # blocks it should not happen, and if it does (two agents sharing one Docker
+                    # host, or a local stack on these ports) we want to be told, not to guess.
                     for p in "$DB_PORT" "$IAM_PORT" "$TRADING_PORT" "$MARKETDATA_PORT"; do
-                        cid=$(docker ps -q --filter "publish=$p")
-                        if [ -n "$cid" ]; then
-                            echo "Port $p is held by container $cid from a previous build; removing it"
-                            docker rm -f "$cid"
-                        fi
+                        for cid in $(docker ps -q --filter "publish=$p"); do
+                            proj=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$cid" 2>/dev/null) || proj=""
+                            # Ours only if what follows the prefix is a bare build number. A
+                            # plain "$PREFIX"-* glob would also match a sibling branch: for job
+                            # ".../main" the prefix is "...-main", which prefix-matches
+                            # "...-main-fix-3" from the branch "main-fix".
+                            suffix=${proj#"$COMPOSE_PROJECT_PREFIX"-}
+                            own=no
+                            if [ "$suffix" != "$proj" ]; then
+                                case "$suffix" in
+                                    ''|*[!0-9]*) own=no ;;
+                                    *)           own=yes ;;
+                                esac
+                            fi
+                            if [ "$own" = yes ]; then
+                                echo "Port $p held by $cid from this job's earlier build ($proj); removing it"
+                                docker rm -f "$cid"
+                            else
+                                echo "ERROR: port $p is held by container $cid, compose project '${proj:-<none>}'."
+                                echo "That container does not belong to this job, so it is not ours to remove."
+                                echo "Another build or a local stack is using this executor's port block."
+                                exit 1
+                            fi
+                        done
                     done
 
                     docker-compose -p "$COMPOSE_PROJECT" up -d db
