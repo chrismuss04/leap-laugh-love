@@ -24,12 +24,40 @@
       <p class="page-subtext">Review your recent trades and fills.</p>
     </div>
 
+    <div class="filter-bar">
+      <label class="filter-field">
+        <span class="filter-label">Year</span>
+        <select class="filter-select" (change)="setFilter(year, $event)">
+          <option value="" [selected]="year() === null">All</option>
+          <option *ngFor="let y of years" [value]="y" [selected]="y === year()">{{ y }}</option>
+        </select>
+      </label>
+
+      <label class="filter-field">
+        <span class="filter-label">Month</span>
+        <select class="filter-select" [disabled]="year() === null" (change)="setFilter(month, $event)">
+          <option value="" [selected]="month() === null">All</option>
+          <option *ngFor="let m of months; let i = index" [value]="i + 1" [selected]="i + 1 === month()">{{ m }}</option>
+        </select>
+      </label>
+
+      <label class="filter-field">
+        <span class="filter-label">Day</span>
+        <select class="filter-select" [disabled]="month() === null" (change)="setFilter(day, $event)">
+          <option value="" [selected]="day() === null">All</option>
+          <option *ngFor="let d of days()" [value]="d" [selected]="d === day()">{{ d }}</option>
+        </select>
+      </label>
+
+      <button *ngIf="year() !== null" (click)="clearFilter()" class="btn-secondary">Clear</button>
+    </div>
+
     <div *ngIf="loading()" class="loading">Loading orders...</div>
 
     <div *ngIf="error()" class="error-message">{{ error() }}</div>
 
     <div *ngIf="!loading() && orders().length === 0 && !error()" class="no-orders">
-      No orders found
+      {{ year() !== null ? 'No orders match this filter' : 'No orders found' }}
     </div>
 
     <div *ngIf="!loading() && orders().length > 0" class="orders-table-wrapper">
