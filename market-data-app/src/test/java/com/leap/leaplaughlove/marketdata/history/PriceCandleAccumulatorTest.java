@@ -17,12 +17,12 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -60,6 +60,23 @@ class PriceCandleAccumulatorTest {
                 OffsetDateTime.ofInstant(Instant.ofEpochSecond(epochSeconds), ZoneOffset.UTC))));
     }
 
+    @SuppressWarnings("unchecked")
+    private List<PriceCandle> flushAndCapture() {
+        accumulator.flushStaleBuckets();
+        ArgumentCaptor<List<PriceCandle>> captor = ArgumentCaptor.forClass(List.class);
+        verify(candleRepository).saveAll(captor.capture());
+        return captor.getValue();
+    }
+
+    private static PriceCandle candleAt(List<PriceCandle> candles, int width, long bucketStart) {
+        return candles.stream()
+                .filter(c -> c.getBucketSeconds() == width)
+                .filter(c -> c.getBucketStart().toEpochSecond() == bucketStart)
+                .findFirst()
+                .orElseThrow(() -> new AssertionError(
+                        "no " + width + "s candle at " + bucketStart + " in " + candles.size() + " candles"));
+    }
+
     @Test
     @DisplayName("a tick is folded into every configured bucket width")
     void testTickFoldsIntoEveryWidth() {
@@ -69,15 +86,17 @@ class PriceCandleAccumulatorTest {
         // Crossing into the next minute rolls the 60s bucket but not the hourly one.
         tick(HOUR_BOUNDARY + 60, "151.00");
 
-        ArgumentCaptor<PriceCandle> captor = ArgumentCaptor.forClass(PriceCandle.class);
-        verify(candleRepository).save(captor.capture());
+        List<PriceCandle> written = flushAndCapture();
 
-        PriceCandle minute = captor.getValue();
-        assertEquals(60, minute.getBucketSeconds());
+        PriceCandle minute = candleAt(written, 60, HOUR_BOUNDARY);
         assertEquals(0, new BigDecimal("150.00").compareTo(minute.getOpen()));
         assertEquals(0, new BigDecimal("152.00").compareTo(minute.getHigh()));
         assertEquals(0, new BigDecimal("149.00").compareTo(minute.getLow()));
         assertEquals(0, new BigDecimal("149.00").compareTo(minute.getClose()));
+
+        PriceCandle hour = candleAt(written, 3600, HOUR_BOUNDARY);
+        assertEquals(0, new BigDecimal("152.00").compareTo(hour.getHigh()),
+                "the hourly candle should see the same ticks as the minute candles inside it");
     }
 
     @Test
@@ -85,32 +104,60 @@ class PriceCandleAccumulatorTest {
     void testWidthsRollOverIndependently() {
         tick(HOUR_BOUNDARY, "150.00");
         tick(HOUR_BOUNDARY + 1800, "160.00");
-        // One hour on: both the minute bucket and the hour bucket have elapsed.
+        // One hour on: the hourly bucket has elapsed too.
         tick(HOUR_BOUNDARY + 3600, "155.00");
 
-        ArgumentCaptor<PriceCandle> captor = ArgumentCaptor.forClass(PriceCandle.class);
-        verify(candleRepository, org.mockito.Mockito.atLeast(2)).save(captor.capture());
+        List<PriceCandle> written = flushAndCapture();
 
-        Map<Integer, List<PriceCandle>> byWidth = captor.getAllValues().stream()
-                .collect(Collectors.groupingBy(PriceCandle::getBucketSeconds));
-
-        assertEquals(2, byWidth.size(), "both widths should have flushed a completed bucket");
-
-        PriceCandle hour = byWidth.get(3600).get(byWidth.get(3600).size() - 1);
-        assertEquals(0, new BigDecimal("150.00").compareTo(hour.getOpen()));
-        assertEquals(0, new BigDecimal("160.00").compareTo(hour.getHigh()));
-        assertEquals(0, new BigDecimal("160.00").compareTo(hour.getClose()),
+        PriceCandle firstHour = candleAt(written, 3600, HOUR_BOUNDARY);
+        assertEquals(0, new BigDecimal("150.00").compareTo(firstHour.getOpen()));
+        assertEquals(0, new BigDecimal("160.00").compareTo(firstHour.getHigh()));
+        assertEquals(0, new BigDecimal("150.00").compareTo(firstHour.getLow()));
+        assertEquals(0, new BigDecimal("160.00").compareTo(firstHour.getClose()),
                 "the hourly candle closes on the last tick inside the hour");
-        assertEquals(HOUR_BOUNDARY, hour.getBucketStart().toEpochSecond());
+
+        PriceCandle secondHour = candleAt(written, 3600, HOUR_BOUNDARY + 3600);
+        assertEquals(0, new BigDecimal("155.00").compareTo(secondHour.getOpen()));
     }
 
     @Test
-    @DisplayName("an in-progress bucket is not persisted")
-    void testInProgressBucketIsNotPersisted() {
+    @DisplayName("ticks alone never touch the database")
+    void testTicksDoNotWriteInline() {
         tick(HOUR_BOUNDARY, "150.00");
         tick(HOUR_BOUNDARY + 30, "151.00");
+        // Enough ticks to roll the minute bucket several times over.
+        tick(HOUR_BOUNDARY + 60, "152.00");
+        tick(HOUR_BOUNDARY + 120, "153.00");
+        tick(HOUR_BOUNDARY + 180, "154.00");
 
-        verify(candleRepository, never()).save(org.mockito.ArgumentMatchers.any());
+        // The simulation publishes events synchronously on its tick thread, so a write here
+        // would be a database round trip inside the tick interval, per instrument.
+        verify(candleRepository, never()).save(any());
+        verify(candleRepository, never()).saveAll(any());
+    }
+
+    @Test
+    @DisplayName("a flush writes every queued candle in one batch")
+    void testFlushWritesOneBatch() {
+        tick(HOUR_BOUNDARY, "150.00");
+        tick(HOUR_BOUNDARY + 60, "151.00");
+        tick(HOUR_BOUNDARY + 120, "152.00");
+        tick(HOUR_BOUNDARY + 180, "153.00");
+
+        List<PriceCandle> written = flushAndCapture();
+
+        assertTrue(written.size() >= 4, "expected the rolled-over candles in the batch");
+        // One saveAll, never a per-candle save: batching is the whole point of the queue.
+        verify(candleRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a flush with nothing queued does not write")
+    void testEmptyFlushDoesNotWrite() {
+        accumulator.flushStaleBuckets();
+
+        verify(candleRepository, never()).saveAll(any());
+        verify(candleRepository, never()).save(any());
     }
 
     @Test

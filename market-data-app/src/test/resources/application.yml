@@ -28,3 +28,6 @@ marketdata:
       # every context start would both slow them down and put rows they didn't write in
       # front of them.
       enabled: false
+    retention:
+      # Tests assert against candles they wrote themselves, including deliberately old ones.
+      enabled: false

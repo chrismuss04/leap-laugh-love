@@ -18,7 +18,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Aggregates the live tick stream into fixed-width OHLC candles instead of persisting every
@@ -29,6 +31,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * wider rollups are what make long ranges affordable: a year of 60s candles is ~525k rows per
  * instrument, the same year of daily candles is 365. A candle is written only when its bucket
  * rolls over, so a daily candle costs one insert per day, not one per tick.
+ *
+ * <p>Completed candles are queued rather than saved where they roll over, and persisted in one
+ * batch by the scheduled flush. Spring publishes events synchronously, so saving inline meant
+ * a database round trip per rolled-over bucket on the simulation's tick thread, inside this
+ * class's monitor - at every minute boundary that is one serialised write per instrument
+ * competing with the tick interval. The queue puts all I/O on the flush thread and lets it
+ * batch. The cost is that a crash can lose up to one flush interval of completed candles.
  */
 @Component
 public class PriceCandleAccumulator {
@@ -39,6 +48,7 @@ public class PriceCandleAccumulator {
 
     private final Map<String, SimulatedInstrument> instrumentsBySymbol = new ConcurrentHashMap<>();
     private final Map<BucketKey, CandleAccumulation> openCandles = new HashMap<>();
+    private final Queue<PriceCandle> pendingCandles = new ConcurrentLinkedQueue<>();
 
     /**
      * Creates a new PriceCandleAccumulator with the given collaborators and bucket widths.
@@ -95,11 +105,19 @@ public class PriceCandleAccumulator {
     }
 
     /**
-     * Flushes and removes every open candle whose bucket has already elapsed, so a symbol
-     * that stops ticking doesn't leave its last candle unpersisted indefinitely.
+     * Closes every open candle whose bucket has already elapsed - so a symbol that stops ticking
+     * doesn't leave its last candle unqueued indefinitely - and then writes everything queued.
      */
     @Scheduled(fixedRateString = "${marketdata.simulation.candle-flush-interval-ms:5000}")
-    public synchronized void flushStaleBuckets() {
+    public void flushStaleBuckets() {
+        closeElapsedBuckets();
+        persistPending();
+    }
+
+    /**
+     * Queues and removes every open candle whose bucket has already elapsed.
+     */
+    private synchronized void closeElapsedBuckets() {
         OffsetDateTime now = OffsetDateTime.now();
         List<BucketKey> elapsed = new ArrayList<>();
         openCandles.forEach((key, accumulation) -> {
@@ -112,16 +130,31 @@ public class PriceCandleAccumulator {
     }
 
     /**
-     * Persists a completed candle accumulation.
+     * Writes every queued candle in one batch. Deliberately not synchronized: the database round
+     * trip must not hold the monitor that {@link #onPriceTick} needs, or the simulation's tick
+     * thread would block on it.
+     */
+    private void persistPending() {
+        List<PriceCandle> batch = new ArrayList<>();
+        for (PriceCandle candle = pendingCandles.poll(); candle != null; candle = pendingCandles.poll()) {
+            batch.add(candle);
+        }
+        if (!batch.isEmpty()) {
+            candleRepository.saveAll(batch);
+        }
+    }
+
+    /**
+     * Queues a completed candle accumulation for the next batch write.
      * @param key the symbol and bucket width the accumulation belongs to
-     * @param accumulation the completed OHLC accumulation to persist
+     * @param accumulation the completed OHLC accumulation to queue
      */
     private void flush(BucketKey key, CandleAccumulation accumulation) {
         SimulatedInstrument instrument = instrumentsBySymbol.get(key.symbol());
         if (instrument == null) {
             return;
         }
-        candleRepository.save(new PriceCandle(
+        pendingCandles.add(new PriceCandle(
                 instrument, accumulation.bucketStart(), key.bucketSeconds(),
                 accumulation.open(), accumulation.high(), accumulation.low(), accumulation.close()));
     }
