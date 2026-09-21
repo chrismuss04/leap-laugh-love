@@ -795,6 +795,12 @@ Configured under `marketdata.history.backfill`: `enabled` (default `true`), `ste
 `tiers` as `bucketSeconds:days` pairs (default `86400:365,3600:90,300:7,60:2`, about 7,400 rows
 per instrument). It is idempotent per instrument, so it is a no-op on every boot after the first.
 
+CI overrides this. The smoke-test stack starts from an empty database on every build, so the
+defaults would generate ~3.8M rows and drop them again in the teardown. `docker-compose.yml`
+exposes `MARKETDATA_BACKFILL_ENABLED` and `MARKETDATA_BACKFILL_TIERS` for that; the Jenkinsfile
+sets the tiers to `86400:7,3600:1`, about 29 rows per instrument, which still exercises the
+generator, the schema and the resume handoff without the volume.
+
 Because it runs before the readiness event, its cost is startup latency on a first boot. At the
 full S&P 500 (503 instruments) that is roughly 5 seconds of simulation plus the batched write of
 ~3.7M rows - tens of seconds in total, once. It has to block: the engine reads the last close

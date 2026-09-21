@@ -60,6 +60,19 @@ pipeline {
                     env.MARKETDATA_PORT = '0'
                     env.FRONTEND_PORT = '0'
 
+                    // The smoke test starts from an empty database every build, so market-data
+                    // would generate its full default history - a year of candles at four widths
+                    // for every instrument, ~3.8M rows once the S&P 500 is seeded - and then
+                    // drop it all in the teardown. Keep the backfill ON, so a broken schema or
+                    // query still fails the build, but ask for a token amount: ~31 rows per
+                    // instrument instead of ~7,400.
+                    //
+                    // It matters more than it looks: the backfill runs as an ApplicationRunner,
+                    // and Spring starts the web server before those, so /actuator/health answers
+                    // while it is still writing. A slow backfill would not fail Verify Services,
+                    // it would let the build go green and then tear the container down mid-write.
+                    env.MARKETDATA_BACKFILL_TIERS = '86400:7,3600:1'
+
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
                 }
