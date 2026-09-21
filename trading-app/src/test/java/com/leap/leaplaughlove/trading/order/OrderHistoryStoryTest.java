@@ -13,6 +13,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -152,5 +154,102 @@ class OrderHistoryStoryTest {
         OrderHistoryItem item = page.getContent().get(0);
         assertEquals("SUBMITTED", item.status());
         assertNull(item.filledAt());
+    }
+
+    private static final ZoneOffset CST = ZoneOffset.ofHours(-6);
+    private static final ZoneOffset CDT = ZoneOffset.ofHours(-5);
+
+    private Page<Order> filteredHistory(UUID clientId, OffsetDateTime from, OffsetDateTime to) {
+        return orderRepository
+                .findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+                        eq(clientId), eq(from), eq(to), eq(PageRequest.of(0, 20)));
+    }
+
+    private Order aliceOrder(Instrument instrument, OffsetDateTime submittedAt) {
+        return new Order(
+                UUID.randomUUID(), aliceAccount, instrument, Order.Side.BUY,
+                10L, Order.Status.SUBMITTED, submittedAt, null, null, null, null);
+    }
+
+    @Test
+    @DisplayName("Filtering by year returns only that year's orders (Central time)")
+    void testAC6_FilterByYear() {
+        OffsetDateTime from = OffsetDateTime.of(2025, 1, 1, 0, 0, 0, 0, CST);
+        OffsetDateTime to = OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, CST);
+        Order march2025 = aliceOrder(msft, OffsetDateTime.of(2025, 3, 12, 10, 15, 0, 0, ZoneOffset.UTC));
+
+        when(filteredHistory(aliceClientId, from, to))
+                .thenReturn(new PageImpl<>(List.of(march2025)));
+
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2025, null, null);
+
+        assertEquals(1, page.getTotalElements());
+        assertEquals("MSFT", page.getContent().get(0).symbol());
+    }
+
+    @Test
+    @DisplayName("Filtering by year and month returns only that month's orders (Central time)")
+    void testAC7_FilterByMonth() {
+        OffsetDateTime from = OffsetDateTime.of(2026, 8, 1, 0, 0, 0, 0, CDT);
+        OffsetDateTime to = OffsetDateTime.of(2026, 9, 1, 0, 0, 0, 0, CDT);
+        Order august2026 = aliceOrder(aapl, OffsetDateTime.of(2026, 8, 19, 10, 10, 0, 0, ZoneOffset.UTC));
+
+        when(filteredHistory(aliceClientId, from, to))
+                .thenReturn(new PageImpl<>(List.of(august2026)));
+
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2026, 8, null);
+
+        assertEquals(1, page.getTotalElements());
+        assertEquals("AAPL", page.getContent().get(0).symbol());
+    }
+
+    @Test
+    @DisplayName("Filtering by year, month and day returns only that day's orders (Central time)")
+    void testAC8_FilterByDay() {
+        OffsetDateTime from = OffsetDateTime.of(2026, 8, 3, 0, 0, 0, 0, CDT);
+        OffsetDateTime to = OffsetDateTime.of(2026, 8, 4, 0, 0, 0, 0, CDT);
+        Order afternoon = aliceOrder(aapl, OffsetDateTime.of(2026, 8, 3, 15, 55, 0, 0, ZoneOffset.UTC));
+        Order morning = aliceOrder(aapl, OffsetDateTime.of(2026, 8, 3, 13, 20, 0, 0, ZoneOffset.UTC));
+
+        when(filteredHistory(aliceClientId, from, to))
+                .thenReturn(new PageImpl<>(List.of(afternoon, morning)));
+
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2026, 8, 3);
+
+        assertEquals(2, page.getTotalElements());
+        assertTrue(page.getContent().get(0).submittedAt().isAfter(page.getContent().get(1).submittedAt()));
+    }
+
+    @Test
+    @DisplayName("A filter that matches no orders returns an empty page, not an error")
+    void testAC9_FilterWithNoMatchesReturnsEmptyPage() {
+        OffsetDateTime from = OffsetDateTime.of(2026, 8, 4, 0, 0, 0, 0, CDT);
+        OffsetDateTime to = OffsetDateTime.of(2026, 8, 5, 0, 0, 0, 0, CDT);
+
+        when(filteredHistory(aliceClientId, from, to))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2026, 8, 4);
+
+        assertEquals(0, page.getTotalElements());
+        assertTrue(page.getContent().isEmpty());
+    }
+
+    @Test
+    @DisplayName("A filtered query is always scoped to the requesting client")
+    void testAC10_FilterNeverQueriesAnotherClient() {
+        UUID otherClientId = UUID.randomUUID();
+        OffsetDateTime from = OffsetDateTime.of(2025, 1, 1, 0, 0, 0, 0, CST);
+        OffsetDateTime to = OffsetDateTime.of(2026, 1, 1, 0, 0, 0, 0, CST);
+
+        when(filteredHistory(aliceClientId, from, to))
+                .thenReturn(new PageImpl<>(List.of()));
+
+        orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2025, null, null);
+
+        verify(orderRepository).findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+                eq(aliceClientId), any(), any(), any());
+        verify(orderRepository, never()).findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+                eq(otherClientId), any(), any(), any());
     }
 }
