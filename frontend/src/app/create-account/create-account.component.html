@@ -74,9 +74,69 @@
       formControlName="phone"
       class="form-input"
       placeholder="(555) 123-4567"
+      maxlength="14"
+      (input)="onPhoneInput($event)"
       [class.error]="isFieldInvalid('phone')"
     />
     <span class="error-message" *ngIf="isFieldInvalid('phone')">{{ getErrorMessage('phone') }}</span>
+  </div>
+
+  <!-- Password -->
+  <div class="section-divider"><span>Create a Password</span></div>
+
+  <div class="form-group">
+    <label for="password" class="form-label">Password</label>
+    <div class="password-input-wrapper">
+      <input
+        [type]="showPassword ? 'text' : 'password'"
+        id="password"
+        formControlName="password"
+        class="form-input"
+        placeholder="••••••••"
+        [class.error]="isFieldInvalid('password')"
+      />
+      <button
+        type="button"
+        class="password-toggle"
+        (click)="togglePasswordVisibility()"
+        [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
+        tabindex="-1"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </button>
+    </div>
+    <span class="error-message" *ngIf="isFieldInvalid('password')">{{ getErrorMessage('password') }}</span>
+    <span class="field-hint">Must be at least 8 characters.</span>
+  </div>
+
+  <div class="form-group">
+    <label for="confirmPassword" class="form-label">Confirm Password</label>
+    <div class="password-input-wrapper">
+      <input
+        [type]="showConfirmPassword ? 'text' : 'password'"
+        id="confirmPassword"
+        formControlName="confirmPassword"
+        class="form-input"
+        placeholder="••••••••"
+        [class.error]="isFieldInvalid('confirmPassword')"
+      />
+      <button
+        type="button"
+        class="password-toggle"
+        (click)="toggleConfirmPasswordVisibility()"
+        [attr.aria-label]="showConfirmPassword ? 'Hide password' : 'Show password'"
+        tabindex="-1"
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+      </button>
+    </div>
+    <span class="error-message" *ngIf="isFieldInvalid('confirmPassword')">{{ getErrorMessage('confirmPassword') }}</span>
   </div>
 
   <!-- Address -->
@@ -89,10 +149,23 @@
       id="streetAddress"
       formControlName="streetAddress"
       class="form-input"
-      placeholder="123 Market Street, Apt 4B"
+      placeholder="123 Market Street"
       [class.error]="isFieldInvalid('streetAddress')"
     />
     <span class="error-message" *ngIf="isFieldInvalid('streetAddress')">{{ getErrorMessage('streetAddress') }}</span>
+  </div>
+
+  <div class="form-group">
+    <label for="addressLine2" class="form-label">Address Line 2 (optional)</label>
+    <input
+      type="text"
+      id="addressLine2"
+      formControlName="addressLine2"
+      class="form-input"
+      placeholder="Apt 4B"
+      [class.error]="isFieldInvalid('addressLine2')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('addressLine2')">{{ getErrorMessage('addressLine2') }}</span>
   </div>
 
   <div class="form-row">
@@ -110,17 +183,30 @@
     </div>
 
     <div class="form-group">
-      <label for="postalCode" class="form-label">Postal Code</label>
+      <label for="stateRegion" class="form-label">State / Region</label>
       <input
         type="text"
-        id="postalCode"
-        formControlName="postalCode"
+        id="stateRegion"
+        formControlName="stateRegion"
         class="form-input"
-        placeholder="10001"
-        [class.error]="isFieldInvalid('postalCode')"
+        placeholder="NY"
+        [class.error]="isFieldInvalid('stateRegion')"
       />
-      <span class="error-message" *ngIf="isFieldInvalid('postalCode')">{{ getErrorMessage('postalCode') }}</span>
+      <span class="error-message" *ngIf="isFieldInvalid('stateRegion')">{{ getErrorMessage('stateRegion') }}</span>
     </div>
+  </div>
+
+  <div class="form-group">
+    <label for="postalCode" class="form-label">Postal Code</label>
+    <input
+      type="text"
+      id="postalCode"
+      formControlName="postalCode"
+      class="form-input"
+      placeholder="10001"
+      [class.error]="isFieldInvalid('postalCode')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('postalCode')">{{ getErrorMessage('postalCode') }}</span>
   </div>
 
   <div class="form-group">
@@ -161,7 +247,6 @@
       </svg>
     </div>
     <span class="error-message" *ngIf="isFieldInvalid('ssn')">{{ getErrorMessage('ssn') }}</span>
-    <span class="field-hint">All encrypted and never stored in plaintext. Required for regulatory compliance.</span>
   </div>
 
   <!-- Trading Experience -->
@@ -181,6 +266,25 @@
       </button>
     </div>
     <span class="error-message" *ngIf="isFieldInvalid('experienceLevel')">{{ getErrorMessage('experienceLevel') }}</span>
+  </div>
+
+  <!-- Initial Deposit -->
+  <div class="section-divider"><span>Initial Deposit</span></div>
+
+  <div class="form-group">
+    <label for="initialDepositAmount" class="form-label">Initial Deposit Amount</label>
+    <input
+      type="number"
+      id="initialDepositAmount"
+      formControlName="initialDepositAmount"
+      class="form-input"
+      placeholder="5000"
+      min="5000"
+      step="0.01"
+      [class.error]="isFieldInvalid('initialDepositAmount')"
+    />
+    <span class="error-message" *ngIf="isFieldInvalid('initialDepositAmount')">{{ getErrorMessage('initialDepositAmount') }}</span>
+    <span class="field-hint">Minimum initial deposit is $5,000.</span>
   </div>
 
   <!-- Terms -->
