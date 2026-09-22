@@ -44,7 +44,6 @@ pipeline {
                     def executor = env.EXECUTOR_NUMBER as Integer
                     env.DB_PORT = (15432 + executor).toString()
                     env.IAM_PORT = (18081 + executor).toString()
-                    env.TRADING_PORT = (18082 + executor).toString()
                     env.ACCOUNT_PORT = (18082 + executor).toString()
                     env.ORDER_PORT = (18084 + executor).toString()
                     env.MARKETDATA_PORT = (18083 + executor).toString()
@@ -134,7 +133,6 @@ pipeline {
                     # cleanup step failed) can still be bound to this executor's ports under a
                     # different COMPOSE_PROJECT name, which "docker-compose down" here would
                     # never find. Free the ports we're about to use before claiming them.
-                    for p in "$DB_PORT" "$IAM_PORT" "$TRADING_PORT" "$MARKETDATA_PORT"; do
                     for p in "$DB_PORT" "$IAM_PORT" "$ACCOUNT_PORT" "$ORDER_PORT" "$MARKETDATA_PORT"; do
                         cid=$(docker ps -q --filter "publish=$p")
                         if [ -n "$cid" ]; then
@@ -181,7 +179,6 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker-compose -p "$COMPOSE_PROJECT" build iam-app trading-app market-data-app
                     docker-compose -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
                     echo "Built service images tagged $IMAGE_TAG"
                 '''
@@ -192,7 +189,6 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker-compose -p "$COMPOSE_PROJECT" up -d --no-build iam-app trading-app market-data-app
                     docker-compose -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
                     docker-compose -p "$COMPOSE_PROJECT" ps
                 '''
@@ -206,7 +202,6 @@ pipeline {
                     echo "Waiting for service health endpoints..."
                     for i in $(seq 1 60); do
                         if docker-compose -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
-                           docker-compose -p "$COMPOSE_PROJECT" exec -T trading-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                            docker-compose -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                            docker-compose -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
                            docker-compose -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
@@ -230,7 +225,6 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     docker-compose -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db iam-app trading-app market-data-app; do
                     for service in db iam-app account-app order-app market-data-app; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         docker-compose -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
@@ -249,7 +243,6 @@ pipeline {
                 # Every build produces three uniquely tagged images; without this the agent
                 # accumulates one set per build until the disk fills.
                 if [ -n "${IMAGE_TAG:-}" ]; then
-                    docker image rm -f "iam-app:$IMAGE_TAG" "trading-app:$IMAGE_TAG" \
                     docker image rm -f "iam-app:$IMAGE_TAG" "account-app:$IMAGE_TAG" "order-app:$IMAGE_TAG" \
                         "market-data-app:$IMAGE_TAG" >/dev/null 2>&1 || true
                 fi

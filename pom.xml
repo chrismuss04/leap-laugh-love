@@ -18,7 +18,6 @@
     <modules>
         <module>common-security</module>
         <module>iam-app</module>
-        <module>trading-app</module>
         <module>account-app</module>
         <module>order-app</module>
         <module>market-data-app</module>

@@ -15,16 +15,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
 
-  trading-app:
-    image: "trading-app:${IMAGE_TAG:-latest}"
   account-app:
     image: "account-app:${IMAGE_TAG:-latest}"
     build:
       context: .
-      dockerfile: trading-app/Dockerfile
       dockerfile: account-app/Dockerfile
     ports:
-      - "${TRADING_PORT:-8082}:8082"
       - "${ACCOUNT_PORT:-8082}:8082"
     depends_on:
       db:
@@ -96,7 +92,6 @@ services:
       npm_config_cache: /tmp/.npm
       # Override proxy.conf.js's localhost defaults with the compose service names.
       IAM_PROXY_TARGET: http://iam-app:8081
-      TRADING_PROXY_TARGET: http://trading-app:8082
       ACCOUNT_PROXY_TARGET: http://account-app:8082
       ORDER_PROXY_TARGET: http://order-app:8084
       MARKETDATA_PROXY_TARGET: http://market-data-app:8083
