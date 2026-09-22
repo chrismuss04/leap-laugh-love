@@ -5,7 +5,6 @@ import com.leap.leaplaughlove.trading.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerRepository;
 import com.leap.leaplaughlove.trading.position.Position;
-import com.leap.leaplaughlove.trading.position.PositionId;
 import com.leap.leaplaughlove.trading.position.PositionMovement;
 import com.leap.leaplaughlove.trading.position.PositionMovementRepository;
 import com.leap.leaplaughlove.trading.position.PositionRepository;
@@ -236,9 +235,10 @@ public class OrderSubmissionService {
                 execution.getExecutionId(), movementType, quantityDelta, costDelta, time);
         positionMovementRepository.save(movement);
 
-        // Update current position holdings (trading.positions)
-        PositionId positionId = new PositionId(account.getAccountId(), instrument.getInstrumentId());
-        Optional<Position> existingOpt = positionRepository.findById(positionId);
+        // Update current position holdings (trading.positions); locked to prevent
+        // concurrent executions on the same account/instrument from losing an update
+        Optional<Position> existingOpt = positionRepository.findByIdForUpdate(
+                account.getAccountId(), instrument.getInstrumentId());
 
         if (side == Order.Side.BUY) {
             if (existingOpt.isEmpty()) {

@@ -5,7 +5,6 @@ import com.leap.leaplaughlove.trading.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerRepository;
 import com.leap.leaplaughlove.trading.position.Position;
-import com.leap.leaplaughlove.trading.position.PositionId;
 import com.leap.leaplaughlove.trading.position.PositionMovement;
 import com.leap.leaplaughlove.trading.position.PositionMovementRepository;
 import com.leap.leaplaughlove.trading.position.PositionRepository;
@@ -83,7 +82,7 @@ class OrderSubmissionServiceTest {
 
         when(tradeValidationService.validateTrade(eq(account), eq(instrument), eq(Order.Side.BUY), eq(10L), eq(new BigDecimal("150.0000"))))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.empty());
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.empty());
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("8500.00"));
 
@@ -138,7 +137,7 @@ class OrderSubmissionServiceTest {
 
         when(tradeValidationService.validateTrade(eq(account), eq(instrument), eq(Order.Side.SELL), eq(5L), eq(new BigDecimal("160.0000"))))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.of(existingPosition));
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.of(existingPosition));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("10800.00"));
 
@@ -214,7 +213,7 @@ class OrderSubmissionServiceTest {
 
         when(tradeValidationService.validateTrade(eq(account), eq(instrument), eq(Order.Side.BUY), eq(10L), eq(new BigDecimal("150.5000"))))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.empty());
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.empty());
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("8495.00"));
 
@@ -241,7 +240,7 @@ class OrderSubmissionServiceTest {
                 10, new BigDecimal("140.000000"), OffsetDateTime.now());
         when(tradeValidationService.validateTrade(eq(account), eq(instrument), eq(Order.Side.SELL), eq(5L), eq(new BigDecimal("149.5000"))))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.of(existingPosition));
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.of(existingPosition));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("10747.50"));
 
