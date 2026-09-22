@@ -48,7 +48,8 @@ class ClientRegistrationControllerTest {
         payload.put("postalCode", "62704");
         payload.put("countryCode", "US");
         payload.put("experienceLevel", "NOVICE");
-        payload.put("initialDepositAmount", new BigDecimal("100.00"));
+        payload.put("initialDepositAmount", new BigDecimal("5000.00"));
+        payload.put("password", "correct-horse-battery");
         return payload;
     }
 

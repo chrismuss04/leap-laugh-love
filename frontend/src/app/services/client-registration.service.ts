@@ -22,6 +22,7 @@ export interface RegistrationRequest {
   countryCode: string;
   experienceLevel: 'NOVICE' | 'INTERMEDIATE' | 'ADVANCED';
   initialDepositAmount: number;
+  password: string;
 }
 
 export interface RegistrationResponse {
