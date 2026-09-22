@@ -33,7 +33,7 @@ public interface PositionRepository extends JpaRepository<Position, PositionId> 
                    p.avg_cost AS avgCost
             FROM trading.positions p
             JOIN trading.instruments i ON i.instrument_id = p.instrument_id
-            WHERE p.account_id = :accountId
+            WHERE p.account_id = :accountId AND p.quantity > 0
             ORDER BY i.symbol ASC
             """, nativeQuery = true)
     List<PositionRow> findPositionsByAccountId(@Param("accountId") UUID accountId);
