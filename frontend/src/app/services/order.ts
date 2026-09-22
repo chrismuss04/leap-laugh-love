@@ -31,12 +31,39 @@ export interface OrderHistoryPage {
   last: boolean;
 }
 
+export interface OrderSubmissionRequest {
+  accountId: string;
+  symbol?: string;
+  instrumentId?: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  price?: number;
+}
+
+export interface OrderSubmissionResponse {
+  orderId: string;
+  accountId: string;
+  accountNumber: string;
+  instrumentId: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  status: string;
+  submittedAt: string;
+  acceptedAt?: string;
+  rejectedAt?: string;
+  filledAt?: string;
+  rejectionReason?: string;
+  execution?: ExecutionItem;
+  accountBalanceAfter: number;
+}
+
 @Injectable({
   providedIn: 'root'
 })
 export class OrderService {
-  // Same-origin path, proxied to trading-app - see proxy.conf.js.
-  private readonly API_URL = '/api/trading';
+  // Same-origin path, proxied to order-app - see proxy.conf.js.
+  private readonly API_URL = '/api/order';
 
   constructor(private http: HttpClient) {}
 
@@ -50,5 +77,9 @@ export class OrderService {
         }
       }
     );
+  }
+
+  submitOrder(request: OrderSubmissionRequest): Observable<OrderSubmissionResponse> {
+    return this.http.post<OrderSubmissionResponse>(`${this.API_URL}/orders`, request);
   }
 }

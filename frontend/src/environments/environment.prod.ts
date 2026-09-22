@@ -7,7 +7,8 @@ export const environment = {
     users: '/api/users',
     clients: '/api/iam/v1/clients',
     portfolio: '/api/portfolio',
-    trading: '/api/trading',
+    account: '/api/account',
+    order: '/api/order',
     marketData: '/api/market-data'
   }
 };

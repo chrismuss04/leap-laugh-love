@@ -2,6 +2,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
+CREATE SCHEMA IF NOT EXISTS marketdata;
 
 CREATE TABLE IF NOT EXISTS iam.clients (
     client_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -18,8 +19,12 @@ CREATE TABLE IF NOT EXISTS iam.client_profile (
     full_name TEXT NOT NULL,
     date_of_birth DATE NOT NULL,
     ssn CHAR(11) NOT NULL UNIQUE,
-    address_line_1 TEXT NOT NULL,
-    address_line_2 TEXT,
+    -- LLL-117: renamed from address_line_1/address_line_2 to match the column names
+    -- Client.java's @Column mappings actually use (address_line1/address_line2) - the
+    -- underscored names here didn't match the entity, so registration failed with a
+    -- "column not found" error against a real database.
+    address_line1 TEXT NOT NULL,
+    address_line2 TEXT,
     city TEXT NOT NULL,
     state_region TEXT,
     postal_code TEXT NOT NULL,
@@ -196,3 +201,69 @@ CREATE TRIGGER trg_client_profile_no_delete
 CREATE TRIGGER trg_client_credentials_no_delete
     BEFORE DELETE ON iam.client_credentials
     FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+-- Market Simulation Backend: owns its own instrument/parameter table (decoupled from
+-- trading.instruments) so market-data-app has no cross-schema JPA coupling to order-app or account-app.
+CREATE TABLE IF NOT EXISTS marketdata.instruments (
+    instrument_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    symbol TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL,
+    initial_price NUMERIC(18,6) NOT NULL CHECK (initial_price > 0),
+    drift NUMERIC(9,6) NOT NULL,
+    volatility NUMERIC(9,6) NOT NULL CHECK (volatility >= 0),
+    rng_seed BIGINT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- OHLC candles aggregated from the live GBM tick stream (not raw ticks) so table growth
+-- stays bounded: one row per instrument per bucket instead of one row per tick.
+--
+-- bucket_seconds is part of the key because the same instant is legitimately covered by
+-- several candles of different widths: the live accumulator writes 60s buckets, while the
+-- historical backfill also stores 5m/1h/1d rollups so a year of history costs thousands of
+-- rows instead of the ~525k/instrument a 60s-only year would need. Readers always filter on
+-- one width, so the widths never mix inside a single series.
+CREATE TABLE IF NOT EXISTS marketdata.price_candles (
+    candle_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instrument_id UUID NOT NULL
+        REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
+    bucket_start TIMESTAMPTZ NOT NULL,
+    bucket_seconds INTEGER NOT NULL DEFAULT 60 CHECK (bucket_seconds > 0),
+    open NUMERIC(18,6) NOT NULL,
+    high NUMERIC(18,6) NOT NULL,
+    low NUMERIC(18,6) NOT NULL,
+    close NUMERIC(18,6) NOT NULL,
+    UNIQUE (instrument_id, bucket_start, bucket_seconds)
+);
+
+-- Backs the history endpoint's per-symbol, per-width, newest-first, time-bounded query.
+-- bucket_seconds leads bucket_start because every read pins the width first.
+CREATE INDEX IF NOT EXISTS idx_price_candles_instrument_bucket
+    ON marketdata.price_candles (instrument_id, bucket_seconds, bucket_start DESC);
+
+-- Quote Feed Ingestion: one row per parsed+validated quote message accepted from the feed
+-- (today, a simulated wire format derived from the GBM tick stream; swappable for a real
+-- feed later without changing this table). quote_timestamp is the feed's own timestamp,
+-- received_at is when this backend ingested it - kept separate so staleness can be judged
+-- against either.
+CREATE TABLE IF NOT EXISTS marketdata.quotes (
+    quote_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    instrument_id UUID NOT NULL
+        REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
+    bid_price NUMERIC(18,6) NOT NULL CHECK (bid_price > 0),
+    bid_size BIGINT NOT NULL CHECK (bid_size >= 0),
+    ask_price NUMERIC(18,6) NOT NULL CHECK (ask_price > 0),
+    ask_size BIGINT NOT NULL CHECK (ask_size >= 0),
+    last_price NUMERIC(18,6) NOT NULL CHECK (last_price > 0),
+    last_size BIGINT NOT NULL CHECK (last_size >= 0),
+    exchange TEXT NOT NULL,
+    sequence_number BIGINT NOT NULL,
+    quote_timestamp TIMESTAMPTZ NOT NULL,
+    received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CHECK (ask_price >= bid_price)
+);
+
+-- Backs the "latest quote for a symbol" lookup used by QuoteIngestionService/QuoteController.
+CREATE INDEX IF NOT EXISTS idx_quotes_instrument_quote_timestamp
+    ON marketdata.quotes (instrument_id, quote_timestamp DESC);

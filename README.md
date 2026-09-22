@@ -76,29 +76,42 @@ flowchart TB
     end
 
     UI -->|"HTTP / JSON (8081)"| IamSec
-    UI -->|"HTTP / JSON (8082)"| TradeSec
+    UI -->|"HTTP / JSON (8082)"| AccountSec
+    UI -->|"HTTP / JSON (8084)"| OrderSec
     UI -->|"HTTP / JSON / SSE (8083)"| MdSec
 
     IamSec --> AuthC
     IamSec --> RegC
-    TradeSec --> BalC
-    TradeSec --> OrderC
+    AccountSec --> BalC
+    AccountSec --> AcctC
+    AccountSec --> PosC
+    AccountSec --> SettleC
+    OrderSec --> OrderSubC
+    OrderSec --> OrderHistC
+    OrderSubC --> AcctClient
+    AcctClient -->|"HTTP / JSON (8082)\npre-trade & settlement"| SettleC
+    OrderSubC --> QuoteSvc
+    QuoteSvc -->|"HTTP / JSON (8083)\ncaller's JWT forwarded"| QuoteC
     MdSec --> PriceC
     MdSec --> StreamC
     MdSec --> QuoteC
-    QuoteSvc -->|"HTTP / JSON (8083)\ncaller's JWT forwarded"| MdSec
     SimEngine --> PriceC
     SimEngine --> StreamC
     SimEngine --> CandleAcc
 
     IAM -- "Library Dependency" --> SEC
-    TRADING -- "Library Dependency" --> SEC
+    ACCOUNT -- "Library Dependency" --> SEC
+    ORDER -- "Library Dependency" --> SEC
     MARKETDATA -- "Library Dependency" --> SEC
 
     AuthC --> IAM_DB
     RegC --> IAM_DB
     BalC --> TRADING_DB
-    OrderC --> TRADING_DB
+    AcctC --> TRADING_DB
+    PosC --> TRADING_DB
+    SettleC --> TRADING_DB
+    OrderSubC --> TRADING_DB
+    OrderHistC --> TRADING_DB
     CandleAcc --> MARKETDATA_DB
 ```
 
@@ -360,9 +373,9 @@ classDiagram
     MarketDataSecurityConfig ..> JwtAuthenticationEntryPoint : registers
 ```
 
-### Trading — `trading-app`
+### Account & Portfolio — `account-app`
 
-`com.leap.leaplaughlove.trading.{account, balance, ledger, order, position, quote, security}` — owns brokerage accounts, an append-only cash ledger, order/execution history, per-account positions, and the current-quote lookup orders are priced against; every endpoint resolves the client from the JWT principal already on the security context.
+`com.leap.leaplaughlove.account.{account, balance, ledger, position, internal, security}` — owns client trading accounts, cash ledger entries, deposit/withdrawal transactions, portfolio positions, and internal pre-trade validation/settlement endpoints; public endpoints resolve the client from the JWT principal.
 
 ```mermaid
 classDiagram
@@ -375,39 +388,22 @@ classDiagram
         -String status
         -String baseCurrency
         -boolean tradingEnabled
+        -OffsetDateTime createdAt
     }
     class CashLedgerEntry {
         -UUID cashLedgerId
         -UUID accountId
+        -UUID orderId
+        -UUID executionId
         -String entryType
         -BigDecimal amount
         -String currency
         -OffsetDateTime createdAt
         -String description
     }
-    class Instrument {
-        -UUID instrumentId
-        -String symbol
-        -String name
-        -String assetClass
-    }
-    class Order {
-        -UUID orderId
-        -BigDecimal quantity
-        -BigDecimal limitPrice
-        -OffsetDateTime submittedAt
-        -OffsetDateTime filledAt
-    }
-    class Side { <<enumeration>> BUY SELL }
-    class Type { <<enumeration>> MARKET LIMIT }
-    class Status { <<enumeration>> PENDING FILLED PARTIALLY_FILLED CANCELLED REJECTED }
-    class Execution {
-        -UUID executionId
-        -BigDecimal quantity
-        -BigDecimal price
-        -OffsetDateTime executedAt
-    }
     class Position {
+        -UUID accountId
+        -UUID instrumentId
         -long quantity
         -BigDecimal avgCost
         -OffsetDateTime updatedAt
@@ -427,10 +423,6 @@ classDiagram
         +sumAmountsByAccountIds(List~UUID~) List~AccountTotal~
         +sumAmountByAccountIdAndCurrency(UUID, String) BigDecimal
     }
-    class OrderRepository {
-        <<interface>>
-        +findByAccount_ClientIdOrderBySubmittedAtDesc(...) Page~Order~
-    }
     class PositionRepository {
         <<interface>>
         +findPositionsByAccountId(UUID) List~PositionRow~
@@ -442,14 +434,8 @@ classDiagram
     }
     class BalanceController {
         +getBalance() BalanceResponse
-        +deposit(UUID, CashMovementRequest)
-        +withdraw(UUID, CashMovementRequest)
-    }
-    class OrderHistoryService {
-        +getOrderHistory(UUID, int, int) Page~OrderHistoryItem~
-    }
-    class OrderHistoryController {
-        +getOrderHistory(int, int) Page~OrderHistoryItem~
+        +deposit(UUID, CashMovementRequest) CashTransactionResponse
+        +withdraw(UUID, CashMovementRequest) CashTransactionResponse
     }
     class PositionService {
         +getPositionsForAuthenticatedClientAccount(UUID) PositionsResponse
@@ -457,56 +443,161 @@ classDiagram
     class PositionController {
         +getPositionsForAccount(UUID) PositionsResponse
     }
-    class QuoteSnapshot {
-        -String symbol
-        -BigDecimal bidPrice
-        -BigDecimal askPrice
-        -BigDecimal lastPrice
-        -OffsetDateTime quoteTimestamp
+    class AccountSettlementController {
+        +getValidationData(UUID, UUID) AccountValidationDto
+        +settle(UUID, SettlementRequest) SettlementResponse
     }
-    class CurrentQuoteClient {
-        +fetchLatest(String) Optional~QuoteSnapshot~
-    }
-    class CurrentQuoteService {
-        +getCurrentQuote(String) QuoteSnapshot
-    }
-    class MarketDataClientConfig {
-        +marketDataRestClient(...) RestClient
-    }
-    class TradingSecurityConfig {
+    class AccountSecurityConfig {
         +filterChain(...) SecurityFilterChain
     }
     class JwtService { <<from common-security>> }
     class JwtAuthenticationFilter { <<from common-security>> }
     class JwtAuthenticationEntryPoint { <<from common-security>> }
 
-    Account "1" --> "many" Order : places
     Account "1" --> "many" CashLedgerEntry : ledger
-    Order "many" --> "1" Instrument : instrument
-    Order "1" --> "many" Execution : fills
-    Order --> Side
-    Order --> Type
-    Order --> Status
-    Position "many" --> "1" Instrument : instrument
     Position ..> PositionId : identified by
     AccountRepository ..> Account : manages
     CashLedgerRepository ..> CashLedgerEntry : manages
-    OrderRepository ..> Order : manages
     PositionRepository ..> Position : manages
     BalanceService --> AccountRepository : uses
     BalanceService --> CashLedgerRepository : uses
     BalanceController --> BalanceService : uses
-    OrderHistoryService --> OrderRepository : uses
-    OrderHistoryController --> OrderHistoryService : uses
     PositionService --> AccountRepository : uses
     PositionService --> PositionRepository : uses
     PositionController --> PositionService : uses
+    AccountSettlementController --> AccountRepository : uses
+    AccountSettlementController --> CashLedgerRepository : uses
+    AccountSettlementController --> PositionRepository : uses
+    AccountSecurityConfig ..> JwtService : uses
+    AccountSecurityConfig ..> JwtAuthenticationFilter : registers
+    AccountSecurityConfig ..> JwtAuthenticationEntryPoint : registers
+```
+
+### Order Management — `order-app`
+
+`com.leap.leaplaughlove.order.{order, execution, submission, history, validation, instrument, position, client, quote, security}` — handles pre-trade validation, order submission, execution against live market quotes, position movements audit logging, and paginated order history; coordinates with `account-app` via internal REST client and `market-data-app` for quotes.
+
+```mermaid
+classDiagram
+    direction LR
+
+    class Order {
+        -UUID orderId
+        -UUID accountId
+        -Instrument instrument
+        -Side side
+        -Long quantity
+        -Status status
+        -OffsetDateTime submittedAt
+        -OffsetDateTime acceptedAt
+        -OffsetDateTime rejectedAt
+        -OffsetDateTime filledAt
+        -String rejectionReason
+    }
+    class Side { <<enumeration>> BUY SELL }
+    class Status { <<enumeration>> SUBMITTED ACCEPTED REJECTED FILLED }
+    class Execution {
+        -UUID executionId
+        -Order order
+        -Long fillQuantity
+        -BigDecimal fillPrice
+        -Status status
+        -OffsetDateTime executedAt
+        -String reason
+    }
+    class PositionMovement {
+        -UUID movementId
+        -UUID accountId
+        -Instrument instrument
+        -UUID orderId
+        -UUID executionId
+        -MovementType movementType
+        -Long quantityDelta
+        -BigDecimal costDelta
+        -OffsetDateTime createdAt
+    }
+    class Instrument {
+        -UUID instrumentId
+        -String symbol
+        -String instrumentName
+        -String assetClass
+        -String market
+        -String currency
+        -boolean tradable
+    }
+    class OrderRepository {
+        <<interface>>
+        +findByAccountIdInOrderBySubmittedAtDescOrderIdDesc(List~UUID~, Pageable) Page~Order~
+    }
+    class ExecutionRepository {
+        <<interface>>
+        +findByOrder_OrderIdIn(List~UUID~) List~Execution~
+    }
+    class PositionMovementRepository {
+        <<interface>>
+    }
+    class InstrumentRepository {
+        <<interface>>
+        +findBySymbol(String) Optional~Instrument~
+    }
+    class OrderSubmissionService {
+        +submitOrder(OrderSubmissionRequest) OrderSubmissionResponse
+    }
+    class OrderSubmissionController {
+        +submitOrder(OrderSubmissionRequest) OrderSubmissionResponse
+    }
+    class OrderHistoryService {
+        +getOrderHistory(UUID, int, int) Page~OrderHistoryItem~
+    }
+    class OrderHistoryController {
+        +getOrderHistory(int, int) Page~OrderHistoryItem~
+    }
+    class TradeValidationService {
+        +validatePreTrade(OrderSubmissionRequest, AccountValidationDto, QuoteSnapshot) TradeValidationResult
+    }
+    class AccountClient {
+        +getValidationData(UUID, UUID) AccountValidationDto
+        +settleOrder(UUID, SettlementRequest) SettlementResponse
+        +getAccountIdsForClient() List~UUID~
+    }
+    class CurrentQuoteService {
+        +getCurrentQuote(String) QuoteSnapshot
+    }
+    class CurrentQuoteClient {
+        +fetchLatest(String) Optional~QuoteSnapshot~
+    }
+    class OrderSecurityConfig {
+        +filterChain(...) SecurityFilterChain
+    }
+    class JwtService { <<from common-security>> }
+    class JwtAuthenticationFilter { <<from common-security>> }
+    class JwtAuthenticationEntryPoint { <<from common-security>> }
+
+    Order --> Instrument : instrument
+    Order --> Side
+    Order --> Status
+    Execution --> Order : order
+    PositionMovement --> Instrument : instrument
+    OrderRepository ..> Order : manages
+    ExecutionRepository ..> Execution : manages
+    PositionMovementRepository ..> PositionMovement : manages
+    InstrumentRepository ..> Instrument : manages
+    OrderSubmissionService --> OrderRepository : uses
+    OrderSubmissionService --> ExecutionRepository : uses
+    OrderSubmissionService --> PositionMovementRepository : uses
+    OrderSubmissionService --> InstrumentRepository : uses
+    OrderSubmissionService --> AccountClient : uses
+    OrderSubmissionService --> CurrentQuoteService : uses
+    OrderSubmissionService --> TradeValidationService : uses
+    OrderSubmissionController --> OrderSubmissionService : uses
+    OrderHistoryService --> OrderRepository : uses
+    OrderHistoryService --> ExecutionRepository : uses
+    OrderHistoryService --> AccountClient : uses
+    OrderHistoryController --> OrderHistoryService : uses
     CurrentQuoteService --> CurrentQuoteClient : uses
-    CurrentQuoteClient ..> QuoteSnapshot : returns
-    MarketDataClientConfig ..> CurrentQuoteClient : configures RestClient for
-    TradingSecurityConfig ..> JwtService : uses
-    TradingSecurityConfig ..> JwtAuthenticationFilter : registers
-    TradingSecurityConfig ..> JwtAuthenticationEntryPoint : registers
+    OrderSecurityConfig ..> JwtService : uses
+    OrderSecurityConfig ..> JwtAuthenticationFilter : registers
+    OrderSecurityConfig ..> JwtAuthenticationEntryPoint : registers
 ```
 
 ---
@@ -540,7 +631,7 @@ classDiagram
 
 ### Quick Start
 
-The database, all three services and the Angular UI, in two commands. Docker is the only
+The database, all four backend services and the Angular UI, in two commands. Docker is the only
 prerequisite - you do not need Node, Java or Maven installed to run the stack.
 
 ```bash

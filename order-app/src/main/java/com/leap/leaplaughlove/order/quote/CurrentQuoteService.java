@@ -25,7 +25,7 @@ public class CurrentQuoteService {
      * @param maxQuoteAgeSeconds the maximum age of a quote in seconds before it is considered stale
      */
     public CurrentQuoteService(CurrentQuoteClient quoteClient,
-                               @Value("${trading.execution.max-quote-age-seconds:5}") long maxQuoteAgeSeconds) {
+                               @Value("${order.execution.max-quote-age-seconds:${trading.execution.max-quote-age-seconds:5}}") long maxQuoteAgeSeconds) {
         this.quoteClient = quoteClient;
         this.maxQuoteAgeSeconds = maxQuoteAgeSeconds;
     }

@@ -4,7 +4,8 @@ WORKDIR /app
 COPY pom.xml .
 COPY common-security/pom.xml common-security/
 COPY iam-app/pom.xml iam-app/
-COPY trading-app/pom.xml trading-app/
+COPY account-app/pom.xml account-app/
+COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
 COPY common-security/src common-security/src
 COPY iam-app/src iam-app/src

@@ -56,7 +56,8 @@ pipeline {
                     // on the agent.
                     env.DB_PORT = '0'
                     env.IAM_PORT = '0'
-                    env.TRADING_PORT = '0'
+                    env.ORDER_PORT = '0'
+                    env.ACCOUNT_PORT = '0'
                     env.MARKETDATA_PORT = '0'
                     env.FRONTEND_PORT = '0'
 
