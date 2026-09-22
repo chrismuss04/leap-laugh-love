@@ -9,8 +9,12 @@
 
   Asks for the PostgreSQL superuser's password; it is held only in this PowerShell session.
 
-  An existing paysprint database is left alone unless -Reset is passed, because the seed files
-  are not safe to run twice.
+  The paysprint user's password is taken from DB_PASSWORD in .env (the same value
+  start-local.ps1 and docker compose use), falling back to 'changeme'. It is set on every run,
+  so re-running after changing DB_PASSWORD brings the database back in step.
+
+  An existing paysprint database's data is left alone unless -Reset is passed, because the seed
+  files are not safe to run twice.
 
 .EXAMPLE
   .\scripts\setup-windows-db.ps1
@@ -25,8 +29,8 @@ param(
     [string]$SuperUser = 'postgres',
     [string]$DbHost = 'localhost',
     [int]$Port = 5432,
-    # Must match DB_PASSWORD in .env (the services connect as paysprint with it).
-    [string]$AppPassword = 'changeme',
+    # The paysprint user's password. Defaults to DB_PASSWORD from .env, else 'changeme'.
+    [string]$AppPassword,
     [switch]$Reset
 )
 
@@ -52,6 +56,13 @@ if (-not $PsqlPath -or -not (Test-Path $PsqlPath)) {
     throw 'psql.exe not found. Pass -PsqlPath with the full path to your PostgreSQL bin\psql.exe.'
 }
 
+if (-not $AppPassword) {
+    $envFile = Join-Path $repoRoot '.env'
+    $line = if (Test-Path $envFile) { Get-Content $envFile | Where-Object { $_ -match '^\s*DB_PASSWORD\s*=' } | Select-Object -First 1 }
+    $AppPassword = if ($line) { ($line -split '=', 2)[1].Trim().Trim('"').Trim("'") } else { 'changeme' }
+    Write-Host ("Using the paysprint password from " + $(if ($line) { '.env (DB_PASSWORD)' } else { "the default 'changeme'" }))
+}
+
 $secure = Read-Host "Password for PostgreSQL user '$SuperUser'" -AsSecureString
 $env:PGPASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure))
@@ -71,18 +82,9 @@ try {
         throw "Could not connect to PostgreSQL at ${DbHost}:${Port} as '$SuperUser'."
     }
 
-    if ($exists -eq '1' -and -not $Reset) {
-        Write-Host "Database 'paysprint' already exists - nothing to do. Re-run with -Reset to rebuild it." -ForegroundColor Yellow
-        return
-    }
-
+    # Create or re-password the role on every run, so the database always accepts DB_PASSWORD.
     $escapedPassword = $AppPassword.Replace("'", "''")
-    if ($exists -eq '1') {
-        Write-Host "Dropping existing 'paysprint' database..."
-        Invoke-Psql 'postgres' @('-c', 'DROP DATABASE paysprint WITH (FORCE)')
-    }
-
-    Write-Host "Creating role and database 'paysprint'..."
+    Write-Host "Setting up role 'paysprint'..."
     Invoke-Psql 'postgres' @('-c', @"
 DO `$`$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'paysprint') THEN
@@ -92,6 +94,17 @@ DO `$`$ BEGIN
   END IF;
 END `$`$;
 "@)
+
+    if ($exists -eq '1' -and -not $Reset) {
+        Write-Host "Database 'paysprint' already exists - kept its data and updated the paysprint password. Re-run with -Reset to rebuild it." -ForegroundColor Green
+        return
+    }
+    if ($exists -eq '1') {
+        Write-Host "Dropping existing 'paysprint' database..."
+        Invoke-Psql 'postgres' @('-c', 'DROP DATABASE paysprint WITH (FORCE)')
+    }
+
+    Write-Host "Creating database 'paysprint'..."
     Invoke-Psql 'postgres' @('-c', 'CREATE DATABASE paysprint OWNER paysprint')
 
     # Load as paysprint so every table it creates is owned by the role the services use. The
