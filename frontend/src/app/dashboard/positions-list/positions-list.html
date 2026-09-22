@@ -1,0 +1,59 @@
+<section class="card" aria-labelledby="positions-title">
+  <header class="card-header">
+    <h2 id="positions-title">Positions</h2>
+    <span class="meta" *ngIf="!loading">{{ holdings.length }} {{ holdings.length === 1 ? 'asset' : 'assets' }}</span>
+  </header>
+
+  <div *ngIf="loading" class="rows" aria-busy="true">
+    <div class="row skeleton-row" *ngFor="let _ of [1, 2, 3]">
+      <span class="skeleton" style="width: 90px; height: 32px"></span>
+      <span class="skeleton" style="width: 88px; height: 24px"></span>
+      <span class="skeleton" style="width: 120px; height: 32px; margin-left: auto"></span>
+    </div>
+  </div>
+
+  <div *ngIf="!loading && holdings.length === 0" class="empty">
+    <p class="empty-title">You don't own any investments yet</p>
+    <p class="empty-text">Search for a symbol above, or pick one from the trade panel, to place your first order.</p>
+  </div>
+
+  <div *ngIf="!loading && holdings.length > 0" class="rows" role="list">
+    <div *ngFor="let h of holdings; trackBy: trackBySymbol" role="listitem"
+         class="row" [class.selected]="h.symbol === selected">
+      <button type="button" class="row-main" (click)="select.emit(h.symbol)"
+              [attr.aria-label]="'Trade ' + h.symbol + ', ' + h.quantity + ' shares'">
+        <span class="identity">
+          <span class="symbol">{{ h.symbol }}</span>
+          <span class="sub">{{ h.quantity | number }} {{ h.quantity === 1 ? 'share' : 'shares' }}</span>
+        </span>
+
+        <app-sparkline class="spark" [values]="h.intraday" [baseline]="h.previousClose"></app-sparkline>
+
+        <span class="price-col">
+          <span class="price num" [appFlash]="h.price">{{ money(h.price) }}</span>
+          <span class="sub num" [ngClass]="'text-' + dir(h.dayChange)">
+            {{ signedPercent(h.dayChangePercent) }} today
+          </span>
+        </span>
+
+        <span class="value-col">
+          <span class="value num">{{ money(h.marketValue) }}</span>
+          <span class="sub num" [ngClass]="'text-' + dir(h.totalReturn)">
+            {{ signedMoney(h.totalReturn) }} ({{ signedPercent(h.totalReturnPercent) }})
+          </span>
+        </span>
+      </button>
+
+      <span class="row-actions">
+        <button type="button" class="chip buy" (click)="trade.emit({ symbol: h.symbol, side: 'BUY' })"
+                [attr.aria-label]="'Buy ' + h.symbol">Buy</button>
+        <button type="button" class="chip sell" (click)="trade.emit({ symbol: h.symbol, side: 'SELL' })"
+                [attr.aria-label]="'Sell ' + h.symbol">Sell</button>
+      </span>
+    </div>
+  </div>
+
+  <footer class="card-footer" *ngIf="!loading && holdings.length > 0">
+    <a routerLink="/holdings">View all holdings by account →</a>
+  </footer>
+</section>

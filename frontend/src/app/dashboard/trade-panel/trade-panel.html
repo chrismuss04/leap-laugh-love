@@ -1,0 +1,116 @@
+<section class="panel" [attr.data-side]="side" aria-labelledby="trade-title">
+  <ng-container *ngIf="symbol; else noSymbol">
+    <header class="panel-header">
+      <div>
+        <h2 id="trade-title">{{ side === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol }}</h2>
+        <p class="name" *ngIf="name">{{ name }}</p>
+      </div>
+      <span class="live-price num" [appFlash]="price">{{ money(price) }}</span>
+    </header>
+
+    <!-- Result -->
+    <div *ngIf="step === 'result' && result" class="result" role="status">
+      <ng-container *ngIf="result.status === 'FILLED'; else rejected">
+        <div class="result-icon ok" aria-hidden="true">✓</div>
+        <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
+          {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</p>
+        <dl class="summary">
+          <div><dt>Fill price</dt><dd class="num">{{ money(fillPrice) }}</dd></div>
+          <div><dt>{{ result.side === 'BUY' ? 'Total cost' : 'Total credit' }}</dt>
+            <dd class="num">{{ money(fillPrice !== null ? fillPrice * result.quantity : null) }}</dd></div>
+          <div *ngIf="result.accountBalanceAfter !== null"><dt>Buying power</dt>
+            <dd class="num">{{ money(result.accountBalanceAfter) }}</dd></div>
+        </dl>
+      </ng-container>
+      <ng-template #rejected>
+        <div class="result-icon bad" aria-hidden="true">!</div>
+        <p class="result-title">Order not filled</p>
+        <p class="result-text">{{ result.rejectionReason || 'The order was rejected.' }}</p>
+      </ng-template>
+      <button type="button" class="cta" (click)="reset()">Done</button>
+    </div>
+
+    <!-- Review -->
+    <div *ngIf="step === 'review' || step === 'submitting'" class="review">
+      <p class="review-text">
+        You're placing a <strong>market order</strong> to {{ side === 'BUY' ? 'buy' : 'sell' }}
+        <strong>{{ quantity | number }} {{ quantity === 1 ? 'share' : 'shares' }}</strong> of {{ symbol }}.
+        It will fill right away at the best available price, which may differ slightly from the estimate.
+      </p>
+      <dl class="summary">
+        <div><dt>Account</dt><dd>{{ account?.accountNumber }}</dd></div>
+        <div><dt>Market price</dt><dd class="num">{{ money(price) }}</dd></div>
+        <div class="total"><dt>{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
+          <dd class="num">{{ money(estimate) }}</dd></div>
+      </dl>
+      <p *ngIf="submitError" class="error" role="alert">{{ submitError }}</p>
+      <button type="button" class="cta" (click)="submit()" [disabled]="step === 'submitting'">
+        <span *ngIf="step !== 'submitting'">{{ side === 'BUY' ? 'Submit buy' : 'Submit sell' }}</span>
+        <span *ngIf="step === 'submitting'" class="spinner" aria-label="Placing order"></span>
+      </button>
+      <button type="button" class="ghost" (click)="edit()" [disabled]="step === 'submitting'">Edit order</button>
+    </div>
+
+    <!-- Edit -->
+    <form *ngIf="step === 'edit'" class="ticket" (ngSubmit)="review()">
+      <div class="sides" role="radiogroup" aria-label="Order side">
+        <button type="button" role="radio" class="side buy" [class.on]="side === 'BUY'"
+                [attr.aria-checked]="side === 'BUY'" (click)="setSide('BUY')">Buy</button>
+        <button type="button" role="radio" class="side sell" [class.on]="side === 'SELL'"
+                [attr.aria-checked]="side === 'SELL'" (click)="setSide('SELL')">Sell</button>
+      </div>
+
+      <label class="field" *ngIf="accounts.length > 1">
+        <span class="field-label">Account</span>
+        <select class="field-input" name="account" [(ngModel)]="accountId">
+          <option *ngFor="let a of accounts" [ngValue]="a.accountId">{{ a.accountNumber }}</option>
+        </select>
+      </label>
+
+      <div class="field-row">
+        <span class="field-label">Order type</span>
+        <span class="field-value">Market</span>
+      </div>
+
+      <div class="field-row">
+        <label class="field-label" for="trade-quantity">Shares</label>
+        <span class="stepper">
+          <button type="button" class="step-btn" (click)="adjust(-1)" aria-label="One fewer share">−</button>
+          <input #quantityInput id="trade-quantity" name="quantity" class="qty num" type="number"
+                 inputmode="numeric" min="1" step="1" placeholder="0" [(ngModel)]="quantity" />
+          <button type="button" class="step-btn" (click)="adjust(1)" aria-label="One more share">+</button>
+        </span>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label">Market price</span>
+        <span class="field-value num">{{ money(price) }}</span>
+      </div>
+
+      <div class="field-row total">
+        <span class="field-label">{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</span>
+        <span class="field-value num">{{ money(estimate) }}</span>
+      </div>
+
+      <p class="hint" [class.error]="blocker && quantity !== null" aria-live="polite">
+        <ng-container *ngIf="blocker && (quantity !== null || price === null || !account); else available">{{ blocker }}</ng-container>
+        <ng-template #available>
+          <ng-container *ngIf="side === 'BUY'">{{ money(account?.buyingPower) }} buying power available</ng-container>
+          <ng-container *ngIf="side === 'SELL'">
+            {{ sharesHeld | number }} {{ sharesHeld === 1 ? 'share' : 'shares' }} available
+            <button *ngIf="sharesHeld > 0" type="button" class="link-btn" (click)="sellAll()">Sell all</button>
+          </ng-container>
+        </ng-template>
+      </p>
+
+      <button type="submit" class="cta" [disabled]="!canReview">Review order</button>
+    </form>
+  </ng-container>
+
+  <ng-template #noSymbol>
+    <div class="placeholder">
+      <h2 id="trade-title">Trade</h2>
+      <p>Search for a symbol or select one of your positions to buy or sell.</p>
+    </div>
+  </ng-template>
+</section>

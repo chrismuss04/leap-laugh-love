@@ -1,0 +1,27 @@
+<div class="chart" [attr.data-tone]="tone"
+     tabindex="0" role="img" [attr.aria-label]="label + '. Use the left and right arrow keys to explore values.'"
+     (pointermove)="onPointer($event)" (pointerdown)="onPointer($event)"
+     (pointerleave)="clear()" (keydown)="onKey($event)" (blur)="clear()">
+  <svg *ngIf="linePath" [attr.width]="width()" [attr.height]="height" aria-hidden="true">
+    <defs>
+      <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" class="fill-stop-top" />
+        <stop offset="100%" class="fill-stop-bottom" />
+      </linearGradient>
+    </defs>
+
+    <line *ngIf="baselineY !== null" class="baseline"
+          x1="0" [attr.x2]="width()" [attr.y1]="baselineY" [attr.y2]="baselineY" />
+
+    <path class="area" [attr.d]="areaPath" fill="url(#chart-fill)" />
+    <path class="line" [attr.d]="linePath" />
+
+    <ng-container *ngIf="active() !== null; else liveDot">
+      <line class="crosshair" [attr.x1]="x(active()!)" [attr.x2]="x(active()!)" y1="0" [attr.y2]="height" />
+      <circle class="dot" [attr.cx]="x(active()!)" [attr.cy]="y(points[active()!].value)" r="5" />
+    </ng-container>
+    <ng-template #liveDot>
+      <circle class="dot live" [attr.cx]="x(points.length - 1)" [attr.cy]="y(points[points.length - 1].value)" r="4" />
+    </ng-template>
+  </svg>
+</div>

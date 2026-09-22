@@ -31,6 +31,38 @@ export interface OrderHistoryPage {
   last: boolean;
 }
 
+export type OrderSide = 'BUY' | 'SELL';
+
+/** A market order: omitting price lets trading-app fill at the live ask (buy) or bid (sell). */
+export interface OrderSubmissionRequest {
+  accountId: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+}
+
+export interface OrderSubmissionResponse {
+  orderId: string;
+  accountId: string;
+  accountNumber: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  status: 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'FILLED';
+  submittedAt: string;
+  filledAt: string | null;
+  rejectionReason: string | null;
+  execution: {
+    executionId: string;
+    fillQuantity: number | null;
+    fillPrice: number | null;
+    status: string;
+    executedAt: string;
+    reason: string | null;
+  } | null;
+  accountBalanceAfter: number | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -39,6 +71,10 @@ export class OrderService {
   private readonly API_URL = '/api/trading';
 
   constructor(private http: HttpClient) {}
+
+  submitOrder(request: OrderSubmissionRequest): Observable<OrderSubmissionResponse> {
+    return this.http.post<OrderSubmissionResponse>(`${this.API_URL}/orders`, request);
+  }
 
   getOrderHistory(page: number = 0, size: number = 20): Observable<OrderHistoryPage> {
     return this.http.get<OrderHistoryPage>(
