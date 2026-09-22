@@ -67,7 +67,7 @@ class OrderHistoryServiceTest {
                 order, 10L, new BigDecimal("150.25"), Execution.Status.FILLED,
                 "Executed at market price", baseTime.plusSeconds(5));
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
         when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
                 .thenReturn(List.of(execution));
@@ -90,7 +90,7 @@ class OrderHistoryServiceTest {
         assertEquals(baseTime.plusSeconds(5), item.execution().executedAt());
         assertEquals(1, item.executions().size());
 
-        verify(orderRepository).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20));
+        verify(orderRepository).findByClientId(clientId, PageRequest.of(0, 20));
     }
 
     @Test
@@ -108,7 +108,7 @@ class OrderHistoryServiceTest {
                 order, 20L, new BigDecimal("150.75"), Execution.Status.FILLED,
                 "Partial fill", baseTime.plusSeconds(9));
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
         // Returned newest-first to prove the service orders the fills rather than trusting the
         // repository's order.
@@ -143,7 +143,7 @@ class OrderHistoryServiceTest {
                 order, 10L, new BigDecimal("150.25"), Execution.Status.FILLED,
                 "Executed at market price", baseTime.plusSeconds(5));
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(order)));
         when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
                 .thenReturn(List.of(rejected, filled));
@@ -166,7 +166,7 @@ class OrderHistoryServiceTest {
                 rejectedOrder, null, null, Execution.Status.REJECTED,
                 "Insufficient funds", baseTime.plusSeconds(1));
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(rejectedOrder)));
         when(executionRepository.findByOrder_OrderIdIn(List.of(orderId)))
                 .thenReturn(List.of(rejectedExec));
@@ -193,7 +193,7 @@ class OrderHistoryServiceTest {
                 100L, Order.Status.FILLED,
                 baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(newer, older)));
 
         List<OrderHistoryItem> items = orderHistoryService.getOrderHistory(clientId, 0, 20, null, null, null).getContent();
@@ -206,7 +206,7 @@ class OrderHistoryServiceTest {
     @Test
     @DisplayName("carries pagination metadata through")
     void testPaginationMetadata() {
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(1, 5)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(1, 5)))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 5), 12));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(clientId, 1, 5, null, null, null);
@@ -224,7 +224,7 @@ class OrderHistoryServiceTest {
                 UUID.randomUUID(), account, aapl, Order.Side.BUY,
                 10L, Order.Status.SUBMITTED, baseTime, null, null, null, null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, PageRequest.of(0, 20)))
+        when(orderRepository.findByClientId(clientId, PageRequest.of(0, 20)))
                 .thenReturn(new PageImpl<>(List.of(pending)));
 
         OrderHistoryItem item = orderHistoryService.getOrderHistory(clientId, 0, 20, null, null, null).getContent().get(0);
@@ -258,7 +258,7 @@ class OrderHistoryServiceTest {
 
     private Page<Order> filteredQuery(OffsetDateTime from, OffsetDateTime to) {
         return orderRepository
-                .findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+                .findByClientIdSubmittedBetween(
                         clientId, from, to, PageRequest.of(0, 20));
     }
 
@@ -272,7 +272,7 @@ class OrderHistoryServiceTest {
         Page<OrderHistoryItem> result = orderHistoryService.getOrderHistory(clientId, 0, 20, 2025, null, null);
 
         assertEquals(1, result.getTotalElements());
-        verify(orderRepository, never()).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(any(), any());
+        verify(orderRepository, never()).findByClientId(any(), any());
     }
 
     @Test

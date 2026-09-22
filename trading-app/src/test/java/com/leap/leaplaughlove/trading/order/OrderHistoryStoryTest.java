@@ -64,13 +64,13 @@ class OrderHistoryStoryTest {
                 UUID.randomUUID(), aliceAccount, aapl, Order.Side.BUY,
                 100L, Order.Status.FILLED, baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
+        when(orderRepository.findByClientId(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(aliceOrder)));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
 
         assertEquals(1, page.getTotalElements());
-        verify(orderRepository).findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20)));
+        verify(orderRepository).findByClientId(eq(aliceClientId), eq(PageRequest.of(0, 20)));
     }
 
     @Test
@@ -86,7 +86,7 @@ class OrderHistoryStoryTest {
                 100L, Order.Status.FILLED,
                 baseTime, baseTime.plusSeconds(1), null, baseTime.plusSeconds(2), null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
+        when(orderRepository.findByClientId(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(newerOrder, olderOrder)));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
@@ -109,7 +109,7 @@ class OrderHistoryStoryTest {
                 orderId, aliceAccount, aapl, Order.Side.BUY,
                 25L, Order.Status.FILLED, submitted, submitted.plusSeconds(1), null, filled, null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
+        when(orderRepository.findByClientId(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(order)));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
@@ -127,7 +127,7 @@ class OrderHistoryStoryTest {
     @Test
     @DisplayName("AC4: Paginated results with configurable page size")
     void testAC4_PaginationSupported() {
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(1, 5))))
+        when(orderRepository.findByClientId(eq(aliceClientId), eq(PageRequest.of(1, 5))))
                 .thenReturn(new PageImpl<>(List.of(), PageRequest.of(1, 5), 12));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 1, 5, null, null, null);
@@ -146,7 +146,7 @@ class OrderHistoryStoryTest {
                 10L, Order.Status.SUBMITTED,
                 baseTime, null, null, null, null);
 
-        when(orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(eq(aliceClientId), eq(PageRequest.of(0, 20))))
+        when(orderRepository.findByClientId(eq(aliceClientId), eq(PageRequest.of(0, 20))))
                 .thenReturn(new PageImpl<>(List.of(unfilledOrder)));
 
         Page<OrderHistoryItem> page = orderHistoryService.getOrderHistory(aliceClientId, 0, 20, null, null, null);
@@ -161,7 +161,7 @@ class OrderHistoryStoryTest {
 
     private Page<Order> filteredHistory(UUID clientId, OffsetDateTime from, OffsetDateTime to) {
         return orderRepository
-                .findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+                .findByClientIdSubmittedBetween(
                         eq(clientId), eq(from), eq(to), eq(PageRequest.of(0, 20)));
     }
 
@@ -247,9 +247,9 @@ class OrderHistoryStoryTest {
 
         orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2025, null, null);
 
-        verify(orderRepository).findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+        verify(orderRepository).findByClientIdSubmittedBetween(
                 eq(aliceClientId), any(), any(), any());
-        verify(orderRepository, never()).findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
+        verify(orderRepository, never()).findByClientIdSubmittedBetween(
                 eq(otherClientId), any(), any(), any());
     }
 }

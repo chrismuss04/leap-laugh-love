@@ -3,6 +3,8 @@ package com.leap.leaplaughlove.trading.order;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
 import java.util.UUID;
@@ -12,8 +14,16 @@ import java.util.UUID;
  * This repository provides methods to perform CRUD operations and custom queries on orders.
  */
 public interface OrderRepository extends JpaRepository<Order, UUID> {
-    Page<Order> findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(UUID clientId, Pageable pageable);
 
-    Page<Order> findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
-            UUID clientId, OffsetDateTime from, OffsetDateTime to, Pageable pageable);
+    @Query("SELECT o FROM Order o WHERE o.account.clientId = :clientId " +
+           "ORDER BY o.submittedAt DESC, o.orderId DESC")
+    Page<Order> findByClientId(@Param("clientId") UUID clientId, Pageable pageable);
+
+    @Query("SELECT o FROM Order o WHERE o.account.clientId = :clientId " +
+           "AND o.submittedAt >= :from AND o.submittedAt < :to " +
+           "ORDER BY o.submittedAt DESC, o.orderId DESC")
+    Page<Order> findByClientIdSubmittedBetween(@Param("clientId") UUID clientId,
+                                               @Param("from") OffsetDateTime from,
+                                               @Param("to") OffsetDateTime to,
+                                               Pageable pageable);
 }

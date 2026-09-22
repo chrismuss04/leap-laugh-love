@@ -55,10 +55,8 @@ public class OrderHistoryService {
         DateRange range = toDateRange(year, month, day);
         Pageable pageable = PageRequest.of(page, size);
         Page<Order> orders = range == null
-                ? orderRepository.findByAccount_ClientIdOrderBySubmittedAtDescOrderIdDesc(clientId, pageable)
-                : orderRepository
-                        .findByAccount_ClientIdAndSubmittedAtGreaterThanEqualAndSubmittedAtLessThanOrderBySubmittedAtDescOrderIdDesc(
-                                clientId, range.from(), range.to(), pageable);
+                ? orderRepository.findByClientId(clientId, pageable)
+                : orderRepository.findByClientIdSubmittedBetween(clientId, range.from(), range.to(), pageable);
 
         List<UUID> orderIds = orders.map(Order::getOrderId).getContent();
         // Grouped, not collected into one-per-order: an order can fill in several executions,
