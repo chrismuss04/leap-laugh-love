@@ -40,15 +40,21 @@ export class OrderService {
 
   constructor(private http: HttpClient) {}
 
-  getOrderHistory(page: number = 0, size: number = 20): Observable<OrderHistoryPage> {
-    return this.http.get<OrderHistoryPage>(
-      `${this.API_URL}/orders/history`,
-      {
-        params: {
-          page: page.toString(),
-          size: size.toString()
-        }
-      }
-    );
+  getOrderHistory(
+    page: number = 0,
+    size: number = 20,
+    year: number | null = null,
+    month: number | null = null,
+    day: number | null = null
+  ): Observable<OrderHistoryPage> {
+    const params: Record<string, string> = {
+      page: page.toString(),
+      size: size.toString()
+    };
+    if (year !== null) params['year'] = year.toString();
+    if (month !== null) params['month'] = month.toString();
+    if (day !== null) params['day'] = day.toString();
+
+    return this.http.get<OrderHistoryPage>(`${this.API_URL}/orders/history`, { params });
   }
 }
