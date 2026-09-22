@@ -36,17 +36,42 @@ pipeline {
                     env.COMPOSE_PROJECT = "${env.JOB_NAME}-${env.BUILD_NUMBER}"
                         .toLowerCase().replaceAll('[^a-z0-9]+', '-').replaceAll('^-+|-+$', '')
 
-                    // Deliberately far from the 5432/8081-8083 the services default to, so a
-                    // build never fights a stack someone is running locally on this host.
-                    // Nothing outside the containers connects to these - every check below
-                    // goes through "docker-compose exec" - they only need to be unique per
-                    // executor so parallel builds on this agent don't overlap.
-                    def executor = env.EXECUTOR_NUMBER as Integer
-                    env.DB_PORT = (15432 + executor).toString()
-                    env.IAM_PORT = (18081 + executor).toString()
-                    env.ACCOUNT_PORT = (18082 + executor).toString()
-                    env.ORDER_PORT = (18084 + executor).toString()
-                    env.MARKETDATA_PORT = (18083 + executor).toString()
+                    // Publish every service on an ephemeral host port: "0:8081" tells Docker to
+                    // pick a free one. Nothing outside the containers connects to these - the
+                    // database checks and health checks below all go through
+                    // "docker-compose exec" - so the host port number is never used by anything,
+                    // it only has to not collide.
+                    //
+                    // Fixed numbers kept colliding however they were assigned. Per-service bases
+                    // one apart plus the executor number overlapped outright (executor 0 took
+                    // 18081/18082/18083, executor 1 took 18082/18083/18084). Widening that to a
+                    // block per executor fixed the arithmetic but not the problem, because
+                    // EXECUTOR_NUMBER is only unique within one node: two agents sharing a Docker
+                    // daemon both start at 0 and claim the same block. Letting the daemon that
+                    // owns the ports do the assigning is the only version of this that cannot
+                    // collide, and it removes the cap on how many builds can run at once.
+                    //
+                    // These must be set rather than left unset: docker-compose.yml defaults them
+                    // to the real 5432/8081-8083/4200, which would fight anything running locally
+                    // on the agent.
+                    env.DB_PORT = '0'
+                    env.IAM_PORT = '0'
+                    env.TRADING_PORT = '0'
+                    env.MARKETDATA_PORT = '0'
+                    env.FRONTEND_PORT = '0'
+
+                    // The smoke test starts from an empty database every build, so market-data
+                    // would generate its full default history - a year of candles at four widths
+                    // for every instrument, ~3.8M rows once the S&P 500 is seeded - and then
+                    // drop it all in the teardown. Keep the backfill ON, so a broken schema or
+                    // query still fails the build, but ask for a token amount: ~31 rows per
+                    // instrument instead of ~7,400.
+                    //
+                    // It matters more than it looks: the backfill runs as an ApplicationRunner,
+                    // and Spring starts the web server before those, so /actuator/health answers
+                    // while it is still writing. A slow backfill would not fail Verify Services,
+                    // it would let the build go green and then tear the container down mid-write.
+                    env.MARKETDATA_BACKFILL_TIERS = '86400:7,3600:1'
 
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
@@ -66,7 +91,12 @@ pipeline {
             environment {
                 // Throwaway CI database credentials; the container is destroyed after the stage.
                 TEST_DB_PASSWORD = "ci-test-password"
-                PG_CONTAINER = "pg-test-${BUILD_NUMBER}-${EXECUTOR_NUMBER}"
+                // Named after the compose project, which carries the branch: BUILD_NUMBER plus
+                // EXECUTOR_NUMBER is not unique across jobs, so two branches that happened to
+                // land on the same build number and executor shared this name - and the
+                // "docker rm -f" below would then destroy the other build's test database
+                // mid-run. Same defect the fixed host ports had.
+                PG_CONTAINER = "pg-test-${COMPOSE_PROJECT}"
             }
             steps {
                 sh '''
@@ -129,17 +159,13 @@ pipeline {
                 sh '''
                     set -eu
 
-                    # A stale container from an earlier build (crashed, aborted, or whose own
-                    # cleanup step failed) can still be bound to this executor's ports under a
-                    # different COMPOSE_PROJECT name, which "docker-compose down" here would
-                    # never find. Free the ports we're about to use before claiming them.
-                    for p in "$DB_PORT" "$IAM_PORT" "$ACCOUNT_PORT" "$ORDER_PORT" "$MARKETDATA_PORT"; do
-                        cid=$(docker ps -q --filter "publish=$p")
-                        if [ -n "$cid" ]; then
-                            echo "Port $p is held by container $cid from a previous build; removing it"
-                            docker rm -f "$cid"
-                        fi
-                    done
+                    # No port reclaiming here any more. It used to free this executor's
+                    # fixed ports before claiming them, which could not distinguish a crashed
+                    # build's leftovers from another branch's containers running right now, and
+                    # checked minutes before "Start Services" actually bound anything anyway.
+                    # Ephemeral ports remove the contention the sweep existed to resolve; the
+                    # post block's "docker-compose down -v" still cleans up this build's own
+                    # containers.
 
                     docker-compose -p "$COMPOSE_PROJECT" up -d db
                     echo "Waiting for PostgreSQL and schema initialization..."

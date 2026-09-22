@@ -64,6 +64,13 @@ services:
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      # How much synthetic price history to generate on a first start against an empty
+      # database. The defaults here are the full set a developer wants to chart against; CI
+      # overrides them with a token amount, because it starts from an empty database on every
+      # build and a year of history for the whole S&P 500 is ~3.8M rows it would immediately
+      # throw away. See "Price history and candle widths" in the README.
+      MARKETDATA_HISTORY_BACKFILL_ENABLED: "${MARKETDATA_BACKFILL_ENABLED:-true}"
+      MARKETDATA_HISTORY_BACKFILL_TIERS: "${MARKETDATA_BACKFILL_TIERS:-86400:365,3600:90,300:7,60:2}"
 
   # Angular dev server with hot reload. Runs straight off the node image rather than a
   # Dockerfile, so there is nothing to rebuild when frontend code changes.
@@ -120,6 +127,8 @@ services:
       - ./iam-app/src/main/resources/db/seed_iam.sql:/docker-entrypoint-initdb.d/02-seed-iam.sql:ro
       - ./iam-app/src/main/resources/db/seed_trading.sql:/docker-entrypoint-initdb.d/03-seed-trading.sql:ro
       - ./iam-app/src/main/resources/db/seed_marketdata.sql:/docker-entrypoint-initdb.d/04-seed-marketdata.sql:ro
+      - ./iam-app/src/main/resources/db/seed_sp500_marketdata.sql:/docker-entrypoint-initdb.d/05-seed-sp500-marketdata.sql:ro
+      - ./iam-app/src/main/resources/db/seed_sp500_trading.sql:/docker-entrypoint-initdb.d/06-seed-sp500-trading.sql:ro
 
 volumes:
   db_data:

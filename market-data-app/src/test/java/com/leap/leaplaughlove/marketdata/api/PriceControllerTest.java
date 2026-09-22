@@ -127,6 +127,25 @@ class PriceControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/marketdata/prices/{symbol} - a dotted ticker resolves in full")
+    void testDottedSymbolIsNotTruncated() throws Exception {
+        // Two S&P 500 constituents carry a share-class suffix (BRK.B, BF.B). Spring's older
+        // suffix-pattern matching would have handed the controller "BRK", silently looking up
+        // the wrong instrument, so this pins the whole symbol reaching the path variable.
+        OffsetDateTime asOf = OffsetDateTime.now();
+        when(simulationEngine.latest("BRK.B")).thenReturn(
+                Optional.of(new PriceState("BRK.B", new BigDecimal("497.170000"), asOf)));
+
+        mockMvc.perform(get("/api/marketdata/prices/BRK.B")
+                        .with(csrf())
+                        .with(authentication(authenticatedClient())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.symbol").value("BRK.B"));
+
+        verify(simulationEngine).latest("BRK.B");
+    }
+
+    @Test
     @DisplayName("GET /api/marketdata/prices/{symbol}/history - queries the requested candle width")
     void testGetHistoryUsesRequestedInterval() throws Exception {
         when(candleRepository.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(

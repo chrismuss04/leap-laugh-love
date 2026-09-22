@@ -10,6 +10,20 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          # Without this Hibernate defaults to 0 (batching off) and saveAll issues one INSERT
+          # round trip per row, which is what makes the history backfill's bulk write scale
+          # with instrument count rather than batch count. PriceCandle uses GenerationType.UUID,
+          # so batching applies - an IDENTITY id would silently disable it.
+          batch_size: 500
+        order_inserts: true
+  task:
+    scheduling:
+      # The simulation tick and the candle flush are both @Scheduled. On the default pool of 1
+      # they share a thread, so a slow flush delays every instrument's next tick.
+      pool-size: 4
 
 app:
   jwt:
@@ -32,9 +46,18 @@ marketdata:
       # whatever history the database already holds.
       enabled: true
       step-seconds: 60
-      # bucketSeconds:lookbackDays - wider buckets reach further back, which is what keeps a
-      # year of history to a few thousand rows per instrument.
+      # bucketSeconds:days - wider buckets reach further back, which is what keeps a year of
+      # history to a few thousand rows per instrument.
       tiers: 86400:365,3600:90,300:7,60:2
+    retention:
+      # Drops candles that have aged out, so the table settles at the size the backfill created
+      # instead of growing for as long as the service runs. Keep these tiers equal to the
+      # backfill's, or the two disagree about how much history should exist. A width the
+      # accumulator writes but this does not list is kept forever.
+      enabled: true
+      tiers: 86400:365,3600:90,300:7,60:2
+      interval-ms: 3600000
+      initial-delay-ms: 300000
   ingestion:
     spread-bps: 5
     default-lot-size: 100

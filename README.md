@@ -528,7 +528,7 @@ classDiagram
 | **Order** | `POST /api/order/orders` | Place order (BUY/SELL) with immediate execution | Bearer JWT required |
 | **Order** | `GET /api/order/orders/history` | Paginated order history | Bearer JWT required |
 | **Order** | `GET /actuator/health` | Order service health check | Permitted |
-| **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument | Bearer JWT required |
+| **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument (503 S&P 500 constituents plus the index/benchmark symbols) | Bearer JWT required | 
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT required |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT required |
@@ -818,9 +818,55 @@ backfill - every restart used to snap prices back to their seed value, leaving a
 candle table that no market movement produced.)
 
 Configured under `marketdata.history.backfill`: `enabled` (default `true`), `step-seconds`, and
-`tiers` as `bucketSeconds:lookbackDays` pairs (default `86400:365,3600:90,300:7,60:2`, about
-7,400 rows per instrument). It is idempotent per instrument, so it is a no-op on every boot after
-the first.
+`tiers` as `bucketSeconds:days` pairs (default `86400:365,3600:90,300:7,60:2`, about 7,400 rows
+per instrument). It is idempotent per instrument, so it is a no-op on every boot after the first.
+
+CI overrides this. The smoke-test stack starts from an empty database on every build, so the
+defaults would generate ~3.8M rows and drop them again in the teardown. `docker-compose.yml`
+exposes `MARKETDATA_BACKFILL_ENABLED` and `MARKETDATA_BACKFILL_TIERS` for that; the Jenkinsfile
+sets the tiers to `86400:7,3600:1`, about 29 rows per instrument, which still exercises the
+generator, the schema and the resume handoff without the volume.
+
+Because it runs before the readiness event, its cost is startup latency on a first boot. At the
+full S&P 500 (503 instruments) that is roughly 5 seconds of simulation plus the batched write of
+~3.7M rows - tens of seconds in total, once. It has to block: the engine reads the last close
+immediately afterwards, so running it in the background would leave the live feed opening at the
+seed price with history appearing behind it.
+
+### Retention
+
+The accumulator writes every width for as long as the service runs, but only the finest width is
+read at short range - a month-long chart is served from hourly candles, not the ~43,000 minute
+candles covering the same period. `PriceCandleRetention` prunes each width to its own window on a
+schedule, configured under `marketdata.history.retention` in the same `bucketSeconds:days` form.
+
+**Keep the retention tiers equal to the backfill tiers.** That is what makes the table settle at
+the size the backfill created (~7,400 rows per instrument) instead of the 60s width growing
+behind it at ~1,440 rows per instrument per day. A width the accumulator writes but retention does
+not list is kept forever.
+
+| Instruments | Unpruned growth | Steady state with retention |
+| --- | --- | --- |
+| 11 | ~7M rows/year | ~82k rows |
+| 503 | ~320M rows/year | ~3.7M rows |
+
+### Scale notes
+
+A few settings exist specifically because instrument count multiplies everything:
+
+- **`spring.jpa.properties.hibernate.jdbc.batch_size`** - Hibernate defaults to batching *off*,
+  which makes `saveAll` issue one INSERT round trip per row. The backfill's bulk write is the
+  thing that cares. `PriceCandle` uses `GenerationType.UUID`; an `IDENTITY` id would silently
+  disable batching again.
+- **`spring.task.scheduling.pool-size`** - the simulation tick and the candle flush are both
+  `@Scheduled`, and share one thread on the default pool.
+- **Candles are queued, not written where they roll over.** Spring publishes events synchronously,
+  so saving inline put a database round trip on the tick thread inside the accumulator's monitor -
+  one serialised write per instrument at every minute boundary. The scheduled flush drains the
+  queue in one batch instead. The tradeoff is that a crash can lose up to one flush interval of
+  completed candles.
+- **The backfill draws from `SplittableRandom`, not `java.util.Random`**, whose atomic
+  compare-and-set per draw measured ~4.5x slower across the walk.
 
 > [!NOTE]
 > Seed files are mounted into `/docker-entrypoint-initdb.d`, which Postgres only runs on an empty
@@ -831,4 +877,6 @@ the first.
 
 ---
 
-Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in three Postgres schemas — `iam` (clients, profiles, credentials), `trading` (accounts, instruments, orders, executions, cash ledger, positions), and `marketdata` (simulated instruments and OHLC price candles — decoupled from `trading.instruments`, matched only by symbol; `marketdata.instruments` also carries index/benchmark symbols such as `SPX` and `VIX` that quote and chart but, having no `trading.instruments` row, can never be ordered). Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.
+Schema source of truth: `iam-app/src/main/resources/db/leap_laugh_love_schema.sql`. Tables live in three Postgres schemas — `iam` (clients, profiles, credentials), `trading` (accounts, instruments, orders, executions, cash ledger, positions), and `marketdata` (simulated instruments and OHLC price candles — decoupled from `trading.instruments`, matched only by symbol; `marketdata.instruments` also carries index/benchmark symbols such as `SPX` and `VIX` that quote and chart but, having no `trading.instruments` row, can never be ordered).
+
+Instrument seeds: `db/seed_marketdata.sql` holds the original five tradables plus the index/benchmark symbols, and `db/seed_sp500_marketdata.sql` / `db/seed_sp500_trading.sql` hold the 503 S&P 500 constituents (503, not 500, because several companies have two share classes in the index). Symbols and company names there are the real index constituents; **prices are not real** — this app has no market-data feed, so `initial_price` is derived deterministically from the symbol and `drift`/`volatility` are assigned per GICS sector, purely to make the simulator behave recognisably. Records in `orders`, `executions`, `cash_ledger`, and `position_movements` are append-only/immutable at the database level (delete/update-blocking triggers) to satisfy audit and compliance retention requirements.
