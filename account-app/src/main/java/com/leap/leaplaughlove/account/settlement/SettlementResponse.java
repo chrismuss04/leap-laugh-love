@@ -8,7 +8,7 @@ import java.util.UUID;
  * @param cashLedgerId the unique identifier of the cash ledger entry
  * @param balanceAfter the cash balance after the settlement
  * @param positionQuantity the quantity of the instrument held after the settlement
- * @param positionAvgCost the average cost of the instrument position after the settlement
+ * @param positionAvgCost the average cost of the instrument position after the settlement, weighted moving average
  */
 public record SettlementResponse(
         UUID cashLedgerId,
