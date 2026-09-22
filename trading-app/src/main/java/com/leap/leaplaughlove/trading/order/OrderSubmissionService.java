@@ -67,7 +67,9 @@ public class OrderSubmissionService {
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details
      */
-    @Transactional
+    // LLL-133
+    // Roll back all settlement writes for checked as well as unchecked exceptions.
+    @Transactional(rollbackFor = Exception.class)
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order request body is required");
@@ -259,16 +261,21 @@ public class OrderSubmissionService {
                 positionRepository.save(p);
             }
         } else {
-            if (existingOpt.isPresent()) {
-                Position p = existingOpt.get();
-                long newQty = Math.max(0L, p.getQuantity() - quantity);
-                p.setQuantity(newQty);
-                if (newQty == 0) {
-                    p.setAvgCost(BigDecimal.ZERO);
-                }
-                p.setUpdatedAt(time);
-                positionRepository.save(p);
+            // LLL-133
+            // A sell must reduce holdings in full or roll back the entire settlement.
+            Position p = existingOpt.orElseThrow(() ->
+                    new IllegalStateException("Cannot settle sell: position does not exist"));
+            if (p.getQuantity() < quantity) {
+                throw new IllegalStateException("Cannot settle sell: insufficient position quantity");
             }
+
+            long newQty = p.getQuantity() - quantity;
+            p.setQuantity(newQty);
+            if (newQty == 0) {
+                p.setAvgCost(BigDecimal.ZERO);
+            }
+            p.setUpdatedAt(time);
+            positionRepository.save(p);
         }
     }
 
