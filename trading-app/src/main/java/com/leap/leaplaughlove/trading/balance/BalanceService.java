@@ -96,7 +96,9 @@ public class BalanceService {
     @Transactional
     public CashTransactionResponse deposit(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
-        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);
+        // LLL-133
+        // Serialize cash movements with trades before reading the balance.
+        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);
         BigDecimal currentBalance = getCurrentBalance(account);
 
         CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(
@@ -120,7 +122,9 @@ public class BalanceService {
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
-        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);
+        // LLL-133
+        // Hold the account lock through validation and commit to prevent concurrent overspending.
+        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);
         BigDecimal currentBalance = getCurrentBalance(account);
 
         if (amount.compareTo(currentBalance) > 0) {

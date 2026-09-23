@@ -130,8 +130,15 @@ public class SeededFillService {
                 blocked.add(holding);
                 continue;
             }
-            if (book(order, price.get())) {
-                booked++;
+            try {
+                if (book(order, price.get())) {
+                    booked++;
+                }
+            } catch (RuntimeException ex) {
+                // e.g. a seeded sell with no holding to settle against (LLL-133). The transaction
+                // rolled back; hold back this holding's later fills and carry on with the rest.
+                log.warn("Could not book seeded fill for order {}: {}", order.getOrderId(), ex.getMessage());
+                blocked.add(holding);
             }
         }
         int remaining = pending.size() - booked;

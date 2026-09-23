@@ -121,6 +121,27 @@ class SeededFillServiceTest {
     }
 
     @Test
+    @DisplayName("a fill that can't be settled holds back its holding without stopping the others")
+    void unsettleableFillBlocksOnlyItsHolding() {
+        Order aaplSell = filledOrder(aapl, Order.Side.SELL, FILLED_AT.minusHours(2));
+        Order laterAapl = filledOrder(aapl, Order.Side.BUY, FILLED_AT.minusHours(1));
+        Order msftBuy = filledOrder(msft, Order.Side.BUY, FILLED_AT);
+        when(orderRepository.findWithoutExecutionByStatus(Order.Status.FILLED))
+                .thenReturn(List.of(aaplSell, laterAapl, msftBuy));
+        when(priceHistoryClient.fetchCloses(anyString(), any(), any(), eq(60), anyString())).thenAnswer(invocation -> {
+            OffsetDateTime to = invocation.getArgument(2);
+            return List.of(new CandleClose(to.minusSeconds(60), new BigDecimal("300")));
+        });
+        when(fillRecorder.recordFill(eq(aaplSell), any(), any()))
+                .thenThrow(new IllegalStateException("Cannot settle sell: position does not exist"));
+
+        assertEquals(2, service.bookPendingFills());
+
+        verify(fillRecorder, never()).recordFill(eq(laterAapl), any(), any());
+        verify(fillRecorder).recordFill(msftBuy, new BigDecimal("300.0000"), FILLED_AT);
+    }
+
+    @Test
     @DisplayName("market data being down leaves the fill pending instead of failing")
     void marketDataDownLeavesFillPending() {
         Order order = filledOrder(aapl, Order.Side.BUY, FILLED_AT);

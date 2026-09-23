@@ -129,16 +129,21 @@ public class FillRecorder {
                 positionRepository.save(p);
             }
         } else {
-            if (existingOpt.isPresent()) {
-                Position p = existingOpt.get();
-                long newQty = Math.max(0L, p.getQuantity() - quantity);
-                p.setQuantity(newQty);
-                if (newQty == 0) {
-                    p.setAvgCost(BigDecimal.ZERO);
-                }
-                p.setUpdatedAt(time);
-                positionRepository.save(p);
+            // LLL-133
+            // A sell must reduce holdings in full or roll back the entire settlement.
+            Position p = existingOpt.orElseThrow(() ->
+                    new IllegalStateException("Cannot settle sell: position does not exist"));
+            if (p.getQuantity() < quantity) {
+                throw new IllegalStateException("Cannot settle sell: insufficient position quantity");
             }
+
+            long newQty = p.getQuantity() - quantity;
+            p.setQuantity(newQty);
+            if (newQty == 0) {
+                p.setAvgCost(BigDecimal.ZERO);
+            }
+            p.setUpdatedAt(time);
+            positionRepository.save(p);
         }
     }
 }
