@@ -57,7 +57,7 @@ class OrderHistoryControllerTest {
         OrderHistoryItem item = new OrderHistoryItem(
                 orderId, "AAPL", "BUY", 10L, "FILLED", submitted, submitted.plusSeconds(30), List.of(execution));
 
-        when(orderHistoryService.getOrderHistory(clientId, 0, 20))
+        when(orderHistoryService.getOrderHistory(clientId, 0, 20, null, null, null))
                 .thenReturn(new PageImpl<>(List.of(item)));
 
         mockMvc.perform(get("/api/order/orders/history")
@@ -80,7 +80,7 @@ class OrderHistoryControllerTest {
     void testGetOrderHistoryInvalidParams() throws Exception {
         UUID clientId = UUID.randomUUID();
 
-        when(orderHistoryService.getOrderHistory(clientId, -1, 20))
+        when(orderHistoryService.getOrderHistory(clientId, -1, 20, null, null, null))
                 .thenThrow(new IllegalArgumentException("page must not be negative"));
 
         mockMvc.perform(get("/api/order/orders/history")
@@ -90,6 +90,56 @@ class OrderHistoryControllerTest {
                         .param("size", "20"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("page must not be negative"));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/orders/history - passes year, month and day filters through to the service")
+    void testGetOrderHistoryWithDateFilters() throws Exception {
+        UUID clientId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        OffsetDateTime submitted = OffsetDateTime.now();
+        OrderHistoryItem item = new OrderHistoryItem(
+                orderId, "AAPL", "BUY", 50L, "FILLED", submitted, submitted.plusSeconds(60), List.of());
+
+        when(orderHistoryService.getOrderHistory(clientId, 0, 20, 2026, 8, 3))
+                .thenReturn(new PageImpl<>(List.of(item)));
+
+        mockMvc.perform(get("/api/order/orders/history")
+                        .with(csrf())
+                        .with(authentication(createAuthenticationWithClientId(clientId)))
+                        .param("year", "2026")
+                        .param("month", "8")
+                        .param("day", "3"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].orderId").value(orderId.toString()));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/orders/history - 400 when the date filter combination is invalid")
+    void testGetOrderHistoryInvalidDateFilter() throws Exception {
+        UUID clientId = UUID.randomUUID();
+
+        when(orderHistoryService.getOrderHistory(clientId, 0, 20, null, 8, null))
+                .thenThrow(new IllegalArgumentException("year is required when month or day is provided"));
+
+        mockMvc.perform(get("/api/order/orders/history")
+                        .with(csrf())
+                        .with(authentication(createAuthenticationWithClientId(clientId)))
+                        .param("month", "8"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("year is required when month or day is provided"));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/orders/history - 400 when a filter is not a number")
+    void testGetOrderHistoryNonNumericFilter() throws Exception {
+        UUID clientId = UUID.randomUUID();
+
+        mockMvc.perform(get("/api/order/orders/history")
+                        .with(csrf())
+                        .with(authentication(createAuthenticationWithClientId(clientId)))
+                        .param("year", "abc"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

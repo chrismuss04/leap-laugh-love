@@ -53,6 +53,8 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- LLL-133 -->
+        <!-- Settlement tests use Jenkins's existing PostgreSQL test database; no Testcontainers needed. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>

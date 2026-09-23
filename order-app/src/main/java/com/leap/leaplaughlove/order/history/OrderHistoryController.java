@@ -32,14 +32,20 @@ public class OrderHistoryController {
      * GET HTTP endpoint for retrieving order history.
      * @param page the page number to retrieve
      * @param size the number of items per page
-     * @return a paginated list of order history items
+     * @param year optional year filter; required when month or day is given
+     * @param month optional month filter (1-12); required when day is given
+     * @param day optional day-of-month filter
+     * @return a paginated list of order history items for the authenticated client
      */
     @GetMapping("/api/order/orders/history")
     public Page<OrderHistoryItem> getOrderHistory(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Integer year,
+            @RequestParam(required = false) Integer month,
+            @RequestParam(required = false) Integer day) {
         UUID authenticatedClientId = SecurityUtils.getAuthenticatedClientId();
-        return orderHistoryService.getOrderHistory(authenticatedClientId, page, size);
+        return orderHistoryService.getOrderHistory(authenticatedClientId, page, size, year, month, day);
     }
 
     /**

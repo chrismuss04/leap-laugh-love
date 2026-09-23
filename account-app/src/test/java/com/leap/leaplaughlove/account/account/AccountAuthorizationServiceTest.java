@@ -19,6 +19,9 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.when;
+// LLL-133
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 
 @ExtendWith(MockitoExtension.class)
 @DisplayName("AccountAuthorizationService Tests")
@@ -44,6 +47,86 @@ class AccountAuthorizationServiceTest {
     @AfterEach
     void tearDown() {
         SecurityContextHolder.clearContext();
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Locking cash authorization allows an active account even when trading is disabled")
+    void testGetAuthorizedAccountForUpdate_Success() {
+        Account account = new Account(accountId, clientId, "ACC-01", "ACTIVE", "USD", false, OffsetDateTime.now());
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId))
+                .thenReturn(Optional.of(account));
+
+        assertSame(account, authorizationService.getAuthorizedAccountForUpdate(accountId));
+
+        verify(accountRepository).findByAccountIdAndClientIdForUpdate(accountId, clientId);
+        verifyNoMoreInteractions(accountRepository);
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Both locking authorization methods reject missing or unowned accounts")
+    void testLockingAuthorization_NotFound() {
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId))
+                .thenReturn(Optional.empty());
+
+        ResponseStatusException cashException = assertThrows(ResponseStatusException.class,
+                () -> authorizationService.getAuthorizedAccountForUpdate(accountId));
+        ResponseStatusException tradeException = assertThrows(ResponseStatusException.class,
+                () -> authorizationService.getAuthorizedTradingAccountForUpdate(accountId));
+
+        assertEquals(HttpStatus.NOT_FOUND, cashException.getStatusCode());
+        assertEquals("Account not found", cashException.getReason());
+        assertEquals(HttpStatus.NOT_FOUND, tradeException.getStatusCode());
+        assertEquals("Account not found", tradeException.getReason());
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Both locking authorization methods reject inactive accounts")
+    void testLockingAuthorization_Inactive() {
+        Account account = new Account(accountId, clientId, "ACC-01", "BLOCKED", "USD", true, OffsetDateTime.now());
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId))
+                .thenReturn(Optional.of(account));
+
+        ResponseStatusException cashException = assertThrows(ResponseStatusException.class,
+                () -> authorizationService.getAuthorizedAccountForUpdate(accountId));
+        ResponseStatusException tradeException = assertThrows(ResponseStatusException.class,
+                () -> authorizationService.getAuthorizedTradingAccountForUpdate(accountId));
+
+        assertEquals(HttpStatus.BAD_REQUEST, cashException.getStatusCode());
+        assertEquals("Account is not active", cashException.getReason());
+        assertEquals(HttpStatus.BAD_REQUEST, tradeException.getStatusCode());
+        assertEquals("Account is not active", tradeException.getReason());
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Locking trading authorization returns an active account with trading enabled")
+    void testGetAuthorizedTradingAccountForUpdate_Success() {
+        Account account = new Account(accountId, clientId, "ACC-01", "ACTIVE", "USD", true, OffsetDateTime.now());
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId))
+                .thenReturn(Optional.of(account));
+
+        assertSame(account, authorizationService.getAuthorizedTradingAccountForUpdate(accountId));
+
+        verify(accountRepository).findByAccountIdAndClientIdForUpdate(accountId, clientId);
+        verifyNoMoreInteractions(accountRepository);
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Locking trading authorization rejects accounts with trading disabled")
+    void testGetAuthorizedTradingAccountForUpdate_TradingDisabled() {
+        Account account = new Account(accountId, clientId, "ACC-01", "ACTIVE", "USD", false, OffsetDateTime.now());
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId))
+                .thenReturn(Optional.of(account));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> authorizationService.getAuthorizedTradingAccountForUpdate(accountId));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("Trading is disabled for this account", ex.getReason());
     }
 
     @Test

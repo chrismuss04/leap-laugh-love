@@ -105,5 +105,51 @@ class AccountSettlementControllerIntegrationTest {
                 .andExpect(jsonPath("$.positionQuantity", is(15)))
                 .andExpect(jsonPath("$.cashLedgerId").isNotEmpty());
     }
+
+    @Test
+    @DisplayName("POST /api/account/internal/accounts/{id}/settlement — rejects SELL if position does not exist")
+    void testSettleSellOrder_positionDoesNotExist_returnsBadRequest() throws Exception {
+        UUID nonExistentInstrumentId = UUID.randomUUID();
+        SettlementRequest request = new SettlementRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                nonExistentInstrumentId,
+                "UNKNOWN",
+                "SELL",
+                10,
+                new BigDecimal("160.0000"),
+                OffsetDateTime.now()
+        );
+
+        mockMvc.perform(post("/api/account/internal/accounts/{accountId}/settlement", ACCOUNT_OWNER_USD_ID)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Cannot settle sell: position does not exist")));
+    }
+
+    @Test
+    @DisplayName("POST /api/account/internal/accounts/{id}/settlement — rejects SELL if insufficient quantity")
+    void testSettleSellOrder_insufficientQuantity_returnsBadRequest() throws Exception {
+        // Holding quantity is 25 in positions_test_setup.sql, trying to sell 100
+        SettlementRequest request = new SettlementRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                UUID.fromString(INSTRUMENT_AAPL_ID),
+                "AAPL",
+                "SELL",
+                100,
+                new BigDecimal("160.0000"),
+                OffsetDateTime.now()
+        );
+
+        mockMvc.perform(post("/api/account/internal/accounts/{accountId}/settlement", ACCOUNT_OWNER_USD_ID)
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Cannot settle sell: insufficient position quantity")));
+    }
 }
 

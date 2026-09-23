@@ -35,3 +35,13 @@ CREATE TABLE iam.client_profile (
     -- default here every insert failed with "NULL not allowed for column CREATED_AT".
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+DROP TABLE IF EXISTS iam.client_credentials CASCADE;
+
+CREATE TABLE iam.client_credentials (
+    client_id UUID PRIMARY KEY REFERENCES iam.clients (client_id),
+    password_hash VARCHAR(255) NOT NULL,
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

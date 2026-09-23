@@ -1,0 +1,184 @@
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 18px 20px 10px;
+}
+
+h2 {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.meta {
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-top: 1px solid var(--border);
+}
+
+.row:hover,
+.row.selected {
+  background: var(--surface-hover);
+}
+
+.row.selected::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+}
+
+.skeleton-row {
+  gap: 24px;
+  padding: 14px 20px;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(80px, 1fr) 88px minmax(110px, 1fr) minmax(150px, 1.2fr);
+  align-items: center;
+  gap: 16px;
+  padding: 14px 8px 14px 20px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.identity,
+.price-col,
+.value-col {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.price-col,
+.value-col {
+  align-items: flex-end;
+}
+
+.symbol {
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.sub {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.sub.text-gain { color: var(--gain); }
+.sub.text-loss { color: var(--loss); }
+
+.price,
+.value {
+  font-size: 15px;
+  font-weight: 500;
+  border-radius: 4px;
+  padding: 0 2px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  padding-right: 16px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.row:hover .row-actions,
+.row.selected .row-actions,
+.row:focus-within .row-actions {
+  opacity: 1;
+}
+
+.chip {
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  background: var(--muted);
+}
+
+.chip.buy { color: var(--gain); }
+.chip.sell { color: var(--loss); }
+.chip.buy:hover { background: var(--gain-muted); }
+.chip.sell:hover { background: var(--loss-muted); }
+
+.empty {
+  padding: 32px 20px 36px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.empty-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.empty-text {
+  font-size: 14px;
+  color: var(--muted-foreground);
+  max-width: 380px;
+  margin: 0 auto;
+}
+
+.card-footer {
+  border-top: 1px solid var(--border);
+  padding: 12px 20px;
+}
+
+.card-footer a {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.card-footer a:hover {
+  text-decoration: underline;
+}
+
+@media (hover: none) {
+  .row-actions { opacity: 1; }
+}
+
+@media (max-width: 640px) {
+  .row-main {
+    grid-template-columns: minmax(70px, 1fr) minmax(100px, 1fr);
+    padding-left: 16px;
+  }
+
+  .spark,
+  .value-col {
+    display: none;
+  }
+
+  .row-actions {
+    padding-right: 12px;
+  }
+}

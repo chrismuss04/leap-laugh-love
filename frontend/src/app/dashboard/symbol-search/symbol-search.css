@@ -1,0 +1,113 @@
+.search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.search:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 60%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+
+.icon {
+  position: absolute;
+  left: 16px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 44px 12px 44px;
+  background: transparent;
+  border: none;
+  color: var(--foreground);
+  font-size: 14px;
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+}
+
+.shortcut {
+  position: absolute;
+  right: 14px;
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  pointer-events: none;
+}
+
+.search:focus-within .shortcut {
+  display: none;
+}
+
+.results {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  padding: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.result {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.result.active {
+  background: var(--surface-hover);
+}
+
+.symbol {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.name {
+  font-size: 13px;
+  color: var(--muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.price {
+  font-size: 14px;
+}
+
+.note {
+  padding: 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}

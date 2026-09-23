@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
+import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 
 /**
@@ -34,6 +35,10 @@ public class Order {
 
     @Column(name = "account_id", nullable = false)
     private UUID accountId;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "account_id", insertable = false, updatable = false)
+    private Account account;
 
     @Transient
     private String accountNumber;
@@ -161,6 +166,11 @@ public class Order {
      * @return the accountId
      */
     public UUID getAccountId() { return accountId; }
+    /**
+     * Returns the account entity associated with this order.
+     * @return the account
+     */
+    public Account getAccount() { return account; }
     /**
      * Returns the account number associated with this order.
      * @return the account number

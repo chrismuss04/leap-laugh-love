@@ -44,3 +44,6 @@ out/
 *.iml
 *.iws
 *.ipr
+
+# scripts/start-local.ps1 run state
+.local-run/

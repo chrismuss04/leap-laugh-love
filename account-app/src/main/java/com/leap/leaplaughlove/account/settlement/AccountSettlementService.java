@@ -78,9 +78,9 @@ public class AccountSettlementService {
      * @param request the settlement request containing order details
      * @return the settlement response encapsulated in a SettlementResponse DTO
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public SettlementResponse settleOrder(UUID accountId, SettlementRequest request) {
-        Account account = accountAuthorizationService.getAuthorizedTradingAccount(accountId);
+        Account account = accountAuthorizationService.getAuthorizedTradingAccountForUpdate(accountId);
         BigDecimal tradeAmount = request.price().multiply(BigDecimal.valueOf(request.quantity()))
                 .setScale(2, RoundingMode.HALF_UP);
         OffsetDateTime time = request.executedAt() != null ? request.executedAt() : OffsetDateTime.now();
@@ -112,9 +112,8 @@ public class AccountSettlementService {
                 description);
         ledgerEntry = cashLedgerRepository.save(ledgerEntry);
 
-        // 2. Update Position (Holdings)
-        PositionId positionId = new PositionId(account.getAccountId(), request.instrumentId());
-        Optional<Position> existingOpt = positionRepository.findById(positionId);
+        // 2. Update Position (Holdings) with pessimistic write lock
+        Optional<Position> existingOpt = positionRepository.findByIdForUpdate(account.getAccountId(), request.instrumentId());
 
         long newQty;
         BigDecimal newAvgCost;
@@ -140,18 +139,17 @@ public class AccountSettlementService {
                 positionRepository.save(p);
             }
         } else {
-            if (existingOpt.isPresent()) {
-                Position p = existingOpt.get();
-                newQty = Math.max(0L, p.getQuantity() - request.quantity());
-                newAvgCost = newQty == 0 ? BigDecimal.ZERO : p.getAvgCost();
-                p.setQuantity(newQty);
-                p.setAvgCost(newAvgCost);
-                p.setUpdatedAt(time);
-                positionRepository.save(p);
-            } else {
-                newQty = 0L;
-                newAvgCost = BigDecimal.ZERO;
+            Position p = existingOpt.orElseThrow(() ->
+                    new IllegalStateException("Cannot settle sell: position does not exist"));
+            if (p.getQuantity() < request.quantity()) {
+                throw new IllegalStateException("Cannot settle sell: insufficient position quantity");
             }
+            newQty = p.getQuantity() - request.quantity();
+            newAvgCost = newQty == 0 ? BigDecimal.ZERO : p.getAvgCost();
+            p.setQuantity(newQty);
+            p.setAvgCost(newAvgCost);
+            p.setUpdatedAt(time);
+            positionRepository.save(p);
         }
 
         // 3. Balance after settlement

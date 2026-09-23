@@ -1,4 +1,5 @@
 package com.leap.leaplaughlove.order.submission;
+
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -17,6 +18,7 @@ import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -74,7 +76,7 @@ public class OrderSubmissionService {
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details
      */
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order request body is required");
@@ -83,7 +85,7 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be at least 1 whole share");
         }
 
-        // 1. Resolve instrument
+        // 2. Resolve instrument
         Instrument instrument = resolveInstrument(request);
 
         // 2. Pre-trade check via AccountClient

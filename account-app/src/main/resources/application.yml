@@ -16,3 +16,9 @@ app:
     secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
     expiration-minutes: 60
 
+marketdata:
+  client:
+    base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 2000
+

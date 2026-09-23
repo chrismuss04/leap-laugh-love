@@ -54,5 +54,17 @@ public class AccountGlobalExceptionHandler {
                 "error", "BAD_REQUEST",
                 "message", ex.getMessage()));
     }
+
+    /**
+     * Exception handler for IllegalStateException.
+     * @param ex the IllegalStateException to handle
+     * @return a ResponseEntity containing the error details
+     */
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<Map<String, String>> handleIllegalState(IllegalStateException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "BAD_REQUEST",
+                "message", ex.getMessage()));
+    }
 }
 

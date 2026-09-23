@@ -76,13 +76,15 @@ VALUES
 INSERT INTO trading.instruments (instrument_id, symbol, instrument_name, asset_class, market, currency, is_tradable)
 VALUES
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 'AAPL', 'Apple Inc.', 'EQUITY', 'NASDAQ', 'USD', TRUE),
-    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0002', 'MSFT', 'Microsoft Corporation', 'EQUITY', 'NASDAQ', 'USD', TRUE);
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0002', 'MSFT', 'Microsoft Corporation', 'EQUITY', 'NASDAQ', 'USD', TRUE),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0003', 'GOOG', 'Alphabet Inc.', 'EQUITY', 'NASDAQ', 'USD', TRUE);
 
 INSERT INTO trading.positions (account_id, instrument_id, quantity, avg_cost)
 VALUES
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 25, 183.500000),
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0002', 10, 401.250000),
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 99, 199.990000);
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 99, 199.990000),
+    ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0003', 0, 0.000000);
 
 INSERT INTO trading.cash_ledger (cash_ledger_id, account_id, entry_type, amount, currency, created_at, description)
 VALUES

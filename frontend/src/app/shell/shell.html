@@ -1,0 +1,53 @@
+<div class="shell">
+  <header class="app-header">
+    <div class="header-inner">
+      <a routerLink="/dashboard" class="brand" aria-label="Leapfolio home">
+        <span class="brand-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+            <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+            <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+          </svg>
+        </span>
+        <span class="brand-name">Leapfolio</span>
+      </a>
+
+      <nav class="main-nav" aria-label="Main">
+        <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">Dashboard</a>
+        <a routerLink="/orders" routerLinkActive="active" class="nav-link">Orders</a>
+        <a routerLink="/holdings" routerLinkActive="active" class="nav-link">Holdings</a>
+      </nav>
+
+      <div class="header-right">
+        <span class="live-status" [attr.data-status]="stream.status()" role="status">
+          <span class="live-dot" aria-hidden="true"></span>
+          <span class="live-label">{{ statusLabel() }}</span>
+        </span>
+
+        <div class="profile" (keydown.escape)="closeMenu()">
+          <button type="button" class="profile-button" (click)="toggleMenu()"
+                  [attr.aria-expanded]="menuOpen()" aria-haspopup="menu">
+            <span class="profile-text">
+              <span class="profile-name">{{ profile()?.fullName ?? 'My account' }}</span>
+              <span class="profile-level" *ngIf="experienceLabel()">{{ experienceLabel() }}</span>
+            </span>
+            <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+          </button>
+
+          <div class="menu-backdrop" *ngIf="menuOpen()" (click)="closeMenu()"></div>
+          <div class="profile-menu" *ngIf="menuOpen()" role="menu">
+            <div class="menu-identity">
+              <span class="menu-name">{{ profile()?.fullName }}</span>
+              <span class="menu-email">{{ profile()?.email }}</span>
+            </div>
+            <button type="button" class="menu-item danger" role="menuitem" (click)="logout()">Log out</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell-main">
+    <router-outlet></router-outlet>
+  </main>
+</div>

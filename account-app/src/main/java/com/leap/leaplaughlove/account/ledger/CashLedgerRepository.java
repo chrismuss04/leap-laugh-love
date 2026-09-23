@@ -5,6 +5,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
@@ -41,5 +43,14 @@ public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUI
     @Query("SELECT COALESCE(SUM(c.amount), 0) FROM CashLedgerEntry c WHERE c.accountId = :accountId AND c.currency = :currency")
     BigDecimal sumAmountByAccountIdAndCurrency(@Param("accountId") UUID accountId,
                                                 @Param("currency") String currency);
+
+    /**
+     * Finds every entry on the given accounts recorded after a point in time, used to walk the
+     * current cash balance back to what it was at that time.
+     * @param accountIds the account IDs to include
+     * @param after the exclusive lower bound on the entry's creation time
+     * @return the matching entries, in no particular order
+     */
+    List<CashLedgerEntry> findByAccountIdInAndCreatedAtAfter(Collection<UUID> accountIds, OffsetDateTime after);
 }
 

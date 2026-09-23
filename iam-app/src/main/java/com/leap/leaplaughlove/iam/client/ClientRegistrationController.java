@@ -8,6 +8,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,13 +31,21 @@ import java.util.UUID;
 public class ClientRegistrationController {
 
     private final ClientRepository clientRepository;
+    private final ClientCredentialsRepository credentialsRepository;
+    private final PasswordEncoder passwordEncoder;
 
     /**
-     * Constructs a new ClientRegistrationController with the specified client repository.
+     * Constructs a new ClientRegistrationController with the specified dependencies.
      * @param clientRepository the client repository used for persisting and retrieving client data
+     * @param credentialsRepository the repository used for persisting the client's login credentials
+     * @param passwordEncoder the encoder used to hash the client's password before it is stored
      */
-    public ClientRegistrationController(ClientRepository clientRepository) {
+    public ClientRegistrationController(ClientRepository clientRepository,
+                                         ClientCredentialsRepository credentialsRepository,
+                                         PasswordEncoder passwordEncoder) {
         this.clientRepository = clientRepository;
+        this.credentialsRepository = credentialsRepository;
+        this.passwordEncoder = passwordEncoder;
     }
 
     /**
@@ -56,15 +65,37 @@ public class ClientRegistrationController {
 
         OffsetDateTime now = OffsetDateTime.now();
         Client client = new Client(
-                UUID.randomUUID(), request.email(), request.phone(), "PENDING", now,
+                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), "PENDING", now,
                 request.fullName(), request.dateOfBirth(), request.ssn(),
                 request.addressLine1(), request.addressLine2(), request.city(),
                 request.stateRegion(), request.postalCode(), request.countryCode(),
                 request.experienceLevel(), request.initialDepositAmount());
         clientRepository.save(client);
 
+        ClientCredentials credentials = new ClientCredentials(
+                client.getClientId(), passwordEncoder.encode(request.password()), 0, null);
+        credentialsRepository.save(credentials);
+
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));
+    }
+
+    /**
+     * Normalizes a phone number into "(XXX) XXX-XXXX" for 10-digit US numbers, or the
+     * digits alone otherwise. Clients that bypass the frontend's live formatting (e.g.
+     * calling the API directly) would otherwise store phone numbers in inconsistent formats.
+     * @param phone the raw phone number as submitted
+     * @return the normalized phone number, or null if none was provided
+     */
+    private static String normalizePhone(String phone) {
+        if (phone == null) {
+            return null;
+        }
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.length() == 10) {
+            return "(%s) %s-%s".formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));
+        }
+        return digits;
     }
 
     /**
@@ -101,7 +132,8 @@ public class ClientRegistrationController {
      * @param postalCode address postal code
      * @param countryCode two-letter ISO country code
      * @param experienceLevel investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
-     * @param initialDepositAmount initial deposit amount (minimum 0.00)
+     * @param initialDepositAmount initial deposit amount (minimum 5000.00)
+     * @param password the applicant's chosen sign-in password (must be at least 8 characters)
      */
     public record RegistrationRequest(
             @NotBlank @Email String email,
@@ -118,7 +150,8 @@ public class ClientRegistrationController {
             @NotBlank String postalCode,
             @NotBlank @Size(min = 2, max = 2) String countryCode,
             @NotBlank @Pattern(regexp = "NOVICE|INTERMEDIATE|ADVANCED") String experienceLevel,
-            @NotNull @DecimalMin("0.00") BigDecimal initialDepositAmount) {
+            @NotNull @DecimalMin("5000.00") BigDecimal initialDepositAmount,
+            @NotBlank @Size(min = 8, message = "password must be at least 8 characters") String password) {
     }
 
     /**

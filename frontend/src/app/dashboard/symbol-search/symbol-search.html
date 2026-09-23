@@ -1,0 +1,25 @@
+<div class="search" [class.open]="open() && query">
+  <svg class="icon" width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" />
+    <path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+  </svg>
+  <input #input type="search" class="input" placeholder="Search symbols to trade"
+         [(ngModel)]="query" (ngModelChange)="filter()" (focus)="onFocus()" (blur)="onBlur()" (keydown)="onKey($event)"
+         role="combobox" aria-autocomplete="list" aria-controls="symbol-results"
+         [attr.aria-expanded]="open() && results.length > 0"
+         [attr.aria-activedescendant]="results.length ? 'symbol-result-' + highlighted() : null"
+         aria-label="Search symbols" autocomplete="off" spellcheck="false" />
+  <kbd class="shortcut" aria-hidden="true">/</kbd>
+
+  <ul *ngIf="open() && query" id="symbol-results" class="results" role="listbox">
+    <li *ngIf="loading" class="note">Loading instruments…</li>
+    <li *ngIf="!loading && results.length === 0" class="note">No symbols match "{{ query }}"</li>
+    <li *ngFor="let r of results; let i = index" [id]="'symbol-result-' + i" role="option"
+        class="result" [class.active]="i === highlighted()" [attr.aria-selected]="i === highlighted()"
+        (mousedown)="$event.preventDefault()" (click)="choose(r)" (mouseenter)="highlighted.set(i)">
+      <span class="symbol">{{ r.symbol }}</span>
+      <span class="name">{{ r.name }}</span>
+      <span class="price num">{{ money(r.price) }}</span>
+    </li>
+  </ul>
+</div>

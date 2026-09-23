@@ -1,0 +1,35 @@
+# Opt-in override: run the services against a PostgreSQL that lives outside Docker (e.g. the
+# Windows host's own install) instead of the bundled "db" container, so the database's data
+# lives on that machine's disk rather than in a Docker volume on the VM.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.external-db.yml up -d --build
+#
+# Or set COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml in .env so a plain
+# "docker compose up" picks it up. EXTERNAL_DB_HOST must be the external database's address
+# as seen from inside the containers - see "Using an external PostgreSQL" in the README.
+#
+# The external database has to be created and seeded once, since the postgres entrypoint that
+# does that for the bundled container never runs here: scripts/setup-windows-db.ps1 does it on
+# a Windows install.
+#
+# Needs Docker Compose v2.24.4+ for the !reset tag. CI never uses this file.
+
+x-external-datasource: &external-datasource
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://${EXTERNAL_DB_HOST:?EXTERNAL_DB_HOST must be set to use docker-compose.external-db.yml}:${EXTERNAL_DB_PORT:-5432}/paysprint"
+
+services:
+  iam-app:
+    depends_on: !reset {}
+    environment: *external-datasource
+
+  trading-app:
+    depends_on: !reset {}
+    environment: *external-datasource
+
+  market-data-app:
+    depends_on: !reset {}
+    environment: *external-datasource
+
+  # Keeps the bundled database (and its volume) from starting unless asked for by profile.
+  db:
+    profiles: ["bundled-db"]
