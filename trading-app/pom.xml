@@ -54,18 +54,7 @@
             <scope>test</scope>
         </dependency>
         <!-- LLL-133 -->
-        <!-- Run settlement integration tests against an isolated PostgreSQL database. -->
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <!-- LLL-133 -->
-        <dependency>
-            <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
+        <!-- Settlement tests use Jenkins's existing PostgreSQL test database; no Testcontainers needed. -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>

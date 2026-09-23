@@ -34,6 +34,8 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+// LLL-133
+import static org.mockito.Mockito.mockingDetails;
 
 /**
  * Uses the PostgreSQL test database provisioned by Jenkins, with its production schema.
@@ -147,8 +149,12 @@ class AtomicTradeSettlementIntegrationTest {
     void failureAfterHoldingsWriteRollsBackEverything(Order.Side side) {
         seedHoldingsForSell(side);
         var before = snapshot();
+        // LLL-133
+        // Spring's repository spy delegates interface calls to the real repository proxy.
+        var repositoryDelegate = mockingDetails(positionRepository).getMockCreationSettings().getDefaultAnswer();
         doAnswer(invocation -> {
-            invocation.callRealMethod();
+            // LLL-133
+            repositoryDelegate.answer(invocation);
             entityManager.flush();
             assertSettledAmounts(side); // Verify both writes before forcing rollback.
             throw new SettlementFailure();
@@ -164,8 +170,11 @@ class AtomicTradeSettlementIntegrationTest {
     void failureAtCommitRollsBackEverything(Order.Side side) {
         seedHoldingsForSell(side);
         var before = snapshot();
+        // LLL-133
+        var repositoryDelegate = mockingDetails(positionRepository).getMockCreationSettings().getDefaultAnswer();
         doAnswer(invocation -> {
-            Object saved = invocation.callRealMethod();
+            // LLL-133
+            Object saved = repositoryDelegate.answer(invocation);
             entityManager.flush();
             TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
                 @Override
