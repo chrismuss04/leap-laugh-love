@@ -50,7 +50,11 @@ public class PriceStreamBroadcaster {
             try {
                 subscription.emitter().send(SseEmitter.event().name("price").data(state));
             } catch (IOException | IllegalStateException ex) {
-                subscription.emitter().completeWithError(ex);
+                // The client went away (tab closed, or the frontend reconnecting with a new
+                // symbol set). Just drop it: the container is already running its own error
+                // handling for the request, and completeWithError() from this non-container
+                // thread makes Tomcat throw - which would escape into the simulation tick and
+                // skip every instrument after this one.
                 subscriptions.remove(subscription);
             }
         }

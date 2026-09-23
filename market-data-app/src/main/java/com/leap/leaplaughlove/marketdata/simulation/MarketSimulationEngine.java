@@ -8,6 +8,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +29,17 @@ import java.util.random.RandomGenerator;
  */
 @Service
 public class MarketSimulationEngine {
+
+    /**
+     * Order of {@link #initialize()} among {@code ApplicationReadyEvent} listeners: last. Seeding
+     * the state is what starts ticks flowing (the scheduled {@link #tick()} is already running),
+     * so every tick consumer that loads a lookup on the same event must run before it - order
+     * those with {@link #TICK_CONSUMER_ORDER}.
+     */
+    public static final int START_ORDER = Ordered.LOWEST_PRECEDENCE;
+
+    /** Order for tick consumers' {@code ApplicationReadyEvent} setup: before {@link #START_ORDER}. */
+    public static final int TICK_CONSUMER_ORDER = START_ORDER - 1;
 
     private static final int PRICE_SCALE = 6;
     private static final double SECONDS_PER_YEAR = 365.0 * 24 * 60 * 60;
@@ -67,6 +80,7 @@ public class MarketSimulationEngine {
      * becomes the live feed's opening price.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(START_ORDER)
     public void initialize() {
         for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {
             RandomGenerator random = new Random(instrument.getRngSeed());
@@ -79,6 +93,7 @@ public class MarketSimulationEngine {
                     startingPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP),
                     OffsetDateTime.now());
             statesBySymbol.put(instrument.getSymbol(), new InstrumentSimState(
+                    instrument.getDisplayName(),
                     instrument.getDrift().doubleValue(),
                     instrument.getVolatility().doubleValue(),
                     random,
@@ -115,6 +130,15 @@ public class MarketSimulationEngine {
     }
 
     /**
+     * Gets the display name of an actively-simulated instrument, e.g. "Apple Inc." for AAPL.
+     * @param symbol the instrument symbol to look up
+     * @return the instrument's display name, if it is being simulated
+     */
+    public Optional<String> displayName(String symbol) {
+        return Optional.ofNullable(statesBySymbol.get(symbol)).map(InstrumentSimState::displayName);
+    }
+
+    /**
      * Gets the latest simulated price for every actively-simulated instrument.
      * @return the latest price state for each simulated instrument
      */
@@ -123,22 +147,26 @@ public class MarketSimulationEngine {
     }
 
     /**
-     * Per-instrument simulation state: its GBM parameters, random generator, and the most
-     * recently simulated price.
+     * Per-instrument simulation state: its display name, GBM parameters, random generator, and
+     * the most recently simulated price.
      */
     private static final class InstrumentSimState {
+        private final String displayName;
         private final double drift;
         private final double volatility;
         private final RandomGenerator random;
         private volatile PriceState current;
 
-        private InstrumentSimState(double drift, double volatility, RandomGenerator random, PriceState current) {
+        private InstrumentSimState(String displayName, double drift, double volatility,
+                                   RandomGenerator random, PriceState current) {
+            this.displayName = displayName;
             this.drift = drift;
             this.volatility = volatility;
             this.random = random;
             this.current = current;
         }
 
+        String displayName() { return displayName; }
         double drift() { return drift; }
         double volatility() { return volatility; }
         RandomGenerator random() { return random; }

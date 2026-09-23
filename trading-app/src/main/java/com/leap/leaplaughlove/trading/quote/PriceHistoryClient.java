@@ -14,6 +14,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 /**
  * Fetches candle history and latest prices from the market data service, for valuing holdings
@@ -51,6 +52,28 @@ public class PriceHistoryClient {
      */
     public List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
                                          int intervalSeconds) {
+        return fetchCloses(symbol, from, to, intervalSeconds, this::forwardCallerToken);
+    }
+
+    /**
+     * Fetches every candle close for a symbol within a time range, oldest first, authenticating
+     * with the given token instead of the caller's. For work that runs outside any request.
+     * @param symbol the instrument symbol
+     * @param from the start of the range
+     * @param to the end of the range
+     * @param intervalSeconds the candle width, in seconds (60, 300, 3600 or 86400)
+     * @param bearerToken the JWT to send to the market data service
+     * @return the candle closes in the range, oldest first; empty if the symbol has no history
+     * @throws QuoteUnavailableException if the market data service could not be reached or
+     *     returned an error
+     */
+    public List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
+                                         int intervalSeconds, String bearerToken) {
+        return fetchCloses(symbol, from, to, intervalSeconds, headers -> headers.setBearerAuth(bearerToken));
+    }
+
+    private List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
+                                          int intervalSeconds, Consumer<HttpHeaders> authentication) {
         List<CandleClose> closes = new ArrayList<>();
         try {
             for (int page = 0; page < MAX_PAGES; page++) {
@@ -63,7 +86,7 @@ public class PriceHistoryClient {
                                 .queryParam("page", pageNumber)
                                 .queryParam("size", PAGE_SIZE)
                                 .build(symbol))
-                        .headers(this::forwardCallerToken)
+                        .headers(authentication)
                         .retrieve()
                         .body(CandlePage.class);
                 if (body == null || body.content() == null) {

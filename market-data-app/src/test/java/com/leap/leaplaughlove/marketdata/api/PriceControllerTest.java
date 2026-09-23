@@ -91,12 +91,14 @@ class PriceControllerTest {
         OffsetDateTime asOf = OffsetDateTime.now();
         when(simulationEngine.latestAll()).thenReturn(List.of(
                 new PriceState("AAPL", new BigDecimal("150.250000"), asOf)));
+        when(simulationEngine.displayName("AAPL")).thenReturn(Optional.of("Apple Inc."));
 
         mockMvc.perform(get("/api/marketdata/prices")
                         .with(csrf())
                         .with(authentication(authenticatedClient())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].symbol").value("AAPL"))
+                .andExpect(jsonPath("$[0].name").value("Apple Inc."))
                 .andExpect(jsonPath("$[0].price").value(150.25));
     }
 
@@ -106,12 +108,14 @@ class PriceControllerTest {
         OffsetDateTime asOf = OffsetDateTime.now();
         when(simulationEngine.latest("AAPL")).thenReturn(
                 Optional.of(new PriceState("AAPL", new BigDecimal("150.250000"), asOf)));
+        when(simulationEngine.displayName("AAPL")).thenReturn(Optional.of("Apple Inc."));
 
         mockMvc.perform(get("/api/marketdata/prices/AAPL")
                         .with(csrf())
                         .with(authentication(authenticatedClient())))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.symbol").value("AAPL"))
+                .andExpect(jsonPath("$.name").value("Apple Inc."))
                 .andExpect(jsonPath("$.price").value(150.25));
     }
 

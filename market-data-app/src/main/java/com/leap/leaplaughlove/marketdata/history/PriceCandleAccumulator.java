@@ -5,9 +5,11 @@ import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepositor
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
 import com.leap.leaplaughlove.marketdata.simulation.PriceState;
 import com.leap.leaplaughlove.marketdata.simulation.PriceTickEvent;
 
@@ -73,9 +75,10 @@ public class PriceCandleAccumulator {
 
     /**
      * Loads every active instrument into the in-memory lookup used when flushing candles,
-     * once the application context is ready.
+     * once the application context is ready, before the simulation engine starts ticking.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(MarketSimulationEngine.TICK_CONSUMER_ORDER)
     public void initialize() {
         instrumentRepository.findByActiveTrue()
                 .forEach(instrument -> instrumentsBySymbol.put(instrument.getSymbol(), instrument));

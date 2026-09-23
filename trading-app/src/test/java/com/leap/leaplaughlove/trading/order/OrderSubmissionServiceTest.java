@@ -57,8 +57,8 @@ class OrderSubmissionServiceTest {
                 orderRepository,
                 executionRepository,
                 cashLedgerRepository,
-                positionMovementRepository,
-                positionRepository,
+                new FillRecorder(executionRepository, cashLedgerRepository,
+                        positionMovementRepository, positionRepository),
                 tradeValidationService,
                 currentQuoteService
         );

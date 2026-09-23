@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.marketdata.ingestion;
 
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
+import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
 import com.leap.leaplaughlove.marketdata.simulation.PriceTickEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -9,6 +10,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
@@ -67,9 +69,11 @@ public class QuoteIngestionService {
 
     /**
      * Loads every active instrument into the in-memory lookup used to validate incoming
-     * quote symbols, once the application context is ready.
+     * quote symbols, once the application context is ready. Runs before the simulation engine
+     * starts ticking, or every tick until this finished would be rejected as an unknown symbol.
      */
     @EventListener(ApplicationReadyEvent.class)
+    @Order(MarketSimulationEngine.TICK_CONSUMER_ORDER)
     public void initialize() {
         instrumentRepository.findByActiveTrue()
                 .forEach(instrument -> instrumentsBySymbol.put(instrument.getSymbol(), instrument));
