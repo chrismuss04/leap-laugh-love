@@ -1,14 +1,25 @@
 package com.leap.leaplaughlove.trading.position;
 
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PositionRepository extends JpaRepository<Position, PositionId> {
+
+    /**
+     * Locks the position row for the duration of the transaction so concurrent
+     * executions against the same account/instrument can't lose an update.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Position p WHERE p.accountId = :accountId AND p.instrumentId = :instrumentId")
+    Optional<Position> findByIdForUpdate(@Param("accountId") UUID accountId, @Param("instrumentId") UUID instrumentId);
 
     interface PositionRow {
         String getInstrumentId();

@@ -1,4 +1,4 @@
-import { Component, inject, OnInit, signal } from '@angular/core';
+import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
@@ -19,6 +19,25 @@ export class OrderHistoryComponent implements OnInit {
   error = signal<string | null>(null);
   expandedOrderId = signal<string | null>(null);
 
+  year = signal<number | null>(null);
+  month = signal<number | null>(null);
+  day = signal<number | null>(null);
+
+  readonly years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
+  readonly months = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+  days = computed(() => {
+    const year = this.year();
+    const month = this.month();
+    if (year === null || month === null) {
+      return [];
+    }
+    const daysInMonth = new Date(year, month, 0).getDate();
+    return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+  });
+
   private authService = inject(AuthService);
   private orderService = inject(OrderService);
 
@@ -34,7 +53,7 @@ export class OrderHistoryComponent implements OnInit {
     this.error.set(null);
     this.expandedOrderId.set(null);
 
-    this.orderService.getOrderHistory(page, 20).subscribe({
+    this.orderService.getOrderHistory(page, 20, this.year(), this.month(), this.day()).subscribe({
       next: (response: OrderHistoryPage) => {
         this.orders.set(response.content);
         this.currentPage.set(response.number);
@@ -46,6 +65,32 @@ export class OrderHistoryComponent implements OnInit {
         this.loading.set(false);
       }
     });
+  }
+
+  setFilter(field: WritableSignal<number | null>, event: Event) {
+    const value = (event.target as HTMLSelectElement).value;
+    field.set(value === '' ? null : Number(value));
+    this.applyFilter();
+  }
+
+  clearFilter() {
+    this.year.set(null);
+    this.applyFilter();
+  }
+
+  // A month needs a year and a day needs a month; drop whatever a change made invalid.
+  private applyFilter() {
+    if (this.year() === null) {
+      this.month.set(null);
+    }
+    if (this.month() === null) {
+      this.day.set(null);
+    }
+    const day = this.day();
+    if (day !== null && day > this.days().length) {
+      this.day.set(null);
+    }
+    this.loadOrders(0);
   }
 
   toggleExpand(orderId: string) {
