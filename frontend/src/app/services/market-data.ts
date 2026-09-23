@@ -5,6 +5,8 @@ import { catchError, map, shareReplay } from 'rxjs/operators';
 
 export interface LatestPrice {
   symbol: string;
+  /** Company or index name, e.g. "Apple Inc."; null if market data has none. */
+  name: string | null;
   price: number;
   asOf: string;
 }

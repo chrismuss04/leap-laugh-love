@@ -5,8 +5,6 @@ import com.leap.leaplaughlove.trading.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerRepository;
 import com.leap.leaplaughlove.trading.position.Position;
-// LLL-133
-import com.leap.leaplaughlove.trading.position.PositionId;
 import com.leap.leaplaughlove.trading.position.PositionMovement;
 import com.leap.leaplaughlove.trading.position.PositionMovementRepository;
 import com.leap.leaplaughlove.trading.position.PositionRepository;
@@ -59,8 +57,8 @@ class OrderSubmissionServiceTest {
                 orderRepository,
                 executionRepository,
                 cashLedgerRepository,
-                positionMovementRepository,
-                positionRepository,
+                new FillRecorder(executionRepository, cashLedgerRepository,
+                        positionMovementRepository, positionRepository),
                 tradeValidationService,
                 currentQuoteService
         );
@@ -191,7 +189,7 @@ class OrderSubmissionServiceTest {
                 accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.empty());
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.empty());
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> orderSubmissionService.submitOrder(request));
@@ -210,7 +208,7 @@ class OrderSubmissionServiceTest {
                 3, new BigDecimal("140.000000"), OffsetDateTime.now());
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
-        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.of(existingPosition));
+        when(positionRepository.findByIdForUpdate(accountId, instrument.getInstrumentId())).thenReturn(Optional.of(existingPosition));
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
                 () -> orderSubmissionService.submitOrder(request));

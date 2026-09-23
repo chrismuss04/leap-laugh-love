@@ -2,12 +2,7 @@ package com.leap.leaplaughlove.trading.order;
 
 import com.leap.leaplaughlove.trading.account.Account;
 import com.leap.leaplaughlove.trading.account.AccountAuthorizationService;
-import com.leap.leaplaughlove.trading.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.trading.ledger.CashLedgerRepository;
-import com.leap.leaplaughlove.trading.position.Position;
-import com.leap.leaplaughlove.trading.position.PositionMovement;
-import com.leap.leaplaughlove.trading.position.PositionMovementRepository;
-import com.leap.leaplaughlove.trading.position.PositionRepository;
 import com.leap.leaplaughlove.trading.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.trading.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.trading.quote.QuoteUnavailableException;
@@ -20,7 +15,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
-import java.util.Optional;
 
 /**
  * Service to orchestrate the order submission and immediate execution lifecycle.
@@ -35,8 +29,7 @@ public class OrderSubmissionService {
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
     private final CashLedgerRepository cashLedgerRepository;
-    private final PositionMovementRepository positionMovementRepository;
-    private final PositionRepository positionRepository;
+    private final FillRecorder fillRecorder;
     private final TradeValidationService tradeValidationService;
     private final CurrentQuoteService currentQuoteService;
 
@@ -45,8 +38,7 @@ public class OrderSubmissionService {
                                   OrderRepository orderRepository,
                                   ExecutionRepository executionRepository,
                                   CashLedgerRepository cashLedgerRepository,
-                                  PositionMovementRepository positionMovementRepository,
-                                  PositionRepository positionRepository,
+                                  FillRecorder fillRecorder,
                                   TradeValidationService tradeValidationService,
                                   CurrentQuoteService currentQuoteService) {
         this.accountAuthorizationService = accountAuthorizationService;
@@ -54,8 +46,7 @@ public class OrderSubmissionService {
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
         this.cashLedgerRepository = cashLedgerRepository;
-        this.positionMovementRepository = positionMovementRepository;
-        this.positionRepository = positionRepository;
+        this.fillRecorder = fillRecorder;
         this.tradeValidationService = tradeValidationService;
         this.currentQuoteService = currentQuoteService;
     }
@@ -112,20 +103,13 @@ public class OrderSubmissionService {
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
-        // Execution success: record Execution as FILLED
+        // 6. Execution success: record the FILLED execution, Cash Ledger, Position Ledger, Positions
         OffsetDateTime fillTime = OffsetDateTime.now();
-        Execution execution = new Execution(
-                order, request.quantity(), executionPrice, Execution.Status.FILLED,
-                "Executed at market price", fillTime);
-        execution = executionRepository.saveAndFlush(execution);
+        Execution execution = fillRecorder.recordFill(order, executionPrice, fillTime);
 
         // Transition order to FILLED
         order.markFilled(fillTime);
         order = orderRepository.saveAndFlush(order);
-
-        // 6. Post-execution updates: Cash Ledger, Position Ledger, Positions
-        propagateCashLedger(account, order, execution, request.side(), request.quantity(), executionPrice, fillTime);
-        propagatePositionLedgerAndHoldings(account, instrument, order, execution, request.side(), request.quantity(), executionPrice, fillTime);
 
         // 7. Calculate updated balance after the trade
         BigDecimal balanceAfter = cashLedgerRepository.sumAmountByAccountIdAndCurrency(
@@ -190,95 +174,6 @@ public class OrderSubmissionService {
         }
 
         return price.setScale(4, RoundingMode.HALF_UP);
-    }
-
-    private void propagateCashLedger(Account account, Order order, Execution execution,
-                                     Order.Side side, long quantity, BigDecimal price, OffsetDateTime time) {
-        BigDecimal tradeAmount = price.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal ledgerAmount;
-        String entryType;
-        String description;
-
-        if (side == Order.Side.BUY) {
-            ledgerAmount = tradeAmount.negate();
-            entryType = "BUY_SETTLEMENT";
-            description = "Buy settlement: " + order.getInstrument().getSymbol() + " " + quantity + " @ $" + price;
-        } else {
-            ledgerAmount = tradeAmount;
-            entryType = "SELL_SETTLEMENT";
-            description = "Sell settlement: " + order.getInstrument().getSymbol() + " " + quantity + " @ $" + price;
-        }
-
-        CashLedgerEntry entry = new CashLedgerEntry(
-                account.getAccountId(), order.getOrderId(), execution.getExecutionId(),
-                entryType, ledgerAmount, account.getBaseCurrency(), time, description);
-        cashLedgerRepository.save(entry);
-    }
-
-    private void propagatePositionLedgerAndHoldings(Account account, Instrument instrument, Order order,
-                                                    Execution execution, Order.Side side, long quantity,
-                                                    BigDecimal price, OffsetDateTime time) {
-        BigDecimal tradeCost = price.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
-        String movementType;
-        long quantityDelta;
-        BigDecimal costDelta;
-
-        if (side == Order.Side.BUY) {
-            movementType = "BUY_FILL";
-            quantityDelta = quantity;
-            costDelta = tradeCost;
-        } else {
-            movementType = "SELL_FILL";
-            quantityDelta = -quantity;
-            costDelta = tradeCost.negate();
-        }
-
-        // Record in position movements ledger (audit trail)
-        PositionMovement movement = new PositionMovement(
-                account.getAccountId(), instrument.getInstrumentId(), order.getOrderId(),
-                execution.getExecutionId(), movementType, quantityDelta, costDelta, time);
-        positionMovementRepository.save(movement);
-
-        // Update current position holdings (trading.positions); locked to prevent
-        // concurrent executions on the same account/instrument from losing an update
-        Optional<Position> existingOpt = positionRepository.findByIdForUpdate(
-                account.getAccountId(), instrument.getInstrumentId());
-
-        if (side == Order.Side.BUY) {
-            if (existingOpt.isEmpty()) {
-                Position newPosition = new Position(
-                        account.getAccountId(), instrument.getInstrumentId(), quantity, price, time);
-                positionRepository.save(newPosition);
-            } else {
-                Position p = existingOpt.get();
-                long oldQty = p.getQuantity();
-                BigDecimal oldAvg = p.getAvgCost();
-                long newQty = oldQty + quantity;
-                BigDecimal totalCost = oldAvg.multiply(BigDecimal.valueOf(oldQty)).add(tradeCost);
-                BigDecimal newAvgCost = totalCost.divide(BigDecimal.valueOf(newQty), 6, RoundingMode.HALF_UP);
-
-                p.setQuantity(newQty);
-                p.setAvgCost(newAvgCost);
-                p.setUpdatedAt(time);
-                positionRepository.save(p);
-            }
-        } else {
-            // LLL-133
-            // A sell must reduce holdings in full or roll back the entire settlement.
-            Position p = existingOpt.orElseThrow(() ->
-                    new IllegalStateException("Cannot settle sell: position does not exist"));
-            if (p.getQuantity() < quantity) {
-                throw new IllegalStateException("Cannot settle sell: insufficient position quantity");
-            }
-
-            long newQty = p.getQuantity() - quantity;
-            p.setQuantity(newQty);
-            if (newQty == 0) {
-                p.setAvgCost(BigDecimal.ZERO);
-            }
-            p.setUpdatedAt(time);
-            positionRepository.save(p);
-        }
     }
 
     private OrderSubmissionResponse toResponse(Order order, Execution execution, BigDecimal currentBalance) {

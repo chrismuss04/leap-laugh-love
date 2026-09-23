@@ -153,6 +153,24 @@ describe('AuthInterceptor', () => {
       req.flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
     });
 
+    it('should pass a 401 on a request without a token (sign-in) through to the caller', (done) => {
+      authService.getToken.and.returnValue(null);
+
+      httpClient.post('/api/iam/auth/login', {}).subscribe({
+        next: () => fail('should have failed with 401 error'),
+        error: (error: HttpErrorResponse) => {
+          expect(error.status).toBe(401);
+          expect(error.error.message).toBe('Invalid email or password');
+          expect(authService.logout).not.toHaveBeenCalled();
+          done();
+        }
+      });
+
+      const req = httpMock.expectOne('/api/iam/auth/login');
+      req.flush({ error: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
+        { status: 401, statusText: 'Unauthorized' });
+    });
+
     it('should not call logout for non-401 errors', () => {
       authService.getToken.and.returnValue('test-token');
 

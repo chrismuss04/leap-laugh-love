@@ -111,7 +111,9 @@ public class PriceController {
     }
 
     private PriceResponse toResponse(PriceState state) {
-        return new PriceResponse(state.symbol(), state.price(), state.asOf());
+        return new PriceResponse(state.symbol(),
+                simulationEngine.displayName(state.symbol()).orElse(null),
+                state.price(), state.asOf());
     }
 
     private PriceCandleResponse toResponse(PriceCandle candle) {

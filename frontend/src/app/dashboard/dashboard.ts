@@ -56,6 +56,8 @@ export class DashboardComponent implements OnInit {
 
   /** Latest price per symbol from REST, used until the live stream has ticked the symbol. */
   private readonly snapshotPrices = signal<Record<string, number>>({});
+  /** Display name per symbol from market data, covering instruments the client doesn't hold. */
+  private readonly marketNames = signal<Record<string, string>>({});
   readonly previousCloses = signal<Record<string, number | null>>({});
   private readonly intraday = signal<Record<string, number[]>>({});
   private readonly requestedCloses = new Set<string>();
@@ -213,8 +215,10 @@ export class DashboardComponent implements OnInit {
     return accounts.length === 1 ? accounts[0].accountNumber : accounts.length > 1 ? `${accounts.length} accounts` : '';
   });
 
-  readonly names = computed<Record<string, string>>(() =>
-    Object.fromEntries(this.holdings().map(h => [h.symbol, h.name])));
+  readonly names = computed<Record<string, string>>(() => ({
+    ...this.marketNames(),
+    ...Object.fromEntries(this.holdings().map(h => [h.symbol, h.name]))
+  }));
 
   readonly selectedName = computed(() => {
     const symbol = this.selectedSymbol();
@@ -250,10 +254,14 @@ export class DashboardComponent implements OnInit {
 
     this.marketData.getAllLatestPrices()
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(prices => this.snapshotPrices.update(current => ({
-        ...Object.fromEntries(prices.map(p => [p.symbol, Number(p.price)])),
-        ...current
-      })));
+      .subscribe(prices => {
+        this.snapshotPrices.update(current => ({
+          ...Object.fromEntries(prices.map(p => [p.symbol, Number(p.price)])),
+          ...current
+        }));
+        this.marketNames.set(Object.fromEntries(
+          prices.filter(p => p.name).map(p => [p.symbol, p.name as string])));
+      });
     this.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
   }
 
