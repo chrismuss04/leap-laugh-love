@@ -68,7 +68,8 @@ class OrderSubmissionServiceTest {
         account = new Account(accountId, clientId, "ACC-TEST-01", "ACTIVE", "USD", true, OffsetDateTime.now());
         instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
 
-        when(accountAuthorizationService.getAuthorizedTradingAccount(accountId)).thenReturn(account);
+        // LLL-133
+        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(accountId)).thenReturn(account);
         when(instrumentRepository.findBySymbol("AAPL")).thenReturn(Optional.of(instrument));
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(executionRepository.saveAndFlush(any(Execution.class))).thenAnswer(invocation -> invocation.getArgument(0));
@@ -87,6 +88,12 @@ class OrderSubmissionServiceTest {
                 .thenReturn(new BigDecimal("8500.00"));
 
         OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        // LLL-133
+        var settlementOrder = inOrder(accountAuthorizationService, tradeValidationService);
+        settlementOrder.verify(accountAuthorizationService).getAuthorizedTradingAccountForUpdate(accountId);
+        settlementOrder.verify(tradeValidationService).validateTrade(
+                account, instrument, Order.Side.BUY, 10L, new BigDecimal("150.0000"));
 
         assertNotNull(response);
         assertEquals("FILLED", response.status());
@@ -147,6 +154,12 @@ class OrderSubmissionServiceTest {
         assertEquals("FILLED", response.status());
         assertEquals("SELL", response.side());
 
+        // LLL-133
+        var settlementOrder = inOrder(accountAuthorizationService, tradeValidationService);
+        settlementOrder.verify(accountAuthorizationService).getAuthorizedTradingAccountForUpdate(accountId);
+        settlementOrder.verify(tradeValidationService).validateTrade(
+                account, instrument, Order.Side.SELL, 5L, new BigDecimal("160.0000"));
+
         // Verify cash ledger entry has positive amount (sell settlement)
         ArgumentCaptor<CashLedgerEntry> cashCaptor = ArgumentCaptor.forClass(CashLedgerEntry.class);
         verify(cashLedgerRepository).save(cashCaptor.capture());
@@ -166,6 +179,43 @@ class OrderSubmissionServiceTest {
         verify(positionRepository).save(posCaptor.capture());
         Position position = posCaptor.getValue();
         assertEquals(15L, position.getQuantity());
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Sell settlement fails when the validated position is missing")
+    void testSellSettlement_MissingPosition_Throws() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.empty());
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> orderSubmissionService.submitOrder(request));
+
+        assertEquals("Cannot settle sell: position does not exist", exception.getMessage());
+        verify(positionRepository, never()).save(any(Position.class));
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Sell settlement fails without clamping insufficient holdings to zero")
+    void testSellSettlement_InsufficientPosition_Throws() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+        Position existingPosition = new Position(accountId, instrument.getInstrumentId(),
+                3, new BigDecimal("140.000000"), OffsetDateTime.now());
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(positionRepository.findById(any(PositionId.class))).thenReturn(Optional.of(existingPosition));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> orderSubmissionService.submitOrder(request));
+
+        assertEquals("Cannot settle sell: insufficient position quantity", exception.getMessage());
+        assertEquals(3L, existingPosition.getQuantity());
+        verify(positionRepository, never()).save(any(Position.class));
     }
 
     @Test

@@ -66,7 +66,9 @@ public class OrderSubmissionService {
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details
      */
-    @Transactional
+    // LLL-133
+    // Roll back all settlement writes for checked as well as unchecked exceptions.
+    @Transactional(rollbackFor = Exception.class)
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order request body is required");
@@ -75,8 +77,10 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be at least 1 whole share");
         }
 
-        // 1. Authorize account (verifies ownership, active status, and tradingEnabled == true)
-        Account account = accountAuthorizationService.getAuthorizedTradingAccount(request.accountId());
+        // LLL-133
+        // 1. Lock and authorize the account before validating cash or holdings.
+        // The existing transaction holds this lock until settlement commits or rolls back.
+        Account account = accountAuthorizationService.getAuthorizedTradingAccountForUpdate(request.accountId());
 
         // 2. Resolve instrument
         Instrument instrument = resolveInstrument(request);
@@ -259,16 +263,21 @@ public class OrderSubmissionService {
                 positionRepository.save(p);
             }
         } else {
-            if (existingOpt.isPresent()) {
-                Position p = existingOpt.get();
-                long newQty = Math.max(0L, p.getQuantity() - quantity);
-                p.setQuantity(newQty);
-                if (newQty == 0) {
-                    p.setAvgCost(BigDecimal.ZERO);
-                }
-                p.setUpdatedAt(time);
-                positionRepository.save(p);
+            // LLL-133
+            // A sell must reduce holdings in full or roll back the entire settlement.
+            Position p = existingOpt.orElseThrow(() ->
+                    new IllegalStateException("Cannot settle sell: position does not exist"));
+            if (p.getQuantity() < quantity) {
+                throw new IllegalStateException("Cannot settle sell: insufficient position quantity");
             }
+
+            long newQty = p.getQuantity() - quantity;
+            p.setQuantity(newQty);
+            if (newQty == 0) {
+                p.setAvgCost(BigDecimal.ZERO);
+            }
+            p.setUpdatedAt(time);
+            positionRepository.save(p);
         }
     }
 

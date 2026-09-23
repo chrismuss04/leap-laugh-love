@@ -56,7 +56,8 @@ class BalanceServiceTest {
     void testDeposit_Success() {
         var request = new CashMovementRequest(new BigDecimal("100.00"), "Deposit test");
 
-        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
+        // LLL-133
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("250.00"));
 
@@ -66,6 +67,12 @@ class BalanceServiceTest {
         });
 
         CashTransactionResponse response = balanceService.deposit(accountId, request);
+
+        // LLL-133
+        var cashMovementOrder = inOrder(accountRepository, cashLedgerRepository);
+        cashMovementOrder.verify(accountRepository).findByAccountIdAndClientIdForUpdate(accountId, clientId);
+        cashMovementOrder.verify(cashLedgerRepository).sumAmountByAccountIdAndCurrency(accountId, "USD");
+        cashMovementOrder.verify(cashLedgerRepository).save(any(CashLedgerEntry.class));
 
         assertNotNull(response);
         assertEquals("DEPOSIT", response.entryType());
@@ -84,13 +91,20 @@ class BalanceServiceTest {
     void testWithdraw_Success() {
         var request = new CashMovementRequest(new BigDecimal("50.00"), "Withdrawal test");
 
-        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
+        // LLL-133
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("200.00"));
 
         when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         CashTransactionResponse response = balanceService.withdraw(accountId, request);
+
+        // LLL-133
+        var cashMovementOrder = inOrder(accountRepository, cashLedgerRepository);
+        cashMovementOrder.verify(accountRepository).findByAccountIdAndClientIdForUpdate(accountId, clientId);
+        cashMovementOrder.verify(cashLedgerRepository).sumAmountByAccountIdAndCurrency(accountId, "USD");
+        cashMovementOrder.verify(cashLedgerRepository).save(any(CashLedgerEntry.class));
 
         assertNotNull(response);
         assertEquals("WITHDRAWAL", response.entryType());
@@ -108,23 +122,34 @@ class BalanceServiceTest {
     void testWithdraw_ExceedsBalance() {
         var request = new CashMovementRequest(new BigDecimal("300.00"), "Overdraft");
 
-        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.of(account));
+        // LLL-133
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD"))
                 .thenReturn(new BigDecimal("100.00"));
 
-        assertThrows(ResponseStatusException.class, () -> balanceService.withdraw(accountId, request));
+        // LLL-133
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> balanceService.withdraw(accountId, request));
+        assertEquals(400, ex.getStatusCode().value());
+        assertEquals("Withdrawal amount cannot exceed available account balance", ex.getReason());
+        var cashMovementOrder = inOrder(accountRepository, cashLedgerRepository);
+        cashMovementOrder.verify(accountRepository).findByAccountIdAndClientIdForUpdate(accountId, clientId);
+        cashMovementOrder.verify(cashLedgerRepository).sumAmountByAccountIdAndCurrency(accountId, "USD");
         verify(cashLedgerRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("deposit — throws Not Found when client does not own account")
     void testDeposit_NotFoundForUnownedAccount() {
-        when(accountRepository.findByAccountIdAndClientId(accountId, clientId)).thenReturn(Optional.empty());
+        // LLL-133
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.empty());
 
         var request = new CashMovementRequest(new BigDecimal("50.00"), "Unauthorized");
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> balanceService.deposit(accountId, request));
         assertEquals(404, ex.getStatusCode().value());
+        // LLL-133
+        verifyNoInteractions(cashLedgerRepository);
     }
 }
