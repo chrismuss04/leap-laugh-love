@@ -14,6 +14,72 @@
   --radius: 2px;
   --danger: #ff6b6b;
   --danger-foreground: #2a0d0d;
+
+  /* Market direction. Always paired with a sign or arrow, never colour alone. */
+  --gain: #21d07a;
+  --gain-muted: color-mix(in srgb, var(--gain) 14%, transparent);
+  --loss: #ff5c5c;
+  --loss-muted: color-mix(in srgb, var(--loss) 14%, transparent);
+  --info: #5b9dff;
+  --info-muted: color-mix(in srgb, var(--info) 14%, transparent);
+
+  /* Dashboard surfaces: softer corners than the square auth forms. */
+  --surface: #121216;
+  --surface-hover: #1a1a20;
+  --radius-lg: 12px;
+  --radius-md: 8px;
+}
+
+/* Figures that update live keep their width, so rows don't jitter as prices tick. */
+.num {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+.text-gain { color: var(--gain); }
+.text-loss { color: var(--loss); }
+.text-muted { color: var(--muted-foreground); }
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--surface-hover) 50%, var(--muted) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+/* Set by FlashDirective when a live figure ticks. */
+.flash-up { animation: flash-up 0.7s ease-out; }
+.flash-down { animation: flash-down 0.7s ease-out; }
+
+@keyframes flash-up {
+  from { background-color: var(--gain-muted); }
+  to { background-color: transparent; }
+}
+
+@keyframes flash-down {
+  from { background-color: var(--loss-muted); }
+  to { background-color: transparent; }
+}
+
+@keyframes skeleton-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
 }
 
 * {

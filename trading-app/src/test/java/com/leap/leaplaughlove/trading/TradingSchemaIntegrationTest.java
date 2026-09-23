@@ -242,8 +242,10 @@ class TradingSchemaIntegrationTest {
         
         assertTrue(seed.contains("INSERT INTO trading.positions"),
             "Seed data should insert positions");
-        assertTrue(seed.contains("SUM(pm.quantity_delta)"),
-            "Positions should aggregate quantities from movements");
+        // Positions are replayed from the movement ledger (see the DO block in the seed), not
+        // inserted as independent numbers that could disagree with it.
+        assertTrue(seed.contains("FROM trading.position_movements"),
+            "Positions should be derived from movements");
     }
 
     @Test

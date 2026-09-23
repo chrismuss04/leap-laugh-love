@@ -624,6 +624,66 @@ To stop containers and clean up volumes:
 docker-compose down -v
 ```
 
+#### Using an external PostgreSQL (e.g. the Windows host's)
+
+By default the database runs in the `db` container, so its data - including the market-data
+price history - lives in a Docker volume on whatever machine runs Docker. If that is a VM that
+is short on disk, point the services at a PostgreSQL installed elsewhere instead, such as the
+Windows machine the VM runs on. `docker-compose.external-db.yml` does that: it repoints the
+three services' datasource and stops the `db` container from starting. It needs Docker Compose
+v2.24.4 or newer.
+
+**1. Create and seed the database on Windows** (once). In PowerShell, from the repo root:
+
+```powershell
+.\scripts\setup-windows-db.ps1
+```
+
+It asks for your `postgres` superuser password, creates the `paysprint` role and database, and
+loads the same schema and seed files the `db` container would. `-Reset` drops and rebuilds it;
+`-AppPassword` sets the `paysprint` password if your `DB_PASSWORD` isn't `changeme`.
+
+**2. Let the VM reach it.** Windows PostgreSQL only accepts local connections out of the box:
+
+- `postgresql.conf` (in the data directory, e.g. `C:\Program Files\PostgreSQL\18\data`):
+  `listen_addresses = '*'`
+- `pg_hba.conf`, same directory - allow the VM's network, e.g. for a `172.20.0.0/16` network:
+  `host  paysprint  paysprint  172.20.0.0/16  scram-sha-256`
+- Restart the PostgreSQL service (`services.msc`, or `Restart-Service postgresql-x64-18`).
+- Allow inbound TCP 5432 through Windows Firewall from that network, e.g. as administrator:
+  `New-NetFirewallRule -DisplayName "PostgreSQL from VM" -Direction Inbound -Protocol TCP -LocalPort 5432 -RemoteAddress 172.20.0.0/16 -Action Allow`
+
+**3. Point compose at it.** In the VM's `.env`:
+
+```bash
+COMPOSE_FILE=docker-compose.yml:docker-compose.external-db.yml
+EXTERNAL_DB_HOST=192.168.1.50   # the Windows host's IP as seen from the VM
+```
+
+On WSL2, the Windows host is the VM's default gateway (`ip route show default | awk '{print $3}'`);
+for a Hyper-V or VirtualBox VM, use the Windows address on the network the VM is attached to.
+Check it from the VM with `nc -zv "$EXTERNAL_DB_HOST" 5432` before starting.
+
+Then `docker compose up -d --build` as usual. To go back to the bundled database, remove
+`COMPOSE_FILE` from `.env`. Once you have switched, `docker compose down -v` (while still on the
+bundled setup) or `docker volume rm leap-laugh-love_db_data` frees the old volume's space.
+
+### Run everything on Windows without Docker
+
+For a Windows machine that can't run Linux containers (e.g. an EC2 instance without nested
+virtualization), two scripts run the whole stack natively: JDK 21+, Maven, Node.js and a local
+PostgreSQL are all it needs.
+
+```powershell
+.\scripts\setup-windows-db.ps1   # once: creates and seeds the paysprint database
+.\scripts\start-local.ps1        # builds, starts all four in their own windows, opens the browser
+.\scripts\stop-local.ps1         # stops them again
+```
+
+`start-local.ps1` reads `DB_PASSWORD` and `JWT_SECRET` from `.env` if it exists. Useful flags:
+`-SkipBuild` reuses the last build, and `-LightHistory` generates a month of price history instead
+of a year on the first start, which is much quicker.
+
 ### 4. Launch Services Locally (Spring Boot)
 
 Ensure PostgreSQL is running locally on port `5432` with the database `paysprint` (or use active Spring profiles).

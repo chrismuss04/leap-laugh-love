@@ -1,0 +1,84 @@
+:host {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chart {
+  --tone: var(--gain);
+  position: relative;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: pan-y;
+  outline: none;
+  border-radius: var(--radius-md);
+}
+
+.chart[data-tone='loss'] {
+  --tone: var(--loss);
+}
+
+.chart[data-tone='flat'] {
+  --tone: var(--muted-foreground);
+}
+
+.chart:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 45%, transparent);
+}
+
+svg {
+  display: block;
+  overflow: visible;
+}
+
+.line {
+  fill: none;
+  stroke: var(--tone);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  transition: stroke 0.3s ease;
+}
+
+.fill-stop-top {
+  stop-color: var(--tone);
+  stop-opacity: 0.16;
+}
+
+.fill-stop-bottom {
+  stop-color: var(--tone);
+  stop-opacity: 0;
+}
+
+.baseline {
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  opacity: 0.6;
+}
+
+.crosshair {
+  stroke: var(--muted-foreground);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+
+.dot {
+  fill: var(--tone);
+  stroke: var(--background);
+  stroke-width: 2;
+}
+
+.dot.live {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { stroke-width: 2; }
+  50% { stroke-width: 6; stroke: color-mix(in srgb, var(--tone) 30%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dot.live { animation: none; }
+}

@@ -179,6 +179,27 @@ class PriceControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/marketdata/prices/{symbol}/history - accepts ISO-8601 UTC from/to bounds")
+    void testGetHistoryParsesIsoRange() throws Exception {
+        OffsetDateTime from = OffsetDateTime.parse("2026-01-01T00:00:00Z");
+        OffsetDateTime to = OffsetDateTime.parse("2026-01-02T12:30:00Z");
+        when(candleRepository.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(300), any(), any(), any()))
+                .thenReturn(Page.empty());
+
+        mockMvc.perform(get("/api/marketdata/prices/AAPL/history")
+                        .param("from", "2026-01-01T00:00:00Z")
+                        .param("to", "2026-01-02T12:30:00Z")
+                        .param("interval", "300")
+                        .with(csrf())
+                        .with(authentication(authenticatedClient())))
+                .andExpect(status().isOk());
+
+        verify(candleRepository).findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(300), eq(from), eq(to), any());
+    }
+
+    @Test
     @DisplayName("GET /api/marketdata/prices/{symbol}/history - 400 for an unsupported interval")
     void testGetHistoryRejectsUnsupportedInterval() throws Exception {
         mockMvc.perform(get("/api/marketdata/prices/AAPL/history")

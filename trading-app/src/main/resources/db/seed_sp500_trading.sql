@@ -18,9 +18,13 @@
 -- market is 'US' rather than the real listing venue: the constituent list carries no
 -- exchange column, and inventing one per symbol would be fabricated data.
 
+-- Symbols already seeded under their real venue by seed_trading.sql (AAPL, MSFT, GOOGL, TSLA
+-- on NASDAQ) are skipped: (symbol, market) is the table's key, so a second 'US' row would
+-- insert cleanly and then break every lookup by symbol - order entry among them.
 INSERT INTO trading.instruments
     (symbol, instrument_name, asset_class, market, currency, is_tradable)
-VALUES
+SELECT v.symbol, v.instrument_name, v.asset_class, v.market, v.currency, v.is_tradable
+FROM (VALUES
     ('MMM', '3M', 'EQUITY', 'US', 'USD', TRUE),
     ('AOS', 'A. O. Smith', 'EQUITY', 'US', 'USD', TRUE),
     ('ABT', 'Abbott Laboratories', 'EQUITY', 'US', 'USD', TRUE),
@@ -524,6 +528,10 @@ VALUES
     ('ZBRA', 'Zebra Technologies', 'EQUITY', 'US', 'USD', TRUE),
     ('ZBH', 'Zimmer Biomet', 'EQUITY', 'US', 'USD', TRUE),
     ('ZTS', 'Zoetis', 'EQUITY', 'US', 'USD', TRUE)
+) AS v (symbol, instrument_name, asset_class, market, currency, is_tradable)
+WHERE NOT EXISTS (
+    SELECT 1 FROM trading.instruments i WHERE i.symbol = v.symbol AND i.market <> v.market
+)
 ON CONFLICT (symbol, market) DO UPDATE SET
     instrument_name = EXCLUDED.instrument_name,
     is_tradable = EXCLUDED.is_tradable;
