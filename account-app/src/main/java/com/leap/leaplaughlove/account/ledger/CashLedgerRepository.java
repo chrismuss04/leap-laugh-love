@@ -8,6 +8,7 @@ import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -52,5 +53,7 @@ public interface CashLedgerRepository extends JpaRepository<CashLedgerEntry, UUI
      * @return the matching entries, in no particular order
      */
     List<CashLedgerEntry> findByAccountIdInAndCreatedAtAfter(Collection<UUID> accountIds, OffsetDateTime after);
+
+    Optional<CashLedgerEntry> findFirstByExecutionId(UUID executionId);
 }
 

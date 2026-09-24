@@ -23,8 +23,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -46,6 +49,7 @@ class OrderSubmissionServiceTest {
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private TradeValidationService tradeValidationService;
     @Mock private CurrentQuoteService currentQuoteService;
+    @Mock private PlatformTransactionManager transactionManager;
 
     private OrderSubmissionService orderSubmissionService;
     private FillRecorder fillRecorder;
@@ -64,7 +68,8 @@ class OrderSubmissionServiceTest {
                 executionRepository,
                 fillRecorder,
                 tradeValidationService,
-                currentQuoteService
+                currentQuoteService,
+                new TransactionTemplate(transactionManager)
         );
 
         accountId = UUID.randomUUID();
@@ -165,6 +170,7 @@ class OrderSubmissionServiceTest {
                 () -> orderSubmissionService.submitOrder(request));
 
         assertEquals("Cannot settle sell: position does not exist", exception.getMessage());
+        assertOrderRejectedForSettlement();
     }
 
     // LLL-133
@@ -184,6 +190,40 @@ class OrderSubmissionServiceTest {
                 () -> orderSubmissionService.submitOrder(request));
 
         assertEquals("Cannot settle sell: insufficient position quantity", exception.getMessage());
+        assertOrderRejectedForSettlement();
+    }
+
+    private void assertOrderRejectedForSettlement() {
+        ArgumentCaptor<Order> orders = ArgumentCaptor.forClass(Order.class);
+        verify(orderRepository, atLeastOnce()).saveAndFlush(orders.capture());
+        Order last = orders.getAllValues().get(orders.getAllValues().size() - 1);
+        assertEquals(Order.Status.REJECTED, last.getStatus());
+        assertTrue(last.getRejectionReason().startsWith("Settlement failed: "));
+        verify(positionMovementRepository, never()).save(any(PositionMovement.class));
+    }
+
+    @Test
+    @DisplayName("Order and execution are committed before account-app settles, and the movement only after")
+    void testCommitsBeforeSettling() {
+        // account-app settles on its own database connection and its ledger rows reference the
+        // order and execution by foreign key, so it can't settle rows this app hasn't committed.
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+
+        orderSubmissionService.submitOrder(request);
+
+        InOrder inOrder = inOrder(executionRepository, transactionManager, accountClient, positionMovementRepository);
+        inOrder.verify(executionRepository).saveAndFlush(any(Execution.class));
+        inOrder.verify(transactionManager).commit(any());
+        inOrder.verify(accountClient).settleOrder(eq(accountId), any(SettlementRequest.class));
+        inOrder.verify(positionMovementRepository).save(any(PositionMovement.class));
+        inOrder.verify(transactionManager).commit(any());
     }
 
     @Test

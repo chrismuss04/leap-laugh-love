@@ -6,10 +6,9 @@ import { formatMoney } from '../../shared/format';
 
 /** The client's latest orders, with a link through to the full order history page. */
 @Component({
-  selector: 'app-recent-activity',
-  standalone: true,
-  imports: [CommonModule, RouterLink],
-  template: `
+    selector: 'app-recent-activity',
+    imports: [CommonModule, RouterLink],
+    template: `
     <section class="card" aria-labelledby="activity-title">
       <header class="card-header">
         <h2 id="activity-title">Recent activity</h2>
@@ -40,7 +39,7 @@ import { formatMoney } from '../../shared/format';
       </ol>
     </section>
   `,
-  styles: [`
+    styles: [`
     .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); }
     .card-header { display: flex; align-items: baseline; justify-content: space-between; padding: 18px 20px 10px; }
     h2 { font-size: 16px; font-weight: 600; }

@@ -16,11 +16,10 @@ const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
  * Pages render into its router outlet, so they share one header instead of each drawing its own.
  */
 @Component({
-  selector: 'app-shell',
-  standalone: true,
-  imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
-  templateUrl: './shell.html',
-  styleUrl: './shell.css'
+    selector: 'app-shell',
+    imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+    templateUrl: './shell.html',
+    styleUrl: './shell.css'
 })
 export class ShellComponent implements OnInit, OnDestroy {
   readonly profile = signal<ClientProfile | null>(null);

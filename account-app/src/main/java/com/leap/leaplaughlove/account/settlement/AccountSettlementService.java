@@ -74,6 +74,10 @@ public class AccountSettlementService {
 
     /**
      * Settles an executed order atomically by posting to the cash ledger and updating holdings.
+     *
+     * <p>Settles each execution once. order-app retries a settlement whose outcome it never got
+     * to record, so a repeat is answered from what was already booked instead of booking the
+     * trade a second time.
      * @param accountId the unique identifier of the account
      * @param request the settlement request containing order details
      * @return the settlement response encapsulated in a SettlementResponse DTO
@@ -81,6 +85,18 @@ public class AccountSettlementService {
     @Transactional(rollbackFor = Exception.class)
     public SettlementResponse settleOrder(UUID accountId, SettlementRequest request) {
         Account account = accountAuthorizationService.getAuthorizedTradingAccountForUpdate(accountId);
+        // Checked under the account lock taken above, so two copies of one settlement serialize.
+        Optional<CashLedgerEntry> alreadySettled = cashLedgerRepository.findFirstByExecutionId(request.executionId());
+        if (alreadySettled.isPresent()) {
+            Optional<Position> position = positionRepository.findById(
+                    new PositionId(account.getAccountId(), request.instrumentId()));
+            return new SettlementResponse(
+                    alreadySettled.get().getCashLedgerId(),
+                    balanceService.getCurrentBalance(account),
+                    position.map(Position::getQuantity).orElse(0L),
+                    position.map(Position::getAvgCost).orElse(BigDecimal.ZERO));
+        }
+
         BigDecimal tradeAmount = request.price().multiply(BigDecimal.valueOf(request.quantity()))
                 .setScale(2, RoundingMode.HALF_UP);
         OffsetDateTime time = request.executedAt() != null ? request.executedAt() : OffsetDateTime.now();

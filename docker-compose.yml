@@ -83,7 +83,7 @@ services:
   # Still no depends_on: the proxy resolves its targets per request, so a backend that is
   # slower to start only affects calls made before it is up, not this container's startup.
   frontend:
-    image: node:20-alpine
+    image: node:24-alpine
     working_dir: /app
     ports:
       - "${FRONTEND_PORT:-4200}:4200"
@@ -103,10 +103,15 @@ services:
       ACCOUNT_PROXY_TARGET: http://account-app:8082
       ORDER_PROXY_TARGET: http://order-app:8084
       MARKETDATA_PROXY_TARGET: http://market-data-app:8083
+    # Reinstalls whenever package-lock.json differs from the one the volume was installed
+    # from, not only when the volume is empty - otherwise a dependency upgrade keeps running
+    # on the old packages until someone thinks to "docker compose down -v".
+    #
     # --poll: inotify events do not cross a bind mount on Docker Desktop, so without it
     # hot reload silently does nothing for everyone not on linux.
     command: >
-      sh -c "[ -d node_modules/@angular/core ] || npm ci --no-audit --no-fund;
+      sh -c "cmp -s package-lock.json node_modules/.installed-lock ||
+             { npm ci --no-audit --no-fund && cp package-lock.json node_modules/.installed-lock; } &&
              exec npx ng serve --host 0.0.0.0 --port 4200 --poll 2000"
 
   db:

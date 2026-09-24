@@ -1,7 +1,6 @@
 import { NgModule } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
-import { BrowserAnimationsModule } from '@angular/platform-browser/animations';
-import { HttpClientModule, HTTP_INTERCEPTORS } from '@angular/common/http';
+import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
 import { RouterModule, Routes } from '@angular/router';
@@ -31,31 +30,24 @@ const routes: Routes = [
   { path: '**', redirectTo: 'dashboard' }
 ];
 
-@NgModule({
-  declarations: [
-    AppComponent,
-    SignInComponent,
-    CreateAccountComponent
-  ],
-  imports: [
-    BrowserModule,
-    BrowserAnimationsModule,
-    HttpClientModule,
-    ReactiveFormsModule,
-    FormsModule,
-    CommonModule,
-    RouterModule.forRoot(routes),
-    OrderHistoryComponent,
-    HoldingsComponent
-  ],
-  providers: [
-    AuthService,
-    {
-      provide: HTTP_INTERCEPTORS,
-      useClass: AuthInterceptor,
-      multi: true
-    }
-  ],
-  bootstrap: [AppComponent]
-})
+@NgModule({ declarations: [
+        AppComponent,
+        SignInComponent,
+        CreateAccountComponent
+    ],
+    bootstrap: [AppComponent], imports: [BrowserModule,
+        ReactiveFormsModule,
+        FormsModule,
+        CommonModule,
+        RouterModule.forRoot(routes),
+        OrderHistoryComponent,
+        HoldingsComponent], providers: [
+        AuthService,
+        {
+            provide: HTTP_INTERCEPTORS,
+            useClass: AuthInterceptor,
+            multi: true
+        },
+        provideHttpClient(withInterceptorsFromDi())
+    ] })
 export class AppModule { }

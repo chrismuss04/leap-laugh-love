@@ -131,12 +131,19 @@ foreach ($service in $services) {
 }
 
 $frontendDir = Join-Path $repoRoot 'frontend'
-if (-not (Test-Path (Join-Path $frontendDir 'node_modules\@angular\core'))) {
-    Write-Host 'Installing frontend dependencies (first run only)...' -ForegroundColor Cyan
+# Reinstall whenever package-lock.json differs from the one node_modules was installed from,
+# not only on a first run - after a dependency upgrade the old packages would otherwise stay.
+$lockFile = Join-Path $frontendDir 'package-lock.json'
+$installedLock = Join-Path $frontendDir 'node_modules\.installed-lock'
+$frontendUpToDate = (Test-Path $installedLock) -and
+    ((Get-FileHash $lockFile).Hash -eq (Get-FileHash $installedLock).Hash)
+if (-not $frontendUpToDate) {
+    Write-Host 'Installing frontend dependencies (package-lock.json changed since the last install)...' -ForegroundColor Cyan
     Push-Location $frontendDir
     try {
         & npm ci --no-audit --no-fund
         if ($LASTEXITCODE -ne 0) { throw 'npm ci failed - see the output above.' }
+        Copy-Item $lockFile $installedLock
     } finally {
         Pop-Location
     }

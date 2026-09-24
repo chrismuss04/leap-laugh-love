@@ -15,11 +15,10 @@ interface SearchResult {
  * arrow keys and Enter pick a result, which opens it in the trade panel.
  */
 @Component({
-  selector: 'app-symbol-search',
-  standalone: true,
-  imports: [CommonModule, FormsModule],
-  templateUrl: './symbol-search.html',
-  styleUrl: './symbol-search.css'
+    selector: 'app-symbol-search',
+    imports: [CommonModule, FormsModule],
+    templateUrl: './symbol-search.html',
+    styleUrl: './symbol-search.css'
 })
 export class SymbolSearchComponent {
   /** Display name per symbol, searched alongside the ticker and shown under it. */

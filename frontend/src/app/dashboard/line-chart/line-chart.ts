@@ -15,11 +15,10 @@ export interface ChartPoint {
  * (via ResizeObserver) so the line keeps a crisp, even stroke at any width.
  */
 @Component({
-  selector: 'app-line-chart',
-  standalone: true,
-  imports: [CommonModule],
-  templateUrl: './line-chart.html',
-  styleUrl: './line-chart.css'
+    selector: 'app-line-chart',
+    imports: [CommonModule],
+    templateUrl: './line-chart.html',
+    styleUrl: './line-chart.css'
 })
 export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() points: ChartPoint[] = [];

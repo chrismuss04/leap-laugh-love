@@ -14,11 +14,10 @@ type Step = 'edit' | 'review' | 'submitting' | 'result';
  * orders - order-app fills them immediately at the live ask (buy) or bid (sell).
  */
 @Component({
-  selector: 'app-trade-panel',
-  standalone: true,
-  imports: [CommonModule, FormsModule, FlashDirective],
-  templateUrl: './trade-panel.html',
-  styleUrl: './trade-panel.css'
+    selector: 'app-trade-panel',
+    imports: [CommonModule, FormsModule, FlashDirective],
+    templateUrl: './trade-panel.html',
+    styleUrl: './trade-panel.css'
 })
 export class TradePanelComponent implements OnChanges {
   @Input() symbol: string | null = null;

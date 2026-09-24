@@ -6,10 +6,9 @@ import { direction, formatNumber, formatSignedPercent, percentChange } from '../
 
 /** Headline market indices with their live level and change since the previous close. */
 @Component({
-  selector: 'app-ticker-strip',
-  standalone: true,
-  imports: [CommonModule, FlashDirective],
-  template: `
+    selector: 'app-ticker-strip',
+    imports: [CommonModule, FlashDirective],
+    template: `
     <section class="strip" aria-label="Market indices">
       <div class="item" *ngFor="let index of indices; trackBy: trackBySymbol">
         <span class="label">{{ index.label }}</span>
@@ -25,7 +24,7 @@ import { direction, formatNumber, formatSignedPercent, percentChange } from '../
       </div>
     </section>
   `,
-  styles: [`
+    styles: [`
     .strip {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));

@@ -5,6 +5,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -26,5 +27,13 @@ public interface ExecutionRepository extends JpaRepository<Execution, UUID> {
      * @return true if an execution exists, false otherwise
      */
     boolean existsByOrder_OrderId(UUID orderId);
+
+    /**
+     * Finds the order's execution in the given status, if it has one.
+     * @param orderId the order ID
+     * @param status the execution status
+     * @return the execution, if any
+     */
+    Optional<Execution> findFirstByOrder_OrderIdAndStatus(UUID orderId, Execution.Status status);
 }
 
