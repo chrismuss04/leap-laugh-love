@@ -32,8 +32,8 @@ export interface PortfolioHistory {
   providedIn: 'root'
 })
 export class PortfolioService {
-  // Same-origin path, proxied to trading-app - see proxy.conf.js.
-  private readonly API_URL = '/api/trading/portfolio';
+  // Same-origin path, proxied to account-app - see proxy.conf.js.
+  private readonly API_URL = '/api/account/portfolio';
 
   constructor(private http: HttpClient) {}
 

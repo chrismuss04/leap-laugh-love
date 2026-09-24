@@ -67,14 +67,10 @@ export interface OrderSubmissionResponse {
   providedIn: 'root'
 })
 export class OrderService {
-  // Same-origin path, proxied to trading-app - see proxy.conf.js.
-  private readonly API_URL = '/api/trading';
+  // Same-origin path, proxied to order-app - see proxy.conf.js.
+  private readonly API_URL = '/api/order';
 
   constructor(private http: HttpClient) {}
-
-  submitOrder(request: OrderSubmissionRequest): Observable<OrderSubmissionResponse> {
-    return this.http.post<OrderSubmissionResponse>(`${this.API_URL}/orders`, request);
-  }
 
   getOrderHistory(
     page: number = 0,
@@ -93,5 +89,9 @@ export class OrderService {
 
     return this.http.get<OrderHistoryPage>(`${this.API_URL}/orders/history`, { params });
 
+  }
+
+  submitOrder(request: OrderSubmissionRequest): Observable<OrderSubmissionResponse> {
+    return this.http.post<OrderSubmissionResponse>(`${this.API_URL}/orders`, request);
   }
 }
