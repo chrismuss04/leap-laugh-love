@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -41,6 +42,9 @@ public class MarketDataSecurityConfig {
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
                         .requestMatchers("/error").permitAll()
+                        // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
+                        // the original REQUEST dispatch was already authenticated
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
