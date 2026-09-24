@@ -4,6 +4,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -17,10 +18,16 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Trade Record Archive - Retention Validation Tests")
 class TradeRecordRetentionIntegrationTest {
 
-    private static final String SCHEMA_FILE = "src/main/resources/db/leap_laugh_love_schema.sql";
+    // The one copy the database is built from (docker-compose, Jenkins, setup-windows-db.ps1).
+    private static final String SCHEMA_FILE = "iam-app/src/main/resources/db/leap_laugh_love_schema.sql";
 
+    // Relative to the repo root; Maven runs module tests from order-app/, an IDE may not.
     private String readFile(String filePath) throws Exception {
-        return new String(Files.readAllBytes(Paths.get(filePath)));
+        Path path = Paths.get(filePath);
+        if (!Files.exists(path)) {
+            path = Paths.get("..", filePath);
+        }
+        return new String(Files.readAllBytes(path));
     }
 
     @Test

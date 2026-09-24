@@ -52,7 +52,7 @@ pipeline {
                     // collide, and it removes the cap on how many builds can run at once.
                     //
                     // These must be set rather than left unset: docker-compose.yml defaults them
-                    // to the real 5432/8081-8083/4200, which would fight anything running locally
+                    // to the real 5432/8081-8084/4200, which would fight anything running locally
                     // on the agent.
                     env.DB_PORT = '0'
                     env.IAM_PORT = '0'
@@ -75,6 +75,14 @@ pipeline {
                     env.MARKETDATA_BACKFILL_TIERS = '86400:7,3600:1'
 
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
+
+                    // Docker Desktop and current Linux installs ship Compose v2 as the
+                    // "docker compose" plugin, and some no longer include the standalone
+                    // "docker-compose"; older agents have only the standalone one. Use whichever
+                    // this agent has. Left unquoted in the steps below so it splits into words.
+                    env.COMPOSE = sh(
+                        script: 'if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo docker-compose; fi',
+                        returnStdout: true).trim()
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
                 }
             }
@@ -83,8 +91,44 @@ pipeline {
         stage('Build Frontend') {
             steps {
                 dir('frontend') {
-                    sh 'npm ci && npm run build'
+                    // Its own npm cache rather than the agent user's ~/.npm: a single "sudo npm"
+                    // ever run on the agent leaves root-owned files there, and every later
+                    // install fails with EACCES. WORKSPACE_TMP (<workspace>@tmp) is outside the
+                    // checkout, so the Checkout stage's git clean keeps it and later builds
+                    // still reuse the downloads.
+                    sh '''
+                        node --version
+                        npm ci --cache "${WORKSPACE_TMP:-$WORKSPACE@tmp}/npm-cache" --no-audit --no-fund
+                        npm run build
+                    '''
                 }
+            }
+        }
+
+        stage('Pull Images') {
+            steps {
+                sh '''
+                    set -eu
+                    # Pull every image the build runs up front, retrying: Docker Desktop's
+                    # containerd store occasionally fails to unpack a layer mid-pull ("failed to
+                    # extract layer ... no such file or directory") and a second attempt goes
+                    # through. The later stages then use these local copies without pulling.
+                    # Base images are read from the Dockerfiles so this list can't drift from them.
+                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    for image in $images; do
+                        for attempt in 1 2 3; do
+                            if docker pull -q "$image"; then
+                                break
+                            fi
+                            if [ "$attempt" = "3" ]; then
+                                echo "Could not pull $image after 3 attempts"
+                                exit 1
+                            fi
+                            echo "Pulling $image failed (attempt $attempt/3), retrying..."
+                            sleep 5
+                        done
+                    done
+                '''
             }
         }
 
@@ -168,10 +212,10 @@ pipeline {
                     # post block's "docker-compose down -v" still cleans up this build's own
                     # containers.
 
-                    docker-compose -p "$COMPOSE_PROJECT" up -d db
+                    $COMPOSE -p "$COMPOSE_PROJECT" up -d db
                     echo "Waiting for PostgreSQL and schema initialization..."
                     for i in $(seq 1 60); do
-                        if docker-compose -p "$COMPOSE_PROJECT" exec -T db pg_isready -U paysprint -d paysprint; then
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T db pg_isready -U paysprint -d paysprint; then
                             echo "PostgreSQL is ready"
                             exit 0
                         fi
@@ -189,7 +233,7 @@ pipeline {
                     set -eu
                     echo "Checking initialized database schemas..."
                     for i in $(seq 1 30); do
-                        ready=$(docker-compose -p "$COMPOSE_PROJECT" exec -T db psql -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
+                        ready=$($COMPOSE -p "$COMPOSE_PROJECT" exec -T db psql -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
                         if [ "$ready" = "t" ]; then
                             echo "IAM, trading, and market-data schemas are initialized"
                             exit 0
@@ -206,7 +250,7 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker-compose -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
+                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
                     echo "Built service images tagged $IMAGE_TAG"
                 '''
             }
@@ -216,8 +260,8 @@ pipeline {
             steps {
                 sh '''
                     set -eu
-                    docker-compose -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
-                    docker-compose -p "$COMPOSE_PROJECT" ps
+                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
+                    $COMPOSE -p "$COMPOSE_PROJECT" ps
                 '''
             }
         }
@@ -228,10 +272,10 @@ pipeline {
                     set -eu
                     echo "Waiting for service health endpoints..."
                     for i in $(seq 1 60); do
-                        if docker-compose -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
-                           docker-compose -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
-                           docker-compose -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
-                           docker-compose -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
+                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
+                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
+                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
                             echo "All services are healthy"
                             exit 0
                         fi
@@ -251,10 +295,10 @@ pipeline {
             sh '''
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
-                    docker-compose -p "$COMPOSE_PROJECT" ps -a || true
+                    $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
                     for service in db iam-app account-app order-app market-data-app; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
-                        docker-compose -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
+                        $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
                 fi
             '''
@@ -265,7 +309,7 @@ pipeline {
         cleanup {
             sh '''
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
-                    docker-compose -p "$COMPOSE_PROJECT" down -v --remove-orphans || true
+                    $COMPOSE -p "$COMPOSE_PROJECT" down -v --remove-orphans || true
                 fi
                 # Every build produces three uniquely tagged images; without this the agent
                 # accumulates one set per build until the disk fills.

@@ -742,7 +742,7 @@ By default the database runs in the `db` container, so its data - including the 
 price history - lives in a Docker volume on whatever machine runs Docker. If that is a VM that
 is short on disk, point the services at a PostgreSQL installed elsewhere instead, such as the
 Windows machine the VM runs on. `docker-compose.external-db.yml` does that: it repoints the
-three services' datasource and stops the `db` container from starting. It needs Docker Compose
+four services' datasource and stops the `db` container from starting. It needs Docker Compose
 v2.24.4 or newer.
 
 **1. Create and seed the database on Windows** (once). In PowerShell, from the repo root:
@@ -788,7 +788,7 @@ PostgreSQL are all it needs.
 
 ```powershell
 .\scripts\setup-windows-db.ps1   # once: creates and seeds the paysprint database
-.\scripts\start-local.ps1        # builds, starts all four in their own windows, opens the browser
+.\scripts\start-local.ps1        # builds, starts all five in their own windows, opens the browser
 .\scripts\stop-local.ps1         # stops them again
 ```
 
@@ -1026,7 +1026,7 @@ A few settings exist specifically because instrument count multiplies everything
 > that `docker-compose.yml` mounts the **`iam-app`** copy of the seed files; the copies under
 > `account-app`, `order-app`, and `market-data-app` are kept in step for module-local use.
 
-Seeded trades: `seed_trading.sql` inserts filled orders with only their fill time, not their fills. On startup, trading-app's `SeededFillService` books each one — execution, cash settlement, position movement, holding — at the market-data price at that moment, retrying in the background until market-data-app has generated its price history. Until that finishes on a fresh database, seeded accounts show their orders but not the resulting holdings. The seed can't price fills itself: it runs before any price history exists, and the fill ledgers are append-only. Seeded fill times are relative to when the database was created, so they stay inside the 365 days of generated history.
+Seeded trades: `seed_trading.sql` inserts filled orders with only their fill time, not their fills. On startup, order-app's `SeededFillService` books each one — execution, cash settlement, position movement, holding — at the market-data price at that moment, retrying in the background until market-data-app has generated its price history. Until that finishes on a fresh database, seeded accounts show their orders but not the resulting holdings. The seed can't price fills itself: it runs before any price history exists, and the fill ledgers are append-only. Seeded fill times are relative to when the database was created, so they stay inside the 365 days of generated history.
 
 ---
 

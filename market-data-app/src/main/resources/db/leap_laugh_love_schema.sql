@@ -203,7 +203,7 @@ CREATE TRIGGER trg_client_credentials_no_delete
     FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
 
 -- Market Simulation Backend: owns its own instrument/parameter table (decoupled from
--- trading.instruments) so market-data-app has no cross-schema JPA coupling to trading-app.
+-- trading.instruments) so market-data-app has no cross-schema JPA coupling to account-app or order-app.
 CREATE TABLE IF NOT EXISTS marketdata.instruments (
     instrument_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     symbol TEXT NOT NULL UNIQUE,

@@ -22,7 +22,11 @@ services:
     depends_on: !reset {}
     environment: *external-datasource
 
-  trading-app:
+  account-app:
+    depends_on: !reset {}
+    environment: *external-datasource
+
+  order-app:
     depends_on: !reset {}
     environment: *external-datasource
 

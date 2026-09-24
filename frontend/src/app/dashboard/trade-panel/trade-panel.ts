@@ -11,7 +11,7 @@ type Step = 'edit' | 'review' | 'submitting' | 'result';
 /**
  * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side, enter whole shares, see
  * the live estimate against buying power (or shares held), review, then submit. Orders are market
- * orders - trading-app fills them immediately at the live ask (buy) or bid (sell).
+ * orders - order-app fills them immediately at the live ask (buy) or bid (sell).
  */
 @Component({
   selector: 'app-trade-panel',

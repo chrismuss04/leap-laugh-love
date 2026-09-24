@@ -2,7 +2,7 @@
 -- Simple, readable seed data for testing trading functionality
 --
 -- Fills are NOT written here. A filled order is seeded with its filled_at only, and
--- trading-app's SeededFillService books its execution, cash settlement, position movement and
+-- order-app's SeededFillService books its execution, cash settlement, position movement and
 -- holding at startup, priced from market data at that moment. This file runs when the database
 -- is created - before market-data-app has generated any price history - and the fill ledgers
 -- are append-only, so a hard-coded price here could never match the simulated market, and the
