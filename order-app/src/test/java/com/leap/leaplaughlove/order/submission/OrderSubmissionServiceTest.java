@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -47,6 +48,7 @@ class OrderSubmissionServiceTest {
     @Mock private CurrentQuoteService currentQuoteService;
 
     private OrderSubmissionService orderSubmissionService;
+    private FillRecorder fillRecorder;
 
     private UUID accountId;
     private Instrument instrument;
@@ -54,12 +56,13 @@ class OrderSubmissionServiceTest {
 
     @BeforeEach
     void setUp() {
+        fillRecorder = new FillRecorder(executionRepository, positionMovementRepository, accountClient);
         orderSubmissionService = new OrderSubmissionService(
                 accountClient,
                 instrumentRepository,
                 orderRepository,
                 executionRepository,
-                positionMovementRepository,
+                fillRecorder,
                 tradeValidationService,
                 currentQuoteService
         );
@@ -143,6 +146,44 @@ class OrderSubmissionServiceTest {
 
         // Verify settlement
         verify(accountClient).settleOrder(eq(accountId), any(SettlementRequest.class));
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Sell settlement fails when the validated position is missing")
+    void testSellSettlement_MissingPosition_Throws() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01"));
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(new IllegalStateException("Cannot settle sell: position does not exist"));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> orderSubmissionService.submitOrder(request));
+
+        assertEquals("Cannot settle sell: position does not exist", exception.getMessage());
+    }
+
+    // LLL-133
+    @Test
+    @DisplayName("Sell settlement fails without clamping insufficient holdings to zero")
+    void testSellSettlement_InsufficientPosition_Throws() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01"));
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(new IllegalStateException("Cannot settle sell: insufficient position quantity"));
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> orderSubmissionService.submitOrder(request));
+
+        assertEquals("Cannot settle sell: insufficient position quantity", exception.getMessage());
     }
 
     @Test
@@ -252,4 +293,3 @@ class OrderSubmissionServiceTest {
         verify(accountClient, never()).settleOrder(any(), any());
     }
 }
-

@@ -22,7 +22,7 @@ interface SearchResult {
   styleUrl: './symbol-search.css'
 })
 export class SymbolSearchComponent {
-  /** Display names we already know (from holdings); market data only carries symbols. */
+  /** Display name per symbol, searched alongside the ticker and shown under it. */
   @Input() names: Record<string, string> = {};
   /** Live prices, preferred over the snapshot loaded for search. */
   @Input() livePrices: Record<string, number> = {};

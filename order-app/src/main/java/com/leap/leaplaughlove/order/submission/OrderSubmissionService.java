@@ -6,19 +6,15 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
-import com.leap.leaplaughlove.order.position.PositionMovement;
-import com.leap.leaplaughlove.order.position.PositionMovementRepository;
+import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.AccountValidationDto;
-import com.leap.leaplaughlove.order.client.SettlementRequest;
-import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,7 +36,7 @@ public class OrderSubmissionService {
     private final InstrumentRepository instrumentRepository;
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
-    private final PositionMovementRepository positionMovementRepository;
+    private final FillRecorder fillRecorder;
     private final TradeValidationService tradeValidationService;
     private final CurrentQuoteService currentQuoteService;
 
@@ -50,7 +46,7 @@ public class OrderSubmissionService {
      * @param instrumentRepository the repository for accessing instrument data
      * @param orderRepository the repository for persisting order data
      * @param executionRepository the repository for persisting execution data
-     * @param positionMovementRepository the repository for persisting position movements
+     * @param fillRecorder the component responsible for recording fill details
      * @param tradeValidationService the service used for validating trades
      * @param currentQuoteService the service used for obtaining current market quotes
      */
@@ -58,14 +54,14 @@ public class OrderSubmissionService {
                                   InstrumentRepository instrumentRepository,
                                   OrderRepository orderRepository,
                                   ExecutionRepository executionRepository,
-                                  PositionMovementRepository positionMovementRepository,
+                                  FillRecorder fillRecorder,
                                   TradeValidationService tradeValidationService,
                                   CurrentQuoteService currentQuoteService) {
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
-        this.positionMovementRepository = positionMovementRepository;
+        this.fillRecorder = fillRecorder;
         this.tradeValidationService = tradeValidationService;
         this.currentQuoteService = currentQuoteService;
     }
@@ -126,42 +122,16 @@ public class OrderSubmissionService {
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
-        // Execution success: record Execution as FILLED
+        // 6. Execution success: record the FILLED execution, Cash Ledger, Position Ledger, Positions
         OffsetDateTime fillTime = OffsetDateTime.now();
-        Execution execution = new Execution(
-                order, request.quantity(), executionPrice, Execution.Status.FILLED,
-                "Executed at market price", fillTime);
-        execution = executionRepository.saveAndFlush(execution);
+        Execution execution = fillRecorder.recordFill(order, executionPrice, fillTime);
 
         // Transition order to FILLED
         order.markFilled(fillTime);
         order = orderRepository.saveAndFlush(order);
 
-        // 6. Record PositionMovement in Order audit ledger
-        BigDecimal tradeCost = executionPrice.multiply(BigDecimal.valueOf(request.quantity())).setScale(2, RoundingMode.HALF_UP);
-        String movementType = request.side() == Order.Side.BUY ? "BUY_FILL" : "SELL_FILL";
-        long qtyDelta = request.side() == Order.Side.BUY ? request.quantity() : -request.quantity();
-        BigDecimal costDelta = request.side() == Order.Side.BUY ? tradeCost : tradeCost.negate();
-
-        PositionMovement movement = new PositionMovement(
-                request.accountId(), instrument.getInstrumentId(), order.getOrderId(),
-                execution.getExecutionId(), movementType, qtyDelta, costDelta, fillTime);
-        positionMovementRepository.save(movement);
-
-        // 7. Post-execution settlement via AccountClient (Cash Ledger & Position update in account-app)
-        SettlementRequest settlementRequest = new SettlementRequest(
-                order.getOrderId(),
-                execution.getExecutionId(),
-                instrument.getInstrumentId(),
-                instrument.getSymbol(),
-                request.side().name(),
-                request.quantity(),
-                executionPrice,
-                fillTime
-        );
-        SettlementResponse settlementResponse = accountClient.settleOrder(request.accountId(), settlementRequest);
-
-        return toResponse(order, execution, settlementResponse.balanceAfter());
+        BigDecimal balanceAfter = fillRecorder.getLastBalanceAfter();
+        return toResponse(order, execution, balanceAfter);
     }
 
     /**
@@ -203,6 +173,7 @@ public class OrderSubmissionService {
         }
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Either instrumentId or symbol must be provided");
     }
+
     /**
      * Resolves the price for the order submission request based on the provided instrument and current market quotes.
      * @param request the order submission request containing price and side details
@@ -276,4 +247,3 @@ public class OrderSubmissionService {
         );
     }
 }
-

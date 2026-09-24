@@ -128,6 +128,18 @@ public class Order {
     }
 
     /**
+     * Constructor for Order entity with Account object reference.
+     */
+    public Order(UUID orderId, Account account, Instrument instrument, Side side,
+                 Long quantity, Status status, OffsetDateTime submittedAt,
+                 OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
+                 OffsetDateTime filledAt, String rejectionReason) {
+        this(orderId, account != null ? account.getAccountId() : null, instrument, side,
+             quantity, status, submittedAt, acceptedAt, rejectedAt, filledAt, rejectionReason);
+        this.account = account;
+    }
+
+    /**
      * Transitions order state to ACCEPTED.
      * @param acceptedAt the timestamp when the order was accepted
      */
@@ -165,7 +177,9 @@ public class Order {
      * Returns the accountId associated with this order.
      * @return the accountId
      */
-    public UUID getAccountId() { return accountId; }
+    public UUID getAccountId() {
+        return accountId != null ? accountId : (account != null ? account.getAccountId() : null);
+    }
     /**
      * Returns the account entity associated with this order.
      * @return the account

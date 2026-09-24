@@ -40,5 +40,5 @@ VALUES
 INSERT INTO trading.position_movements (account_id, instrument_id, movement_type, quantity_delta, cost_delta, created_at)
 VALUES
     ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 'BUY_FILL', 5, 800.00, CURRENT_TIMESTAMP - INTERVAL '1' HOUR),
-    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 99, 1000.00, CURRENT_TIMESTAMP - INTERVAL '1' HOUR);
+    ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 'BUY_FILL', 99, 1000.00, CURRENT_TIMESTAMP - INTERVAL '1' HOUR);
 

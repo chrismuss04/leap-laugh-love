@@ -41,7 +41,10 @@ export class AuthInterceptor implements HttpInterceptor {
     // Pass the cloned request to the next handler
     return next.handle(request).pipe(
       catchError((error: HttpErrorResponse) => {
-        if (error.status === 401) {
+        // Only a request that carried a token means the session expired. Without one - signing
+        // in - a 401 is the answer itself (e.g. wrong password), and the caller shows it;
+        // reloading here would wipe the form and swallow the message.
+        if (error.status === 401 && authToken) {
           // Token expired or invalid - redirect to login
           this.authService.logout();
           window.location.href = '/';

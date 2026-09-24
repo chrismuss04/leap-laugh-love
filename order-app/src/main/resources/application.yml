@@ -32,3 +32,11 @@ order:
   execution:
     max-quote-age-seconds: 5
 
+trading:
+  seeded-fills:
+    # Book seed-data fills at market data prices once history exists (see SeededFillService).
+    enabled: ${TRADING_SEEDED_FILLS_ENABLED:true}
+    retry-seconds: 10
+    max-attempts: 60
+
+

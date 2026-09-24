@@ -19,5 +19,12 @@ public interface ExecutionRepository extends JpaRepository<Execution, UUID> {
      * @return a list of executions associated with the given order IDs
      */
     List<Execution> findByOrder_OrderIdIn(Collection<UUID> orderIds);
+
+    /**
+     * Checks if an execution exists for the given order ID.
+     * @param orderId the order ID
+     * @return true if an execution exists, false otherwise
+     */
+    boolean existsByOrder_OrderId(UUID orderId);
 }
 

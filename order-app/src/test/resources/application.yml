@@ -16,3 +16,9 @@ app:
   jwt:
     secret: verylongsecretkeyforjwttokengenerationspecifiedhere12345
     expiration-minutes: 60
+
+trading:
+  seeded-fills:
+    # Seeded fills are booked from market data at startup; tests have neither to offer.
+    enabled: false
+

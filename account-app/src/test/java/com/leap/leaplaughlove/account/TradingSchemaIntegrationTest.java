@@ -193,7 +193,8 @@ class TradingSchemaIntegrationTest {
         assertTrue(seed.contains("INSERT INTO trading.cash_ledger"),
             "Seed data should insert cash ledger entries");
         assertTrue(seed.contains("'DEPOSIT'"), "Should have DEPOSIT entries");
-        assertTrue(seed.contains("'BUY_SETTLEMENT'"), "Should have BUY_SETTLEMENT entries");
+        // Settlements are booked by SeededFillService at market data prices, not hard-coded here.
+        assertFalse(seed.contains("_SETTLEMENT'"), "Seed data should not book fill settlements");
     }
 
     @Test
@@ -209,14 +210,19 @@ class TradingSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("Seed data should insert executions for filled orders")
+    @DisplayName("Seed data should insert executions only for rejected orders")
     void testSeedDataExecutions() throws Exception {
         String seed = readFile(SEED_FILE);
-        
+
         assertTrue(seed.contains("INSERT INTO trading.executions"),
-            "Seed data should insert executions");
-        assertTrue(seed.contains("fill_quantity"), "Should record fill quantities");
-        assertTrue(seed.contains("fill_price"), "Should record fill prices");
+            "Seed data should insert executions for rejected orders");
+        // Filled orders get their executions from SeededFillService, priced from market data.
+        for (String statement : seed.split(";")) {
+            if (statement.contains("INSERT INTO trading.executions")) {
+                assertFalse(statement.contains("'FILLED'"),
+                    "Seed data should not hard-code a filled execution: " + statement.strip());
+            }
+        }
     }
 
     @Test
@@ -230,25 +236,15 @@ class TradingSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("Seed data should create position movements from executions")
-    void testSeedDataPositionMovements() throws Exception {
+    @DisplayName("Seed data should leave position movements and holdings to SeededFillService")
+    void testSeedDataLeavesFillLedgersToStartup() throws Exception {
         String seed = readFile(SEED_FILE);
-        
-        assertTrue(seed.contains("INSERT INTO trading.position_movements"),
-            "Seed data should insert position movements");
-        assertTrue(seed.contains("'BUY_FILL'"), "Should have BUY_FILL movements");
-        assertTrue(seed.contains("quantity_delta"), "Should track quantity changes");
-    }
 
-    @Test
-    @DisplayName("Seed data should aggregate positions from movements")
-    void testSeedDataPositions() throws Exception {
-        String seed = readFile(SEED_FILE);
-        
-        assertTrue(seed.contains("INSERT INTO trading.positions"),
-            "Seed data should insert positions");
-        assertTrue(seed.contains("FROM trading.position_movements"),
-            "Positions should be derived from movements");
+        assertFalse(seed.contains("INSERT INTO trading.position_movements"),
+            "Seed data should not insert position movements");
+        assertFalse(seed.contains("INSERT INTO trading.positions"),
+            "Seed data should not insert positions");
+        assertTrue(seed.contains("filled_at"), "Filled orders should still carry their fill time");
     }
 
     @Test
@@ -278,16 +274,6 @@ class TradingSchemaIntegrationTest {
         assertTrue(seed.contains("INSERT INTO trading.cash_ledger") 
             && (seed.contains("'DEPOSIT'") || seed.contains("'BUY_SETTLEMENT'")),
             "Cash ledger should include deposit and settlement entries");
-    }
-
-    @Test
-    @DisplayName("Position movements should reference orders and executions")
-    void testPositionMovementReferences() throws Exception {
-        String seed = readFile(SEED_FILE);
-        
-        assertTrue(seed.contains("INSERT INTO trading.position_movements") 
-            && seed.contains("dddddddd-"),
-            "Position movements should be tracked with distinct IDs");
     }
 
     @Test

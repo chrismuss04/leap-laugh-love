@@ -1,4 +1,4 @@
-package com.leap.leaplaughlove.account.quote;
+package com.leap.leaplaughlove.order.quote;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
