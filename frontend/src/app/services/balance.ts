@@ -18,8 +18,8 @@ export interface BalanceResponse {
   providedIn: 'root'
 })
 export class BalanceService {
-  // Same-origin path, proxied to trading-app - see proxy.conf.js.
-  private readonly API_URL = '/api/trading';
+  // Same-origin path, proxied to account-app - see proxy.conf.js.
+  private readonly API_URL = '/api/account';
 
   constructor(private http: HttpClient) {}
 

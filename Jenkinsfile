@@ -52,7 +52,7 @@ pipeline {
                     // collide, and it removes the cap on how many builds can run at once.
                     //
                     // These must be set rather than left unset: docker-compose.yml defaults them
-                    // to the real 5432/8081-8083/4200, which would fight anything running locally
+                    // to the real 5432/8081-8084/4200, which would fight anything running locally
                     // on the agent.
                     env.DB_PORT = '0'
                     env.IAM_PORT = '0'

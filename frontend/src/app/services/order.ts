@@ -33,7 +33,7 @@ export interface OrderHistoryPage {
 
 export type OrderSide = 'BUY' | 'SELL';
 
-/** A market order: omitting price lets trading-app fill at the live ask (buy) or bid (sell). */
+/** A market order: omitting price lets order-app fill at the live ask (buy) or bid (sell). */
 export interface OrderSubmissionRequest {
   accountId: string;
   symbol: string;

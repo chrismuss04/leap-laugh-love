@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Runs the whole stack natively on Windows - no Docker: iam-app, trading-app, market-data-app
-  and the Angular frontend, against a local PostgreSQL.
+  Runs the whole stack natively on Windows - no Docker: iam-app, account-app, order-app,
+  market-data-app and the Angular frontend, against a local PostgreSQL.
 
 .DESCRIPTION
-  Builds the three services, starts each (and the frontend) in its own titled window, waits
+  Builds the four services, starts each (and the frontend) in its own titled window, waits
   until they report healthy, then opens the app in the browser. Stop everything with
   .\scripts\stop-local.ps1, or close the windows.
 
@@ -40,8 +40,9 @@ $pidFile = Join-Path $runDir 'pids.json'
 
 $services = @(
     @{ Name = 'iam-app';         Port = 8081 },
-    @{ Name = 'trading-app';     Port = 8082 },
-    @{ Name = 'market-data-app'; Port = 8083 }
+    @{ Name = 'account-app';     Port = 8082 },
+    @{ Name = 'market-data-app'; Port = 8083 },
+    @{ Name = 'order-app';       Port = 8084 }
 )
 $frontendPort = 4200
 
@@ -98,9 +99,10 @@ $dotEnv = Read-DotEnv (Join-Path $repoRoot '.env')
 $env:SPRING_DATASOURCE_URL = "jdbc:postgresql://${DbHost}:${DbPort}/paysprint"
 $env:SPRING_DATASOURCE_USERNAME = 'paysprint'
 if ($dotEnv.DB_PASSWORD) { $env:SPRING_DATASOURCE_PASSWORD = $dotEnv.DB_PASSWORD }
-# All three services must share one secret, or trading and market data reject iam's tokens.
+# Every service must share one secret, or account, order and market data reject iam's tokens.
 if ($dotEnv.JWT_SECRET) { $env:JWT_SECRET = $dotEnv.JWT_SECRET }
 $env:MARKET_DATA_BASE_URL = 'http://localhost:8083'
+$env:ACCOUNT_SERVICE_BASE_URL = 'http://localhost:8082'
 if ($LightHistory) {
     $env:MARKETDATA_HISTORY_BACKFILL_TIERS = '86400:30,3600:7,300:2,60:1'
 }

@@ -13,13 +13,15 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("Trading Schema Validation Tests")
 class TradingSchemaIntegrationTest {
 
-    private static final String SCHEMA_FILE = "src/main/resources/db/leap_laugh_love_schema.sql";
-    private static final String SEED_FILE = "src/main/resources/db/seed_trading.sql";
+    // The one copy the database is built from (docker-compose, Jenkins, setup-windows-db.ps1).
+    private static final String SCHEMA_FILE = "iam-app/src/main/resources/db/leap_laugh_love_schema.sql";
+    private static final String SEED_FILE = "iam-app/src/main/resources/db/seed_trading.sql";
 
+    // Relative to the repo root; Maven runs module tests from account-app/, an IDE may not.
     private String readFile(String filePath) throws Exception {
         Path path = Paths.get(filePath);
         if (!Files.exists(path)) {
-            path = Paths.get("account-app", filePath);
+            path = Paths.get("..", filePath);
         }
         return new String(Files.readAllBytes(path));
     }

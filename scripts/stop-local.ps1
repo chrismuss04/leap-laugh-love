@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   Ends each window start-local.ps1 opened, along with the java/node process running in it.
-  Anything still holding the stack's ports (8081-8083, 4200) afterwards is only reported, not
+  Anything still holding the stack's ports (8081-8084, 4200) afterwards is only reported, not
   killed, since it wasn't started by start-local.ps1.
 #>
 $ErrorActionPreference = 'Stop'
@@ -27,7 +27,7 @@ if (Test-Path $pidFile) {
     Write-Host 'Nothing recorded as started by start-local.ps1.'
 }
 
-$ports = 8081, 8082, 8083, 4200
+$ports = 8081, 8082, 8083, 8084, 4200
 $leftover = Get-NetTCPConnection -State Listen -LocalPort $ports -ErrorAction SilentlyContinue
 foreach ($connection in $leftover) {
     $process = Get-Process -Id $connection.OwningProcess -ErrorAction SilentlyContinue
