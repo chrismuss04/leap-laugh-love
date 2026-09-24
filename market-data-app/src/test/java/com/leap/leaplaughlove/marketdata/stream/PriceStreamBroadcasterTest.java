@@ -16,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -58,8 +59,12 @@ class PriceStreamBroadcasterTest {
     }
 
     private static void awaitSize(List<?> list, int size) throws InterruptedException {
+        awaitUntil(() -> list.size() >= size);
+    }
+
+    private static void awaitUntil(BooleanSupplier condition) throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (list.size() < size && System.nanoTime() < deadline) {
+        while (!condition.getAsBoolean() && System.nanoTime() < deadline) {
             Thread.sleep(10);
         }
     }
@@ -79,7 +84,8 @@ class PriceStreamBroadcasterTest {
         });
         assertTrue(stuck.firstSendStarted.await(5, TimeUnit.SECONDS), "the stuck client's send should be in progress");
 
-        awaitSize(healthy.sent, 1);
+        // the healthy sender may still be draining earlier ticks, so wait for the last one to land
+        awaitUntil(() -> healthy.sent.contains("AAPL=460.99"));
         assertTrue(healthy.sent.contains("AAPL=460.99"), "the healthy client should get the latest price: " + healthy.sent);
         stuck.release.countDown();
     }
