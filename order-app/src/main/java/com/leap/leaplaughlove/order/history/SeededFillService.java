@@ -1,9 +1,11 @@
 package com.leap.leaplaughlove.order.history;
 
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
+import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import com.leap.leaplaughlove.order.quote.PriceHistoryClient;
 import com.leap.leaplaughlove.order.quote.PriceHistoryClient.CandleClose;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
@@ -31,7 +33,7 @@ import java.util.Set;
  * market-data-app has generated any price history, and the fill ledgers are append-only so a
  * placeholder price can't be corrected later. So the seed inserts filled orders with only a
  * {@code filled_at}, and this books each one - execution, cash settlement, position movement,
- * holding - through the same {@link FillRecorder} live orders use, at the close of the last
+ * holding - through the same {@link FillRecorder} steps live orders use, at the close of the last
  * candle that ended at or before the fill. That is the price the portfolio chart values the
  * holding at, so the chart moves smoothly through the trade instead of jumping by the gap
  * between a hard-coded fill price and the simulated market.
@@ -55,6 +57,7 @@ public class SeededFillService {
 
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
+    private final PositionMovementRepository positionMovementRepository;
     private final FillRecorder fillRecorder;
     private final PriceHistoryClient priceHistoryClient;
     private final JwtService jwtService;
@@ -64,6 +67,7 @@ public class SeededFillService {
 
     public SeededFillService(OrderRepository orderRepository,
                              ExecutionRepository executionRepository,
+                             PositionMovementRepository positionMovementRepository,
                              FillRecorder fillRecorder,
                              PriceHistoryClient priceHistoryClient,
                              JwtService jwtService,
@@ -72,6 +76,7 @@ public class SeededFillService {
                              @Value("${trading.seeded-fills.max-attempts:60}") int maxAttempts) {
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
+        this.positionMovementRepository = positionMovementRepository;
         this.fillRecorder = fillRecorder;
         this.priceHistoryClient = priceHistoryClient;
         this.jwtService = jwtService;
@@ -118,7 +123,7 @@ public class SeededFillService {
      * @return how many pending fills are still unbooked
      */
     int bookPendingFills() {
-        List<Order> pending = orderRepository.findWithoutExecutionByStatus(Order.Status.FILLED);
+        List<Order> pending = orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED);
         // A holding's average cost depends on the order of its fills, so once one fill for an
         // account/instrument can't be priced yet, its later fills wait for it.
         Set<String> blocked = new HashSet<>();
@@ -138,8 +143,9 @@ public class SeededFillService {
                     booked++;
                 }
             } catch (RuntimeException ex) {
-                // e.g. a seeded sell with no holding to settle against (LLL-133). The transaction
-                // rolled back; hold back this holding's later fills and carry on with the rest.
+                // e.g. a seeded sell with no holding to settle against (LLL-133). The fill stays
+                // pending and is retried on the next pass; hold back this holding's later fills
+                // and carry on with the rest.
                 log.warn("Could not book seeded fill for order {}: {}", order.getOrderId(), ex.getMessage());
                 blocked.add(holding);
             }
@@ -154,14 +160,35 @@ public class SeededFillService {
         return remaining;
     }
 
+    /**
+     * Books one fill in FillRecorder's three steps, committing between them. A fill whose
+     * booking stopped part-way - its execution written but settling failed - is picked up again
+     * here and settled with that same execution, which account-app settles only once.
+     */
     private boolean book(Order order, BigDecimal price) {
-        Boolean booked = transactionTemplate.execute(status -> {
+        Execution execution = transactionTemplate.execute(status -> {
             Optional<Order> locked = orderRepository.findByIdForUpdate(order.getOrderId());
             // Another instance may have booked it between the query and the lock.
-            if (locked.isEmpty() || executionRepository.existsByOrder_OrderId(order.getOrderId())) {
+            if (locked.isEmpty() || positionMovementRepository.existsByOrderId(order.getOrderId())) {
+                return null;
+            }
+            return executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED)
+                    .orElseGet(() -> fillRecorder.recordExecution(locked.get(), price, locked.get().getFilledAt()));
+        });
+        if (execution == null) {
+            return false;
+        }
+
+        // No request is behind this, so there is no caller's token to forward; sign as the order's
+        // owner, whose request this fill would have been.
+        fillRecorder.settle(order, execution, jwtService.generateToken(order.getAccount().getClientId(), null));
+
+        Boolean booked = transactionTemplate.execute(status -> {
+            orderRepository.findByIdForUpdate(order.getOrderId());
+            if (positionMovementRepository.existsByOrderId(order.getOrderId())) {
                 return false;
             }
-            fillRecorder.recordFill(locked.get(), price, locked.get().getFilledAt());
+            fillRecorder.recordPositionMovement(order, execution);
             return true;
         });
         return Boolean.TRUE.equals(booked);

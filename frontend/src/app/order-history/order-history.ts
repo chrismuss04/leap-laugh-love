@@ -1,15 +1,13 @@
 import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
 
 @Component({
-  selector: 'app-order-history',
-  standalone: true,
-  imports: [CommonModule, RouterLink],
-  templateUrl: './order-history.html',
-  styleUrl: './order-history.css'
+    selector: 'app-order-history',
+    imports: [CommonModule],
+    templateUrl: './order-history.html',
+    styleUrl: './order-history.css'
 })
 export class OrderHistoryComponent implements OnInit {
   orders = signal<OrderHistoryItem[]>([]);

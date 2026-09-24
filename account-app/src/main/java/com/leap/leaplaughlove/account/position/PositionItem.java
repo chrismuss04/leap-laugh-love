@@ -10,7 +10,7 @@ import java.util.UUID;
  * @param instrumentName the name of the instrument
  * @param assetClass the asset class of the instrument
  * @param quantity the quantity of the position
- * @param avgCost the average cost of the position
+ * @param averageCost the average cost of the position
  */
 public record PositionItem(
         UUID instrumentId,
@@ -18,6 +18,6 @@ public record PositionItem(
         String instrumentName,
         String assetClass,
         long quantity,
-        BigDecimal avgCost
+        BigDecimal averageCost
 ) {}
 

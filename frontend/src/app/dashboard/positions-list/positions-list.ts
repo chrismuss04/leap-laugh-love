@@ -8,11 +8,10 @@ import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '
 
 /** The client's holdings. Selecting a row loads that symbol into the trade panel. */
 @Component({
-  selector: 'app-positions-list',
-  standalone: true,
-  imports: [CommonModule, RouterLink, SparklineComponent, FlashDirective],
-  templateUrl: './positions-list.html',
-  styleUrl: './positions-list.css'
+    selector: 'app-positions-list',
+    imports: [CommonModule, RouterLink, SparklineComponent, FlashDirective],
+    templateUrl: './positions-list.html',
+    styleUrl: './positions-list.css'
 })
 export class PositionsListComponent {
   @Input() holdings: HoldingView[] = [];

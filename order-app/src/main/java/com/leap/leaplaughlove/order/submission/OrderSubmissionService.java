@@ -11,13 +11,14 @@ import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.AccountValidationDto;
+import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -39,6 +40,13 @@ public class OrderSubmissionService {
     private final FillRecorder fillRecorder;
     private final TradeValidationService tradeValidationService;
     private final CurrentQuoteService currentQuoteService;
+    private final TransactionTemplate transactionTemplate;
+
+    /**
+     * What the first step of a submission decided: either a finished rejection, or an accepted
+     * order with its committed FILLED execution, waiting to be settled.
+     */
+    private record FirstStep(OrderSubmissionResponse rejection, Order order, Execution execution) {}
 
     /**
      * Constructs an instance of OrderSubmissionService with the specified dependencies.
@@ -49,6 +57,7 @@ public class OrderSubmissionService {
      * @param fillRecorder the component responsible for recording fill details
      * @param tradeValidationService the service used for validating trades
      * @param currentQuoteService the service used for obtaining current market quotes
+     * @param transactionTemplate runs each step of a submission in its own transaction
      */
     public OrderSubmissionService(AccountClient accountClient,
                                   InstrumentRepository instrumentRepository,
@@ -56,7 +65,8 @@ public class OrderSubmissionService {
                                   ExecutionRepository executionRepository,
                                   FillRecorder fillRecorder,
                                   TradeValidationService tradeValidationService,
-                                  CurrentQuoteService currentQuoteService) {
+                                  CurrentQuoteService currentQuoteService,
+                                  TransactionTemplate transactionTemplate) {
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -64,15 +74,19 @@ public class OrderSubmissionService {
         this.fillRecorder = fillRecorder;
         this.tradeValidationService = tradeValidationService;
         this.currentQuoteService = currentQuoteService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
      * Submits an order and triggers immediate execution processing.
      *
+     * <p>Runs in three steps rather than one transaction, because settling is account-app's
+     * work and it can only see what this app has committed (see {@link FillRecorder}): the order
+     * and its execution are committed first, then settled, and only then marked FILLED.
+     *
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details
      */
-    @Transactional(rollbackFor = Exception.class)
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
         if (request == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Order request body is required");
@@ -81,7 +95,44 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be at least 1 whole share");
         }
 
-        // 2. Resolve instrument
+        FirstStep firstStep = transactionTemplate.execute(status -> acceptOrReject(request));
+        if (firstStep.rejection() != null) {
+            return firstStep.rejection();
+        }
+        Order order = firstStep.order();
+        Execution execution = firstStep.execution();
+
+        SettlementResponse settlement;
+        try {
+            settlement = fillRecorder.settle(order, execution, null);
+        } catch (RuntimeException ex) {
+            // The execution is immutable, so it stays as the record of the attempt; the order
+            // says it never filled.
+            transactionTemplate.executeWithoutResult(status -> {
+                order.markRejected("Settlement failed: " + ex.getMessage(), OffsetDateTime.now());
+                orderRepository.saveAndFlush(order);
+            });
+            throw ex;
+        }
+
+        transactionTemplate.executeWithoutResult(status -> {
+            fillRecorder.recordPositionMovement(order, execution);
+            order.markFilled(execution.getExecutedAt());
+            orderRepository.saveAndFlush(order);
+        });
+
+        BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;
+        return toResponse(order, execution, balanceAfter);
+    }
+
+    /**
+     * Stores the order, prices and validates it, and either rejects it or accepts it and writes
+     * its FILLED execution. Runs in one transaction, committed before the fill is settled.
+     * @param request the order submission request
+     * @return the rejection, or the accepted order and its execution
+     */
+    private FirstStep acceptOrReject(OrderSubmissionRequest request) {
+        // 1. Resolve instrument
         Instrument instrument = resolveInstrument(request);
 
         // 2. Pre-trade check via AccountClient
@@ -106,7 +157,8 @@ public class OrderSubmissionService {
             executionPrice = resolvePrice(request, instrument);
         } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {
             String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();
-            return rejectOrder(order, accountValidation, rejectReason != null ? rejectReason : "Market quote unavailable");
+            return new FirstStep(rejectOrder(order, accountValidation,
+                    rejectReason != null ? rejectReason : "Market quote unavailable"), null, null);
         }
 
         // 5. Execute Trade Validation
@@ -114,7 +166,7 @@ public class OrderSubmissionService {
                 accountValidation, instrument, request.side(), request.quantity(), executionPrice);
 
         if (!validationResult.isValid()) {
-            return rejectOrder(order, accountValidation, validationResult.reason());
+            return new FirstStep(rejectOrder(order, accountValidation, validationResult.reason()), null, null);
         }
 
         // Acceptance flow: transition order to ACCEPTED
@@ -122,16 +174,9 @@ public class OrderSubmissionService {
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
-        // 6. Execution success: record the FILLED execution, Cash Ledger, Position Ledger, Positions
-        OffsetDateTime fillTime = OffsetDateTime.now();
-        Execution execution = fillRecorder.recordFill(order, executionPrice, fillTime);
-
-        // Transition order to FILLED
-        order.markFilled(fillTime);
-        order = orderRepository.saveAndFlush(order);
-
-        BigDecimal balanceAfter = fillRecorder.getLastBalanceAfter();
-        return toResponse(order, execution, balanceAfter);
+        // 6. Execution success: record the FILLED execution; settlement follows once it is committed
+        Execution execution = fillRecorder.recordExecution(order, executionPrice, OffsetDateTime.now());
+        return new FirstStep(null, order, execution);
     }
 
     /**

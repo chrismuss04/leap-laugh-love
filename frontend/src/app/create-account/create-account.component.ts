@@ -38,9 +38,10 @@ function passwordsMatchValidator(): ValidatorFn {
 }
 
 @Component({
-  selector: 'app-create-account',
-  templateUrl: './create-account.component.html',
-  styleUrls: ['./create-account.component.css']
+    selector: 'app-create-account',
+    templateUrl: './create-account.component.html',
+    styleUrls: ['./create-account.component.css'],
+    standalone: false
 })
 export class CreateAccountComponent implements OnInit {
   @Output() switchToSignIn = new EventEmitter<void>();

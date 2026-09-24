@@ -18,14 +18,13 @@ import { TradePanelComponent } from './trade-panel/trade-panel';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
 
 @Component({
-  selector: 'app-dashboard',
-  standalone: true,
-  imports: [
-    CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
-    PositionsListComponent, RecentActivityComponent, TradePanelComponent
-  ],
-  templateUrl: './dashboard.html',
-  styleUrl: './dashboard.css'
+    selector: 'app-dashboard',
+    imports: [
+        CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
+        PositionsListComponent, RecentActivityComponent, TradePanelComponent
+    ],
+    templateUrl: './dashboard.html',
+    styleUrl: './dashboard.css'
 })
 export class DashboardComponent implements OnInit {
   @ViewChild(TradePanelComponent) tradePanel?: TradePanelComponent;

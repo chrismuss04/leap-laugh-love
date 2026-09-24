@@ -66,16 +66,18 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
                                                Pageable pageable);
 
     /**
-     * Finds orders in the given status that have no execution at all, oldest fill first. For
-     * FILLED this is the seed data's orders whose fills haven't been booked yet - live
-     * submission writes the order and its execution in one transaction, so it never leaves one.
+     * Finds orders in the given status with no position movement, oldest fill first. For FILLED
+     * these are the fills not fully booked yet: the seed data's orders, which start with no
+     * execution, and any whose booking stopped after the execution was written. A fill's
+     * position movement is its last step (see FillRecorder), and live submission only marks an
+     * order FILLED after writing it, so live orders never show up here.
      * @param status the order status to look for
      * @return the matching orders, by fill time then id
      */
     @Query("SELECT o FROM Order o JOIN FETCH o.account JOIN FETCH o.instrument WHERE o.status = :status " +
-           "AND NOT EXISTS (SELECT e FROM Execution e WHERE e.order = o) " +
+           "AND NOT EXISTS (SELECT m FROM PositionMovement m WHERE m.orderId = o.orderId) " +
            "ORDER BY o.filledAt, o.orderId")
-    List<Order> findWithoutExecutionByStatus(@Param("status") Order.Status status);
+    List<Order> findWithoutPositionMovementByStatus(@Param("status") Order.Status status);
 
     /**
      * Loads an order with a row lock, so two processes booking the same fill serialize.

@@ -18,5 +18,12 @@ public interface PositionMovementRepository extends JpaRepository<PositionMoveme
      * @return a list of position movements matching the given account and instrument
      */
     List<PositionMovement> findByAccountIdAndInstrumentId(UUID accountId, UUID instrumentId);
+
+    /**
+     * Checks whether the order's fill has been written to the ledger.
+     * @param orderId the order ID
+     * @return true if a movement exists for the order
+     */
+    boolean existsByOrderId(UUID orderId);
 }
 

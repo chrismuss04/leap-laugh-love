@@ -3,10 +3,9 @@ import { CommonModule } from '@angular/common';
 
 /** A tiny trend line with a dotted baseline, coloured by direction against that baseline. */
 @Component({
-  selector: 'app-sparkline',
-  standalone: true,
-  imports: [CommonModule],
-  template: `
+    selector: 'app-sparkline',
+    imports: [CommonModule],
+    template: `
     <svg *ngIf="path; else empty" [attr.viewBox]="'0 0 ' + width + ' ' + height"
          [attr.width]="width" [attr.height]="height" aria-hidden="true" [attr.data-tone]="tone">
       <line *ngIf="baselineY !== null" x1="0" [attr.x2]="width" [attr.y1]="baselineY" [attr.y2]="baselineY" class="base" />
@@ -14,7 +13,7 @@ import { CommonModule } from '@angular/common';
     </svg>
     <ng-template #empty><span class="empty" [style.width.px]="width" [style.height.px]="height"></span></ng-template>
   `,
-  styles: [`
+    styles: [`
     :host { display: inline-flex; }
     .line { fill: none; stroke: var(--gain); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
     svg[data-tone='loss'] .line { stroke: var(--loss); }

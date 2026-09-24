@@ -60,6 +60,23 @@ public class AccountClient {
     }
 
     /**
+     * Settles an order for the specified account, authenticating with the given token rather
+     * than the current request's - for work with no request behind it, such as booking seeded fills.
+     * @param accountId the ID of the account
+     * @param request the settlement request containing order details
+     * @param bearerToken the JWT to send, issued to the account's owner
+     * @return the settlement response for the order
+     */
+    public SettlementResponse settleOrderAs(UUID accountId, SettlementRequest request, String bearerToken) {
+        return restClient.post()
+                .uri("/api/account/internal/accounts/{accountId}/settlement", accountId)
+                .headers(headers -> headers.setBearerAuth(bearerToken))
+                .body(request)
+                .retrieve()
+                .body(SettlementResponse.class);
+    }
+
+    /**
      * Retrieves the list of account IDs for the currently authenticated client.
      * @return a list of account IDs for the client
      */

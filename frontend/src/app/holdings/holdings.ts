@@ -1,15 +1,13 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { HoldingsService, AccountHoldings, ClientHoldings } from '../services/holdings';
 
 @Component({
-  selector: 'app-holdings',
-  standalone: true,
-  imports: [CommonModule, RouterLink],
-  templateUrl: './holdings.html',
-  styleUrl: './holdings.css'
+    selector: 'app-holdings',
+    imports: [CommonModule],
+    templateUrl: './holdings.html',
+    styleUrl: './holdings.css'
 })
 export class HoldingsComponent implements OnInit {
   accounts = signal<AccountHoldings[]>([]);

@@ -174,4 +174,27 @@ class AccountSettlementServiceTest {
         assertEquals("Cannot settle sell: insufficient position quantity", ex.getMessage());
         verify(positionRepository, never()).save(any());
     }
+
+    @Test
+    @DisplayName("Settling an execution that is already on the ledger returns the booked state without booking it again")
+    void testSettleOrder_alreadySettled_isNotBookedTwice() {
+        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        UUID executionId = UUID.randomUUID();
+        CashLedgerEntry booked = new CashLedgerEntry(
+                ACCOUNT_ID, UUID.randomUUID(), executionId, "BUY_SETTLEMENT",
+                new BigDecimal("-1500.00"), "USD", OffsetDateTime.now(), "Buy settlement");
+        when(cashLedgerRepository.findFirstByExecutionId(executionId)).thenReturn(Optional.of(booked));
+        when(positionRepository.findById(new PositionId(ACCOUNT_ID, INSTRUMENT_ID))).thenReturn(Optional.of(
+                new Position(ACCOUNT_ID, INSTRUMENT_ID, 10L, new BigDecimal("150.00"), OffsetDateTime.now())));
+        when(balanceService.getCurrentBalance(account)).thenReturn(new BigDecimal("3500.00"));
+
+        SettlementResponse response = service.settleOrder(ACCOUNT_ID, new SettlementRequest(
+                UUID.randomUUID(), executionId, INSTRUMENT_ID, "AAPL", "BUY",
+                10, new BigDecimal("150.00"), OffsetDateTime.now()));
+
+        assertEquals(10L, response.positionQuantity());
+        assertEquals(new BigDecimal("3500.00"), response.balanceAfter());
+        verify(cashLedgerRepository, never()).save(any(CashLedgerEntry.class));
+        verify(positionRepository, never()).save(any(Position.class));
+    }
 }
