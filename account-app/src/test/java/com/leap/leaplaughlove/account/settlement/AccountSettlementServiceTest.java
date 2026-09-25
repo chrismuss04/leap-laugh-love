@@ -15,6 +15,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -69,7 +71,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settle BUY order creates new position when none existed")
     void testSettleBuyOrder_newPosition() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.empty());
         CashLedgerEntry savedLedger = new CashLedgerEntry(
                 ACCOUNT_ID, UUID.randomUUID(), UUID.randomUUID(), "BUY_SETTLEMENT",
@@ -96,7 +98,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settle BUY order updates average cost for existing position")
     void testSettleBuyOrder_existingPosition() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         Position existing = new Position(ACCOUNT_ID, INSTRUMENT_ID, 10L, new BigDecimal("100.00"), OffsetDateTime.now());
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.of(existing));
         CashLedgerEntry savedLedger = new CashLedgerEntry(
@@ -121,7 +123,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settle SELL order reduces position quantity")
     void testSettleSellOrder_success() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         Position existing = new Position(ACCOUNT_ID, INSTRUMENT_ID, 25L, new BigDecimal("100.00"), OffsetDateTime.now());
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.of(existing));
         CashLedgerEntry savedLedger = new CashLedgerEntry(
@@ -145,7 +147,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settle SELL order throws IllegalStateException if position does not exist")
     void testSettleSellOrder_positionDoesNotExist() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.empty());
 
         SettlementRequest request = new SettlementRequest(
@@ -161,7 +163,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settle SELL order throws IllegalStateException if position has insufficient quantity")
     void testSettleSellOrder_insufficientQuantity() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         Position existing = new Position(ACCOUNT_ID, INSTRUMENT_ID, 5L, new BigDecimal("100.00"), OffsetDateTime.now());
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.of(existing));
 
@@ -178,7 +180,7 @@ class AccountSettlementServiceTest {
     @Test
     @DisplayName("Settling an execution that is already on the ledger returns the booked state without booking it again")
     void testSettleOrder_alreadySettled_isNotBookedTwice() {
-        when(accountAuthorizationService.getAuthorizedTradingAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         UUID executionId = UUID.randomUUID();
         CashLedgerEntry booked = new CashLedgerEntry(
                 ACCOUNT_ID, UUID.randomUUID(), executionId, "BUY_SETTLEMENT",
@@ -196,5 +198,44 @@ class AccountSettlementServiceTest {
         assertEquals(new BigDecimal("3500.00"), response.balanceAfter());
         verify(cashLedgerRepository, never()).save(any(CashLedgerEntry.class));
         verify(positionRepository, never()).save(any(Position.class));
+    }
+
+    @Test
+    @DisplayName("A new settlement is refused when trading is disabled for the account")
+    void testSettleOrder_tradingDisabled_refusesNewSettlement() {
+        Account disabled = new Account(ACCOUNT_ID, CLIENT_ID, "ACC-TEST", "ACTIVE", "USD", false, OffsetDateTime.now());
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(disabled);
+        UUID executionId = UUID.randomUUID();
+        when(cashLedgerRepository.findFirstByExecutionId(executionId)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.settleOrder(ACCOUNT_ID, new SettlementRequest(
+                        UUID.randomUUID(), executionId, INSTRUMENT_ID, "AAPL", "BUY",
+                        10, new BigDecimal("150.00"), OffsetDateTime.now())));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        verify(cashLedgerRepository, never()).save(any(CashLedgerEntry.class));
+    }
+
+    @Test
+    @DisplayName("A retry of a settlement booked before trading was disabled returns the booking instead of refusing")
+    void testSettleOrder_tradingDisabledAfterBooking_returnsBookedState() {
+        Account disabled = new Account(ACCOUNT_ID, CLIENT_ID, "ACC-TEST", "ACTIVE", "USD", false, OffsetDateTime.now());
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(disabled);
+        UUID executionId = UUID.randomUUID();
+        CashLedgerEntry booked = new CashLedgerEntry(
+                ACCOUNT_ID, UUID.randomUUID(), executionId, "BUY_SETTLEMENT",
+                new BigDecimal("-1500.00"), "USD", OffsetDateTime.now(), "Buy settlement");
+        when(cashLedgerRepository.findFirstByExecutionId(executionId)).thenReturn(Optional.of(booked));
+        when(positionRepository.findById(new PositionId(ACCOUNT_ID, INSTRUMENT_ID))).thenReturn(Optional.of(
+                new Position(ACCOUNT_ID, INSTRUMENT_ID, 10L, new BigDecimal("150.00"), OffsetDateTime.now())));
+        when(balanceService.getCurrentBalance(disabled)).thenReturn(new BigDecimal("3500.00"));
+
+        SettlementResponse response = service.settleOrder(ACCOUNT_ID, new SettlementRequest(
+                UUID.randomUUID(), executionId, INSTRUMENT_ID, "AAPL", "BUY",
+                10, new BigDecimal("150.00"), OffsetDateTime.now()));
+
+        assertEquals(10L, response.positionQuantity());
+        verify(cashLedgerRepository, never()).save(any(CashLedgerEntry.class));
     }
 }

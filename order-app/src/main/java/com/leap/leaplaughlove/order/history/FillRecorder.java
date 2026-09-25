@@ -9,10 +9,12 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.position.PositionMovement;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.Map;
 
 /**
  * Writes everything a fill leaves behind: the FILLED execution, the cash settlement and holding
@@ -85,6 +87,58 @@ public class FillRecorder {
         return bearerToken == null
                 ? accountClient.settleOrder(order.getAccountId(), request)
                 : accountClient.settleOrderAs(order.getAccountId(), request, bearerToken);
+    }
+
+    /**
+     * Tells whether a failed {@link #settle} means account-app refused the fill, so nothing was
+     * booked. account-app settles in one transaction and answers a refusal (e.g. not enough
+     * shares to sell) with a 4xx. Anything else - no answer (unreachable, timed out), a 5xx, or a
+     * failure on this side - leaves it unknown whether cash and holdings moved. Such a fill must
+     * not be recorded as rejected: it is left for {@link PendingFillRecovery} to settle again,
+     * which is safe because account-app settles each execution only once.
+     * @param failure what {@link #settle} threw
+     * @return true only if account-app answered with a refusal
+     */
+    public static boolean isRefused(RuntimeException failure) {
+        return failure instanceof HttpClientErrorException;
+    }
+
+    /**
+     * account-app's own explanation of a refused settlement, e.g. "Cannot settle sell:
+     * insufficient position quantity", read from the {@code message} of its error body.
+     * @param refusal what {@link #settle} threw, for which {@link #isRefused} is true
+     * @return the reason, or the exception's message if the body has none
+     */
+    public static String refusalReason(RuntimeException refusal) {
+        if (refusal instanceof HttpClientErrorException clientError) {
+            try {
+                Map<?, ?> body = clientError.getResponseBodyAs(Map.class);
+                if (body != null && body.get("message") instanceof String message && !message.isBlank()) {
+                    return message;
+                }
+            } catch (RuntimeException unreadable) {
+                // Not account-app's JSON error body; fall back to the exception's message.
+            }
+        }
+        return refusal.getMessage();
+    }
+
+    /**
+     * Finishes booking a settled live fill: writes its position movement and marks the order
+     * FILLED. Call inside a transaction holding the order's row lock (see
+     * OrderRepository#findByIdForUpdate), so live submission and {@link PendingFillRecovery}
+     * can't both finish it. Does nothing if the fill was already finished.
+     * @param lockedOrder the order, loaded with its row lock in the current transaction
+     * @param execution its settled FILLED execution
+     * @return true if this call finished the fill, false if it was already finished
+     */
+    public boolean completeFill(Order lockedOrder, Execution execution) {
+        if (positionMovementRepository.existsByOrderId(lockedOrder.getOrderId())) {
+            return false;
+        }
+        recordPositionMovement(lockedOrder, execution);
+        lockedOrder.markFilled(execution.getExecutedAt());
+        return true;
     }
 
     /**

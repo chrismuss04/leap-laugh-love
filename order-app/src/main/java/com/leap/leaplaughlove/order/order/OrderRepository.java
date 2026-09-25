@@ -80,6 +80,22 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
     List<Order> findWithoutPositionMovementByStatus(@Param("status") Order.Status status);
 
     /**
+     * Finds live fills whose booking stopped part-way: orders still ACCEPTED although their
+     * FILLED execution is committed, because settling them with account-app failed with an
+     * unknown outcome, or the app stopped before recording that it succeeded. Only orders
+     * accepted before the cutoff are returned, so a submission still in flight is left alone.
+     * @param acceptedBefore only orders accepted before this are returned
+     * @return the stuck orders, oldest first
+     */
+    @Query("SELECT o FROM Order o JOIN FETCH o.account JOIN FETCH o.instrument " +
+           "WHERE o.status = com.leap.leaplaughlove.order.order.Order.Status.ACCEPTED " +
+           "AND o.acceptedAt < :acceptedBefore " +
+           "AND EXISTS (SELECT e FROM Execution e WHERE e.order = o " +
+           "AND e.status = com.leap.leaplaughlove.order.execution.Execution.Status.FILLED) " +
+           "ORDER BY o.acceptedAt, o.orderId")
+    List<Order> findAcceptedWithFilledExecution(@Param("acceptedBefore") OffsetDateTime acceptedBefore);
+
+    /**
      * Loads an order with a row lock, so two processes booking the same fill serialize.
      * @param orderId the order to lock
      * @return the locked order, if it exists

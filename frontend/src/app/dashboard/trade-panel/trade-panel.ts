@@ -1,12 +1,13 @@
 import { Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionResponse } from '../../services/order';
 import { FlashDirective } from '../../shared/flash.directive';
 import { formatMoney } from '../../shared/format';
 
-type Step = 'edit' | 'review' | 'submitting' | 'result';
+type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
 
 /**
  * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side, enter whole shares, see
@@ -25,6 +26,8 @@ export class TradePanelComponent implements OnChanges {
   @Input() price: number | null = null;
   @Input() accounts: TradeAccount[] = [];
   @Output() placed = new EventEmitter<OrderSubmissionResponse>();
+  /** The order may or may not have gone through; the account and activity should be reloaded. */
+  @Output() unconfirmed = new EventEmitter<void>();
 
   @ViewChild('quantityInput') quantityInput?: ElementRef<HTMLInputElement>;
 
@@ -148,11 +151,27 @@ export class TradePanelComponent implements OnChanges {
         this.step = 'result';
         this.placed.emit(response);
       },
-      error: err => {
+      error: (err: HttpErrorResponse) => {
+        if (this.outcomeUnknown(err)) {
+          // It may still complete (order-app finishes interrupted trades), so don't invite a
+          // second submission that would buy or sell twice.
+          this.step = 'unconfirmed';
+          this.unconfirmed.emit();
+          return;
+        }
         this.submitError = err.error?.message || err.error?.error || 'Your order could not be placed. Please try again.';
         this.step = 'review';
       }
     });
+  }
+
+  /**
+   * Whether a failed submission may still have placed the order: no answer came back (status 0,
+   * e.g. the connection dropped) or the server failed part-way (5xx). A 4xx means the order was
+   * refused before anything was booked.
+   */
+  private outcomeUnknown(err: HttpErrorResponse): boolean {
+    return err.status === 0 || err.status >= 500;
   }
 
   reset(): void {

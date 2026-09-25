@@ -8,12 +8,15 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.history.FillRecorder;
+import com.leap.leaplaughlove.order.history.PendingFillRecovery;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovement;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
+import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -60,6 +65,9 @@ class OrderSubmissionIntegrationTest {
     @Autowired private OrderRepository orderRepository;
     @Autowired private ExecutionRepository executionRepository;
     @Autowired private PositionMovementRepository positionMovementRepository;
+    @Autowired private FillRecorder fillRecorder;
+    @Autowired private TransactionTemplate transactionTemplate;
+    @Autowired private EntityManager entityManager;
 
     @MockBean private AccountClient accountClient;
     @MockBean private CurrentQuoteService currentQuoteService;
@@ -251,6 +259,56 @@ class OrderSubmissionIntegrationTest {
                 .andExpect(jsonPath("$.execution.status").value("FILLED"))
                 .andExpect(jsonPath("$.execution.fillPrice").value(150.00))
                 .andExpect(jsonPath("$.accountBalanceAfter").value(8500.00));
+    }
+
+    @Test
+    @DisplayName("Settlement times out: order is kept ACCEPTED (202), then recovery settles it and records it FILLED")
+    void testSettlementTimeout_RecoveredToFilled() throws Exception {
+        when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+        // account-app booked the trade, but its answer never arrived.
+        when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+
+        mockMvc.perform(post("/api/order/orders")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("ACCEPTED"))
+                .andExpect(jsonPath("$.execution.status").value("FILLED"));
+
+        Order pending = orderRepository.findAll().stream()
+                .filter(o -> o.getAccountId().equals(accountOwnerId))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Order.Status.ACCEPTED, pending.getStatus());
+        assertFalse(positionMovementRepository.existsByOrderId(pending.getOrderId()));
+
+        // account-app is answering again; the repeat settlement is answered from what it booked.
+        when(accountClient.settleOrderAs(eq(accountOwnerId), any(SettlementRequest.class), any()))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 35L, new BigDecimal("150.00")));
+        // Recovery runs later, in a fresh persistence context, not the one the submission used.
+        entityManager.flush();
+        entityManager.clear();
+        // A negative grace period puts the cutoff in the future, so the just-submitted order counts as stuck.
+        PendingFillRecovery recovery = new PendingFillRecovery(
+                orderRepository, executionRepository, fillRecorder, jwtService, transactionTemplate, -60);
+
+        recovery.run();
+
+        Order recovered = orderRepository.findById(pending.getOrderId()).orElseThrow();
+        assertEquals(Order.Status.FILLED, recovered.getStatus());
+        assertNotNull(recovered.getFilledAt());
+        List<PositionMovement> movements = positionMovementRepository.findByAccountIdAndInstrumentId(accountOwnerId, instrumentAaplId);
+        assertEquals(1, movements.stream().filter(m -> m.getOrderId().equals(pending.getOrderId())).count());
+
+        // A second run finds nothing left to do.
+        recovery.run();
+        verify(accountClient, times(1)).settleOrderAs(eq(accountOwnerId), any(SettlementRequest.class), any());
     }
 }
 
