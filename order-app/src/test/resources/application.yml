@@ -21,4 +21,6 @@ trading:
   seeded-fills:
     # Seeded fills are booked from market data at startup; tests have neither to offer.
     enabled: false
-
+  fill-recovery:
+    # Tests drive PendingFillRecovery directly rather than on a schedule.
+    enabled: false

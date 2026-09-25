@@ -8,8 +8,10 @@ import com.leap.leaplaughlove.account.ledger.CashLedgerRepository;
 import com.leap.leaplaughlove.account.position.Position;
 import com.leap.leaplaughlove.account.position.PositionId;
 import com.leap.leaplaughlove.account.position.PositionRepository;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -84,9 +86,15 @@ public class AccountSettlementService {
      */
     @Transactional(rollbackFor = Exception.class)
     public SettlementResponse settleOrder(UUID accountId, SettlementRequest request) {
-        Account account = accountAuthorizationService.getAuthorizedTradingAccountForUpdate(accountId);
+        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);
         // Checked under the account lock taken above, so two copies of one settlement serialize.
+        // Checked before trading is, so a retry of a trade that was booked before trading was
+        // turned off is answered with that booking rather than refused - order-app would record
+        // the refusal as a rejection of a trade whose cash and shares already moved.
         Optional<CashLedgerEntry> alreadySettled = cashLedgerRepository.findFirstByExecutionId(request.executionId());
+        if (alreadySettled.isEmpty() && !account.isTradingEnabled()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Trading is disabled for this account");
+        }
         if (alreadySettled.isPresent()) {
             Optional<Position> position = positionRepository.findById(
                     new PositionId(account.getAccountId(), request.instrumentId()));
