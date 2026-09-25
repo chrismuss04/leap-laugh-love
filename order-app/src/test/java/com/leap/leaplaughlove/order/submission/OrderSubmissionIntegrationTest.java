@@ -309,6 +309,19 @@ class OrderSubmissionIntegrationTest {
         // A second run finds nothing left to do.
         recovery.run();
         verify(accountClient, times(1)).settleOrderAs(eq(accountOwnerId), any(SettlementRequest.class), any());
+    @DisplayName("Verify OrderRepository custom queries execute successfully")
+    void testOrderRepositoryQueries() {
+        UUID clientId = UUID.fromString(CLIENT_OWNER_ID);
+        var page = orderRepository.findByClientId(clientId, org.springframework.data.domain.PageRequest.of(0, 10));
+        assertNotNull(page);
+
+        OffsetDateTime now = OffsetDateTime.now();
+        var pageBetween = orderRepository.findByClientIdSubmittedBetween(
+                clientId, now.minusDays(1), now.plusDays(1), org.springframework.data.domain.PageRequest.of(0, 10));
+        assertNotNull(pageBetween);
+
+        var pendingFills = orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED);
+        assertNotNull(pendingFills);
     }
 }
 

@@ -36,10 +36,6 @@ public class Order {
     @Column(name = "account_id", nullable = false)
     private UUID accountId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "account_id", insertable = false, updatable = false)
-    private Account account;
-
     @Transient
     private String accountNumber;
 
@@ -136,7 +132,6 @@ public class Order {
                  OffsetDateTime filledAt, String rejectionReason) {
         this(orderId, account != null ? account.getAccountId() : null, instrument, side,
              quantity, status, submittedAt, acceptedAt, rejectedAt, filledAt, rejectionReason);
-        this.account = account;
     }
 
     /**
@@ -178,13 +173,8 @@ public class Order {
      * @return the accountId
      */
     public UUID getAccountId() {
-        return accountId != null ? accountId : (account != null ? account.getAccountId() : null);
+        return accountId;
     }
-    /**
-     * Returns the account entity associated with this order.
-     * @return the account
-     */
-    public Account getAccount() { return account; }
     /**
      * Returns the account number associated with this order.
      * @return the account number

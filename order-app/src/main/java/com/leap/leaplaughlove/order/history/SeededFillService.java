@@ -1,6 +1,8 @@
 package com.leap.leaplaughlove.order.history;
 
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -25,6 +27,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Books the fills of seeded orders, priced from market data at the moment each one filled.
@@ -56,6 +59,7 @@ public class SeededFillService {
     private static final int PRICE_SCALE = 4;
 
     private final OrderRepository orderRepository;
+    private final AccountRepository accountRepository;
     private final ExecutionRepository executionRepository;
     private final PositionMovementRepository positionMovementRepository;
     private final FillRecorder fillRecorder;
@@ -66,6 +70,7 @@ public class SeededFillService {
     private final int maxAttempts;
 
     public SeededFillService(OrderRepository orderRepository,
+                             AccountRepository accountRepository,
                              ExecutionRepository executionRepository,
                              PositionMovementRepository positionMovementRepository,
                              FillRecorder fillRecorder,
@@ -75,6 +80,7 @@ public class SeededFillService {
                              @Value("${trading.seeded-fills.retry-seconds:10}") long retrySeconds,
                              @Value("${trading.seeded-fills.max-attempts:60}") int maxAttempts) {
         this.orderRepository = orderRepository;
+        this.accountRepository = accountRepository;
         this.executionRepository = executionRepository;
         this.positionMovementRepository = positionMovementRepository;
         this.fillRecorder = fillRecorder;
@@ -129,7 +135,7 @@ public class SeededFillService {
         Set<String> blocked = new HashSet<>();
         int booked = 0;
         for (Order order : pending) {
-            String holding = order.getAccount().getAccountId() + "/" + order.getInstrument().getInstrumentId();
+            String holding = order.getAccountId() + "/" + order.getInstrument().getInstrumentId();
             if (blocked.contains(holding)) {
                 continue;
             }
@@ -179,9 +185,9 @@ public class SeededFillService {
             return false;
         }
 
-        // No request is behind this, so there is no caller's token to forward; sign as the order's
+        // no request is behind this, so there is no caller's token to forward; sign as the order's
         // owner, whose request this fill would have been.
-        fillRecorder.settle(order, execution, jwtService.generateToken(order.getAccount().getClientId(), null));
+        fillRecorder.settle(order, execution, jwtService.generateToken(getClientId(order), null));
 
         Boolean booked = transactionTemplate.execute(status -> {
             orderRepository.findByIdForUpdate(order.getOrderId());
@@ -203,9 +209,9 @@ public class SeededFillService {
     private Optional<BigDecimal> priceAt(Order order) {
         OffsetDateTime filledAt = order.getFilledAt();
         String symbol = order.getInstrument().getSymbol();
-        // Market data only needs a valid token; sign it as the order's owner, whose request
+        // market data only needs a valid token; sign it as the order's owner, whose request
         // this fill would have been.
-        String token = jwtService.generateToken(order.getAccount().getClientId(), null);
+        String token = jwtService.generateToken(getClientId(order), null);
         try {
             for (int width : CANDLE_WIDTHS) {
                 List<CandleClose> closes = priceHistoryClient.fetchCloses(
@@ -222,5 +228,11 @@ public class SeededFillService {
             log.debug("Market data unavailable pricing seeded fill for {}: {}", symbol, ex.getMessage());
         }
         return Optional.empty();
+    }
+
+    private UUID getClientId(Order order) {
+        return accountRepository.findById(order.getAccountId())
+                .map(Account::getClientId)
+                .orElseThrow(() -> new IllegalStateException("Account not found for order: " + order.getOrderId()));
     }
 }
