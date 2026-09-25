@@ -224,8 +224,14 @@ CREATE TABLE IF NOT EXISTS marketdata.instruments (
 -- historical backfill also stores 5m/1h/1d rollups so a year of history costs thousands of
 -- rows instead of the ~525k/instrument a 60s-only year would need. Readers always filter on
 -- one width, so the widths never mix inside a single series.
+--
+-- The natural key is the primary key, with no surrogate id: nothing looks a candle up by id,
+-- and every read - the history endpoint, the simulation's resume, the backfill's idempotency
+-- check - pins the instrument, then the width, then a time range, which this key's order
+-- serves directly (scanned backwards for newest-first). One index on the table's hottest
+-- insert path instead of three. See scripts/migrate-price-candles-key.sql for databases
+-- created before this layout.
 CREATE TABLE IF NOT EXISTS marketdata.price_candles (
-    candle_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     instrument_id UUID NOT NULL
         REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
     bucket_start TIMESTAMPTZ NOT NULL,
@@ -234,13 +240,13 @@ CREATE TABLE IF NOT EXISTS marketdata.price_candles (
     high NUMERIC(18,6) NOT NULL,
     low NUMERIC(18,6) NOT NULL,
     close NUMERIC(18,6) NOT NULL,
-    UNIQUE (instrument_id, bucket_start, bucket_seconds)
+    PRIMARY KEY (instrument_id, bucket_seconds, bucket_start)
 );
 
--- Backs the history endpoint's per-symbol, per-width, newest-first, time-bounded query.
--- bucket_seconds leads bucket_start because every read pins the width first.
-CREATE INDEX IF NOT EXISTS idx_price_candles_instrument_bucket
-    ON marketdata.price_candles (instrument_id, bucket_seconds, bucket_start DESC);
+-- Backs the retention prune, which deletes one width's candles older than a cutoff across every
+-- instrument. Without it each hourly prune reads the whole table to find the few rows aged out.
+CREATE INDEX IF NOT EXISTS idx_price_candles_width_bucket
+    ON marketdata.price_candles (bucket_seconds, bucket_start);
 
 -- Quote Feed Ingestion: one row per parsed+validated quote message accepted from the feed
 -- (today, a simulated wire format derived from the GBM tick stream; swappable for a real
