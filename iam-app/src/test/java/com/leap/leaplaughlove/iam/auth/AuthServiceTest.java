@@ -89,16 +89,17 @@ class AuthServiceTest {
     }
 
     @Test
-    void authenticate_5thFailedAttempt_LocksAccount() {
-        testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 4, null);
+    void authenticate_3rdFailedAttempt_LocksAccount() {
+        testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 2, null);
         when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
         when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.of(testCredentials));
         when(passwordEncoder.matches("wrongPassword", "$2a$10$hashedpassword")).thenReturn(false);
 
-        assertThrows(InvalidCredentialsException.class,
+        AccountLockedException ex = assertThrows(AccountLockedException.class,
                 () -> authService.authenticate("alice@example.com", "wrongPassword"));
 
-        assertEquals(5, testCredentials.getFailedAttempts());
+        assertTrue(ex.getMessage().contains("locked"));
+        assertEquals(3, testCredentials.getFailedAttempts());
         assertEquals("LOCKED", testClient.getStatus());
         verify(clientRepository).save(testClient);
         verify(credentialsRepository).save(testCredentials);

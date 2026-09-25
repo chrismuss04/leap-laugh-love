@@ -1,4 +1,4 @@
-import { Component, signal, EventEmitter, OnInit, Output } from '@angular/core';
+import { Component, EventEmitter, OnInit, Output, signal } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ClientRegistrationService, RegistrationRequest } from '../services/client-registration.service';
 import { COUNTRIES, CountryOption } from '../shared/countries';
@@ -47,9 +47,8 @@ export class CreateAccountComponent implements OnInit {
   @Output() switchToSignIn = new EventEmitter<void>();
 
   registrationForm!: FormGroup;
-  // Signals, not plain fields: these change inside HTTP callbacks, and the app is zoneless
-  // (Angular's default since v21), so a plain field change there isn't rendered until some
-  // unrelated event - like clicking into an input - happens to trigger change detection.
+  // Signals, because the app runs zoneless: a plain field set in an HTTP callback wouldn't
+  // re-render until some unrelated event happened to trigger change detection.
   readonly isLoading = signal(false);
   readonly errorMessage = signal('');
   readonly successMessage = signal('');

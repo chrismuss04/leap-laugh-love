@@ -18,7 +18,7 @@ import java.time.OffsetDateTime;
 @Service
 public class AuthService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
+    private static final int MAX_FAILED_ATTEMPTS = 3;
     private static final String LOCKED_STATUS = "LOCKED";
 
     private final ClientRepository clientRepository;
@@ -51,9 +51,9 @@ public class AuthService {
      * @throws AccountLockedException if the account is locked due to too many failed login attempts
      * @return a LoginResponse containing the authentication token and related information
      */
-    // A wrong password is answered by throwing, which would otherwise roll back the failed-attempt
-    // count and lock recorded just before it - and the account would never lock.
-    @Transactional(noRollbackFor = InvalidCredentialsException.class)
+    // Failed logins throw after saving the incremented attempt count and any lock, so those
+    // exceptions must not roll the transaction back or the lockout would never persist.
+    @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountLockedException.class})
     public LoginResponse authenticate(String email, String rawPassword) {
         Client client = clientRepository.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
@@ -67,11 +67,12 @@ public class AuthService {
 
         if (!passwordEncoder.matches(rawPassword, creds.getPasswordHash())) {
             creds.incrementFailedAttempts();
+            credentialsRepository.save(creds);
             if (creds.getFailedAttempts() >= MAX_FAILED_ATTEMPTS) {
                 client.setStatus(LOCKED_STATUS);
                 clientRepository.save(client);
+                throw new AccountLockedException("Account is locked due to too many failed login attempts");
             }
-            credentialsRepository.save(creds);
             throw new InvalidCredentialsException();
         }
 

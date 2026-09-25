@@ -1,4 +1,4 @@
-import { Component, signal, OnInit } from '@angular/core';
+import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 
@@ -11,9 +11,8 @@ import { AuthService } from '../services/auth.service';
 export class SignInComponent implements OnInit {
   // Form and state variables
   signinForm!: FormGroup;
-  // Signals, not plain fields: these change inside HTTP callbacks, and the app is zoneless
-  // (Angular's default since v21), so a plain field change there isn't rendered until some
-  // unrelated event - like clicking into an input - happens to trigger change detection.
+  // Signals, because the app runs zoneless: a plain field set in an HTTP callback wouldn't
+  // re-render until some unrelated event happened to trigger change detection.
   readonly isLoading = signal(false);
   readonly errorMessage = signal('');
   readonly successMessage = signal('');
