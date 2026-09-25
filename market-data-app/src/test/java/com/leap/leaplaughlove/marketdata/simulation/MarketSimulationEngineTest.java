@@ -38,6 +38,8 @@ class MarketSimulationEngineTest {
     @Mock
     private ApplicationEventPublisher eventPublisher;
 
+    private static final List<Integer> WIDTHS = List.of(60, 300, 3600, 86400);
+
     private MarketSimulationEngine engine;
 
     @BeforeEach
@@ -47,7 +49,7 @@ class MarketSimulationEngineTest {
                 new BigDecimal("150.00"), new BigDecimal("0.07"), new BigDecimal("0.25"), 42L, true);
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
 
-        engine = new MarketSimulationEngine(instrumentRepository, candleRepository, eventPublisher, 1000L);
+        engine = new MarketSimulationEngine(instrumentRepository, candleRepository, eventPublisher, 1000L, WIDTHS);
         engine.initialize();
     }
 
@@ -65,7 +67,7 @@ class MarketSimulationEngineTest {
     void testInitializeResumesFromLatestCandleClose() {
         PriceCandle latest = mock(PriceCandle.class);
         when(latest.getClose()).thenReturn(new BigDecimal("182.520000"));
-        when(candleRepository.findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc("AAPL"))
+        when(candleRepository.findNewest("AAPL", WIDTHS))
                 .thenReturn(Optional.of(latest));
 
         engine.initialize();

@@ -12,7 +12,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.test.context.jdbc.Sql;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -39,7 +38,7 @@ class PriceHistoryBackfillIntegrationTest {
     private PriceCandleRepository candleRepository;
 
     @Autowired
-    private TransactionTemplate transactionTemplate;
+    private PriceCandleBulkWriter bulkWriter;
 
     @Autowired
     private ApplicationEventPublisher eventPublisher;
@@ -51,7 +50,7 @@ class PriceHistoryBackfillIntegrationTest {
         // The backfill bean is disabled in the test profile, because as an ApplicationRunner it
         // would otherwise run before @Sql creates these tables. Build it here instead.
         backfill = new PriceHistoryBackfill(
-                instrumentRepository, candleRepository, transactionTemplate,
+                instrumentRepository, candleRepository, bulkWriter,
                 60L, List.of("3600:2", "60:1"));
     }
 
@@ -155,12 +154,12 @@ class PriceHistoryBackfillIntegrationTest {
                 .findFirst()
                 .orElseThrow();
         BigDecimal lastClose = candleRepository
-                .findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc("AAPL")
+                .findNewest("AAPL", List.of(60, 300, 3600, 86400))
                 .orElseThrow()
                 .getClose();
 
         MarketSimulationEngine engine = new MarketSimulationEngine(
-                instrumentRepository, candleRepository, eventPublisher, 1000L);
+                instrumentRepository, candleRepository, eventPublisher, 1000L, List.of(60, 300, 3600, 86400));
         engine.initialize();
 
         BigDecimal resumed = engine.latest("AAPL").orElseThrow().price();

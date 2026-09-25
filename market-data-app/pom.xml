@@ -41,7 +41,7 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <scope>runtime</scope>
+            <!-- compile, not runtime: PriceCandleBulkWriter uses the driver's COPY API -->
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

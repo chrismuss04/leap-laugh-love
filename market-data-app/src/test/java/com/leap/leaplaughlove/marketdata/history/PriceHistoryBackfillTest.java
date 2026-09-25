@@ -9,7 +9,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -18,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -27,7 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -44,7 +41,7 @@ class PriceHistoryBackfillTest {
     private PriceCandleRepository candleRepository;
 
     @Mock
-    private TransactionTemplate transactionTemplate;
+    private PriceCandleBulkWriter bulkWriter;
 
     private SimulatedInstrument aapl;
 
@@ -55,28 +52,16 @@ class PriceHistoryBackfillTest {
                 new BigDecimal("150.00"), new BigDecimal("0.07"), new BigDecimal("0.25"), 42L, true);
     }
 
-    /**
-     * Runs the callback the backfill hands to the transaction template, so the save it performs
-     * is observable on the mocked repository.
-     */
-    @SuppressWarnings("unchecked")
-    private void runTransactionsInline() {
-        doAnswer(invocation -> {
-            invocation.getArgument(0, Consumer.class).accept(null);
-            return null;
-        }).when(transactionTemplate).executeWithoutResult(any());
-    }
-
     @SuppressWarnings("unchecked")
     private List<PriceCandle> captureSavedCandles() {
         ArgumentCaptor<List<PriceCandle>> captor = ArgumentCaptor.forClass(List.class);
-        verify(candleRepository).saveAll(captor.capture());
+        verify(bulkWriter).write(captor.capture());
         return captor.getValue();
     }
 
     private PriceHistoryBackfill backfillWith(String tiers) {
         return new PriceHistoryBackfill(
-                instrumentRepository, candleRepository, transactionTemplate, 60L, List.of(tiers.split(",")));
+                instrumentRepository, candleRepository, bulkWriter, 60L, List.of(tiers.split(",")));
     }
 
     @Test
@@ -84,7 +69,6 @@ class PriceHistoryBackfillTest {
     void testGeneratesEveryConfiguredWidth() {
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
         when(candleRepository.existsByInstrument_InstrumentId(aapl.getInstrumentId())).thenReturn(false);
-        runTransactionsInline();
 
         backfillWith("3600:2,60:1").run(null);
 
@@ -106,7 +90,6 @@ class PriceHistoryBackfillTest {
     void testCandlesAreWellFormed() {
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
         when(candleRepository.existsByInstrument_InstrumentId(aapl.getInstrumentId())).thenReturn(false);
-        runTransactionsInline();
 
         backfillWith("3600:1").run(null);
 
@@ -127,7 +110,6 @@ class PriceHistoryBackfillTest {
     void testBucketsAreAlignedAndStopBeforeNow() {
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
         when(candleRepository.existsByInstrument_InstrumentId(aapl.getInstrumentId())).thenReturn(false);
-        runTransactionsInline();
 
         backfillWith("3600:1").run(null);
 
@@ -152,12 +134,11 @@ class PriceHistoryBackfillTest {
 
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl, sameSeed, otherSeed));
         when(candleRepository.existsByInstrument_InstrumentId(any())).thenReturn(false);
-        runTransactionsInline();
 
         backfillWith("3600:1").run(null);
 
         ArgumentCaptor<List<PriceCandle>> captor = ArgumentCaptor.forClass(List.class);
-        verify(candleRepository, times(3)).saveAll(captor.capture());
+        verify(bulkWriter, times(3)).write(captor.capture());
         List<List<BigDecimal>> closes = captor.getAllValues().stream()
                 .map(batch -> batch.stream()
                         .sorted(Comparator.comparing(PriceCandle::getBucketStart))
@@ -181,8 +162,7 @@ class PriceHistoryBackfillTest {
 
         backfillWith("3600:1").run(null);
 
-        verify(candleRepository, never()).saveAll(any());
-        verify(transactionTemplate, never()).executeWithoutResult(any());
+        verify(bulkWriter, never()).write(any());
     }
 
     @Test

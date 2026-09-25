@@ -299,13 +299,13 @@
   <span class="error-message" *ngIf="isFieldInvalid('agreeToTerms')">You must accept the terms to continue</span>
 
   <!-- Submit -->
-  <button type="submit" class="btn-primary" [disabled]="isLoading">
-    <span *ngIf="!isLoading">Submit application</span>
-    <span *ngIf="isLoading" class="loading-spinner"></span>
+  <button type="submit" class="btn-primary" [disabled]="isLoading()">
+    <span *ngIf="!isLoading()">Submit application</span>
+    <span *ngIf="isLoading()" class="loading-spinner"></span>
   </button>
 
-  <div class="error-alert" *ngIf="errorMessage">{{ errorMessage }}</div>
-  <div class="success-alert" *ngIf="successMessage">{{ successMessage }}</div>
+  <div class="error-alert" *ngIf="errorMessage()">{{ errorMessage() }}</div>
+  <div class="success-alert" *ngIf="successMessage()">{{ successMessage() }}</div>
 </form>
 
 <div class="auth-footer-link">

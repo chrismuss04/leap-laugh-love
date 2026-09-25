@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,7 +16,7 @@ import java.util.UUID;
  * Interface to represent the repository for OHLC price candles in the market data system.
  * This repository provides methods to perform CRUD operations and custom queries on candles.
  */
-public interface PriceCandleRepository extends JpaRepository<PriceCandle, UUID> {
+public interface PriceCandleRepository extends JpaRepository<PriceCandle, PriceCandle.Key> {
 
     /**
      * Finds a newest-first page of candles for the given instrument symbol whose bucket
@@ -33,15 +34,36 @@ public interface PriceCandleRepository extends JpaRepository<PriceCandle, UUID> 
             String symbol, int bucketSeconds, OffsetDateTime from, OffsetDateTime to, Pageable pageable);
 
     /**
-     * Returns the most recent candle for the given symbol, at any bucket width. Used to resume
-     * the simulation from where it left off instead of restarting at the instrument's seed
-     * price, which would put a discontinuity in the price series at every application restart.
-     * Ties on bucket start are broken towards the narrowest bucket, whose close is the latest
-     * price in that instant.
+     * Returns the most recent candle for the given symbol at one bucket width - a single
+     * backwards step along the primary key.
      * @param symbol the instrument symbol
+     * @param bucketSeconds the bucket width, in seconds
+     * @return the newest candle of that width, or empty if there is none
+     */
+    Optional<PriceCandle> findFirstByInstrument_SymbolAndBucketSecondsOrderByBucketStartDesc(
+            String symbol, int bucketSeconds);
+
+    /**
+     * Returns the most recent candle for the given symbol across the given bucket widths. Used
+     * to resume the simulation from where it left off instead of restarting at the instrument's
+     * seed price, which would put a discontinuity in the price series at every application
+     * restart. Ties on bucket start are broken towards the narrowest bucket, whose close is the
+     * latest price in that instant.
+     *
+     * <p>Asks for each width's newest candle separately: the primary key leads with the width
+     * after the instrument, so "newest at any width" as one query would read every candle the
+     * instrument has.
+     * @param symbol the instrument symbol
+     * @param bucketSeconds the bucket widths to consider
      * @return the newest candle for the symbol, or empty if it has none yet
      */
-    Optional<PriceCandle> findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc(String symbol);
+    default Optional<PriceCandle> findNewest(String symbol, Collection<Integer> bucketSeconds) {
+        return bucketSeconds.stream()
+                .sorted()
+                .map(width -> findFirstByInstrument_SymbolAndBucketSecondsOrderByBucketStartDesc(symbol, width))
+                .flatMap(Optional::stream)
+                .reduce((newest, candle) -> candle.getBucketStart().isAfter(newest.getBucketStart()) ? candle : newest);
+    }
 
     /**
      * Reports whether any candle already exists for the given instrument, at any bucket width.

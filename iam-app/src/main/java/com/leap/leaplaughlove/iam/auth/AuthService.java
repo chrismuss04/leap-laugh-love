@@ -51,7 +51,9 @@ public class AuthService {
      * @throws AccountLockedException if the account is locked due to too many failed login attempts
      * @return a LoginResponse containing the authentication token and related information
      */
-    @Transactional
+    // A wrong password is answered by throwing, which would otherwise roll back the failed-attempt
+    // count and lock recorded just before it - and the account would never lock.
+    @Transactional(noRollbackFor = InvalidCredentialsException.class)
     public LoginResponse authenticate(String email, String rawPassword) {
         Client client = clientRepository.findByEmail(email)
                 .orElseThrow(InvalidCredentialsException::new);
