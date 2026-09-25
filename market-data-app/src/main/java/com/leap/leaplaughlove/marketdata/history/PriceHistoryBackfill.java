@@ -10,7 +10,6 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -67,22 +66,22 @@ public class PriceHistoryBackfill implements ApplicationRunner {
 
     private final SimulatedInstrumentRepository instrumentRepository;
     private final PriceCandleRepository candleRepository;
-    private final TransactionTemplate transactionTemplate;
+    private final PriceCandleBulkWriter bulkWriter;
     private final long stepSeconds;
     private final List<CandleTier> tiers;
 
     /**
      * Creates a new PriceHistoryBackfill.
      * @param instrumentRepository repository used to look up the instruments to backfill
-     * @param candleRepository repository used to check for and persist candles
-     * @param transactionTemplate template used to write each instrument in one transaction
+     * @param candleRepository repository used to check for existing candles
+     * @param bulkWriter writer that stores each instrument's candles in one transaction
      * @param stepSeconds the resolution, in seconds, of the underlying simulated walk
      * @param tierSpec the bucket widths to emit and how far back each reaches, as
      *                 {@code bucketSeconds:days} pairs
      */
     public PriceHistoryBackfill(SimulatedInstrumentRepository instrumentRepository,
                                  PriceCandleRepository candleRepository,
-                                 TransactionTemplate transactionTemplate,
+                                 PriceCandleBulkWriter bulkWriter,
                                  @Value("${marketdata.history.backfill.step-seconds:60}") long stepSeconds,
                                  @Value("${marketdata.history.backfill.tiers:86400:365,3600:90,300:7,60:2}")
                                  List<String> tierSpec) {
@@ -91,7 +90,7 @@ public class PriceHistoryBackfill implements ApplicationRunner {
         }
         this.instrumentRepository = instrumentRepository;
         this.candleRepository = candleRepository;
-        this.transactionTemplate = transactionTemplate;
+        this.bulkWriter = bulkWriter;
         this.stepSeconds = stepSeconds;
         this.tiers = parseTiers(tierSpec, stepSeconds);
     }
@@ -108,7 +107,7 @@ public class PriceHistoryBackfill implements ApplicationRunner {
                 continue;
             }
             List<PriceCandle> candles = generate(instrument);
-            transactionTemplate.executeWithoutResult(status -> candleRepository.saveAll(candles));
+            bulkWriter.write(candles);
             backfilled++;
             log.info("Backfilled {} candles of price history for {}", candles.size(), instrument.getSymbol());
         }

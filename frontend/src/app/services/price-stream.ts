@@ -17,6 +17,12 @@ export type StreamStatus = 'idle' | 'connecting' | 'live' | 'reconnecting';
 export class PriceStreamService implements OnDestroy {
   private static readonly FLUSH_MS = 400;
   private static readonly MAX_BACKOFF_MS = 30_000;
+  /**
+   * Every instrument ticks once a second, so this long without a byte means the connection is
+   * dead even though it never closed - e.g. market-data-app restarted and the dev-server proxy
+   * left the browser's side open. Without this the header kept saying "Live" over frozen prices.
+   */
+  private static readonly STALL_MS = 10_000;
 
   /** Latest live price per symbol. */
   readonly prices = signal<Record<string, number>>({});
@@ -80,6 +86,13 @@ export class PriceStreamService implements OnDestroy {
   }
 
   private async read(url: string, token: string, controller: AbortController): Promise<void> {
+    let lastDataAt = Date.now();
+    const watchdog = setInterval(() => {
+      if (Date.now() - lastDataAt > PriceStreamService.STALL_MS && this.controller === controller) {
+        controller.abort();
+        this.scheduleReconnect();
+      }
+    }, 2_000);
     try {
       const response = await fetch(url, {
         headers: { Authorization: `Bearer ${token}`, Accept: 'text/event-stream' },
@@ -102,6 +115,7 @@ export class PriceStreamService implements OnDestroy {
         if (done) {
           break;
         }
+        lastDataAt = Date.now();
         buffer += value;
         const frames = buffer.split(/\r?\n\r?\n/);
         buffer = frames.pop() ?? '';
@@ -113,6 +127,8 @@ export class PriceStreamService implements OnDestroy {
         return;
       }
       this.scheduleReconnect();
+    } finally {
+      clearInterval(watchdog);
     }
   }
 

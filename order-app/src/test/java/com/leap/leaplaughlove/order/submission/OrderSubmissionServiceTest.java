@@ -57,6 +57,8 @@ class OrderSubmissionServiceTest {
     private UUID accountId;
     private Instrument instrument;
     private AccountValidationDto validationDto;
+    /** The order as last saved, which findById serves back like the database would. */
+    private Order storedOrder;
 
     @BeforeEach
     void setUp() {
@@ -77,7 +79,11 @@ class OrderSubmissionServiceTest {
         validationDto = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-TEST-01");
 
         when(instrumentRepository.findBySymbol("AAPL")).thenReturn(Optional.of(instrument));
-        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
+            storedOrder = invocation.getArgument(0);
+            return storedOrder;
+        });
+        lenient().when(orderRepository.findById(any())).thenAnswer(invocation -> Optional.ofNullable(storedOrder));
         when(executionRepository.saveAndFlush(any(Execution.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -194,11 +200,8 @@ class OrderSubmissionServiceTest {
     }
 
     private void assertOrderRejectedForSettlement() {
-        ArgumentCaptor<Order> orders = ArgumentCaptor.forClass(Order.class);
-        verify(orderRepository, atLeastOnce()).saveAndFlush(orders.capture());
-        Order last = orders.getAllValues().get(orders.getAllValues().size() - 1);
-        assertEquals(Order.Status.REJECTED, last.getStatus());
-        assertTrue(last.getRejectionReason().startsWith("Settlement failed: "));
+        assertEquals(Order.Status.REJECTED, storedOrder.getStatus());
+        assertTrue(storedOrder.getRejectionReason().startsWith("Settlement failed: "));
         verify(positionMovementRepository, never()).save(any(PositionMovement.class));
     }
 

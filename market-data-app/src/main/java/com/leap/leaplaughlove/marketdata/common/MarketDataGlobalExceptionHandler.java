@@ -5,8 +5,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.async.AsyncRequestNotUsableException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.util.DisconnectedClientHelper;
 
+import java.io.IOException;
 import java.util.Map;
 
 /**
@@ -15,6 +18,24 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class MarketDataGlobalExceptionHandler {
+
+    private static final DisconnectedClientHelper DISCONNECTED_CLIENTS =
+            new DisconnectedClientHelper(MarketDataGlobalExceptionHandler.class.getName());
+
+    /**
+     * Quietly drops a write that failed because the client went away - routine for the price
+     * stream, whose subscribers disconnect whenever a tab closes, the frontend reconnects with a
+     * new symbol set, or this service shuts down. Unhandled, each one reached the container and
+     * was logged as an ERROR with a full stack trace. Any other I/O failure is rethrown.
+     * @param ex the exception raised while writing the response
+     * @throws Exception the same exception, if it wasn't a client disconnect
+     */
+    @ExceptionHandler({IOException.class, AsyncRequestNotUsableException.class})
+    public void handleClientDisconnect(Exception ex) throws Exception {
+        if (!DISCONNECTED_CLIENTS.checkAndLogClientDisconnectedException(ex)) {
+            throw ex;
+        }
+    }
 
     /**
      * Handles a {@link ResponseStatusException}, returning its status and reason as JSON.

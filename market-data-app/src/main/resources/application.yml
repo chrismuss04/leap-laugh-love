@@ -6,6 +6,11 @@ spring:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
     username: ${SPRING_DATASOURCE_USERNAME:paysprint}
     password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+    hikari:
+      data-source-properties:
+        # Has the Postgres driver send a JDBC batch as multi-row INSERTs instead of one
+        # statement per row, so the candle flush's saveAll really is one round trip per batch.
+        reWriteBatchedInserts: true
   jpa:
     hibernate:
       ddl-auto: none

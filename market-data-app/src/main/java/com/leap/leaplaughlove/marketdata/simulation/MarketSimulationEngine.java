@@ -48,6 +48,7 @@ public class MarketSimulationEngine {
     private final PriceCandleRepository candleRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final long tickIntervalMs;
+    private final List<Integer> candleBucketSeconds;
 
     private final Map<String, InstrumentSimState> statesBySymbol = new ConcurrentHashMap<>();
 
@@ -57,15 +58,19 @@ public class MarketSimulationEngine {
      * @param candleRepository repository used to resume each instrument's last persisted price
      * @param eventPublisher publisher used to broadcast {@link PriceTickEvent}s
      * @param tickIntervalMs the interval, in milliseconds, between simulation ticks
+     * @param candleBucketSeconds the candle widths, in seconds, searched for the price to resume from
      */
     public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
                                    PriceCandleRepository candleRepository,
                                    ApplicationEventPublisher eventPublisher,
-                                   @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs) {
+                                   @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs,
+                                   @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}")
+                                   List<Integer> candleBucketSeconds) {
         this.instrumentRepository = instrumentRepository;
         this.candleRepository = candleRepository;
         this.eventPublisher = eventPublisher;
         this.tickIntervalMs = tickIntervalMs;
+        this.candleBucketSeconds = List.copyOf(candleBucketSeconds);
     }
 
     /**
@@ -85,7 +90,7 @@ public class MarketSimulationEngine {
         for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {
             RandomGenerator random = new Random(instrument.getRngSeed());
             BigDecimal startingPrice = candleRepository
-                    .findFirstByInstrument_SymbolOrderByBucketStartDescBucketSecondsAsc(instrument.getSymbol())
+                    .findNewest(instrument.getSymbol(), candleBucketSeconds)
                     .map(PriceCandle::getClose)
                     .orElseGet(instrument::getInitialPrice);
             PriceState initialState = new PriceState(

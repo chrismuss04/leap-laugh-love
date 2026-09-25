@@ -1,4 +1,4 @@
-import { Component, EventEmitter, OnInit, Output } from '@angular/core';
+import { Component, signal, EventEmitter, OnInit, Output } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ClientRegistrationService, RegistrationRequest } from '../services/client-registration.service';
 import { COUNTRIES, CountryOption } from '../shared/countries';
@@ -47,9 +47,12 @@ export class CreateAccountComponent implements OnInit {
   @Output() switchToSignIn = new EventEmitter<void>();
 
   registrationForm!: FormGroup;
-  isLoading = false;
-  errorMessage = '';
-  successMessage = '';
+  // Signals, not plain fields: these change inside HTTP callbacks, and the app is zoneless
+  // (Angular's default since v21), so a plain field change there isn't rendered until some
+  // unrelated event - like clicking into an input - happens to trigger change detection.
+  readonly isLoading = signal(false);
+  readonly errorMessage = signal('');
+  readonly successMessage = signal('');
   showPassword = false;
   showConfirmPassword = false;
 
@@ -136,13 +139,13 @@ export class CreateAccountComponent implements OnInit {
   onSubmit(): void {
     if (this.registrationForm.invalid) {
       this.registrationForm.markAllAsTouched();
-      this.errorMessage = 'Please fill in all required fields correctly.';
+      this.errorMessage.set('Please fill in all required fields correctly.');
       return;
     }
 
-    this.isLoading = true;
-    this.errorMessage = '';
-    this.successMessage = '';
+    this.isLoading.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
 
     const v = this.registrationForm.value;
     const request: RegistrationRequest = {
@@ -164,13 +167,13 @@ export class CreateAccountComponent implements OnInit {
 
     this.clientRegistrationService.register(request).subscribe({
       next: () => {
-        this.isLoading = false;
-        this.successMessage = 'Application submitted! Redirecting to sign in...';
+        this.isLoading.set(false);
+        this.successMessage.set('Application submitted! Redirecting to sign in...');
         setTimeout(() => this.switchToSignIn.emit(), 1500);
       },
       error: (error) => {
-        this.isLoading = false;
-        this.errorMessage = error.error?.message || error.error || 'Submission failed. Please try again.';
+        this.isLoading.set(false);
+        this.errorMessage.set(error.error?.message || error.error || 'Submission failed. Please try again.');
       }
     });
   }

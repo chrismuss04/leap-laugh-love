@@ -108,9 +108,11 @@ public class OrderSubmissionService {
         } catch (RuntimeException ex) {
             // The execution is immutable, so it stays as the record of the attempt; the order
             // says it never filled.
+            String reason = "Settlement failed: " + ex.getMessage();
+            OffsetDateTime rejectedAt = OffsetDateTime.now();
             transactionTemplate.executeWithoutResult(status -> {
-                order.markRejected("Settlement failed: " + ex.getMessage(), OffsetDateTime.now());
-                orderRepository.saveAndFlush(order);
+                order.markRejected(reason, rejectedAt);
+                storedCopy(order).markRejected(reason, rejectedAt);
             });
             throw ex;
         }
@@ -118,11 +120,25 @@ public class OrderSubmissionService {
         transactionTemplate.executeWithoutResult(status -> {
             fillRecorder.recordPositionMovement(order, execution);
             order.markFilled(execution.getExecutedAt());
-            orderRepository.saveAndFlush(order);
+            storedCopy(order).markFilled(execution.getExecutedAt());
         });
 
         BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;
         return toResponse(order, execution, balanceAfter);
+    }
+
+    /**
+     * Loads the order's row in the current transaction, so a status change made after settling
+     * is written by dirty checking. Saving the order itself would merge a copy detached when the
+     * first transaction committed, and its account association - never loaded, as orders are
+     * created by account ID - would be copied over the stored one, which Hibernate warns it
+     * can't update (HHH000502).
+     * @param order the order, committed by an earlier transaction
+     * @return the managed order
+     */
+    private Order storedCopy(Order order) {
+        return orderRepository.findById(order.getOrderId())
+                .orElseThrow(() -> new IllegalStateException("Order " + order.getOrderId() + " is not stored"));
     }
 
     /**

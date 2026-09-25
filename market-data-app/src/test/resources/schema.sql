@@ -2,7 +2,7 @@
 -- any bean queries them: the simulation engine, candle accumulator and quote ingestion service
 -- all read on startup, which is earlier than an @Sql script can run.
 --
--- Kept in step with db/leap_laugh_love_schema.sql. The composite unique key below in particular
+-- Kept in step with db/leap_laugh_love_schema.sql. The composite primary key below in particular
 -- is the thing PriceHistoryBackfillIntegrationTest exercises, so it must match the real one.
 CREATE SCHEMA IF NOT EXISTS marketdata;
 
@@ -19,7 +19,6 @@ CREATE TABLE IF NOT EXISTS marketdata.instruments (
 );
 
 CREATE TABLE IF NOT EXISTS marketdata.price_candles (
-    candle_id UUID PRIMARY KEY,
     instrument_id UUID NOT NULL
         REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
     bucket_start TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -28,7 +27,7 @@ CREATE TABLE IF NOT EXISTS marketdata.price_candles (
     high NUMERIC(18,6) NOT NULL,
     low NUMERIC(18,6) NOT NULL,
     close NUMERIC(18,6) NOT NULL,
-    UNIQUE (instrument_id, bucket_start, bucket_seconds)
+    PRIMARY KEY (instrument_id, bucket_seconds, bucket_start)
 );
 
 CREATE TABLE IF NOT EXISTS marketdata.quotes (

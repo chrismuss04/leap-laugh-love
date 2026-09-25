@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, signal, OnInit } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { AuthService } from '../services/auth.service';
 
@@ -11,9 +11,12 @@ import { AuthService } from '../services/auth.service';
 export class SignInComponent implements OnInit {
   // Form and state variables
   signinForm!: FormGroup;
-  isLoading: boolean = false;
-  errorMessage: string = '';
-  successMessage: string = '';
+  // Signals, not plain fields: these change inside HTTP callbacks, and the app is zoneless
+  // (Angular's default since v21), so a plain field change there isn't rendered until some
+  // unrelated event - like clicking into an input - happens to trigger change detection.
+  readonly isLoading = signal(false);
+  readonly errorMessage = signal('');
+  readonly successMessage = signal('');
   showPassword: boolean = false;
   activeTab: 'signin' | 'create-account' = 'signin';
 
@@ -42,21 +45,21 @@ export class SignInComponent implements OnInit {
    */
   onSignIn(): void {
     if (this.signinForm.invalid) {
-      this.errorMessage = 'Please fill in all required fields correctly.';
+      this.errorMessage.set('Please fill in all required fields correctly.');
       return;
     }
 
-    this.isLoading = true;
-    this.errorMessage = '';
-    this.successMessage = '';
+    this.isLoading.set(true);
+    this.errorMessage.set('');
+    this.successMessage.set('');
 
     const { email, password, rememberMe } = this.signinForm.value;
 
     // Call authentication service
     this.authService.login(email, password).subscribe({
       next: (response) => {
-        this.isLoading = false;
-        this.successMessage = 'Sign in successful! Redirecting...';
+        this.isLoading.set(false);
+        this.successMessage.set('Sign in successful! Redirecting...');
         
         // Store token if remember me is checked
         if (rememberMe) {
@@ -69,8 +72,8 @@ export class SignInComponent implements OnInit {
         }, 1000);
       },
       error: (error) => {
-        this.isLoading = false;
-        this.errorMessage = error.error?.message || 'Sign in failed. Please try again.';
+        this.isLoading.set(false);
+        this.errorMessage.set(error.error?.message || 'Sign in failed. Please try again.');
       }
     });
   }
