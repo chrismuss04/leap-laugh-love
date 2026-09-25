@@ -20,7 +20,7 @@ public class GlobalExceptionHandler {
     /**
      * Constructs a new GlobalExceptionHandler instance.
      */
-    protected GlobalExceptionHandler() {
+    public GlobalExceptionHandler() {
     }
 
     /**
