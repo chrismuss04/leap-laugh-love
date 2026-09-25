@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.submission;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.AccountValidationDto;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
@@ -65,6 +66,7 @@ class OrderSubmissionIntegrationTest {
     @Autowired private OrderRepository orderRepository;
     @Autowired private ExecutionRepository executionRepository;
     @Autowired private PositionMovementRepository positionMovementRepository;
+    @Autowired private AccountRepository accountRepository;
     @Autowired private FillRecorder fillRecorder;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
@@ -296,7 +298,7 @@ class OrderSubmissionIntegrationTest {
         entityManager.clear();
         // A negative grace period puts the cutoff in the future, so the just-submitted order counts as stuck.
         PendingFillRecovery recovery = new PendingFillRecovery(
-                orderRepository, executionRepository, fillRecorder, jwtService, transactionTemplate, -60);
+                orderRepository, executionRepository, accountRepository, fillRecorder, jwtService, transactionTemplate, -60);
 
         recovery.run();
 
@@ -309,6 +311,9 @@ class OrderSubmissionIntegrationTest {
         // A second run finds nothing left to do.
         recovery.run();
         verify(accountClient, times(1)).settleOrderAs(eq(accountOwnerId), any(SettlementRequest.class), any());
+    }
+
+    @Test
     @DisplayName("Verify OrderRepository custom queries execute successfully")
     void testOrderRepositoryQueries() {
         UUID clientId = UUID.fromString(CLIENT_OWNER_ID);

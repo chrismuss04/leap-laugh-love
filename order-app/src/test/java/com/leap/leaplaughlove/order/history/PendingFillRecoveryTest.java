@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.history;
 
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
@@ -49,6 +50,7 @@ class PendingFillRecoveryTest {
 
     @Mock private OrderRepository orderRepository;
     @Mock private ExecutionRepository executionRepository;
+    @Mock private AccountRepository accountRepository;
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private AccountClient accountClient;
     @Mock private JwtService jwtService;
@@ -56,14 +58,15 @@ class PendingFillRecoveryTest {
     private PendingFillRecovery recovery;
     private Order order;
     private Execution execution;
+    private Account account;
 
     @BeforeEach
     void setUp() {
         FillRecorder fillRecorder = new FillRecorder(executionRepository, positionMovementRepository, accountClient);
-        recovery = new PendingFillRecovery(orderRepository, executionRepository, fillRecorder, jwtService,
+        recovery = new PendingFillRecovery(orderRepository, executionRepository, accountRepository, fillRecorder, jwtService,
                 new TransactionTemplate(mock(PlatformTransactionManager.class)), 30);
 
-        Account account = new Account(UUID.randomUUID(), UUID.randomUUID(), "ACC-TEST-01", "ACTIVE", "USD", true,
+        account = new Account(UUID.randomUUID(), UUID.randomUUID(), "ACC-TEST-01", "ACTIVE", "USD", true,
                 OffsetDateTime.now().minusDays(30));
         Instrument aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         OffsetDateTime acceptedAt = OffsetDateTime.now().minusMinutes(5);
@@ -73,6 +76,7 @@ class PendingFillRecoveryTest {
                 "Executed at market price", acceptedAt);
 
         when(jwtService.generateToken(any(), any())).thenReturn("token");
+        when(accountRepository.findById(account.getAccountId())).thenReturn(Optional.of(account));
         when(orderRepository.findAcceptedWithFilledExecution(any())).thenReturn(List.of(order));
         when(orderRepository.findByIdForUpdate(order.getOrderId())).thenReturn(Optional.of(order));
         when(executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED))
@@ -92,7 +96,7 @@ class PendingFillRecoveryTest {
         ArgumentCaptor<PositionMovement> movement = ArgumentCaptor.forClass(PositionMovement.class);
         verify(positionMovementRepository).save(movement.capture());
         assertEquals(10L, movement.getValue().getQuantityDelta());
-        verify(jwtService).generateToken(order.getAccount().getClientId(), null);
+        verify(jwtService).generateToken(account.getClientId(), null);
     }
 
     @Test

@@ -1,6 +1,8 @@
 package com.leap.leaplaughlove.order.history;
 
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -16,6 +18,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Finishes booking live fills that a partial platform failure left part-way, so the trade record
@@ -41,6 +44,7 @@ public class PendingFillRecovery {
 
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
+    private final AccountRepository accountRepository;
     private final FillRecorder fillRecorder;
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
@@ -48,12 +52,14 @@ public class PendingFillRecovery {
 
     public PendingFillRecovery(OrderRepository orderRepository,
                                ExecutionRepository executionRepository,
+                               AccountRepository accountRepository,
                                FillRecorder fillRecorder,
                                JwtService jwtService,
                                TransactionTemplate transactionTemplate,
                                @Value("${trading.fill-recovery.grace-seconds:30}") long graceSeconds) {
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
+        this.accountRepository = accountRepository;
         this.fillRecorder = fillRecorder;
         this.jwtService = jwtService;
         this.transactionTemplate = transactionTemplate;
@@ -109,7 +115,7 @@ public class PendingFillRecovery {
         try {
             // No request is behind this, so there is no caller's token to forward; sign as the
             // order's owner, whose request this fill was.
-            fillRecorder.settle(order, execution, jwtService.generateToken(order.getAccount().getClientId(), null));
+            fillRecorder.settle(order, execution, jwtService.generateToken(clientIdOf(order), null));
         } catch (RuntimeException ex) {
             if (!FillRecorder.isRefused(ex)) {
                 log.warn("Order {} is still waiting to settle; will retry: {}", order.getOrderId(), ex.getMessage());
@@ -129,5 +135,17 @@ public class PendingFillRecovery {
                 .ifPresent(locked -> fillRecorder.completeFill(locked, execution)));
         log.info("Order {} settled and recorded as FILLED on recovery", order.getOrderId());
         return true;
+    }
+
+    /**
+     * The client who owns the order's account. Looked up here, inside the settle attempt, so an
+     * account that can't be read yet leaves the fill pending rather than rejecting it.
+     * @param order the order
+     * @return its account's client ID
+     */
+    private UUID clientIdOf(Order order) {
+        return accountRepository.findById(order.getAccountId())
+                .map(Account::getClientId)
+                .orElseThrow(() -> new IllegalStateException("Account not found for order: " + order.getOrderId()));
     }
 }

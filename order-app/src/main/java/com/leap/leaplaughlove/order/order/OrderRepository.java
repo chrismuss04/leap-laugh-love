@@ -89,7 +89,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * @param acceptedBefore only orders accepted before this are returned
      * @return the stuck orders, oldest first
      */
-    @Query("SELECT o FROM Order o JOIN FETCH o.account JOIN FETCH o.instrument " +
+    @Query("SELECT o FROM Order o JOIN FETCH o.instrument " +
            "WHERE o.status = com.leap.leaplaughlove.order.order.Order.Status.ACCEPTED " +
            "AND o.acceptedAt < :acceptedBefore " +
            "AND EXISTS (SELECT e FROM Execution e WHERE e.order = o " +
