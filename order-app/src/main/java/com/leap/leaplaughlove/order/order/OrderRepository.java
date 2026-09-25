@@ -15,6 +15,8 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import com.leap.leaplaughlove.order.account.Account;
+
 /**
  * Repository interface for accessing Order entities from the database.
  * Provides methods for retrieving orders by account ID or client ID with pagination and sorting.
@@ -44,7 +46,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * @param pageable the pagination information
      * @return a page of orders for the client
      */
-    @Query("SELECT o FROM Order o WHERE o.account.clientId = :clientId " +
+    @Query("SELECT o FROM Order o, Account a WHERE o.accountId = a.accountId AND a.clientId = :clientId " +
            "ORDER BY o.submittedAt DESC, o.orderId DESC")
     Page<Order> findByClientId(@Param("clientId") UUID clientId, Pageable pageable);
 
@@ -57,7 +59,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * @param pageable the pagination information
      * @return a page of orders for the client in the date range
      */
-    @Query("SELECT o FROM Order o WHERE o.account.clientId = :clientId " +
+    @Query("SELECT o FROM Order o, Account a WHERE o.accountId = a.accountId AND a.clientId = :clientId " +
            "AND o.submittedAt >= :from AND o.submittedAt < :to " +
            "ORDER BY o.submittedAt DESC, o.orderId DESC")
     Page<Order> findByClientIdSubmittedBetween(@Param("clientId") UUID clientId,
@@ -74,7 +76,7 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
      * @param status the order status to look for
      * @return the matching orders, by fill time then id
      */
-    @Query("SELECT o FROM Order o JOIN FETCH o.account JOIN FETCH o.instrument WHERE o.status = :status " +
+    @Query("SELECT o FROM Order o JOIN FETCH o.instrument WHERE o.status = :status " +
            "AND NOT EXISTS (SELECT m FROM PositionMovement m WHERE m.orderId = o.orderId) " +
            "ORDER BY o.filledAt, o.orderId")
     List<Order> findWithoutPositionMovementByStatus(@Param("status") Order.Status status);
