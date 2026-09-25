@@ -56,8 +56,6 @@ public class IamSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // LLL-117: registration must stay public - a new applicant has no JWT yet.
                         .requestMatchers("/api/iam/auth/**", "/api/iam/v1/clients/register", "/actuator/health").permitAll()
-                        // commment local manual-test ui only
-                        .requestMatchers("/", "/index.html").permitAll()
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
                         .requestMatchers("/error").permitAll()
