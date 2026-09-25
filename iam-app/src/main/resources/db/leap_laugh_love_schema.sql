@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS iam.client_credentials (
 
 -- LLL-176
 -- Staff credentials for reporting access; separate from customer identities.
-CREATE TABLE IF NOT EXISTS iam.service_credentials (
+CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
     service_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
