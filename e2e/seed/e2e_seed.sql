@@ -15,7 +15,6 @@ SELECT format('e2e.trader.%s@leap.test', lpad(n::text, 2, '0')), '(555) 010-' ||
 FROM generate_series(0, 15) AS n
 UNION ALL SELECT 'e2e.multi@leap.test',   '(555) 020-0001', 'ACTIVE'
 UNION ALL SELECT 'e2e.history@leap.test', '(555) 020-0002', 'ACTIVE'
-UNION ALL SELECT 'e2e.noaccount@leap.test', '(555) 020-0003', 'ACTIVE'
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO iam.client_profile (client_id, full_name, date_of_birth, ssn, address_line1, city, state_region,
@@ -30,7 +29,6 @@ FROM (
     FROM generate_series(0, 15) AS n
     UNION ALL SELECT 'e2e.multi@leap.test', 'E2E Multi Account', '900-01-0001', 'ADVANCED'
     UNION ALL SELECT 'e2e.history@leap.test', 'E2E History', '900-01-0002', 'NOVICE'
-    UNION ALL SELECT 'e2e.noaccount@leap.test', 'E2E No Account', '900-01-0003', 'NOVICE'
 ) p
 JOIN iam.clients c ON c.email = p.email
 ON CONFLICT (client_id) DO NOTHING;
@@ -42,7 +40,6 @@ WHERE c.email LIKE 'e2e.%@leap.test'
 ON CONFLICT (client_id) DO NOTHING;
 
 -- ---- Accounts ------------------------------------------------------------------------------
--- e2e.noaccount deliberately has none: it covers the "no active account" states.
 INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at)
 SELECT c.client_id, a.account_number, 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '30 days'
 FROM (

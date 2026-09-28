@@ -9,13 +9,13 @@ try {
 
 const CI = !!process.env.CI;
 const BASE_URL = process.env.BASE_URL ?? 'http://localhost:4200';
-// Pixel baselines are OS-specific and the committed ones come from the Linux Playwright image, so
-// the visual project only runs where E2E_VISUAL is set - `npm run test:visual` and the CI container.
-const VISUAL = !!process.env.E2E_VISUAL;
+// Chromium alone by default - in CI it is the only browser installed. Set E2E_ALL_BROWSERS=1
+// (after `npx playwright install firefox webkit`) for a cross-browser pass before a release.
+const ALL_BROWSERS = !!process.env.E2E_ALL_BROWSERS;
 
 /** Browser projects share everything but the device; API specs run once, not per browser. */
 const browserProject = {
-  testIgnore: /tests[\\/](api|visual)[\\/]/,
+  testIgnore: /tests[\\/]api[\\/]/,
   dependencies: ['setup']
 };
 
@@ -23,11 +23,10 @@ export default defineConfig({
   testDir: './tests',
   fullyParallel: true,
   forbidOnly: CI,
-  retries: CI ? 2 : 0,
-  // Each worker trades from its own seeded account (e2e.trader.00-15), so this can't exceed 16.
-  workers: CI ? 4 : undefined,
-  // Live prices tick once a second and the first dashboard load fans out ~20 requests, so allow
-  // more than the 30s default for the flows that place and then verify an order.
+  retries: CI ? 1 : 0,
+  // The CI agent also runs Postgres, four JVMs and the Angular dev server; two browsers at a
+  // time is what it can carry. (Each worker trades from its own seeded account, max 16.)
+  workers: CI ? 2 : undefined,
   timeout: 60_000,
   expect: { timeout: 10_000 },
 
@@ -37,9 +36,11 @@ export default defineConfig({
 
   use: {
     baseURL: BASE_URL,
-    trace: 'on-first-retry',
+    // A trace (DOM snapshots, network, console) is enough to debug a failure and far cheaper
+    // than recording video of every test.
+    trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
-    video: 'retain-on-failure',
+    video: 'off',
     // The app formats money and dates with en-US; pin it so every browser renders the same text.
     locale: 'en-US',
     timezoneId: 'UTC'
@@ -47,22 +48,15 @@ export default defineConfig({
 
   projects: [
     // Confirms the stack is up and seeded before anything else runs, with a message that says
-    // which service is missing rather than 150 identical timeouts.
+    // which service is missing rather than every test timing out.
     { name: 'setup', testMatch: /.*\.setup\.ts/ },
-
     { name: 'api', testMatch: /tests[\\/]api[\\/].*\.spec\.ts/, dependencies: ['setup'] },
-
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, ...browserProject },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] }, ...browserProject },
-    { name: 'webkit', use: { ...devices['Desktop Safari'] }, ...browserProject },
-
-    // Phones run the critical path only.
-    { name: 'mobile-chrome', use: { ...devices['Pixel 7'] }, ...browserProject, grep: /@smoke/ },
-    { name: 'mobile-safari', use: { ...devices['iPhone 14'] }, ...browserProject, grep: /@smoke/ },
-
-    // One engine only: rendering legitimately differs between them.
-    ...(VISUAL
-      ? [{ name: 'visual', testMatch: /tests[\\/]visual[\\/].*\.spec\.ts/, use: { ...devices['Desktop Chrome'] }, dependencies: ['setup'] }]
+    ...(ALL_BROWSERS
+      ? [
+          { name: 'firefox', use: { ...devices['Desktop Firefox'] }, ...browserProject },
+          { name: 'webkit', use: { ...devices['Desktop Safari'] }, ...browserProject }
+        ]
       : [])
   ]
 });

@@ -685,13 +685,13 @@ mvn -pl market-data-app -am test
 
 ### End-to-end tests (Playwright)
 
-`e2e/` holds browser and API tests that run against the whole stack in Chromium, Firefox, WebKit
-and mobile viewports. Start the stack with the E2E overlay, which adds the suite's test users,
-then run them:
+`e2e/` holds a small suite of browser and API tests for the critical paths (sign-in,
+registration, trading, order history, holdings) that run against the whole stack. Start the
+stack with the E2E overlay, which adds the suite's test users, then run them:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
-cd e2e && npm install && npx playwright install
+cd e2e && npm install && npx playwright install chromium
 npm test            # or: npm run test:smoke, npm run test:ui
 ```
 

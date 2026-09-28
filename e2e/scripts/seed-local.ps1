@@ -55,4 +55,4 @@ try {
 } finally {
     Remove-Item Env:PGPASSWORD -ErrorAction SilentlyContinue
 }
-Write-Host 'E2E users loaded: e2e.trader.00-15, e2e.multi, e2e.history, e2e.noaccount (@leap.test).'
+Write-Host 'E2E users loaded: e2e.trader.00-15, e2e.multi, e2e.history (@leap.test).'

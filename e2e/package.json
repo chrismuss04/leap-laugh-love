@@ -6,18 +6,15 @@
   "scripts": {
     "test": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
-    "test:chromium": "playwright test --project=setup --project=chromium",
     "test:api": "playwright test --project=setup --project=api",
     "test:ui": "playwright test --ui",
     "report": "playwright show-report",
     "codegen": "playwright codegen http://localhost:4200",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test:visual": "node scripts/in-playwright-image.mjs npx playwright test --project=setup --project=visual",
-    "test:visual:update": "node scripts/in-playwright-image.mjs npx playwright test --project=setup --project=visual --update-snapshots"
+    "test:all-browsers": "node -e \"process.env.E2E_ALL_BROWSERS=1;require('child_process').execSync('npx playwright test',{stdio:'inherit',env:process.env})\""
   },
   "devDependencies": {
-    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "1.63.0",
     "@types/node": "^20.0.0",
     "eslint": "^10.11.0",

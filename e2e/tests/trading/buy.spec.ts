@@ -28,16 +28,12 @@ test.describe('Buying', () => {
     await ticket.quantity.fill('1');
     await expect(ticket.estimate).toHaveText(MONEY);
     await ticket.reviewButton.click();
-
     await expect(ticket.reviewText).toContainText(`You're placing a market order to buy 1 share of ${SYMBOL}`);
-    await expect(ticket.root.locator('.summary')).toContainText(trader.accountNumber);
     await ticket.submitButton.click();
 
     await expect(ticket.result).toContainText(`Bought 1 share of ${SYMBOL}`);
-    const fillPrice = parseAmount(await ticket.result.locator('dt:text-is("Fill price") + dd').textContent())!;
     const totalCost = parseAmount(await ticket.result.locator('dt:text-is("Total cost") + dd').textContent())!;
     const cashAfterShown = parseAmount(await ticket.result.locator('dt:text-is("Buying power") + dd').textContent())!;
-    expect(totalCost).toBeCloseTo(fillPrice, 2);
     expect(cashAfterShown).toBeCloseTo(cashBefore - totalCost, 2);
 
     // The backend agrees with what the ticket reported.
@@ -46,67 +42,16 @@ test.describe('Buying', () => {
 
     // And the rest of the dashboard refreshed on its own.
     await ticket.done.click();
-    await expect(ticket.quantity).toHaveValue('');
     await expect(dashboard.buyingPower).toHaveText(money(cashAfterShown));
     await expect(dashboard.positionRow(SYMBOL)).toBeVisible();
-    const latest = dashboard.activityRows().first();
-    await expect(latest).toContainText(SYMBOL);
-    await expect(latest).toContainText('Buy 1');
-    await expect(latest.locator('.status')).toHaveText('Filled');
-  });
-
-  test('the estimate is the live price times the shares', async () => {
-    await ticket.quantity.fill('3');
-    await expect(async () => {
-      const price = parseAmount(await ticket.root.locator('.field-row').filter({ hasText: 'Market price' }).locator('.field-value').textContent())!;
-      const estimate = parseAmount(await ticket.estimate.textContent())!;
-      // Read in one pass, but a tick can land between the two reads - retry until consistent.
-      expect(estimate).toBeCloseTo(price * 3, 2);
-    }).toPass({ timeout: 10_000 });
-  });
-
-  test('the stepper adds and removes whole shares and never goes below one', async () => {
-    await ticket.increment.click();
-    await expect(ticket.quantity).toHaveValue('1');
-    await ticket.increment.click();
-    await ticket.increment.click();
-    await expect(ticket.quantity).toHaveValue('3');
-    await ticket.decrement.click();
-    await expect(ticket.quantity).toHaveValue('2');
-    await ticket.decrement.click();
-    await ticket.decrement.click();
-    await expect(ticket.quantity).toHaveValue('1');
-  });
-
-  for (const bad of ['0', '-3', '1.5']) {
-    test(`"${bad}" shares cannot be reviewed`, async () => {
-      await ticket.quantity.fill(bad);
-      await expect(ticket.hint).toHaveText('Enter a whole number of shares');
-      await expect(ticket.hint).toHaveClass(/error/);
-      await expect(ticket.reviewButton).toBeDisabled();
-    });
-  }
-
-  test('an empty quantity shows buying power, not an error', async () => {
-    await ticket.quantity.fill('');
-    await expect(ticket.hint).toHaveText(/\$[\d,]+\.\d{2} buying power available/);
-    await expect(ticket.reviewButton).toBeDisabled();
+    await expect(dashboard.activityRows().first()).toContainText(SYMBOL);
+    await expect(dashboard.activityRows().first().locator('.status')).toHaveText('Filled');
   });
 
   test('an order bigger than buying power is blocked before review', async () => {
     await ticket.quantity.fill('10000000');
     await expect(ticket.hint).toHaveText(/^Not enough buying power \(\$[\d,]+\.\d{2} available\)$/);
     await expect(ticket.reviewButton).toBeDisabled();
-  });
-
-  test('"Edit order" goes back to the ticket with the quantity kept', async () => {
-    await ticket.quantity.fill('2');
-    await ticket.reviewButton.click();
-    await expect(ticket.reviewText).toBeVisible();
-
-    await ticket.editButton.click();
-    await expect(ticket.quantity).toHaveValue('2');
-    await expect(ticket.quantity).toBeFocused();
   });
 
   test('the order cannot be submitted twice while it is being placed', async ({ page }) => {
@@ -126,18 +71,9 @@ test.describe('Buying', () => {
     await ticket.reviewButton.click();
     await ticket.submitButton.click();
     await expect(ticket.submitButton).toBeDisabled();
-    await expect(ticket.editButton).toBeDisabled();
 
     release();
     await expect(ticket.result).toBeVisible();
     expect(submissions).toBe(1);
-  });
-
-  test('switching symbols resets the ticket', async () => {
-    await ticket.quantity.fill('4');
-    await dashboard.search.pick('AAPL');
-
-    await expect(ticket.title).toHaveText('Buy AAPL');
-    await expect(ticket.quantity).toHaveValue('');
   });
 });

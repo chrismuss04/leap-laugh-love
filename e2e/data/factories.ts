@@ -54,13 +54,3 @@ export function formatSsn(digits: string): string {
 export function formatPhone(digits: string): string {
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
 }
-
-/** A date of birth that makes someone exactly `years` old today, minus one day if `justUnder`. */
-export function dateOfBirthForAge(years: number, justUnder = false): string {
-  const d = new Date();
-  d.setUTCFullYear(d.getUTCFullYear() - years);
-  if (justUnder) {
-    d.setUTCDate(d.getUTCDate() + 1);
-  }
-  return d.toISOString().slice(0, 10);
-}

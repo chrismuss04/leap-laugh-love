@@ -22,13 +22,6 @@ export const personas = {
     experience: 'Advanced investor',
     accountNumbers: ['ACC-001-01']
   },
-  /** Seeded as LOCKED. */
-  grace: {
-    email: 'grace.wilson@leap.com',
-    fullName: 'Grace Wilson',
-    experience: 'Novice investor',
-    accountNumbers: ['ACC-007-01']
-  },
   /** Two funded accounts; used by the account-selector tests (which run serially). */
   multi: {
     email: 'e2e.multi@leap.test',
@@ -42,13 +35,6 @@ export const personas = {
     fullName: 'E2E History',
     experience: 'Novice investor',
     accountNumbers: ['ACC-E2E-H1']
-  },
-  /** Active client with no trading account. */
-  noAccount: {
-    email: 'e2e.noaccount@leap.test',
-    fullName: 'E2E No Account',
-    experience: 'Novice investor',
-    accountNumbers: []
   }
 } satisfies Record<string, Persona>;
 
