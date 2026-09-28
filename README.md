@@ -683,6 +683,21 @@ mvn -pl order-app -am test
 mvn -pl market-data-app -am test
 ```
 
+### End-to-end tests (Playwright)
+
+`e2e/` holds browser and API tests that run against the whole stack in Chromium, Firefox, WebKit
+and mobile viewports. Start the stack with the E2E overlay, which adds the suite's test users,
+then run them:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+cd e2e && npm install && npx playwright install
+npm test            # or: npm run test:smoke, npm run test:ui
+```
+
+See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay isolated, and
+conventions for writing new ones.
+
 ### 2. Javadoc Documentation Generation
 
 Generate Javadoc documentation across all modules from the repository root:

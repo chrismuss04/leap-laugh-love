@@ -10,9 +10,16 @@ pipeline {
         // range, so overlapping them corrupts both. Queue them instead.
         disableConcurrentBuilds()
         // A hung build holds this executor's ports and containers until someone notices;
-        // failing it releases them via the cleanup block below.
-        timeout(time: 45, unit: 'MINUTES')
+        // failing it releases them via the cleanup block below. Sized for the full E2E matrix
+        // on main; PR builds run the smoke subset and finish well inside it.
+        timeout(time: 75, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
+
+    triggers {
+        // Nightly full E2E run on main, so cross-browser regressions surface within a day even
+        // when no one merges. Other branches build on push only.
+        cron(env.BRANCH_NAME == 'main' ? 'H 2 * * *' : '')
     }
 
     stages {
@@ -76,6 +83,18 @@ pipeline {
 
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
 
+                    // The E2E overlay adds the Playwright suite's test users to the database seed
+                    // and gives market-data enough history to chart every range. It has to apply
+                    // from the first "up": the seed only runs when Postgres initialises the volume.
+                    env.COMPOSE_FILE = 'docker-compose.yml:docker-compose.e2e.yml'
+
+                    // Pull requests run the critical path in every browser; main (including the
+                    // nightly trigger) runs the whole suite.
+                    env.E2E_ARGS = env.CHANGE_ID ? '--grep @smoke' : ''
+                    env.PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright:v" + sh(
+                        script: "node -p \"require('./e2e/package.json').devDependencies['@playwright/test']\"",
+                        returnStdout: true).trim() + "-noble"
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -114,7 +133,7 @@ pipeline {
                     # extract layer ... no such file or directory") and a second attempt goes
                     # through. The later stages then use these local copies without pulling.
                     # Base images are read from the Dockerfiles so this list can't drift from them.
-                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 node:24-alpine $PLAYWRIGHT_IMAGE $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
                     for image in $images; do
                         for attempt in 1 2 3; do
                             if docker pull -q "$image"; then
@@ -287,6 +306,56 @@ pipeline {
                 '''
             }
         }
+
+        stage('E2E') {
+            options {
+                timeout(time: 40, unit: 'MINUTES')
+            }
+            steps {
+                sh '''
+                    set -eu
+                    # The Angular dev server: its proxy is what routes /api/** to the services, the
+                    # same way a developer's browser reaches them.
+                    $COMPOSE -p "$COMPOSE_PROJECT" up -d frontend
+                    echo "Waiting for the frontend (installs dependencies on first start)..."
+                    for i in $(seq 1 120); do
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
+                            echo "Frontend is serving"
+                            break
+                        fi
+                        if [ "$i" = "120" ]; then
+                            echo "Frontend did not start in time"
+                            exit 1
+                        fi
+                        sleep 5
+                    done
+
+                    # Playwright runs in its own image (browsers and system libraries included),
+                    # attached to the compose network so it reaches the frontend by service name.
+                    # --user keeps the reports and node_modules owned by the agent account, for the
+                    # same reason as the Maven step.
+                    mkdir -p "${WORKSPACE_TMP:-$WORKSPACE@tmp}/npm-cache"
+                    docker run --rm --ipc=host \
+                        --network "${COMPOSE_PROJECT}_default" \
+                        --user "$(id -u):$(id -g)" \
+                        -e HOME=/tmp \
+                        -e CI=1 \
+                        -e BASE_URL=http://frontend:4200 \
+                        -e npm_config_cache=/npm-cache \
+                        -v "${WORKSPACE_TMP:-$WORKSPACE@tmp}/npm-cache":/npm-cache \
+                        -v "$WORKSPACE/e2e":/e2e \
+                        -w /e2e \
+                        "$PLAYWRIGHT_IMAGE" \
+                        sh -c "npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npx playwright test $E2E_ARGS"
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'e2e/results/junit.xml'
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'e2e/playwright-report/**, e2e/test-results/**'
+                }
+            }
+        }
     }
 
     post {
@@ -296,7 +365,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db iam-app account-app order-app market-data-app; do
+                    for service in db iam-app account-app order-app market-data-app frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
