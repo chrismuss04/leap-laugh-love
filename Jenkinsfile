@@ -90,6 +90,7 @@ pipeline {
 
                     // Pull requests run the critical path in every browser; main (including the
                     // nightly trigger) runs the whole suite.
+                    // Jenkins drops a variable set to '', so the E2E stage reads ${E2E_ARGS:-}.
                     env.E2E_ARGS = env.CHANGE_ID ? '--grep @smoke' : ''
                     env.PLAYWRIGHT_IMAGE = "mcr.microsoft.com/playwright:v" + sh(
                         script: "node -p \"require('./e2e/package.json').devDependencies['@playwright/test']\"",
@@ -346,7 +347,7 @@ pipeline {
                         -v "$WORKSPACE/e2e":/e2e \
                         -w /e2e \
                         "$PLAYWRIGHT_IMAGE" \
-                        sh -c "npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npx playwright test $E2E_ARGS"
+                        sh -c "npm ci --no-audit --no-fund && npm run typecheck && npm run lint && npx playwright test ${E2E_ARGS:-}"
                 '''
             }
             post {
