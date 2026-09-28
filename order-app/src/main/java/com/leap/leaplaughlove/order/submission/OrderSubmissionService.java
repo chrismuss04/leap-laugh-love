@@ -16,6 +16,8 @@ import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -32,6 +34,8 @@ import java.time.OffsetDateTime;
  */
 @Service
 public class OrderSubmissionService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderSubmissionService.class);
 
     private final AccountClient accountClient;
     private final InstrumentRepository instrumentRepository;
@@ -84,6 +88,11 @@ public class OrderSubmissionService {
      * work and it can only see what this app has committed (see {@link FillRecorder}): the order
      * and its execution are committed first, then settled, and only then marked FILLED.
      *
+     * <p>If account-app doesn't answer settling with a refusal (it is unreachable, times out or
+     * fails), or the fill can't be recorded after settling, the order is returned ACCEPTED rather
+     * than failed: the trade may already have moved cash and holdings, and PendingFillRecovery
+     * finishes it.
+     *
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details
      */
@@ -106,38 +115,51 @@ public class OrderSubmissionService {
         try {
             settlement = fillRecorder.settle(order, execution, null);
         } catch (RuntimeException ex) {
-            // The execution is immutable, so it stays as the record of the attempt; the order
-            // says it never filled.
-            String reason = "Settlement failed: " + ex.getMessage();
+            if (!FillRecorder.isRefused(ex)) {
+                // account-app may have booked it, so it must not be recorded as rejected. The
+                // order stays ACCEPTED and PendingFillRecovery settles it once account-app answers.
+                log.warn("Settling order {} had an unknown outcome; left for recovery: {}",
+                        order.getOrderId(), ex.getMessage());
+                return toResponse(order, execution, null);
+            }
+            // account-app refused it, so nothing was booked. The execution is immutable, so it
+            // stays as the record of the attempt; the order says it never filled.
+            String reason = "Settlement failed: " + FillRecorder.refusalReason(ex);
             OffsetDateTime rejectedAt = OffsetDateTime.now();
             transactionTemplate.executeWithoutResult(status -> {
                 order.markRejected(reason, rejectedAt);
-                storedCopy(order).markRejected(reason, rejectedAt);
+                lockedCopy(order).markRejected(reason, rejectedAt);
             });
-            throw ex;
+            // A 4xx, so the customer is told it definitely didn't go through, and why.
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, reason, ex);
         }
 
-        transactionTemplate.executeWithoutResult(status -> {
-            fillRecorder.recordPositionMovement(order, execution);
-            order.markFilled(execution.getExecutedAt());
-            storedCopy(order).markFilled(execution.getExecutedAt());
-        });
-
         BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;
+        try {
+            transactionTemplate.executeWithoutResult(status -> fillRecorder.completeFill(lockedCopy(order), execution));
+        } catch (RuntimeException ex) {
+            // Cash and holdings have moved; only this app's record of it is missing, and
+            // PendingFillRecovery writes it once this app's database is back.
+            log.warn("Order {} settled but its fill could not be recorded; left for recovery: {}",
+                    order.getOrderId(), ex.getMessage());
+            return toResponse(order, execution, balanceAfter);
+        }
+        order.markFilled(execution.getExecutedAt());
         return toResponse(order, execution, balanceAfter);
     }
 
     /**
-     * Loads the order's row in the current transaction, so a status change made after settling
-     * is written by dirty checking. Saving the order itself would merge a copy detached when the
+     * Loads the order's row with its row lock in the current transaction, so a status change
+     * made after settling is written by dirty checking, and can't race PendingFillRecovery
+     * finishing the same fill. Saving the order itself would merge a copy detached when the
      * first transaction committed, and its account association - never loaded, as orders are
      * created by account ID - would be copied over the stored one, which Hibernate warns it
      * can't update (HHH000502).
      * @param order the order, committed by an earlier transaction
-     * @return the managed order
+     * @return the managed, locked order
      */
-    private Order storedCopy(Order order) {
-        return orderRepository.findById(order.getOrderId())
+    private Order lockedCopy(Order order) {
+        return orderRepository.findByIdForUpdate(order.getOrderId())
                 .orElseThrow(() -> new IllegalStateException("Order " + order.getOrderId() + " is not stored"));
     }
 

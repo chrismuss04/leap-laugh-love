@@ -244,6 +244,7 @@ h2 {
 
 .result-icon.ok { background: var(--gain-muted); color: var(--gain); }
 .result-icon.bad { background: var(--loss-muted); color: var(--loss); }
+.result-icon.pending { background: var(--info-muted); color: var(--info); }
 
 .result-title {
   font-size: 16px;

@@ -81,7 +81,8 @@
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
                      [price]="selectedPrice()" [accounts]="tradeAccounts()"
-                     (placed)="onOrderPlaced()"></app-trade-panel>
+                     (placed)="onOrderPlaced()"
+                     (unconfirmed)="onOrderPlaced()"></app-trade-panel>
     <app-recent-activity [orders]="orders()" [loading]="ordersLoading()" [error]="ordersError()"></app-recent-activity>
   </aside>
 </div>

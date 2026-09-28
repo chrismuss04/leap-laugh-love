@@ -44,6 +44,21 @@ CREATE TABLE IF NOT EXISTS iam.client_credentials (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- LLL-176
+-- Staff credentials for reporting access; separate from customer identities.
+CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
+    service_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL
+        CHECK (role IN ('TRADING_OPERATIONS', 'COMMERCIAL_ANALYST')),
+    status TEXT NOT NULL DEFAULT 'ACTIVE'
+        CHECK (status IN ('PENDING', 'ACTIVE', 'LOCKED', 'DELETED')),
+    failed_attempts INTEGER NOT NULL DEFAULT 0 CHECK (failed_attempts >= 0),
+    last_login_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS trading.accounts (
     account_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL

@@ -38,5 +38,10 @@ trading:
     enabled: ${TRADING_SEEDED_FILLS_ENABLED:true}
     retry-seconds: 10
     max-attempts: 60
-
-
+  fill-recovery:
+    # Finish live fills a partial platform failure left part-way (see PendingFillRecovery).
+    enabled: ${TRADING_FILL_RECOVERY_ENABLED:true}
+    # Leave fills this recent alone: their submission may still be in flight.
+    grace-seconds: 30
+    initial-delay-ms: 15000
+    interval-ms: 30000

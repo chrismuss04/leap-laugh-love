@@ -27,10 +27,16 @@ import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.http.HttpStatus;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
+import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -83,7 +89,7 @@ class OrderSubmissionServiceTest {
             storedOrder = invocation.getArgument(0);
             return storedOrder;
         });
-        lenient().when(orderRepository.findById(any())).thenAnswer(invocation -> Optional.ofNullable(storedOrder));
+        lenient().when(orderRepository.findByIdForUpdate(any())).thenAnswer(invocation -> Optional.ofNullable(storedOrder));
         when(executionRepository.saveAndFlush(any(Execution.class))).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
@@ -170,12 +176,14 @@ class OrderSubmissionServiceTest {
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
         when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
-                .thenThrow(new IllegalStateException("Cannot settle sell: position does not exist"));
+                .thenThrow(refusal("Cannot settle sell: position does not exist"));
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> orderSubmissionService.submitOrder(request));
 
-        assertEquals("Cannot settle sell: position does not exist", exception.getMessage());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, exception.getStatusCode());
+        assertEquals("Settlement failed: Cannot settle sell: position does not exist", exception.getReason());
+        assertEquals("Settlement failed: Cannot settle sell: position does not exist", storedOrder.getRejectionReason());
         assertOrderRejectedForSettlement();
     }
 
@@ -190,13 +198,24 @@ class OrderSubmissionServiceTest {
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
         when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
-                .thenThrow(new IllegalStateException("Cannot settle sell: insufficient position quantity"));
+                .thenThrow(refusal("Cannot settle sell: insufficient position quantity"));
 
-        IllegalStateException exception = assertThrows(IllegalStateException.class,
+        ResponseStatusException exception = assertThrows(ResponseStatusException.class,
                 () -> orderSubmissionService.submitOrder(request));
 
-        assertEquals("Cannot settle sell: insufficient position quantity", exception.getMessage());
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, exception.getStatusCode());
+        assertEquals("Settlement failed: Cannot settle sell: insufficient position quantity", exception.getReason());
+        assertEquals("Settlement failed: Cannot settle sell: insufficient position quantity", storedOrder.getRejectionReason());
         assertOrderRejectedForSettlement();
+    }
+
+    /** account-app's answer when it refuses a settlement, as the RestClient raises it. */
+    private static HttpClientErrorException refusal(String message) {
+        HttpClientErrorException refusal = HttpClientErrorException.create(
+                HttpStatus.BAD_REQUEST, "Bad Request", null, null, null);
+        // account-app's JSON error body, as RestClient makes it readable.
+        refusal.setBodyConvertFunction(type -> Map.of("error", "BAD_REQUEST", "message", message));
+        return refusal;
     }
 
     private void assertOrderRejectedForSettlement() {
@@ -334,5 +353,87 @@ class OrderSubmissionServiceTest {
         verify(orderRepository, times(2)).saveAndFlush(any(Order.class));
         verify(executionRepository).saveAndFlush(any(Execution.class));
         verify(accountClient, never()).settleOrder(any(), any());
+    }
+
+    private OrderSubmissionRequest acceptedBuy() {
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        return new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+    }
+
+    @Test
+    @DisplayName("Settlement timeout: order stays ACCEPTED for recovery instead of being rejected")
+    void testSettlementTimeout_LeavesOrderAcceptedForRecovery() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("ACCEPTED", response.status());
+        assertEquals("FILLED", response.execution().status());
+        assertNull(response.rejectionReason());
+        assertNull(response.accountBalanceAfter());
+        assertEquals(Order.Status.ACCEPTED, storedOrder.getStatus());
+        verify(positionMovementRepository, never()).save(any(PositionMovement.class));
+    }
+
+    @Test
+    @DisplayName("account-app 5xx: order stays ACCEPTED for recovery instead of being rejected")
+    void testSettlementServerError_LeavesOrderAcceptedForRecovery() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(HttpServerErrorException.create(HttpStatus.SERVICE_UNAVAILABLE, "Unavailable", null, null, null));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("ACCEPTED", response.status());
+        assertEquals(Order.Status.ACCEPTED, storedOrder.getStatus());
+        assertNull(storedOrder.getRejectedAt());
+    }
+
+    @Test
+    @DisplayName("Unexpected settle failure is not taken as a refusal: order stays ACCEPTED for recovery")
+    void testUnexpectedSettlementFailure_LeavesOrderAcceptedForRecovery() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(new IllegalStateException("response could not be read"));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("ACCEPTED", response.status());
+        assertEquals(Order.Status.ACCEPTED, storedOrder.getStatus());
+    }
+
+    @Test
+    @DisplayName("Settled but the fill can't be recorded: order stays ACCEPTED for recovery and reports the new balance")
+    void testRecordingFailsAfterSettling_LeavesOrderAcceptedForRecovery() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+        when(positionMovementRepository.save(any(PositionMovement.class)))
+                .thenThrow(new IllegalStateException("database unavailable"));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("ACCEPTED", response.status());
+        assertEquals(new BigDecimal("8500.00"), response.accountBalanceAfter());
+        assertNull(response.filledAt());
+    }
+
+    @Test
+    @DisplayName("Fill already finished by recovery: live submission doesn't record it again")
+    void testFillAlreadyFinished_IsNotRecordedTwice() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+        when(positionMovementRepository.existsByOrderId(any())).thenReturn(true);
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("FILLED", response.status());
+        verify(positionMovementRepository, never()).save(any(PositionMovement.class));
     }
 }

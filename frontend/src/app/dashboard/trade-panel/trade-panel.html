@@ -10,7 +10,7 @@
 
     <!-- Result -->
     <div *ngIf="step === 'result' && result" class="result" role="status">
-      <ng-container *ngIf="result.status === 'FILLED'; else rejected">
+      <ng-container *ngIf="result.status === 'FILLED'; else notFilled">
         <div class="result-icon ok" aria-hidden="true">✓</div>
         <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
           {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</p>
@@ -22,11 +22,31 @@
             <dd class="num">{{ money(result.accountBalanceAfter) }}</dd></div>
         </dl>
       </ng-container>
+      <ng-template #notFilled>
+        <ng-container *ngIf="result.status === 'ACCEPTED'; else rejected">
+          <div class="result-icon pending" aria-hidden="true">…</div>
+          <p class="result-title">Order placed, confirming</p>
+          <p class="result-text">Your order to {{ result.side === 'BUY' ? 'buy' : 'sell' }}
+            {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
+            went through and is still being confirmed. It will show as filled in your activity shortly.</p>
+        </ng-container>
+      </ng-template>
       <ng-template #rejected>
         <div class="result-icon bad" aria-hidden="true">!</div>
         <p class="result-title">Order not filled</p>
         <p class="result-text">{{ result.rejectionReason || 'The order was rejected.' }}</p>
       </ng-template>
+      <button type="button" class="cta" (click)="reset()">Done</button>
+    </div>
+
+    <!-- Unconfirmed: the order may still go through -->
+    <div *ngIf="step === 'unconfirmed'" class="result" role="alert">
+      <div class="result-icon pending" aria-hidden="true">?</div>
+      <p class="result-title">We couldn't confirm your order</p>
+      <p class="result-text">Your order to {{ side === 'BUY' ? 'buy' : 'sell' }}
+        {{ quantity | number }} {{ quantity === 1 ? 'share' : 'shares' }} of {{ symbol }} may still go through.
+        Check Recent activity in a minute before placing it again, so you don't
+        {{ side === 'BUY' ? 'buy' : 'sell' }} twice.</p>
       <button type="button" class="cta" (click)="reset()">Done</button>
     </div>
 
