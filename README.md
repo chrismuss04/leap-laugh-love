@@ -12,7 +12,7 @@ We are using the Trunk branching strategy because it best fits our development s
 
 ---
 
-## Documentation and Code Coverage
+## [Documentation and Code Coverage](https://chrismuss04.github.io/leap-laugh-love/)
 
 - **Javadoc API Reference**: [View Live Javadoc](https://chrismuss04.github.io/leap-laugh-love/javadoc/)
 - **JaCoCo Test Coverage**: [View Live Coverage Hub](https://chrismuss04.github.io/leap-laugh-love/jacoco/)
