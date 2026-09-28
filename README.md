@@ -12,6 +12,18 @@ We are using the Trunk branching strategy because it best fits our development s
 
 ---
 
+## Documentation and Code Coverage
+
+- **Javadoc API Reference**: [View Live Javadoc](https://chrismuss04.github.io/leap-laugh-love/javadoc/)
+- **JaCoCo Test Coverage**: [View Live Coverage Hub](https://chrismuss04.github.io/leap-laugh-love/jacoco/)
+  - [account-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/account-app/)
+  - [common-security](https://chrismuss04.github.io/leap-laugh-love/jacoco/common-security/)
+  - [iam-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/iam-app/)
+  - [market-data-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/market-data-app/)
+  - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
+
+---
+
 ## Architecture Overview
 
 The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices along with a shared security library:
