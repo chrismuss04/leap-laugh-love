@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>JwtService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common-security</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.security</a> &gt; <span class="el_source">JwtService.java</span></div><h1>JwtService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.common.security;
+
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.security.Keys;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Date;
+import java.util.UUID;
+
+/**
+ * Service for generating and validating JSON Web Tokens (JWTs).
+ * Provides methods to generate JWT tokens, retrieve their expiration time, and parse and validate them.
+ */
+@Service
+public class JwtService {
+
+    private final SecretKey signingKey;
+    private final long expirationMinutes;
+
+    /**
+     * Constructs a new JwtService with the specified secret key and expiration time.
+     * @param secret the secret key used for signing JWT tokens
+     * @param expirationMinutes the expiration time of JWT tokens in minutes
+     */
+    public JwtService(@Value(&quot;${app.jwt.secret}&quot;) String secret,
+<span class="fc" id="L32">                       @Value(&quot;${app.jwt.expiration-minutes}&quot;) long expirationMinutes) {</span>
+<span class="fc bfc" id="L33" title="All 4 branches covered.">        if (secret == null || secret.isBlank()) {</span>
+<span class="fc" id="L34">            throw new IllegalArgumentException(&quot;app.jwt.secret must not be blank&quot;);</span>
+        }
+<span class="fc bfc" id="L36" title="All 2 branches covered.">        if (expirationMinutes &lt;= 0) {</span>
+<span class="fc" id="L37">            throw new IllegalArgumentException(&quot;app.jwt.expiration-minutes must be &gt; 0&quot;);</span>
+        }
+<span class="fc" id="L39">        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L40">        this.expirationMinutes = expirationMinutes;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * Generates a JSON Web Token for the given clientId and email.
+     * @param clientId
+     * @param email
+     * @return serialized JWT token as a String
+     */
+    public String generateToken(UUID clientId, String email) {
+<span class="fc" id="L50">        Instant now = Instant.now();</span>
+<span class="fc" id="L51">        return Jwts.builder()</span>
+<span class="fc" id="L52">                .subject(clientId.toString())</span>
+<span class="fc" id="L53">                .claim(&quot;email&quot;, email)</span>
+<span class="fc" id="L54">                .issuedAt(Date.from(now))</span>
+<span class="fc" id="L55">                .expiration(Date.from(now.plus(expirationMinutes, ChronoUnit.MINUTES)))</span>
+<span class="fc" id="L56">                .signWith(signingKey)</span>
+<span class="fc" id="L57">                .compact();</span>
+    }
+
+    /**
+     * Gets the expiration time of the JWT token in seconds.
+     * @return expiration time in seconds
+     */
+    public long getExpirationSeconds() {
+<span class="fc" id="L65">        return expirationMinutes * 60;</span>
+    }
+
+    /**
+     * Parses and validates the given JWT token.
+     * @param token the JWT token to parse and validate
+     * @return the clientId extracted from the token
+     */
+    public UUID parseAndValidate(String token) {
+<span class="fc" id="L74">        Claims claims = Jwts.parser()</span>
+<span class="fc" id="L75">                .verifyWith(signingKey)</span>
+<span class="fc" id="L76">                .build()</span>
+<span class="fc" id="L77">                .parseSignedClaims(token)</span>
+<span class="fc" id="L78">                .getPayload();</span>
+<span class="fc" id="L79">        return UUID.fromString(claims.getSubject());</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

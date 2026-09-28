@@ -1,0 +1,215 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceCandleAccumulator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.history</a> &gt; <span class="el_source">PriceCandleAccumulator.java</span></div><h1>PriceCandleAccumulator.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.history;
+
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+
+import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
+import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import com.leap.leaplaughlove.marketdata.simulation.PriceTickEvent;
+
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+
+/**
+ * Aggregates the live tick stream into fixed-width OHLC candles instead of persisting every
+ * tick, keeping table growth predictable (bucket count/day instead of tick count/day).
+ *
+ * &lt;p&gt;Every configured bucket width is accumulated in parallel from the same tick stream, so a
+ * chart over any range reads candles that stay current rather than only the finest width. The
+ * wider rollups are what make long ranges affordable: a year of 60s candles is ~525k rows per
+ * instrument, the same year of daily candles is 365. A candle is written only when its bucket
+ * rolls over, so a daily candle costs one insert per day, not one per tick.
+ *
+ * &lt;p&gt;Completed candles are queued rather than saved where they roll over, and persisted in one
+ * batch by the scheduled flush. Spring publishes events synchronously, so saving inline meant
+ * a database round trip per rolled-over bucket on the simulation's tick thread, inside this
+ * class's monitor - at every minute boundary that is one serialised write per instrument
+ * competing with the tick interval. The queue puts all I/O on the flush thread and lets it
+ * batch. The cost is that a crash can lose up to one flush interval of completed candles.
+ */
+@Component
+public class PriceCandleAccumulator {
+
+    private final SimulatedInstrumentRepository instrumentRepository;
+    private final PriceCandleRepository candleRepository;
+    private final List&lt;Integer&gt; candleBucketSeconds;
+
+<span class="fc" id="L51">    private final Map&lt;String, SimulatedInstrument&gt; instrumentsBySymbol = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="fc" id="L52">    private final Map&lt;BucketKey, CandleAccumulation&gt; openCandles = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L53">    private final Queue&lt;PriceCandle&gt; pendingCandles = new ConcurrentLinkedQueue&lt;&gt;();</span>
+
+    /**
+     * Creates a new PriceCandleAccumulator with the given collaborators and bucket widths.
+     * @param instrumentRepository repository used to look up active instruments at startup
+     * @param candleRepository repository used to persist flushed candles
+     * @param candleBucketSeconds the widths, in seconds, of the OHLC buckets to accumulate
+     */
+    public PriceCandleAccumulator(SimulatedInstrumentRepository instrumentRepository,
+                                   PriceCandleRepository candleRepository,
+                                   @Value(&quot;${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}&quot;)
+<span class="fc" id="L64">                                   List&lt;Integer&gt; candleBucketSeconds) {</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        if (candleBucketSeconds.isEmpty()) {</span>
+<span class="fc" id="L66">            throw new IllegalArgumentException(&quot;at least one candle bucket width must be configured&quot;);</span>
+        }
+<span class="pc bpc" id="L68" title="1 of 6 branches missed.">        if (candleBucketSeconds.stream().anyMatch(width -&gt; width == null || width &lt;= 0)) {</span>
+<span class="fc" id="L69">            throw new IllegalArgumentException(&quot;candle bucket widths must be positive&quot;);</span>
+        }
+<span class="fc" id="L71">        this.instrumentRepository = instrumentRepository;</span>
+<span class="fc" id="L72">        this.candleRepository = candleRepository;</span>
+<span class="fc" id="L73">        this.candleBucketSeconds = List.copyOf(candleBucketSeconds);</span>
+<span class="fc" id="L74">    }</span>
+
+    /**
+     * Loads every active instrument into the in-memory lookup used when flushing candles,
+     * once the application context is ready, before the simulation engine starts ticking.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    @Order(MarketSimulationEngine.TICK_CONSUMER_ORDER)
+    public void initialize() {
+<span class="fc" id="L83">        instrumentRepository.findByActiveTrue()</span>
+<span class="fc" id="L84">                .forEach(instrument -&gt; instrumentsBySymbol.put(instrument.getSymbol(), instrument));</span>
+<span class="fc" id="L85">    }</span>
+
+    /**
+     * Folds a simulation tick into the open candle for each configured bucket width, flushing
+     * any bucket the tick has rolled past first.
+     * @param event the simulation tick event to fold in
+     */
+    @EventListener
+    public synchronized void onPriceTick(PriceTickEvent event) {
+<span class="fc" id="L94">        PriceState state = event.priceState();</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        for (int width : candleBucketSeconds) {</span>
+<span class="fc" id="L96">            BucketKey key = new BucketKey(state.symbol(), width);</span>
+<span class="fc" id="L97">            OffsetDateTime bucketStart = bucketStart(state.asOf(), width);</span>
+<span class="fc" id="L98">            CandleAccumulation existing = openCandles.get(key);</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">            if (existing == null) {</span>
+<span class="fc" id="L100">                openCandles.put(key, CandleAccumulation.open(bucketStart, state.price()));</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">            } else if (existing.bucketStart().equals(bucketStart)) {</span>
+<span class="fc" id="L102">                openCandles.put(key, existing.extend(state.price()));</span>
+            } else {
+<span class="fc" id="L104">                flush(key, existing);</span>
+<span class="fc" id="L105">                openCandles.put(key, CandleAccumulation.open(bucketStart, state.price()));</span>
+            }
+<span class="fc" id="L107">        }</span>
+<span class="fc" id="L108">    }</span>
+
+    /**
+     * Closes every open candle whose bucket has already elapsed - so a symbol that stops ticking
+     * doesn't leave its last candle unqueued indefinitely - and then writes everything queued.
+     */
+    @Scheduled(fixedRateString = &quot;${marketdata.simulation.candle-flush-interval-ms:5000}&quot;)
+    public void flushStaleBuckets() {
+<span class="fc" id="L116">        closeElapsedBuckets();</span>
+<span class="fc" id="L117">        persistPending();</span>
+<span class="fc" id="L118">    }</span>
+
+    /**
+     * Queues and removes every open candle whose bucket has already elapsed.
+     */
+    private synchronized void closeElapsedBuckets() {
+<span class="fc" id="L124">        OffsetDateTime now = OffsetDateTime.now();</span>
+<span class="fc" id="L125">        List&lt;BucketKey&gt; elapsed = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L126">        openCandles.forEach((key, accumulation) -&gt; {</span>
+<span class="pc bpc" id="L127" title="1 of 2 branches missed.">            if (accumulation.bucketStart().isBefore(bucketStart(now, key.bucketSeconds()))) {</span>
+<span class="fc" id="L128">                flush(key, accumulation);</span>
+<span class="fc" id="L129">                elapsed.add(key);</span>
+            }
+<span class="fc" id="L131">        });</span>
+<span class="fc" id="L132">        elapsed.forEach(openCandles::remove);</span>
+<span class="fc" id="L133">    }</span>
+
+    /**
+     * Writes every queued candle in one batch. Deliberately not synchronized: the database round
+     * trip must not hold the monitor that {@link #onPriceTick} needs, or the simulation's tick
+     * thread would block on it.
+     */
+    private void persistPending() {
+<span class="fc" id="L141">        List&lt;PriceCandle&gt; batch = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        for (PriceCandle candle = pendingCandles.poll(); candle != null; candle = pendingCandles.poll()) {</span>
+<span class="fc" id="L143">            batch.add(candle);</span>
+        }
+<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (!batch.isEmpty()) {</span>
+<span class="fc" id="L146">            candleRepository.saveAll(batch);</span>
+        }
+<span class="fc" id="L148">    }</span>
+
+    /**
+     * Queues a completed candle accumulation for the next batch write.
+     * @param key the symbol and bucket width the accumulation belongs to
+     * @param accumulation the completed OHLC accumulation to queue
+     */
+    private void flush(BucketKey key, CandleAccumulation accumulation) {
+<span class="fc" id="L156">        SimulatedInstrument instrument = instrumentsBySymbol.get(key.symbol());</span>
+<span class="pc bpc" id="L157" title="1 of 2 branches missed.">        if (instrument == null) {</span>
+<span class="nc" id="L158">            return;</span>
+        }
+<span class="fc" id="L160">        pendingCandles.add(new PriceCandle(</span>
+<span class="fc" id="L161">                instrument, accumulation.bucketStart(), key.bucketSeconds(),</span>
+<span class="fc" id="L162">                accumulation.open(), accumulation.high(), accumulation.low(), accumulation.close()));</span>
+<span class="fc" id="L163">    }</span>
+
+    /**
+     * Rounds a timestamp down to the start of its bucket at the given width.
+     * @param timestamp the timestamp to bucket
+     * @param bucketSeconds the bucket width, in seconds
+     * @return the start of the bucket containing the timestamp
+     */
+    private static OffsetDateTime bucketStart(OffsetDateTime timestamp, int bucketSeconds) {
+<span class="fc" id="L172">        long epochSeconds = timestamp.toEpochSecond();</span>
+<span class="fc" id="L173">        long bucketEpochSeconds = epochSeconds - Math.floorMod(epochSeconds, (long) bucketSeconds);</span>
+<span class="fc" id="L174">        return OffsetDateTime.ofInstant(Instant.ofEpochSecond(bucketEpochSeconds), timestamp.getOffset());</span>
+    }
+
+    /**
+     * Identifies one in-progress accumulation: a symbol at one bucket width.
+     * @param symbol the instrument symbol
+     * @param bucketSeconds the bucket width, in seconds
+     */
+<span class="fc" id="L182">    private record BucketKey(String symbol, int bucketSeconds) {</span>
+    }
+
+    /**
+     * In-progress OHLC accumulation for one symbol's current candle bucket.
+     * @param bucketStart the start of the bucket being accumulated
+     * @param open the opening price of the bucket
+     * @param high the highest price seen so far in the bucket
+     * @param low the lowest price seen so far in the bucket
+     * @param close the most recent price seen in the bucket
+     */
+<span class="fc" id="L193">    private record CandleAccumulation(OffsetDateTime bucketStart, BigDecimal open, BigDecimal high,</span>
+                                       BigDecimal low, BigDecimal close) {
+        /**
+         * Opens a new accumulation with a single price as its open/high/low/close.
+         * @param bucketStart the start of the bucket
+         * @param price the first price observed in the bucket
+         * @return the opened accumulation
+         */
+        static CandleAccumulation open(OffsetDateTime bucketStart, BigDecimal price) {
+<span class="fc" id="L202">            return new CandleAccumulation(bucketStart, price, price, price, price);</span>
+        }
+
+        /**
+         * Extends this accumulation with another price observed in the same bucket.
+         * @param price the next price observed in the bucket
+         * @return the extended accumulation
+         */
+        CandleAccumulation extend(BigDecimal price) {
+<span class="fc" id="L211">            return new CandleAccumulation(bucketStart, open, high.max(price), low.min(price), price);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

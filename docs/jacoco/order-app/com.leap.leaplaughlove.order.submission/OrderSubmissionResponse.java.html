@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderSubmissionResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.submission</a> &gt; <span class="el_source">OrderSubmissionResponse.java</span></div><h1>OrderSubmissionResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.submission;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Response payload returned upon order submission and immediate execution processing.
+ * @param orderId the ID of the submitted order
+ * @param accountId the ID of the account under which the order was submitted
+ * @param accountNumber the account number associated with the order
+ * @param instrumentId the ID of the instrument being traded
+ * @param symbol the symbol of the instrument being traded
+ * @param side the side of the order (e.g., BUY or SELL)
+ * @param quantity the quantity of the order
+ * @param status the status of the order
+ * @param submittedAt the timestamp when the order was submitted
+ * @param acceptedAt the timestamp when the order was accepted
+ * @param rejectedAt the timestamp when the order was rejected
+ * @param filledAt the timestamp when the order was filled
+ * @param rejectionReason the reason for order rejection, if applicable
+ * @param execution the execution details of the order
+ * @param accountBalanceAfter the account balance after the order execution
+ */
+<span class="fc" id="L25">public record OrderSubmissionResponse(</span>
+        UUID orderId,
+        UUID accountId,
+        String accountNumber,
+        UUID instrumentId,
+        String symbol,
+        String side,
+        long quantity,
+        String status,
+        OffsetDateTime submittedAt,
+        OffsetDateTime acceptedAt,
+        OffsetDateTime rejectedAt,
+        OffsetDateTime filledAt,
+        String rejectionReason,
+        ExecutionDto execution,
+        BigDecimal accountBalanceAfter
+) {
+        /**
+         * Constructs an instance of ExecutionDto with the specified execution details.
+         * @param executionId the ID of the execution
+         * @param fillQuantity the quantity filled in the execution
+         * @param fillPrice the price at which the execution was filled
+         * @param status the status of the execution
+         * @param executedAt the timestamp when the execution occurred
+         * @param reason the reason for the execution status, if applicable
+         */
+<span class="fc" id="L51">    public record ExecutionDto(</span>
+            UUID executionId,
+            Long fillQuantity,
+            BigDecimal fillPrice,
+            String status,
+            OffsetDateTime executedAt,
+            String reason
+    ) {}
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

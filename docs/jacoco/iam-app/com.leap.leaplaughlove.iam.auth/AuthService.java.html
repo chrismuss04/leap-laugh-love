@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AuthService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.auth</a> &gt; <span class="el_source">AuthService.java</span></div><h1>AuthService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.auth;
+
+import com.leap.leaplaughlove.iam.client.Client;
+import com.leap.leaplaughlove.iam.client.ClientCredentials;
+import com.leap.leaplaughlove.iam.client.ClientCredentialsRepository;
+import com.leap.leaplaughlove.iam.client.ClientRepository;
+import com.leap.leaplaughlove.common.security.JwtService;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+
+/**
+ * Service for handling authentication logic, including login and account lock management.
+ * Provides methods for authenticating clients and managing failed login attempts.
+ */
+@Service
+public class AuthService {
+
+    private static final int MAX_FAILED_ATTEMPTS = 3;
+    private static final String LOCKED_STATUS = &quot;LOCKED&quot;;
+
+    private final ClientRepository clientRepository;
+    private final ClientCredentialsRepository credentialsRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtService jwtService;
+
+    /**
+     * Constructs a new AuthService with the specified dependencies.
+     * @param clientRepository the repository for managing client entities
+     * @param credentialsRepository the repository for managing client credentials
+     * @param passwordEncoder the password encoder for verifying client passwords
+     * @param jwtService the service for generating JWT tokens
+     */
+    public AuthService(ClientRepository clientRepository,
+                       ClientCredentialsRepository credentialsRepository,
+                       PasswordEncoder passwordEncoder,
+<span class="fc" id="L39">                       JwtService jwtService) {</span>
+<span class="fc" id="L40">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L41">        this.credentialsRepository = credentialsRepository;</span>
+<span class="fc" id="L42">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L43">        this.jwtService = jwtService;</span>
+<span class="fc" id="L44">    }</span>
+
+    /**
+     * Authenticates a client using their email and password. 
+     * @param email the email of the client attempting to authenticate
+     * @param rawPassword the raw password provided by the client
+     * @throws InvalidCredentialsException if the email or password is incorrect
+     * @throws AccountLockedException if the account is locked due to too many failed login attempts
+     * @return a LoginResponse containing the authentication token and related information
+     */
+    // Failed logins throw after saving the incremented attempt count and any lock, so those
+    // exceptions must not roll the transaction back or the lockout would never persist.
+    @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountLockedException.class})
+    public LoginResponse authenticate(String email, String rawPassword) {
+<span class="fc" id="L58">        Client client = clientRepository.findByEmail(email)</span>
+<span class="fc" id="L59">                .orElseThrow(InvalidCredentialsException::new);</span>
+
+<span class="fc" id="L61">        ClientCredentials creds = credentialsRepository.findByClientId(client.getClientId())</span>
+<span class="fc" id="L62">                .orElseThrow(InvalidCredentialsException::new);</span>
+
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (LOCKED_STATUS.equalsIgnoreCase(client.getStatus())) {</span>
+<span class="fc" id="L65">            throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+        }
+
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (!passwordEncoder.matches(rawPassword, creds.getPasswordHash())) {</span>
+<span class="fc" id="L69">            creds.incrementFailedAttempts();</span>
+<span class="fc" id="L70">            credentialsRepository.save(creds);</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">            if (creds.getFailedAttempts() &gt;= MAX_FAILED_ATTEMPTS) {</span>
+<span class="fc" id="L72">                client.setStatus(LOCKED_STATUS);</span>
+<span class="fc" id="L73">                clientRepository.save(client);</span>
+<span class="fc" id="L74">                throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+            }
+<span class="fc" id="L76">            throw new InvalidCredentialsException();</span>
+        }
+
+        // commment reset failed attempts on successful login
+<span class="fc" id="L80">        creds.resetFailedAttempts();</span>
+<span class="fc" id="L81">        creds.setLastLoginAt(OffsetDateTime.now());</span>
+<span class="fc" id="L82">        credentialsRepository.save(creds);</span>
+
+<span class="fc" id="L84">        String token = jwtService.generateToken(client.getClientId(), client.getEmail());</span>
+<span class="fc" id="L85">        long expiresIn = jwtService.getExpirationSeconds();</span>
+
+<span class="fc" id="L87">        return new LoginResponse(token, &quot;Bearer&quot;, expiresIn);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

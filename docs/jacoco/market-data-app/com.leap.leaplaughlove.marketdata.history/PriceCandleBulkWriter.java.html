@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceCandleBulkWriter.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.history</a> &gt; <span class="el_source">PriceCandleBulkWriter.java</span></div><h1>PriceCandleBulkWriter.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.history;
+
+import org.postgresql.PGConnection;
+import org.springframework.jdbc.datasource.DataSourceUtils;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import javax.sql.DataSource;
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.UncheckedIOException;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.List;
+
+/**
+ * Writes a large set of new candles in one transaction, as fast as the database allows. Used by
+ * the history backfill, which writes a few million rows on a fresh database before the service
+ * is ready.
+ *
+ * &lt;p&gt;On Postgres it streams the rows with {@code COPY}, which loads them without per-row
+ * statement, JPA entity or index-lookup overhead - several times faster than even batched
+ * {@code INSERT}s, which matters most on the small VMs the stack is often brought up on. Any
+ * other database (the H2 the tests run against) falls back to {@code saveAll}.
+ */
+@Component
+public class PriceCandleBulkWriter {
+
+    private static final String COPY_SQL = &quot;COPY marketdata.price_candles &quot;
+            + &quot;(instrument_id, bucket_seconds, bucket_start, open, high, low, close) FROM STDIN&quot;;
+
+    private final DataSource dataSource;
+    private final PriceCandleRepository candleRepository;
+    private final TransactionTemplate transactionTemplate;
+
+    /**
+     * Creates a new PriceCandleBulkWriter.
+     * @param dataSource the data source whose transaction-bound connection the COPY runs on
+     * @param candleRepository repository used when the database doesn't support COPY
+     * @param transactionTemplate template used to write each set of candles in one transaction
+     */
+    public PriceCandleBulkWriter(DataSource dataSource,
+                                 PriceCandleRepository candleRepository,
+<span class="fc" id="L45">                                 TransactionTemplate transactionTemplate) {</span>
+<span class="fc" id="L46">        this.dataSource = dataSource;</span>
+<span class="fc" id="L47">        this.candleRepository = candleRepository;</span>
+<span class="fc" id="L48">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L49">    }</span>
+
+    /**
+     * Inserts the candles in one transaction: either all of them are stored or none are.
+     * @param candles new candles, none of which may already exist
+     */
+    public void write(List&lt;PriceCandle&gt; candles) {
+<span class="fc" id="L56">        transactionTemplate.executeWithoutResult(status -&gt; {</span>
+            // The transaction's own connection, so the COPY commits or rolls back with it.
+<span class="fc" id="L58">            Connection connection = DataSourceUtils.getConnection(dataSource);</span>
+            try {
+<span class="pc bpc" id="L60" title="1 of 2 branches missed.">                if (connection.isWrapperFor(PGConnection.class)) {</span>
+<span class="nc" id="L61">                    copy(connection, candles);</span>
+                } else {
+<span class="fc" id="L63">                    candleRepository.saveAll(candles);</span>
+                }
+<span class="nc" id="L65">            } catch (SQLException ex) {</span>
+<span class="nc" id="L66">                throw new IllegalStateException(&quot;Failed to write &quot; + candles.size() + &quot; candles&quot;, ex);</span>
+<span class="nc" id="L67">            } catch (IOException ex) {</span>
+<span class="nc" id="L68">                throw new UncheckedIOException(ex);</span>
+<span class="fc" id="L69">            }</span>
+<span class="fc" id="L70">        });</span>
+<span class="fc" id="L71">    }</span>
+
+    private static void copy(Connection connection, List&lt;PriceCandle&gt; candles) throws SQLException, IOException {
+<span class="nc" id="L74">        try (Statement statement = connection.createStatement()) {</span>
+            // Skips waiting for this transaction's commit to reach disk - on a slow VM disk that
+            // wait is a large share of a small transaction. Still atomic: a crash can only lose
+            // the most recent commits whole, which leaves those instruments with no candles, and
+            // the backfill regenerates those on the next start.
+<span class="nc" id="L79">            statement.execute(&quot;SET LOCAL synchronous_commit TO OFF&quot;);</span>
+        }
+<span class="nc" id="L81">        connection.unwrap(PGConnection.class).getCopyAPI().copyIn(COPY_SQL, new StringReader(toCopyText(candles)));</span>
+<span class="nc" id="L82">    }</span>
+
+    /**
+     * Renders candles in COPY's default text format: tab-separated columns, one row per line.
+     * No value can contain a tab, newline or backslash, so none needs escaping.
+     */
+    static String toCopyText(List&lt;PriceCandle&gt; candles) {
+<span class="fc" id="L89">        StringBuilder rows = new StringBuilder(candles.size() * 128);</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        for (PriceCandle candle : candles) {</span>
+<span class="fc" id="L91">            rows.append(candle.getInstrument().getInstrumentId()).append('\t')</span>
+<span class="fc" id="L92">                    .append(candle.getBucketSeconds()).append('\t')</span>
+<span class="fc" id="L93">                    .append(candle.getBucketStart().toInstant()).append('\t')</span>
+<span class="fc" id="L94">                    .append(candle.getOpen().toPlainString()).append('\t')</span>
+<span class="fc" id="L95">                    .append(candle.getHigh().toPlainString()).append('\t')</span>
+<span class="fc" id="L96">                    .append(candle.getLow().toPlainString()).append('\t')</span>
+<span class="fc" id="L97">                    .append(candle.getClose().toPlainString()).append('\n');</span>
+<span class="fc" id="L98">        }</span>
+<span class="fc" id="L99">        return rows.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

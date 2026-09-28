@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountAuthorizationService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.account</a> &gt; <span class="el_source">AccountAuthorizationService.java</span></div><h1>AccountAuthorizationService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.account;
+
+import com.leap.leaplaughlove.common.security.SecurityUtils;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+// LLL-133
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.util.UUID;
+
+/**
+ * Service providing reusable authorization checks on accounts for the authenticated client.
+ */
+@Service
+public class AccountAuthorizationService {
+
+    public static final String ACTIVE_STATUS = &quot;ACTIVE&quot;;
+
+    private final AccountRepository accountRepository;
+
+    /**
+     * Constructs an AccountAuthorizationService with the specified account repository.
+     * @param accountRepository the repository used to access account data
+     */
+<span class="fc" id="L27">    public AccountAuthorizationService(AccountRepository accountRepository) {</span>
+<span class="fc" id="L28">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L29">    }</span>
+
+    /**
+     * Verifies that the specified account exists, belongs to the authenticated client, and is in ACTIVE status.
+     * @param accountId the unique identifier of the account to be authorized
+     * @return the authorized account if it exists, belongs to the authenticated client, and is active
+     * @throws ResponseStatusException if the account is not found or is not active
+     */
+    public Account getAuthorizedAccount(UUID accountId) {
+<span class="fc" id="L38">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L39">        Account account = accountRepository.findByAccountIdAndClientId(accountId, clientId)</span>
+<span class="fc" id="L40">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Account not found&quot;));</span>
+
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        if (!ACTIVE_STATUS.equals(account.getStatus())) {</span>
+<span class="fc" id="L43">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Account is not active&quot;);</span>
+        }
+
+<span class="fc" id="L46">        return account;</span>
+    }
+
+    // LLL-133
+    /**
+     * Locks and authorizes the account within the caller's existing transaction.
+     * The caller must acquire this lock before checking cash or holdings.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Account getAuthorizedAccountForUpdate(UUID accountId) {
+<span class="fc" id="L56">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L57">        Account account = accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)</span>
+<span class="fc" id="L58">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Account not found&quot;));</span>
+
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        if (!ACTIVE_STATUS.equals(account.getStatus())) {</span>
+<span class="fc" id="L61">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Account is not active&quot;);</span>
+        }
+
+<span class="fc" id="L64">        return account;</span>
+    }
+
+    // LLL-133
+    /**
+     * Locks and authorizes a trading account until the caller commits or rolls back.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public Account getAuthorizedTradingAccountForUpdate(UUID accountId) {
+<span class="fc" id="L73">        Account account = getAuthorizedAccountForUpdate(accountId);</span>
+
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (!account.isTradingEnabled()) {</span>
+<span class="fc" id="L76">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Trading is disabled for this account&quot;);</span>
+        }
+
+<span class="fc" id="L79">        return account;</span>
+    }
+
+    /**
+     * Verifies that the specified account exists, belongs to the authenticated client, is in ACTIVE status, and has trading enabled.
+     * @param accountId the unique identifier of the account to be authorized for trading
+     * @return the authorized trading account if it exists, belongs to the authenticated client, is active, and has trading enabled
+     * @throws ResponseStatusException if the account is not found, is not active, or trading is disabled for the account
+     */
+    public Account getAuthorizedTradingAccount(UUID accountId) {
+<span class="fc" id="L89">        Account account = getAuthorizedAccount(accountId);</span>
+
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        if (!account.isTradingEnabled()) {</span>
+<span class="fc" id="L92">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Trading is disabled for this account&quot;);</span>
+        }
+
+<span class="fc" id="L95">        return account;</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

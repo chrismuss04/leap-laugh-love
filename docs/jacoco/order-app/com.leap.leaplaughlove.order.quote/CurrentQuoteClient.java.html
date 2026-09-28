@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CurrentQuoteClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.quote</a> &gt; <span class="el_source">CurrentQuoteClient.java</span></div><h1>CurrentQuoteClient.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.quote;
+
+import org.springframework.http.HttpHeaders;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.Optional;
+
+/**
+ * HTTP Client that fetches the latest quote for an instrument from the market data service with caller JWT token forwarded.
+ */
+@Component
+public class CurrentQuoteClient {
+
+    private final RestClient restClient;
+    /**
+     * Constructs a new CurrentQuoteClient with the given market data REST client.
+     * @param marketDataRestClient
+     */
+<span class="fc" id="L24">    public CurrentQuoteClient(RestClient marketDataRestClient) {</span>
+<span class="fc" id="L25">        this.restClient = marketDataRestClient;</span>
+<span class="fc" id="L26">    }</span>
+
+    /**
+     * Fetches the latest quote for the given instrument symbol. Returns an empty Optional if the quote is not found.
+     * Hits the market data service endpoint to retrieve the latest quote for the specified instrument symbol.
+     * @param symbol the instrument symbol for which to fetch the latest quote
+     * @return an Optional containing the latest QuoteSnapshot if available, or an empty Optional if not found
+     */
+    public Optional&lt;QuoteSnapshot&gt; fetchLatest(String symbol) {
+        try {
+<span class="fc" id="L36">            return Optional.ofNullable(restClient.get()</span>
+<span class="fc" id="L37">                    .uri(&quot;/api/marketdata/quotes/{symbol}&quot;, symbol)</span>
+<span class="fc" id="L38">                    .headers(this::forwardCallerToken)</span>
+<span class="fc" id="L39">                    .retrieve()</span>
+<span class="fc" id="L40">                    .body(QuoteSnapshot.class));</span>
+<span class="fc" id="L41">        } catch (HttpClientErrorException.NotFound ex) {</span>
+<span class="fc" id="L42">            return Optional.empty();</span>
+<span class="fc" id="L43">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L44">            throw new QuoteUnavailableException(</span>
+                    &quot;Failed to fetch current quote for symbol &quot; + symbol, ex);
+        }
+    }
+
+    /**
+     * Forwards the caller's JWT token from the current HTTP request to the given headers for the market data service.
+     * @param headers the HTTP headers to which the caller's JWT token should be forwarded
+     */
+    private void forwardCallerToken(HttpHeaders headers) {
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
+<span class="fc" id="L55">            String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);</span>
+<span class="pc bpc" id="L56" title="1 of 2 branches missed.">            if (authorization != null) {</span>
+<span class="fc" id="L57">                headers.set(HttpHeaders.AUTHORIZATION, authorization);</span>
+            }
+        }
+<span class="fc" id="L60">    }</span>
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
