@@ -11,4 +11,12 @@ public class InvalidCredentialsException extends RuntimeException {
     public InvalidCredentialsException() {
         super("Invalid email or password");
     }
+
+    /**
+     * Constructs a new InvalidCredentialsException with a custom error message.
+     * @param message the detail message
+     */
+    public InvalidCredentialsException(String message) {
+        super(message);
+    }
 }
