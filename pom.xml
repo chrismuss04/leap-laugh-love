@@ -145,7 +145,7 @@
                                     <outputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</outputDirectory>
                                     <resources>
                                         <resource>
-                                            <directory>${project.build.directory}/report/apidocs</directory>
+                                            <directory>${project.build.directory}/reports/apidocs</directory>
                                         </resource>
                                     </resources>
                                 </configuration>
