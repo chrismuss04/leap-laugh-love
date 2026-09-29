@@ -42,8 +42,7 @@ public class ClientProfileController {
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
         return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),
-                client.getExperienceLevel(), client.getStatus(),
-                client.getEmail(), client.getExperienceLevel(), client.getCreatedAt());
+                client.getExperienceLevel(), client.getStatus(), client.getCreatedAt());
     }
 
     /**
@@ -53,12 +52,9 @@ public class ClientProfileController {
      * @param fullName the client's full name
      * @param experienceLevel the client's investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
      * @param status the client's account status
-     * @param username the client's username; clients sign in with their email, so this is the email
-     * @param accountType the client's account type, taken from their experience level
      * @param createdAt the timestamp when the client's account was created
      */
     public record ClientProfileResponse(UUID clientId, String email, String fullName,
-                                        String experienceLevel, String status,
-                                        String username, String accountType, OffsetDateTime createdAt) {
+                                        String experienceLevel, String status, OffsetDateTime createdAt) {
     }
 }

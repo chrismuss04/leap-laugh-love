@@ -42,8 +42,6 @@ class ClientProfileControllerTest {
                 .andExpect(jsonPath("$.email", is("alice@example.com")))
                 .andExpect(jsonPath("$.fullName", is("Alice Example")))
                 .andExpect(jsonPath("$.experienceLevel", is("INTERMEDIATE")))
-                .andExpect(jsonPath("$.username", is("alice@example.com")))
-                .andExpect(jsonPath("$.accountType", is("INTERMEDIATE")))
                 .andExpect(jsonPath("$.createdAt", startsWith("2024-01-15")))
                 .andExpect(jsonPath("$.ssn").doesNotExist())
                 .andExpect(jsonPath("$.dateOfBirth").doesNotExist());
