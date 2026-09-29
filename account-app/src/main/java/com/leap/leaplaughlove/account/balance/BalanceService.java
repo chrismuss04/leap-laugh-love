@@ -20,7 +20,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Service for handling balance-related operations such as retrieving account balances, performing deposits, and executing withdrawals.
+ * Service for handling balance-related operations such as retrieving account
+ * balances, performing deposits, and executing withdrawals.
  */
 @Service
 public class BalanceService {
@@ -34,15 +35,19 @@ public class BalanceService {
     private final AccountAuthorizationService accountAuthorizationService;
 
     /**
-     * Constructs a new BalanceService with the injected repositories and authorization service.
-     * @param accountRepository the repository for accessing account data
-     * @param cashLedgerRepository the repository for accessing cash ledger entries
-     * @param accountAuthorizationService the service for handling account authorization
+     * Constructs a new BalanceService with the injected repositories and
+     * authorization service.
+     * 
+     * @param accountRepository           the repository for accessing account data
+     * @param cashLedgerRepository        the repository for accessing cash ledger
+     *                                    entries
+     * @param accountAuthorizationService the service for handling account
+     *                                    authorization
      */
     @Autowired
     public BalanceService(AccountRepository accountRepository,
-                          CashLedgerRepository cashLedgerRepository,
-                          AccountAuthorizationService accountAuthorizationService) {
+            CashLedgerRepository cashLedgerRepository,
+            AccountAuthorizationService accountAuthorizationService) {
         this.accountRepository = accountRepository;
         this.cashLedgerRepository = cashLedgerRepository;
         this.accountAuthorizationService = accountAuthorizationService != null
@@ -50,13 +55,21 @@ public class BalanceService {
                 : new AccountAuthorizationService(accountRepository);
     }
 
+    /**
+     * Overloaded BalanceService constructor without auth service
+     * 
+     * @param accountRepository
+     * @param cashLedgerRepository
+     */
     public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
         this(accountRepository, cashLedgerRepository, new AccountAuthorizationService(accountRepository));
     }
 
     /**
      * Retrieves the balance information for the authenticated client.
-     * @return a BalanceResponse containing the individual account balances and the total balance by currency
+     * 
+     * @return a BalanceResponse containing the individual account balances and the
+     *         total balance by currency
      */
     public BalanceResponse getBalanceForClient() {
         UUID clientId = SecurityUtils.getAuthenticatedClientId();
@@ -90,9 +103,11 @@ public class BalanceService {
 
     /**
      * Deposits the specified amount into the given account.
+     * 
      * @param accountId the unique identifier of the account
-     * @param request the cash movement request containing deposit details
-     * @return a CashTransactionResponse containing the result of the deposit transaction
+     * @param request   the cash movement request containing deposit details
+     * @return a CashTransactionResponse containing the result of the deposit
+     *         transaction
      * @throws IllegalArgumentException if the deposit request is invalid
      */
     @Transactional
@@ -116,16 +131,19 @@ public class BalanceService {
 
     /**
      * Withdraws the specified amount from the given account.
+     * 
      * @param accountId the unique identifier of the account
-     * @param request the cash movement request containing withdrawal details
-     * @return a CashTransactionResponse containing the result of the withdrawal transaction
+     * @param request   the cash movement request containing withdrawal details
+     * @return a CashTransactionResponse containing the result of the withdrawal
+     *         transaction
      * @throws IllegalArgumentException if the withdrawal request is invalid
      */
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
         BigDecimal amount = normalizeAmount(request.amount());
         // LLL-133
-        // Hold the account lock through validation and commit to prevent concurrent overspending.
+        // Hold the account lock through validation and commit to prevent concurrent
+        // overspending.
         Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);
         BigDecimal currentBalance = getCurrentBalance(account);
 
@@ -148,6 +166,7 @@ public class BalanceService {
 
     /**
      * Retrieves the current balance for the specified account.
+     * 
      * @param account the account for which to retrieve the current balance
      * @return the current balance of the specified account
      */
@@ -156,10 +175,13 @@ public class BalanceService {
     }
 
     /**
-     * Normalizes the specified amount by ensuring it is greater than zero and rounding it to two decimal places.
+     * Normalizes the specified amount by ensuring it is greater than zero and
+     * rounding it to two decimal places.
+     * 
      * @param amount the amount to be normalized
      * @return the normalized amount
-     * @throws ResponseStatusException if the amount is null or less than or equal to zero
+     * @throws ResponseStatusException if the amount is null or less than or equal
+     *                                 to zero
      */
     private BigDecimal normalizeAmount(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -169,8 +191,10 @@ public class BalanceService {
     }
 
     /**
-     * Converts a cash ledger entry and the resulting balance into a cash transaction response.
-     * @param entry the cash ledger entry to be converted
+     * Converts a cash ledger entry and the resulting balance into a cash
+     * transaction response.
+     * 
+     * @param entry        the cash ledger entry to be converted
      * @param balanceAfter the resulting balance after the transaction
      * @return the corresponding cash transaction response
      */
@@ -188,10 +212,10 @@ public class BalanceService {
 
     /**
      * Represents a composite key consisting of an account ID and a currency.
+     * 
      * @param accountId the unique identifier of the account
-     * @param currency the currency associated with the account
+     * @param currency  the currency associated with the account
      */
     private record AccountCurrencyKey(UUID accountId, String currency) {
     }
 }
-

@@ -710,18 +710,50 @@ npm test            # or: npm run test:smoke, npm run test:ui
 See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay isolated, and
 conventions for writing new ones.
 
-### 2. Javadoc Documentation Generation
+### 2. Documentation and Code Coverage Generation
 
-Generate Javadoc documentation across all modules from the repository root:
+The live documentation site is hosted on GitHub Pages from the [`gh-pages`](https://github.com/chrismuss04/leap-laugh-love/tree/gh-pages) branch at [https://chrismuss04.github.io/leap-laugh-love/](https://chrismuss04.github.io/leap-laugh-love/).
+
+#### Normal Development (Default)
+During regular local development on `main` or feature branches:
+```bash
+mvn test
+```
+JaCoCo coverage reports output to `target/site/jacoco` (which is gitignored), and Javadoc generation is skipped entirely. The root `docs/` folder is **not** touched or generated, ensuring your git working tree stays clean. To generate Javadoc during development:
 
 ```bash
 mvn compile javadoc:javadoc
 ```
 
+#### Generating `docs/` for the `gh-pages` Branch
+To update the live GitHub Pages documentation hosted on the `gh-pages` branch:
+
+1. **Switch to or prepare your `gh-pages` branch**:
+   ```bash
+   git switch gh-pages
+   git merge main # or rebase onto main
+   ```
+
+2. **Generate the documentation and coverage reports into `docs/`**:
+   Activate the `docs` Maven profile using `-Pdocs`:
+   ```bash
+   mvn clean test prepare-package -Pdocs
+   ```
+   This command:
+   - Executes all unit tests and generates per-module JaCoCo coverage reports directly into `docs/jacoco/<module-name>/`.
+   - Generates the aggregate Javadoc API documentation directly into `docs/javadoc/`.
+
+3. **Commit and push to `gh-pages`**:
+   ```bash
+   git add docs/
+   git commit -m "docs: update javadoc and jacoco coverage reports"
+   git push origin gh-pages
+   ```
+
 > [!NOTE]
 > In a multi-module Maven project where `iam-app`, `account-app`, `order-app`, and `market-data-app` depend on the sibling library module `common-security`, invoking `compile` prior to `javadoc:javadoc` (or ensuring artifacts are installed in the local repository) ensures that class files for dependencies in the reactor are built so the Javadoc compiler can resolve classpath types across modules.
 > 
-> To generate Javadocs for a single module:
+> To generate standalone Javadocs for a single module during development:
 > ```bash
 > mvn compile javadoc:javadoc -pl iam-app -am
 > ```
