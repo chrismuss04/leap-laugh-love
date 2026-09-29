@@ -1,7 +1,7 @@
-<div class="orders-page">
+<div class="page">
 
-  <div class="orders-container">
-    <div class="orders-header">
+  <div class="page-container">
+    <div class="page-header">
       <p class="eyebrow">Account Activity</p>
       <h1 class="font-display headline-page">Order <em>History</em></h1>
       <p class="page-subtext">Review your recent trades and fills.</p>
@@ -39,7 +39,7 @@
 
     <div *ngIf="error()" class="error-message">{{ error() }}</div>
 
-    <div *ngIf="!loading() && orders().length === 0 && !error()" class="no-orders">
+    <div *ngIf="!loading() && orders().length === 0 && !error()" class="empty">
       {{ year() !== null ? 'No orders match this filter' : 'No orders found' }}
     </div>
 
