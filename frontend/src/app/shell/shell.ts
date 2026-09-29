@@ -7,7 +7,7 @@ import { PriceStreamService } from '../services/price-stream';
 // Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
 import { SessionActivityService } from '../services/session-activity';
 // Session Timeout & Revocation
-import { Subscription } from 'rxjs';
+import { Subscription, asapScheduler, observeOn } from 'rxjs';
 
 const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
   NOVICE: 'Novice investor',
@@ -59,7 +59,9 @@ export class ShellComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     // Session Timeout & Revocation
     const token = this.auth.getToken();
-    this.expirySubscription = this.sessionActivity.expired$.subscribe(reason => {
+    // Session Timeout & Revocation: invalid tokens can expire synchronously during ngOnInit.
+    // Defer the parent authentication update until Angular finishes its current render.
+    this.expirySubscription = this.sessionActivity.expired$.pipe(observeOn(asapScheduler)).subscribe(reason => {
       this.stream.stop();
       this.auth.expireSession(token, reason);
     });
