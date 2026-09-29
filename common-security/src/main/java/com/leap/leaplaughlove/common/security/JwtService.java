@@ -57,6 +57,22 @@ public class JwtService {
                 .compact();
     }
 
+    // Session Timeout & Revocation: use the same timestamps as the persisted login session.
+    public String generateToken(UUID clientId, String email, UUID sessionId,
+                                Instant issuedAt, Instant expiresAt) {
+        if (sessionId == null || !expiresAt.isAfter(issuedAt)) {
+            throw new IllegalArgumentException("A session ID and valid expiration are required");
+        }
+        return Jwts.builder()
+                .subject(clientId.toString())
+                .claim("email", email)
+                .claim("sid", sessionId.toString())
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .signWith(signingKey)
+                .compact();
+    }
+
     /**
      * Gets the expiration time of the JWT token in seconds.
      * @return expiration time in seconds
