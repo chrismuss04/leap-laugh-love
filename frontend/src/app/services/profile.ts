@@ -8,6 +8,7 @@ export interface ClientProfile {
   fullName: string;
   experienceLevel: 'NOVICE' | 'INTERMEDIATE' | 'ADVANCED';
   status: string;
+  createdAt: string;
 }
 
 @Injectable({

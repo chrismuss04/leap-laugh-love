@@ -23,6 +23,7 @@ const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
 })
 export class ShellComponent implements OnInit, OnDestroy {
   readonly profile = signal<ClientProfile | null>(null);
+  readonly profileError = signal(false);
   readonly menuOpen = signal(false);
 
   private readonly auth = inject(AuthService);
@@ -52,7 +53,7 @@ export class ShellComponent implements OnInit, OnDestroy {
     this.profileService.getMe().subscribe({
       next: profile => this.profile.set(profile),
       // The header still works without a name; the avatar falls back to "?".
-      error: () => this.profile.set(null)
+      error: () => this.profileError.set(true)
     });
   }
 

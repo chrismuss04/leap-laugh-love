@@ -40,6 +40,7 @@
               <span class="menu-name">{{ profile()?.fullName }}</span>
               <span class="menu-email">{{ profile()?.email }}</span>
             </div>
+            <button type="button" class="menu-item" role="menuitem" routerLink="/profile" (click)="closeMenu()">My profile</button>
             <button type="button" class="menu-item danger" role="menuitem" (click)="logout()">Log out</button>
           </div>
         </div>
