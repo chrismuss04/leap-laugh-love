@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PortfolioHistoryResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.portfolio</a> &gt; <span class="el_source">PortfolioHistoryResponse.java</span></div><h1>PortfolioHistoryResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.portfolio;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+/**
+ * The authenticated client's total portfolio value (cash plus holdings at market) over a range.
+ * @param range the range code that was charted, e.g. &quot;1M&quot;
+ * @param intervalSeconds the spacing, in seconds, between points (the final point is &quot;now&quot; and
+ *     may be closer to the one before it)
+ * @param points the portfolio value at each point, oldest first
+ * @param startValue the value at the first point, the baseline the change is measured from
+ * @param endValue the value at the last point
+ * @param change endValue minus startValue
+ * @param changePercent the change as a percentage of startValue, or null if startValue is zero
+ */
+<span class="fc" id="L18">public record PortfolioHistoryResponse(</span>
+        String range,
+        int intervalSeconds,
+        List&lt;Point&gt; points,
+        BigDecimal startValue,
+        BigDecimal endValue,
+        BigDecimal change,
+        BigDecimal changePercent
+) {
+    /**
+     * One valued point in time.
+     * @param timestamp when the portfolio held this value
+     * @param value the portfolio value: cash plus every holding at that time's price
+     */
+<span class="fc" id="L32">    public record Point(OffsetDateTime timestamp, BigDecimal value) {</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

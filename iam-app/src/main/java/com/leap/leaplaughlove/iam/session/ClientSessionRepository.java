@@ -28,4 +28,26 @@ public class ClientSessionRepository {
                 """, sessionId, clientId, issuedAt.atOffset(ZoneOffset.UTC),
                 issuedAt.atOffset(ZoneOffset.UTC), expiresAt.atOffset(ZoneOffset.UTC));
     }
+
+    // Session Timeout & Revocation: a conditional update prevents expired/revoked sessions being revived.
+    @Transactional
+    public boolean recordActivity(UUID sessionId, UUID clientId, Instant now) {
+        return jdbcTemplate.update("""
+                UPDATE iam.client_sessions
+                SET last_activity_at = GREATEST(last_activity_at, ?)
+                WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
+                  AND expires_at > ? AND last_activity_at > ?
+                """, now.atOffset(ZoneOffset.UTC), sessionId, clientId, now.atOffset(ZoneOffset.UTC),
+                now.minus(com.leap.leaplaughlove.common.security.ClientSessionValidator.IDLE_TIMEOUT)
+                        .atOffset(ZoneOffset.UTC)) == 1;
+    }
+
+    // Session Timeout & Revocation: revoke only this login, preserving other devices' sessions.
+    @Transactional
+    public void revoke(UUID sessionId, UUID clientId, Instant now) {
+        jdbcTemplate.update("""
+                UPDATE iam.client_sessions SET revoked_at = ?
+                WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
+                """, now.atOffset(ZoneOffset.UTC), sessionId, clientId);
+    }
 }

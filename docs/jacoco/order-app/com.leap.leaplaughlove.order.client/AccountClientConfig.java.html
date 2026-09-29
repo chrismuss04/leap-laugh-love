@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountClientConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.client</a> &gt; <span class="el_source">AccountClientConfig.java</span></div><h1>AccountClientConfig.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.client;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
+
+/**
+ * Configuration class for the AccountClient.
+ * Provides a RestClient bean configured for communication with the account service.
+ */
+@Configuration
+public class AccountClientConfig {
+
+    /**
+     * Default constructor for the configuration class.
+     */
+<span class="fc" id="L21">    protected AccountClientConfig() {</span>
+<span class="fc" id="L22">    }</span>
+
+    /**
+     * Creates and configures a RestClient for communication with the account service.
+     * @param builder the RestClient builder used to create the RestClient instance
+     * @param baseUrl the base URL of the account service
+     * @param connectTimeoutMs the connection timeout in milliseconds
+     * @param readTimeoutMs the read timeout in milliseconds
+     * @return a configured RestClient instance for communication with the account service
+     */
+    @Bean
+    public RestClient accountRestClient(
+            RestClient.Builder builder,
+            @Value(&quot;${account.client.base-url:http://localhost:8082}&quot;) String baseUrl,
+            @Value(&quot;${account.client.connect-timeout-ms:2000}&quot;) int connectTimeoutMs,
+            @Value(&quot;${account.client.read-timeout-ms:2000}&quot;) int readTimeoutMs) {
+<span class="fc" id="L38">        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();</span>
+<span class="fc" id="L39">        requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));</span>
+<span class="fc" id="L40">        requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));</span>
+<span class="fc" id="L41">        return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

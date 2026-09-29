@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountSettlementController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.settlement</a> &gt; <span class="el_source">AccountSettlementController.java</span></div><h1>AccountSettlementController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.settlement;
+
+import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
+
+/**
+ * Controller for handling account settlement-related operations.
+ * Provides endpoints for retrieving account validation data and settling orders.
+ */
+@RestController
+@RequestMapping(&quot;/api/account/internal/accounts/{accountId}&quot;)
+public class AccountSettlementController {
+
+    private final AccountSettlementService accountSettlementService;
+
+    /**
+     * Constructs an AccountSettlementController with the injected AccountSettlementService.
+     * @param accountSettlementService the service for handling account settlement operations
+     */
+<span class="fc" id="L23">    public AccountSettlementController(AccountSettlementService accountSettlementService) {</span>
+<span class="fc" id="L24">        this.accountSettlementService = accountSettlementService;</span>
+<span class="fc" id="L25">    }</span>
+
+    /**
+     * Retrieves the validation data for a specific account and optionally for a specific instrument.
+     * @param accountId the unique identifier of the account
+     * @param instrumentId the unique identifier of the instrument (optional)
+     * @return the account validation data wrapped in a ResponseEntity
+     */
+    @GetMapping(&quot;/validation-data&quot;)
+    public ResponseEntity&lt;AccountValidationDto&gt; getValidationData(
+            @PathVariable UUID accountId,
+            @RequestParam(required = false) UUID instrumentId) {
+<span class="fc" id="L37">        return ResponseEntity.ok(accountSettlementService.getValidationData(accountId, instrumentId));</span>
+    }
+    /**
+     * Settles an order for a specific account.
+     * @param accountId the unique identifier of the account
+     * @param request the settlement request containing order details
+     * @return the settlement response wrapped in a ResponseEntity
+     */
+    @PostMapping(&quot;/settlement&quot;)
+    public ResponseEntity&lt;SettlementResponse&gt; settleOrder(
+            @PathVariable UUID accountId,
+            @Valid @RequestBody SettlementRequest request) {
+<span class="fc" id="L49">        return ResponseEntity.ok(accountSettlementService.settleOrder(accountId, request));</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

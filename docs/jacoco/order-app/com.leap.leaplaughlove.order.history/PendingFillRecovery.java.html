@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PendingFillRecovery.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.history</a> &gt; <span class="el_source">PendingFillRecovery.java</span></div><h1>PendingFillRecovery.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.history;
+
+import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.order.OrderRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Finishes booking live fills that a partial platform failure left part-way, so the trade record
+ * always ends up agreeing with cash and holdings.
+ *
+ * &lt;p&gt;A live fill is booked in FillRecorder's three steps, committed separately. If account-app
+ * can't be reached or times out while settling, or this app stops or loses its database between
+ * the steps, the order is left ACCEPTED with a committed FILLED execution. Whether cash and
+ * holdings moved is then unknown. This job finds those orders and settles them again - which
+ * account-app does only once, answering a repeat from what it already booked - then writes the
+ * position movement and marks the order FILLED. If account-app refuses the settlement outright,
+ * the order is marked REJECTED instead, as live submission would have done.
+ *
+ * &lt;p&gt;Runs shortly after startup, which recovers anything a crash left behind, and then on a fixed
+ * delay while the app is up. A failure leaves the order as it was, to be retried on the next run.
+ */
+@Service
+@ConditionalOnProperty(prefix = &quot;trading.fill-recovery&quot;, name = &quot;enabled&quot;, havingValue = &quot;true&quot;,
+        matchIfMissing = true)
+public class PendingFillRecovery {
+
+<span class="fc" id="L43">    private static final Logger log = LoggerFactory.getLogger(PendingFillRecovery.class);</span>
+
+    private final OrderRepository orderRepository;
+    private final ExecutionRepository executionRepository;
+    private final AccountRepository accountRepository;
+    private final FillRecorder fillRecorder;
+    private final JwtService jwtService;
+    private final TransactionTemplate transactionTemplate;
+    private final long graceSeconds;
+
+    public PendingFillRecovery(OrderRepository orderRepository,
+                               ExecutionRepository executionRepository,
+                               AccountRepository accountRepository,
+                               FillRecorder fillRecorder,
+                               JwtService jwtService,
+                               TransactionTemplate transactionTemplate,
+<span class="fc" id="L59">                               @Value(&quot;${trading.fill-recovery.grace-seconds:30}&quot;) long graceSeconds) {</span>
+<span class="fc" id="L60">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L61">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L62">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L63">        this.fillRecorder = fillRecorder;</span>
+<span class="fc" id="L64">        this.jwtService = jwtService;</span>
+<span class="fc" id="L65">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L66">        this.graceSeconds = graceSeconds;</span>
+<span class="fc" id="L67">    }</span>
+
+    /**
+     * Scheduled entry point; never throws, so one bad run doesn't stop later ones.
+     */
+    @Scheduled(initialDelayString = &quot;${trading.fill-recovery.initial-delay-ms:15000}&quot;,
+               fixedDelayString = &quot;${trading.fill-recovery.interval-ms:30000}&quot;)
+    public void run() {
+        try {
+<span class="fc" id="L76">            recoverPendingFills();</span>
+<span class="nc" id="L77">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L78">            log.warn(&quot;Recovering pending fills failed: {}&quot;, ex.getMessage());</span>
+<span class="fc" id="L79">        }</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Settles and finishes every live fill left part-way that is older than the grace period.
+     * @return how many stuck fills are still unresolved after this run
+     */
+    int recoverPendingFills() {
+<span class="fc" id="L87">        List&lt;Order&gt; pending = orderRepository.findAcceptedWithFilledExecution(</span>
+<span class="fc" id="L88">                OffsetDateTime.now().minusSeconds(graceSeconds));</span>
+<span class="fc" id="L89">        int unresolved = 0;</span>
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        for (Order order : pending) {</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">            if (!recover(order)) {</span>
+<span class="fc" id="L92">                unresolved++;</span>
+            }
+<span class="fc" id="L94">        }</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (!pending.isEmpty()) {</span>
+<span class="fc" id="L96">            log.info(&quot;Recovered {} of {} fill(s) left part-way by a platform failure&quot;,</span>
+<span class="fc" id="L97">                    pending.size() - unresolved, pending.size());</span>
+        }
+<span class="fc" id="L99">        return unresolved;</span>
+    }
+
+    /**
+     * Settles one stuck fill and finishes or rejects its order.
+     * @param order an ACCEPTED order with a committed FILLED execution
+     * @return true if the order is now FILLED or REJECTED, false if it is still pending
+     */
+    private boolean recover(Order order) {
+<span class="fc" id="L108">        Optional&lt;Execution&gt; filled = executionRepository.findFirstByOrder_OrderIdAndStatus(</span>
+<span class="fc" id="L109">                order.getOrderId(), Execution.Status.FILLED);</span>
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        if (filled.isEmpty()) {</span>
+<span class="nc" id="L111">            return true;</span>
+        }
+<span class="fc" id="L113">        Execution execution = filled.get();</span>
+
+        try {
+            // No request is behind this, so there is no caller's token to forward; sign as the
+            // order's owner, whose request this fill was.
+<span class="fc" id="L118">            fillRecorder.settle(order, execution, jwtService.generateSettlementToken(clientIdOf(order)));</span>
+<span class="fc" id="L119">        } catch (RuntimeException ex) {</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">            if (!FillRecorder.isRefused(ex)) {</span>
+<span class="fc" id="L121">                log.warn(&quot;Order {} is still waiting to settle; will retry: {}&quot;, order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L122">                return false;</span>
+            }
+<span class="fc" id="L124">            String reason = &quot;Settlement failed: &quot; + FillRecorder.refusalReason(ex);</span>
+<span class="fc" id="L125">            transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc bpc" id="L126" title="1 of 2 branches missed.">                    .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
+<span class="fc" id="L127">                    .ifPresent(locked -&gt; locked.markRejected(reason, OffsetDateTime.now())));</span>
+<span class="fc" id="L128">            log.warn(&quot;Order {} was refused by account-app on recovery and is now REJECTED: {}&quot;,</span>
+<span class="fc" id="L129">                    order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L130">            return true;</span>
+<span class="fc" id="L131">        }</span>
+
+<span class="fc" id="L133">        transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc bpc" id="L134" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
+<span class="fc" id="L135">                .ifPresent(locked -&gt; fillRecorder.completeFill(locked, execution)));</span>
+<span class="fc" id="L136">        log.info(&quot;Order {} settled and recorded as FILLED on recovery&quot;, order.getOrderId());</span>
+<span class="fc" id="L137">        return true;</span>
+    }
+
+    /**
+     * The client who owns the order's account. Looked up here, inside the settle attempt, so an
+     * account that can't be read yet leaves the fill pending rather than rejecting it.
+     * @param order the order
+     * @return its account's client ID
+     */
+    private UUID clientIdOf(Order order) {
+<span class="fc" id="L147">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L148">                .map(Account::getClientId)</span>
+<span class="pc" id="L149">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

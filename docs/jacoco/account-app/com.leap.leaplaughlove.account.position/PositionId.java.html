@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PositionId.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.position</a> &gt; <span class="el_source">PositionId.java</span></div><h1>PositionId.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.position;
+
+import java.io.Serializable;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Represents the composite primary key for a trading position, consisting of an account ID and an instrument ID.
+ */
+public class PositionId implements Serializable {
+
+    private UUID accountId;
+    private UUID instrumentId;
+
+    /**
+     * Default constructor for JPA
+     */
+<span class="fc" id="L18">    public PositionId() {</span>
+<span class="fc" id="L19">    }</span>
+
+    /**
+     * Constructs a position ID key with the specified account ID and instrument ID.
+     * @param accountId the unique identifier of the account
+     * @param instrumentId the unique identifier of the instrument
+     */
+<span class="fc" id="L26">    public PositionId(UUID accountId, UUID instrumentId) {</span>
+<span class="fc" id="L27">        this.accountId = accountId;</span>
+<span class="fc" id="L28">        this.instrumentId = instrumentId;</span>
+<span class="fc" id="L29">    }</span>
+
+    /**
+     * Retrieves the account identifier of this position key.
+     * @return the account identifier
+     */
+    public UUID getAccountId() {
+<span class="nc" id="L36">        return accountId;</span>
+    }
+
+    /**
+     * Retrieves the instrument identifier of this position key.
+     * @return the instrument identifier
+     */
+    public UUID getInstrumentId() {
+<span class="nc" id="L44">        return instrumentId;</span>
+    }
+
+    /**    
+     * Overrides the equals method to compare position keys based on account ID and instrument ID.
+     * @see java.lang.Object#equals(java.lang.Object)
+     * @param o the object to compare with
+     * @return true if the objects are equal, false otherwise
+     */
+    @Override
+    public boolean equals(Object o) {
+<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (this == o) {</span>
+<span class="nc" id="L56">            return true;</span>
+        }
+<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (!(o instanceof PositionId that)) {</span>
+<span class="nc" id="L59">            return false;</span>
+        }
+<span class="pc bpc" id="L61" title="1 of 2 branches missed.">        return Objects.equals(accountId, that.accountId)</span>
+<span class="pc bpc" id="L62" title="1 of 2 branches missed.">                &amp;&amp; Objects.equals(instrumentId, that.instrumentId);</span>
+    }
+
+    /**
+     * Overrides the hashCode method to generate a hash code based on account ID and instrument ID.
+     * @see java.lang.Object#hashCode()
+     * @return the hash code of this position key
+     */
+    @Override
+    public int hashCode() {
+<span class="nc" id="L72">        return Objects.hash(accountId, instrumentId);</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

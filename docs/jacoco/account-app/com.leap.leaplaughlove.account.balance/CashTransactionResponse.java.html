@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CashTransactionResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.balance</a> &gt; <span class="el_source">CashTransactionResponse.java</span></div><h1>CashTransactionResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.balance;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Represents the response for a cash transaction, including details of the transaction and the resulting balance.
+ * @param cashLedgerId the unique identifier of the cash ledger entry
+ * @param accountId the unique identifier of the account
+ * @param entryType the type of the cash transaction (e.g., deposit, withdrawal)
+ * @param amount the amount of the cash transaction
+ * @param currency the currency of the cash transaction
+ * @param balanceAfter the resulting balance after the transaction
+ * @param createdAt the timestamp when the transaction was created
+ * @param description a description of the cash transaction
+ */
+<span class="fc" id="L18">public record CashTransactionResponse(</span>
+        UUID cashLedgerId,
+        UUID accountId,
+        String entryType,
+        BigDecimal amount,
+        String currency,
+        BigDecimal balanceAfter,
+        OffsetDateTime createdAt,
+        String description
+) {}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

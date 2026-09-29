@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceStreamBroadcaster.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.stream</a> &gt; <span class="el_source">PriceStreamBroadcaster.java</span></div><h1>PriceStreamBroadcaster.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.stream;
+
+import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import com.leap.leaplaughlove.marketdata.simulation.PriceTickEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+// Session Timeout &amp; Revocation
+import java.util.function.BooleanSupplier;
+
+/**
+ * Broadcasts live simulation ticks to subscribed clients over Server-Sent Events, optionally
+ * filtered to a subset of symbols per subscriber.
+ *
+ * &lt;p&gt;Ticks arrive on the simulation's tick thread, and nothing here may block it: an SSE write
+ * blocks for as long as the client isn't reading (a stalled tab, a dropped connection the proxy
+ * hasn't noticed yet - up to the socket's write timeout), and writing inline froze the whole
+ * market for every instrument and every other subscriber while it waited. So each subscriber
+ * gets its own sender on a virtual thread, and the tick thread only hands it the price. What a
+ * subscriber hasn't been sent yet is conflated to the latest price per symbol, which is all a
+ * live view needs and bounds a slow client's backlog to one entry per symbol it watches.
+ */
+@Component
+public class PriceStreamBroadcaster {
+
+<span class="fc" id="L36">    private final List&lt;Subscription&gt; subscriptions = new CopyOnWriteArrayList&lt;&gt;();</span>
+    private final Executor sender;
+
+    /**
+     * Creates a broadcaster that sends to each subscriber on virtual threads.
+     */
+    public PriceStreamBroadcaster() {
+<span class="fc" id="L43">        this(Executors.newVirtualThreadPerTaskExecutor());</span>
+<span class="fc" id="L44">    }</span>
+
+<span class="fc" id="L46">    PriceStreamBroadcaster(Executor sender) {</span>
+<span class="fc" id="L47">        this.sender = sender;</span>
+<span class="fc" id="L48">    }</span>
+
+    /**
+     * Registers a new SSE subscriber, optionally filtered to a set of symbols.
+     * @param symbolFilter the symbols to send to this subscriber, or empty to send all
+     * @return the emitter the subscriber should be returned to the client
+     */
+    public SseEmitter subscribe(Set&lt;String&gt; symbolFilter) {
+<span class="fc" id="L56">        return register(new SseEmitter(0L), symbolFilter);</span>
+    }
+
+    // Session Timeout &amp; Revocation: validate on the sender thread, never on the market tick thread.
+    public SseEmitter subscribe(Set&lt;String&gt; symbolFilter, BooleanSupplier sessionActive) {
+<span class="nc" id="L61">        return register(new SseEmitter(0L), symbolFilter, sessionActive);</span>
+    }
+
+    SseEmitter register(SseEmitter emitter, Set&lt;String&gt; symbolFilter) {
+<span class="fc" id="L65">        return register(emitter, symbolFilter, () -&gt; true);</span>
+    }
+
+    SseEmitter register(SseEmitter emitter, Set&lt;String&gt; symbolFilter, BooleanSupplier sessionActive) {
+<span class="fc" id="L69">        Subscription subscription = new Subscription(emitter, symbolFilter, sessionActive);</span>
+<span class="fc" id="L70">        subscriptions.add(subscription);</span>
+<span class="fc" id="L71">        emitter.onCompletion(subscription::close);</span>
+<span class="fc" id="L72">        emitter.onTimeout(subscription::close);</span>
+<span class="pc" id="L73">        emitter.onError(ex -&gt; subscription.close());</span>
+<span class="fc" id="L74">        return emitter;</span>
+    }
+
+    /**
+     * Queues a simulation tick for every subscriber whose symbol filter matches it. Never
+     * blocks on a subscriber: the sends happen on each subscriber's own sender.
+     * @param event the simulation tick event to broadcast
+     */
+    @EventListener
+    public void onPriceTick(PriceTickEvent event) {
+<span class="fc" id="L84">        PriceState state = event.priceState();</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        for (Subscription subscription : subscriptions) {</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">            if (subscription.matches(state.symbol())) {</span>
+<span class="fc" id="L87">                subscription.offer(state);</span>
+            }
+<span class="fc" id="L89">        }</span>
+<span class="fc" id="L90">    }</span>
+
+    /**
+     * One SSE subscriber: its symbol filter, the latest unsent price per symbol, and whether a
+     * sender is currently draining those to the client.
+     */
+    private final class Subscription {
+        private final SseEmitter emitter;
+        private final Set&lt;String&gt; symbolFilter;
+<span class="fc" id="L99">        private final Map&lt;String, PriceState&gt; unsent = new ConcurrentHashMap&lt;&gt;();</span>
+<span class="fc" id="L100">        private final AtomicBoolean draining = new AtomicBoolean();</span>
+        private volatile boolean closed;
+        private final BooleanSupplier sessionActive;
+
+<span class="fc" id="L104">        private Subscription(SseEmitter emitter, Set&lt;String&gt; symbolFilter, BooleanSupplier sessionActive) {</span>
+<span class="fc" id="L105">            this.emitter = emitter;</span>
+<span class="fc" id="L106">            this.symbolFilter = symbolFilter;</span>
+<span class="fc" id="L107">            this.sessionActive = sessionActive;</span>
+<span class="fc" id="L108">        }</span>
+
+        /**
+         * Checks whether a symbol should be sent to this subscriber.
+         * @param symbol the instrument symbol of the tick being broadcast
+         * @return true if this subscriber's filter is empty or contains the symbol
+         */
+        boolean matches(String symbol) {
+<span class="fc bfc" id="L116" title="All 4 branches covered.">            return symbolFilter.isEmpty() || symbolFilter.contains(symbol);</span>
+        }
+
+        /**
+         * Records the latest price for its symbol, replacing any not yet sent, and starts a
+         * sender if none is running.
+         */
+        void offer(PriceState state) {
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">            if (closed) {</span>
+<span class="nc" id="L125">                return;</span>
+            }
+<span class="fc" id="L127">            unsent.put(state.symbol(), state);</span>
+<span class="fc bfc" id="L128" title="All 2 branches covered.">            if (draining.compareAndSet(false, true)) {</span>
+<span class="fc" id="L129">                sender.execute(this::drain);</span>
+            }
+<span class="fc" id="L131">        }</span>
+
+        /**
+         * Sends unsent prices until there are none left. Only one drain runs per subscriber at a
+         * time, so the client sees one ordered stream.
+         */
+        private void drain() {
+            try {
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">                while (!closed) {</span>
+                    // Session Timeout &amp; Revocation: validate each outgoing batch, without extending activity.
+<span class="fc bfc" id="L141" title="All 2 branches covered.">                    if (!sessionActive.getAsBoolean()) {</span>
+<span class="fc" id="L142">                        close();</span>
+<span class="fc" id="L143">                        emitter.complete();</span>
+<span class="fc" id="L144">                        return;</span>
+                    }
+<span class="fc bfc" id="L146" title="All 2 branches covered.">                    for (String symbol : unsent.keySet()) {</span>
+<span class="fc" id="L147">                        PriceState state = unsent.remove(symbol);</span>
+<span class="pc bpc" id="L148" title="1 of 2 branches missed.">                        if (state != null) {</span>
+<span class="fc" id="L149">                            emitter.send(SseEmitter.event().name(&quot;price&quot;).data(state));</span>
+                        }
+<span class="fc" id="L151">                    }</span>
+<span class="fc" id="L152">                    draining.set(false);</span>
+                    // A price offered after the loop above but before draining was cleared saw a
+                    // drain in progress and didn't start one, so pick it up here.
+<span class="fc bfc" id="L155" title="All 4 branches covered.">                    if (unsent.isEmpty() || !draining.compareAndSet(false, true)) {</span>
+<span class="fc" id="L156">                        return;</span>
+                    }
+                }
+<span class="fc" id="L159">            } catch (IOException | RuntimeException ex) {</span>
+                // The client went away (tab closed, or the frontend reconnecting with a new
+                // symbol set). Just drop it: the container is already running its own error
+                // handling for the request, and completeWithError() from a non-container thread
+                // makes Tomcat throw.
+<span class="fc" id="L164">                close();</span>
+<span class="fc" id="L165">                emitter.complete();</span>
+<span class="nc" id="L166">            }</span>
+<span class="fc" id="L167">        }</span>
+
+        void close() {
+<span class="fc" id="L170">            closed = true;</span>
+<span class="fc" id="L171">            unsent.clear();</span>
+<span class="fc" id="L172">            subscriptions.remove(this);</span>
+<span class="fc" id="L173">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
