@@ -3,13 +3,13 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { HoldingView } from '../models';
 import { SparklineComponent } from '../sparkline/sparkline';
-import { FlashDirective } from '../../shared/flash.directive';
+import { RollingNumberComponent } from '../../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../../shared/format';
 
 /** The client's holdings. Selecting a row loads that symbol into the trade panel. */
 @Component({
     selector: 'app-positions-list',
-    imports: [CommonModule, RouterLink, SparklineComponent, FlashDirective],
+    imports: [CommonModule, RouterLink, SparklineComponent, RollingNumberComponent],
     templateUrl: './positions-list.html',
     styleUrl: './positions-list.css'
 })

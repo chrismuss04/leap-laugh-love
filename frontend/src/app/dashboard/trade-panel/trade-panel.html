@@ -31,11 +31,11 @@
         <h2 id="trade-title">{{ side === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol }}</h2>
         <p class="name" *ngIf="name">{{ name }}</p>
       </div>
-      <span class="live-price num" [appFlash]="price">{{ money(price) }}</span>
+      <span class="live-price num" [appRollingNumber]="price"></span>
     </header>
 
     <!-- Result -->
-    <div *ngIf="step === 'result' && result" class="result" role="status">
+    <div *ngIf="step === 'result' && result" class="result" role="status" data-testid="trade-result">
       <ng-container *ngIf="result.status === 'FILLED'; else notFilled">
         <div class="result-icon ok" aria-hidden="true">✓</div>
         <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
@@ -66,7 +66,7 @@
     </div>
 
     <!-- Unconfirmed: the order may still go through -->
-    <div *ngIf="step === 'unconfirmed'" class="result" role="alert">
+    <div *ngIf="step === 'unconfirmed'" class="result" role="alert" data-testid="trade-unconfirmed">
       <div class="result-icon pending" aria-hidden="true">?</div>
       <p class="result-title">We couldn't confirm your order</p>
       <p class="result-text">Your order to {{ side === 'BUY' ? 'buy' : 'sell' }}

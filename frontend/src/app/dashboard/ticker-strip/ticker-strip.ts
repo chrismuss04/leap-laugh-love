@@ -1,23 +1,22 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MarketIndex } from '../models';
-import { FlashDirective } from '../../shared/flash.directive';
+import { RollingNumberComponent } from '../../shared/rolling-number';
 import { direction, formatNumber, formatSignedPercent, percentChange } from '../../shared/format';
 
 /** Headline market indices with their live level and change since the previous close. */
 @Component({
     selector: 'app-ticker-strip',
-    imports: [CommonModule, FlashDirective],
+    imports: [CommonModule, RollingNumberComponent],
     template: `
     <section class="strip" aria-label="Market indices">
       <div class="item" *ngFor="let index of indices; trackBy: trackBySymbol">
         <span class="label">{{ index.label }}</span>
         <span class="values">
-          <span class="price num" [appFlash]="index.price">
-            <ng-container *ngIf="index.price !== null; else loading">{{ format(index.price) }}</ng-container>
-            <ng-template #loading><span class="skeleton placeholder"></span></ng-template>
-          </span>
-          <span class="change num" [ngClass]="'text-' + dir(index)" *ngIf="index.price !== null">
+          <span class="price num fade-in" *ngIf="index.price !== null; else loading"
+                [appRollingNumber]="index.price" [format]="format"></span>
+          <ng-template #loading><span class="skeleton placeholder"></span></ng-template>
+          <span class="change num fade-in" [ngClass]="'text-' + dir(index)" *ngIf="index.price !== null">
             {{ arrow(index) }} {{ percent(index) }}
           </span>
         </span>

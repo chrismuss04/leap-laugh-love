@@ -28,8 +28,10 @@ public class PriceController {
     private static final int MAX_HISTORY_PAGE_SIZE = 1000;
 
     /**
-     * Bucket widths a caller may request, in seconds: 1m, 5m, 1h, 1d. Restricted to the widths
-     * the accumulator and backfill actually write, so an unsupported interval fails loudly
+     * Bucket widths a caller may request, in seconds: 1m, 5m, 1h, 1d. Restricted to
+     * the widths
+     * the accumulator and backfill actually write, so an unsupported interval fails
+     * loudly
      * instead of returning an empty page that looks like "no history here".
      */
     private static final Set<Integer> SUPPORTED_INTERVALS = Set.of(60, 300, 3600, 86400);
@@ -37,6 +39,13 @@ public class PriceController {
     private final MarketSimulationEngine simulationEngine;
     private final PriceCandleRepository candleRepository;
 
+    /**
+     * Constructs a PriceController with the injected market simulation engine and
+     * price candle repository.
+     * 
+     * @param simulationEngine the market simulation engine
+     * @param candleRepository the price candle repository
+     */
     public PriceController(MarketSimulationEngine simulationEngine, PriceCandleRepository candleRepository) {
         this.simulationEngine = simulationEngine;
         this.candleRepository = candleRepository;
@@ -44,6 +53,7 @@ public class PriceController {
 
     /**
      * Retrieves the latest simulated price for every active instrument.
+     * 
      * @return the latest price for each active instrument
      */
     @GetMapping
@@ -53,6 +63,7 @@ public class PriceController {
 
     /**
      * Retrieves the latest simulated price for a single instrument symbol.
+     * 
      * @param symbol the instrument symbol to look up
      * @return the latest price for the symbol
      * @throws ResponseStatusException with a 404 status if the symbol is unknown
@@ -66,19 +77,25 @@ public class PriceController {
     }
 
     /**
-     * Retrieves a paginated, newest-first page of OHLC candle history for an instrument
+     * Retrieves a paginated, newest-first page of OHLC candle history for an
+     * instrument
      * symbol within a time range.
-     * @param symbol the instrument symbol to look up
-     * @param from the start of the time range (defaults to one day before {@code to})
-     * @param to the end of the time range (defaults to now)
-     * @param interval the candle width, in seconds, to return: one of 60, 300, 3600 or 86400.
-     *     Pick the width from the range being charted - a day of 60s candles is 1440 points,
-     *     the same day at 300s is 288, which is what a chart can actually resolve
-     * @param page the zero-based page number to retrieve
-     * @param size the page size, between 1 and {@value #MAX_HISTORY_PAGE_SIZE}
+     * 
+     * @param symbol   the instrument symbol to look up
+     * @param from     the start of the time range (defaults to one day before
+     *                 {@code to})
+     * @param to       the end of the time range (defaults to now)
+     * @param interval the candle width, in seconds, to return: one of 60, 300, 3600
+     *                 or 86400.
+     *                 Pick the width from the range being charted - a day of 60s
+     *                 candles is 1440 points,
+     *                 the same day at 300s is 288, which is what a chart can
+     *                 actually resolve
+     * @param page     the zero-based page number to retrieve
+     * @param size     the page size, between 1 and {@value #MAX_HISTORY_PAGE_SIZE}
      * @return the requested page of candle history
-     * @throws ResponseStatusException with a 400 status if the paging or range parameters
-     *     are invalid
+     * @throws ResponseStatusException with a 400 status if the paging or range
+     *                                 parameters are invalid
      */
     @GetMapping("/{symbol}/history")
     public Page<PriceCandleResponse> getHistory(
@@ -110,12 +127,24 @@ public class PriceController {
                 .map(this::toResponse);
     }
 
+    /**
+     * Converts a PriceState to a PriceResponse DTO
+     * 
+     * @param state the PriceState to convert
+     * @return the PriceResponse
+     */
     private PriceResponse toResponse(PriceState state) {
         return new PriceResponse(state.symbol(),
                 simulationEngine.displayName(state.symbol()).orElse(null),
                 state.price(), state.asOf());
     }
 
+    /**
+     * Converts a PriceCandle to a PriceCandleResponse DTO
+     * 
+     * @param candle the PriceCandle to convert
+     * @return the PriceCandleResponse
+     */
     private PriceCandleResponse toResponse(PriceCandle candle) {
         return new PriceCandleResponse(
                 candle.getBucketStart(), candle.getBucketSeconds(),

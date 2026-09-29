@@ -1,4 +1,4 @@
-<div class="shell">
+<div class="shell fade-in">
   <header class="app-header">
     <div class="header-inner">
       <a routerLink="/dashboard" class="brand" aria-label="Leapfolio home">
@@ -27,11 +27,16 @@
         <div class="profile" (keydown.escape)="closeMenu()">
           <button type="button" class="profile-button" (click)="toggleMenu()"
                   [attr.aria-expanded]="menuOpen()" aria-haspopup="menu">
-            <span class="profile-text">
-              <span class="profile-name">{{ profile()?.fullName ?? 'My account' }}</span>
-              <span class="profile-level" *ngIf="experienceLabel()">{{ experienceLabel() }}</span>
+            <span class="profile-text" *ngIf="!profileLoading(); else profileSkeleton">
+              <span class="profile-name fade-in">{{ profile()?.fullName ?? 'My account' }}</span>
+              <span class="profile-level fade-in" *ngIf="experienceLabel()">{{ experienceLabel() }}</span>
             </span>
-            <span class="avatar" aria-hidden="true">{{ initials() }}</span>
+            <ng-template #profileSkeleton>
+              <span class="profile-text" aria-hidden="true">
+                <span class="skeleton" style="display: block; width: 110px; height: 14px"></span>
+              </span>
+            </ng-template>
+            <span class="avatar" aria-hidden="true">{{ profileLoading() ? '' : initials() }}</span>
           </button>
 
           <div class="menu-backdrop" *ngIf="menuOpen()" (click)="closeMenu()"></div>

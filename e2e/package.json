@@ -1,0 +1,25 @@
+{
+  "name": "leap-laugh-love-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Playwright end-to-end tests for the whole Leapfolio stack (frontend + all four services).",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test --grep @smoke",
+    "test:api": "playwright test --project=setup --project=api",
+    "test:ui": "playwright test --ui",
+    "report": "playwright show-report",
+    "codegen": "playwright codegen http://localhost:4200",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test:all-browsers": "node -e \"process.env.E2E_ALL_BROWSERS=1;require('child_process').execSync('npx playwright test',{stdio:'inherit',env:process.env})\""
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^10.11.0",
+    "eslint-plugin-playwright": "^2.12.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.71.0"
+  }
+}

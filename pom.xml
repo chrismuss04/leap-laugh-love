@@ -27,6 +27,8 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.12.6</jjwt.version>
+        <javadoc.output.dir>${project.build.directory}/site/javadoc</javadoc.output.dir>
+        <jacoco.output.dir>${project.build.directory}/site/jacoco</jacoco.output.dir>
     </properties>
 
     <dependencyManagement>
@@ -82,8 +84,8 @@
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <docencoding>${project.build.sourceEncoding}</docencoding>
                     <charset>${project.build.sourceEncoding}</charset>
-                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</outputDirectory>
-                    <reportOutputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</reportOutputDirectory>
+                    <outputDirectory>${javadoc.output.dir}</outputDirectory>
+                    <reportOutputDirectory>${javadoc.output.dir}</reportOutputDirectory>
                     <destDir>javadoc</destDir>
                     <doclint>none</doclint>
                     <failOnError>false</failOnError>
@@ -104,7 +106,7 @@
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.14</version>
                 <configuration>
-                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</outputDirectory>
+                    <outputDirectory>${jacoco.output.dir}</outputDirectory>
                 </configuration>
                 <executions>
                     <execution>
@@ -123,4 +125,14 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>docs</id>
+            <properties>
+                <javadoc.output.dir>${maven.multiModuleProjectDirectory}/docs/javadoc</javadoc.output.dir>
+                <jacoco.output.dir>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</jacoco.output.dir>
+            </properties>
+        </profile>
+    </profiles>
 </project>
