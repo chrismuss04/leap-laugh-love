@@ -8,6 +8,10 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
+// Session Timeout & Revocation: open streams must also stop serving expired sessions.
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import com.leap.leaplaughlove.common.security.JwtService;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Exposes the live simulation tick stream as a Server-Sent Events endpoint.
@@ -16,9 +20,11 @@ import java.util.stream.Collectors;
 public class PriceStreamController {
 
     private final PriceStreamBroadcaster broadcaster;
+    private final ClientSessionValidator sessions;
 
-    public PriceStreamController(PriceStreamBroadcaster broadcaster) {
+    public PriceStreamController(PriceStreamBroadcaster broadcaster, ClientSessionValidator sessions) {
         this.broadcaster = broadcaster;
+        this.sessions = sessions;
     }
 
     /**
@@ -36,6 +42,10 @@ public class PriceStreamController {
                         .map(String::toUpperCase)
                         .filter(s -> !s.isEmpty())
                         .collect(Collectors.toSet());
-        return broadcaster.subscribe(symbolFilter);
+        // Capture the verified identity before leaving the request thread.
+        var identity = (JwtService.TokenIdentity) SecurityContextHolder.getContext()
+                .getAuthentication().getDetails();
+        return broadcaster.subscribe(symbolFilter, () -> sessions.isActive(
+                identity.sessionId(), identity.clientId(), identity.expiresAt()));
     }
 }

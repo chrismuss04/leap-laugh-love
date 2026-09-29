@@ -15,6 +15,8 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+// Session Timeout & Revocation
+import java.util.function.BooleanSupplier;
 
 /**
  * Broadcasts live simulation ticks to subscribed clients over Server-Sent Events, optionally
@@ -54,8 +56,17 @@ public class PriceStreamBroadcaster {
         return register(new SseEmitter(0L), symbolFilter);
     }
 
+    // Session Timeout & Revocation: validate on the sender thread, never on the market tick thread.
+    public SseEmitter subscribe(Set<String> symbolFilter, BooleanSupplier sessionActive) {
+        return register(new SseEmitter(0L), symbolFilter, sessionActive);
+    }
+
     SseEmitter register(SseEmitter emitter, Set<String> symbolFilter) {
-        Subscription subscription = new Subscription(emitter, symbolFilter);
+        return register(emitter, symbolFilter, () -> true);
+    }
+
+    SseEmitter register(SseEmitter emitter, Set<String> symbolFilter, BooleanSupplier sessionActive) {
+        Subscription subscription = new Subscription(emitter, symbolFilter, sessionActive);
         subscriptions.add(subscription);
         emitter.onCompletion(subscription::close);
         emitter.onTimeout(subscription::close);
@@ -88,10 +99,12 @@ public class PriceStreamBroadcaster {
         private final Map<String, PriceState> unsent = new ConcurrentHashMap<>();
         private final AtomicBoolean draining = new AtomicBoolean();
         private volatile boolean closed;
+        private final BooleanSupplier sessionActive;
 
-        private Subscription(SseEmitter emitter, Set<String> symbolFilter) {
+        private Subscription(SseEmitter emitter, Set<String> symbolFilter, BooleanSupplier sessionActive) {
             this.emitter = emitter;
             this.symbolFilter = symbolFilter;
+            this.sessionActive = sessionActive;
         }
 
         /**
@@ -124,6 +137,12 @@ public class PriceStreamBroadcaster {
         private void drain() {
             try {
                 while (!closed) {
+                    // Session Timeout & Revocation: validate each outgoing batch, without extending activity.
+                    if (!sessionActive.getAsBoolean()) {
+                        close();
+                        emitter.complete();
+                        return;
+                    }
                     for (String symbol : unsent.keySet()) {
                         PriceState state = unsent.remove(symbol);
                         if (state != null) {
@@ -137,12 +156,13 @@ public class PriceStreamBroadcaster {
                         return;
                     }
                 }
-            } catch (IOException | IllegalStateException ex) {
+            } catch (IOException | RuntimeException ex) {
                 // The client went away (tab closed, or the frontend reconnecting with a new
                 // symbol set). Just drop it: the container is already running its own error
                 // handling for the request, and completeWithError() from a non-container thread
                 // makes Tomcat throw.
                 close();
+                emitter.complete();
             }
         }
 
