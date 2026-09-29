@@ -190,6 +190,12 @@ public class ClientRegistrationController {
      * Exception thrown when an attempt is made to register a duplicate client.
      */
     static class DuplicateClientException extends RuntimeException {
+
+        /**
+         * Constructor for DuplicateClientException
+         * 
+         * @param message the error message
+         */
         DuplicateClientException(String message) {
             super(message);
         }
@@ -203,12 +209,32 @@ public class ClientRegistrationController {
     @Constraint(validatedBy = MinimumAge.Validator.class)
     @interface MinimumAge {
 
+        /**
+         * Returns the minimum age
+         * 
+         * @return min age
+         */
         int value();
 
+        /**
+         * Returns the error message
+         * 
+         * @return error message
+         */
         String message() default "must be at least {value} years old";
 
+        /**
+         * Returns the groups
+         * 
+         * @return groups
+         */
         Class<?>[] groups() default {};
 
+        /**
+         * Returns the payload
+         * 
+         * @return payload
+         */
         Class<? extends Payload>[] payload() default {};
 
         /**
