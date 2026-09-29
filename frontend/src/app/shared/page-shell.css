@@ -1,73 +1,27 @@
-/* Shared "authenticated page" shell: top bar (brand, nav, logout), page header
-   typography, and loading/error states. Imported by every page rendered inside
-   the router-outlet (order-history, holdings) so they share one look without
-   duplicating the rules. Angular scopes component styles per-component, so this
-   never leaks into unrelated pages (e.g. sign-in) even though it's plain CSS. */
+/* Shared layout for pages rendered inside the shell's router-outlet (orders,
+   holdings, profile): background, centred container, page header typography and
+   loading/empty/error states, so they share one look without duplicating the rules.
+   Angular scopes component styles per-component, so this never leaks into unrelated
+   pages (e.g. sign-in) even though it's plain CSS. */
 
-.top-bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 24px 48px;
-  border-bottom: 1px solid var(--border);
+.page {
+  min-height: 100vh;
+  background-color: var(--background);
+  background-image:
+    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 35%),
+    linear-gradient(color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
 }
 
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.page-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 40px 48px;
 }
 
-.brand-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: var(--primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.brand-name {
-  font-weight: 600;
-  color: var(--foreground);
-}
-
-.top-nav {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-}
-
-.nav-link {
-  color: var(--muted-foreground);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-.nav-link:hover {
-  color: var(--foreground);
-}
-
-.nav-link.active {
-  color: var(--primary);
-}
-
-.btn-logout {
-  padding: 8px 16px;
-  background: transparent;
-  color: var(--danger);
-  border: 1px solid var(--danger);
-  border-radius: var(--radius);
-  cursor: pointer;
-  font-weight: 600;
-  font-family: inherit;
-  font-size: 14px;
-}
-
-.btn-logout:hover {
-  background: var(--danger-foreground);
+.page-header {
+  margin-bottom: 32px;
 }
 
 .eyebrow {
@@ -97,7 +51,8 @@
   margin: 0;
 }
 
-.loading {
+.loading,
+.empty {
   text-align: center;
   color: var(--muted-foreground);
   padding: 40px;
@@ -112,7 +67,7 @@
 }
 
 @media (max-width: 640px) {
-  .top-bar {
-    padding: 20px 24px;
+  .page-container {
+    padding: 32px 24px;
   }
 }
