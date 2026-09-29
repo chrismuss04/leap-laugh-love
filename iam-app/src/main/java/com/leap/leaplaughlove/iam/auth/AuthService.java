@@ -10,6 +10,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+// Session Timeout & Revocation: align token and stored session lifetimes.
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
 
 /**
  * Service for handling authentication logic, including login and account lock management.
@@ -25,6 +30,8 @@ public class AuthService {
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    // Session Timeout & Revocation
+    private final ClientSessionRepository sessionRepository;
 
     /**
      * Constructs a new AuthService with the specified dependencies.
@@ -36,11 +43,14 @@ public class AuthService {
     public AuthService(ClientRepository clientRepository,
                        ClientCredentialsRepository credentialsRepository,
                        PasswordEncoder passwordEncoder,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       ClientSessionRepository sessionRepository) {
         this.clientRepository = clientRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        // Session Timeout & Revocation
+        this.sessionRepository = sessionRepository;
     }
 
     /**
@@ -81,8 +91,15 @@ public class AuthService {
         creds.setLastLoginAt(OffsetDateTime.now());
         credentialsRepository.save(creds);
 
-        String token = jwtService.generateToken(client.getClientId(), client.getEmail());
+        // Session Timeout & Revocation: create a distinct session only after successful authentication.
+        // JWT timestamps have second precision; store those exact same times in the database.
+        Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
         long expiresIn = jwtService.getExpirationSeconds();
+        Instant expiresAt = issuedAt.plusSeconds(expiresIn);
+        UUID sessionId = UUID.randomUUID();
+        sessionRepository.create(sessionId, client.getClientId(), issuedAt, expiresAt);
+        String token = jwtService.generateToken(client.getClientId(), client.getEmail(),
+                sessionId, issuedAt, expiresAt);
 
         return new LoginResponse(token, "Bearer", expiresIn);
     }
