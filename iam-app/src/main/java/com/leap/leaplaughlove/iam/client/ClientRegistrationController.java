@@ -252,7 +252,7 @@ public class ClientRegistrationController {
             /**
              * Initializes the validator with the minimum age specified in the annotation.
              * 
-             * @param MinimumAge annotation
+             * @param annotation the annotation containing the minimum age
              */
             @Override
             public void initialize(MinimumAge annotation) {
