@@ -27,7 +27,6 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.12.6</jjwt.version>
-        <javadoc.output.dir>${project.build.directory}/site/</javadoc.output.dir>
         <jacoco.output.dir>${project.build.directory}/site/jacoco</jacoco.output.dir>
     </properties>
 
@@ -84,9 +83,6 @@
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <docencoding>${project.build.sourceEncoding}</docencoding>
                     <charset>${project.build.sourceEncoding}</charset>
-                    <outputDirectory>${javadoc.output.dir}/javadoc</outputDirectory>
-                    <reportOutputDirectory>${javadoc.output.dir}</reportOutputDirectory>
-                    <destDir>javadoc</destDir>
                     <doclint>none</doclint>
                     <failOnError>false</failOnError>
                 </configuration>
@@ -130,9 +126,34 @@
         <profile>
             <id>docs</id>
             <properties>
-                <javadoc.output.dir>${maven.multiModuleProjectDirectory}/docs</javadoc.output.dir>
                 <jacoco.output.dir>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</jacoco.output.dir>
             </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-resources-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>copy-javadoc-to-docs-root</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <inherited>false</inherited> <!-- run only once at the root -->
+                                <configuration>
+                                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>${project.build.directory}/site/apidocs</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>
