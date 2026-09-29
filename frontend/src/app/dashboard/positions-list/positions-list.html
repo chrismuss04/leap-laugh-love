@@ -12,12 +12,12 @@
     </div>
   </div>
 
-  <div *ngIf="!loading && holdings.length === 0" class="empty">
+  <div *ngIf="!loading && holdings.length === 0" class="empty fade-in">
     <p class="empty-title">You don't own any investments yet</p>
     <p class="empty-text">Search for a symbol above, or pick one from the trade panel, to place your first order.</p>
   </div>
 
-  <div *ngIf="!loading && holdings.length > 0" class="rows" role="list">
+  <div *ngIf="!loading && holdings.length > 0" class="rows fade-in" role="list">
     <div *ngFor="let h of holdings; trackBy: trackBySymbol" role="listitem"
          class="row" [class.selected]="h.symbol === selected">
       <button type="button" class="row-main" (click)="select.emit(h.symbol)"
@@ -30,14 +30,14 @@
         <app-sparkline class="spark" [values]="h.intraday" [baseline]="h.previousClose"></app-sparkline>
 
         <span class="price-col">
-          <span class="price num" [appFlash]="h.price">{{ money(h.price) }}</span>
+          <span class="price num" [appRollingNumber]="h.price"></span>
           <span class="sub num" [ngClass]="'text-' + dir(h.dayChange)">
             {{ signedPercent(h.dayChangePercent) }} today
           </span>
         </span>
 
         <span class="value-col">
-          <span class="value num">{{ money(h.marketValue) }}</span>
+          <span class="value num" [appRollingNumber]="h.marketValue"></span>
           <span class="sub num" [ngClass]="'text-' + dir(h.totalReturn)">
             {{ signedMoney(h.totalReturn) }} ({{ signedPercent(h.totalReturnPercent) }})
           </span>

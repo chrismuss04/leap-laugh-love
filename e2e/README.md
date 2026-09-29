@@ -85,8 +85,6 @@ test report, and the HTML report and traces are archived as build artifacts.
 - **Symbol search can close under the user.** `onBlur()` schedules a close 150ms later and
   `onFocus()` doesn't cancel it. Typing doesn't reopen the list; only refocusing does.
   `pages/symbol-search.ts` retries around this.
-- **Sign-in reloads the page a second after the dashboard renders**, and the "Redirecting..."
-  message is never visible.
 - **Colour contrast** is below WCAG AA for muted text on every page. The submit buttons lose
   their accessible name while loading, and the "Sign up" / "Sign in" footer links are `<a>`
   without `href`, so they can't be reached with the keyboard.

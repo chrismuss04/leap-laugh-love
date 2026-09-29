@@ -16,8 +16,9 @@
       </p>
 
       <ng-container *ngIf="headlineValue() !== null; else heroSkeleton">
-        <h1 class="value num" data-testid="headline-value">{{ money(headlineValue()) }}</h1>
-        <p class="change num" [ngClass]="'text-' + dir(headlineChange())">
+        <h1 class="value num fade-in" data-testid="headline-value"
+            [appRollingNumber]="headlineValue()" [animate]="scrubIndex() === null"></h1>
+        <p class="change num fade-in" [ngClass]="'text-' + dir(headlineChange())">
           <ng-container *ngIf="headlineChange() !== null">
             <span aria-hidden="true">{{ headlineChange()! > 0 ? '▲' : headlineChange()! < 0 ? '▼' : '' }}</span>
             {{ signedMoney(headlineChange()) }} ({{ signedPercent(headlineChangePercent()) }})
@@ -36,7 +37,7 @@
           <p>{{ historyError() }}</p>
           <button type="button" (click)="loadHistory()">Try again</button>
         </div>
-        <app-line-chart *ngIf="history() && !historyError()" [class.stale]="historyLoading()"
+        <app-line-chart *ngIf="history() && !historyError()" class="fade-in" [class.stale]="historyLoading()"
                         [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()"
                         [label]="'Portfolio value, ' + headlineLabel()"
                         (scrub)="scrubIndex.set($event)"></app-line-chart>

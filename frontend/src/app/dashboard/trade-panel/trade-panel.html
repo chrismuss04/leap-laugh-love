@@ -31,7 +31,7 @@
         <h2 id="trade-title">{{ side === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol }}</h2>
         <p class="name" *ngIf="name">{{ name }}</p>
       </div>
-      <span class="live-price num" [appFlash]="price">{{ money(price) }}</span>
+      <span class="live-price num" [appRollingNumber]="price"></span>
     </header>
 
     <!-- Result -->

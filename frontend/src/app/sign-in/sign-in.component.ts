@@ -1,5 +1,6 @@
 import { Component, OnInit, signal } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 
 @Component({
@@ -21,7 +22,8 @@ export class SignInComponent implements OnInit {
 
   constructor(
     private formBuilder: FormBuilder,
-    private authService: AuthService
+    private authService: AuthService,
+    private router: Router
   ) {}
 
   ngOnInit(): void {
@@ -58,17 +60,15 @@ export class SignInComponent implements OnInit {
     this.authService.login(email, password).subscribe({
       next: (response) => {
         this.isLoading.set(false);
-        this.successMessage.set('Sign in successful! Redirecting...');
-        
+
         // Store token if remember me is checked
         if (rememberMe) {
           localStorage.setItem('rememberMe', 'true');
         }
-        
-        // Redirect to dashboard after 1 second
-        setTimeout(() => {
-          window.location.href = '/dashboard';
-        }, 1000);
+
+        // The app swaps to the signed-in shell as soon as the token is stored, so route there in
+        // place. A full page load here would re-bootstrap the app and fetch everything twice.
+        this.router.navigateByUrl('/dashboard');
       },
       error: (error) => {
         this.isLoading.set(false);

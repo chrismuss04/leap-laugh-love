@@ -15,13 +15,14 @@ import { ChartPoint, LineChartComponent } from './line-chart/line-chart';
 import { PositionsListComponent } from './positions-list/positions-list';
 import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
+import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
 
 @Component({
     selector: 'app-dashboard',
     imports: [
         CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
-        PositionsListComponent, RecentActivityComponent, TradePanelComponent
+        PositionsListComponent, RecentActivityComponent, TradePanelComponent, RollingNumberComponent
     ],
     templateUrl: './dashboard.html',
     styleUrl: './dashboard.css'
