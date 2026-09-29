@@ -73,6 +73,39 @@ public class JwtService {
                 .compact();
     }
 
+    // Session Timeout & Revocation: background recovery uses short-lived, purpose-scoped tokens.
+    public String generateSettlementToken(UUID clientId) {
+        return generateServiceToken(clientId, "account-settlement");
+    }
+
+    // Session Timeout & Revocation: historical seeding can read prices, but not client APIs.
+    public String generateHistoryToken(UUID clientId) {
+        return generateServiceToken(clientId, "market-history");
+    }
+
+    private String generateServiceToken(UUID clientId, String purpose) {
+        Instant now = Instant.now();
+        return Jwts.builder().subject(clientId.toString())
+                .claim("purpose", purpose)
+                .issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(60)))
+                .signWith(signingKey).compact();
+    }
+
+    // Session Timeout & Revocation: parse verified claims once, preserving the session identity.
+    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {}
+
+    public TokenIdentity parseIdentity(String token) {
+        Claims claims = Jwts.parser().verifyWith(signingKey).build()
+                .parseSignedClaims(token).getPayload();
+        if (claims.getExpiration() == null) {
+            throw new IllegalArgumentException("Token expiration is required");
+        }
+        String sessionId = claims.get("sid", String.class);
+        return new TokenIdentity(UUID.fromString(claims.getSubject()),
+                sessionId == null ? null : UUID.fromString(sessionId),
+                claims.getExpiration().toInstant(), claims.get("purpose", String.class));
+    }
+
     /**
      * Gets the expiration time of the JWT token in seconds.
      * @return expiration time in seconds
