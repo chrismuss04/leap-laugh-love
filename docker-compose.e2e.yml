@@ -1,0 +1,31 @@
+# Overlay for running the Playwright suite (e2e/) against the compose stack:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.e2e.yml in .env. Must be in effect from
+# the first "up": the seed below only runs when Postgres initialises an empty volume, so an
+# existing database needs "docker compose down -v" first (or e2e/scripts/seed-local.ps1 against
+# a native one).
+services:
+  db:
+    volumes:
+      # After the regular seeds (01-06): funded per-worker trader accounts and the fixtures the
+      # suite reads. Tests trade against these, never the demo users.
+      - ./e2e/seed/e2e_seed.sql:/docker-entrypoint-initdb.d/07-seed-e2e.sql:ro
+
+  market-data-app:
+    environment:
+      # Enough history that every chart range (1D-ALL) has candles to draw, without the ~3.8M
+      # rows of the developer default. ~190k rows across the S&P 500; seconds, not minutes.
+      # Overrides the backfill tiers the Jenkinsfile sets for the smoke stack.
+      MARKETDATA_HISTORY_BACKFILL_TIERS: "${E2E_BACKFILL_TIERS:-86400:30,3600:2,300:1}"
+
+  frontend:
+    volumes:
+      # ng serve writes its build cache to /app/.angular - in the bind-mounted checkout, as root.
+      # On a CI agent that leaves root-owned files the next build's "git clean" can't delete.
+      # Keep it in a volume instead; only an empty mountpoint appears in the checkout.
+      - frontend_angular_cache:/app/.angular
+
+volumes:
+  frontend_angular_cache:

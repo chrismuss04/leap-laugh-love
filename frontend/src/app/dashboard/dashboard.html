@@ -16,7 +16,7 @@
       </p>
 
       <ng-container *ngIf="headlineValue() !== null; else heroSkeleton">
-        <h1 class="value num">{{ money(headlineValue()) }}</h1>
+        <h1 class="value num" data-testid="headline-value">{{ money(headlineValue()) }}</h1>
         <p class="change num" [ngClass]="'text-' + dir(headlineChange())">
           <ng-container *ngIf="headlineChange() !== null">
             <span aria-hidden="true">{{ headlineChange()! > 0 ? '▲' : headlineChange()! < 0 ? '▼' : '' }}</span>
@@ -53,22 +53,22 @@
     <section class="stats" aria-label="Account summary">
       <div class="stat">
         <span class="stat-label">Buying power</span>
-        <span class="stat-value num">{{ money(cash()) }}</span>
+        <span class="stat-value num" data-testid="stat-buying-power">{{ money(cash()) }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Investments</span>
-        <span class="stat-value num">{{ accountsLoading() ? '—' : money(marketValue()) }}</span>
+        <span class="stat-value num" data-testid="stat-investments">{{ accountsLoading() ? '—' : money(marketValue()) }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Today's return</span>
-        <span class="stat-value num" [ngClass]="'text-' + dir(todaysReturn())">
+        <span class="stat-value num" data-testid="stat-todays-return" [ngClass]="'text-' + dir(todaysReturn())">
           {{ signedMoney(todaysReturn()) }}
           <small *ngIf="todaysReturnPercent() !== null">{{ signedPercent(todaysReturnPercent()) }}</small>
         </span>
       </div>
       <div class="stat">
         <span class="stat-label">Total return</span>
-        <span class="stat-value num" [ngClass]="'text-' + dir(totalReturn())">{{ signedMoney(totalReturn()) }}</span>
+        <span class="stat-value num" data-testid="stat-total-return" [ngClass]="'text-' + dir(totalReturn())">{{ signedMoney(totalReturn()) }}</span>
       </div>
     </section>
 

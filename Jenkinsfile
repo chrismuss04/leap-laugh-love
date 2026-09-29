@@ -11,7 +11,7 @@ pipeline {
         disableConcurrentBuilds()
         // A hung build holds this executor's ports and containers until someone notices;
         // failing it releases them via the cleanup block below.
-        timeout(time: 45, unit: 'MINUTES')
+        timeout(time: 60, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
@@ -76,6 +76,17 @@ pipeline {
 
                     env.JWT_SECRET = "ci-smoke-test-secret-${env.BUILD_NUMBER}-do-not-use-in-prod"
 
+                    // The E2E overlay adds the Playwright suite's test users to the database seed
+                    // and gives market-data enough history to chart every range. It has to apply
+                    // from the first "up": the seed only runs when Postgres initialises the volume.
+                    env.COMPOSE_FILE = 'docker-compose.yml:docker-compose.e2e.yml'
+
+                    // The E2E runner image (e2e/Dockerfile) is tagged by its lockfile, so it is built
+                    // once and reused by every build until the suite's dependencies change.
+                    env.E2E_IMAGE = "leap-e2e-runner:" + sh(
+                        script: "sha256sum e2e/package-lock.json | cut -c1-12",
+                        returnStdout: true).trim()
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -114,7 +125,7 @@ pipeline {
                     # extract layer ... no such file or directory") and a second attempt goes
                     # through. The later stages then use these local copies without pulling.
                     # Base images are read from the Dockerfiles so this list can't drift from them.
-                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 node:24-alpine $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
                     for image in $images; do
                         for attempt in 1 2 3; do
                             if docker pull -q "$image"; then
@@ -287,6 +298,57 @@ pipeline {
                 '''
             }
         }
+
+        stage('E2E') {
+            options {
+                timeout(time: 20, unit: 'MINUTES')
+            }
+            steps {
+                sh '''
+                    set -eu
+                    # The Angular dev server: its proxy is what routes /api/** to the services, the
+                    # same way a developer's browser reaches them.
+                    $COMPOSE -p "$COMPOSE_PROJECT" up -d frontend
+                    echo "Waiting for the frontend (installs dependencies on first start)..."
+                    for i in $(seq 1 120); do
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
+                            echo "Frontend is serving"
+                            break
+                        fi
+                        if [ "$i" = "120" ]; then
+                            echo "Frontend did not start in time"
+                            exit 1
+                        fi
+                        sleep 5
+                    done
+
+                    # The runner: Node, the suite's dependencies and Chromium's headless shell only.
+                    # Built on the first build after a dependency change, reused otherwise.
+                    if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
+                        docker build -t "$E2E_IMAGE" e2e
+                    fi
+
+                    # Attached to the compose network so it reaches the frontend by service name.
+                    # --user keeps the reports owned by the agent account, for the same reason as
+                    # the Maven step. The image already holds node_modules, so nothing installs.
+                    docker run --rm --ipc=host \
+                        --network "${COMPOSE_PROJECT}_default" \
+                        --user "$(id -u):$(id -g)" \
+                        -e HOME=/tmp \
+                        -e CI=1 \
+                        -e BASE_URL=http://frontend:4200 \
+                        -v "$WORKSPACE/e2e":/e2e \
+                        "$E2E_IMAGE" \
+                        sh -c "tsc --noEmit && eslint . && playwright test"
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'e2e/results/junit.xml'
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'e2e/playwright-report/**, e2e/test-results/**'
+                }
+            }
+        }
     }
 
     post {
@@ -296,7 +358,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db iam-app account-app order-app market-data-app; do
+                    for service in db iam-app account-app order-app market-data-app frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
@@ -316,6 +378,15 @@ pipeline {
                 if [ -n "${IMAGE_TAG:-}" ]; then
                     docker image rm -f "iam-app:$IMAGE_TAG" "account-app:$IMAGE_TAG" "order-app:$IMAGE_TAG" \
                         "market-data-app:$IMAGE_TAG" >/dev/null 2>&1 || true
+                fi
+                # Keep only the current E2E runner; older tags are from superseded lockfiles. (An
+                # image another build is using right now refuses removal, hence "|| true".) Also
+                # reclaims the ~2GB official Playwright image earlier versions of this file pulled.
+                if [ -n "${E2E_IMAGE:-}" ]; then
+                    docker images --format '{{.Repository}}:{{.Tag}}' \
+                        | grep -E '^leap-e2e-runner:|^mcr.microsoft.com/playwright:' \
+                        | grep -vx "$E2E_IMAGE" \
+                        | xargs -r docker image rm >/dev/null 2>&1 || true
                 fi
             '''
             // Must run after the teardown above, never before: "docker-compose down" reads
