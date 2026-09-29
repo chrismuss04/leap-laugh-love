@@ -23,6 +23,7 @@ const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
 })
 export class ShellComponent implements OnInit, OnDestroy {
   readonly profile = signal<ClientProfile | null>(null);
+  readonly profileLoading = signal(true);
   readonly profileError = signal(false);
   readonly menuOpen = signal(false);
 
@@ -55,8 +56,11 @@ export class ShellComponent implements OnInit, OnDestroy {
         this.profile.set(profile);
         this.profileLoading.set(false);
       },
-      // The header still works without a name; the avatar falls back to "?".
-      error: () => this.profileError.set(true)
+      // Stop the skeleton so the header shows the error; the avatar falls back to "?".
+      error: () => {
+        this.profileError.set(true);
+        this.profileLoading.set(false);
+      }
     });
   }
 
