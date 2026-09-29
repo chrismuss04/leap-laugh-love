@@ -5,6 +5,8 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+// Session Timeout & Revocation
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -21,6 +23,8 @@ import java.util.Map;
  * Security configuration for the IAM application 
  * This class defines the JWT authentication and CORS settings, security filter chain, password encoder, and exception handling for unauthorized access.
  */
+// Session Timeout & Revocation: common-security is outside each app's component scan.
+@org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class IamSecurityConfig {
 
@@ -48,7 +52,7 @@ public class IamSecurityConfig {
      * @throws Exception if an error occurs while configuring the security filter chain
      */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -63,7 +67,7 @@ public class IamSecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
-                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
