@@ -1,4 +1,4 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, signal, inject } from '@angular/core';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../services/auth.service';
@@ -10,6 +10,8 @@ import { AuthService } from '../services/auth.service';
     standalone: false
 })
 export class SignInComponent implements OnInit {
+  // Session Timeout & Revocation: stays reactive if logout confirmation later fails.
+  readonly sessionMessage = inject(AuthService).sessionMessage;
   // Form and state variables
   signinForm!: FormGroup;
   // Signals, because the app runs zoneless: a plain field set in an HTTP callback wouldn't

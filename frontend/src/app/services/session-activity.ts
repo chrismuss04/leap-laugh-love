@@ -21,9 +21,10 @@ export class SessionActivityService implements OnDestroy {
   private expiresAt = 0;
   private lastActivity = 0;
   private reporting = false;
-  private readonly expiredSubject = new Subject<void>();
+  // Session Timeout & Revocation: distinguish inactivity from absolute expiry for the sign-in message.
+  private readonly expiredSubject = new Subject<'inactivity' | 'expired'>();
 
-  // Step 6 will use this notification to clear login state and display the expiry message.
+  // The shell clears login state and displays the corresponding expiry message.
   readonly expired$ = this.expiredSubject.asObservable();
 
   start(): void {
@@ -43,7 +44,7 @@ export class SessionActivityService implements OnDestroy {
       this.lastActivity = claims.iat * 1000;
       this.readSharedActivity();
     } catch {
-      this.expire();
+      this.expire('expired');
       return;
     }
     if (this.isExpired()) {
@@ -106,7 +107,7 @@ export class SessionActivityService implements OnDestroy {
       },
       error: error => {
         this.reporting = false;
-        if (error.status === 401) this.expire();
+        if (error.status === 401) this.expire('expired');
         // Network/503 failures do not count as accepted activity; the next interaction can retry.
       }
     }));
@@ -139,9 +140,9 @@ export class SessionActivityService implements OnDestroy {
     this.timer = setTimeout(() => this.checkTime(), Math.max(0, remaining));
   }
 
-  private expire(): void {
+  private expire(reason: 'inactivity' | 'expired' = Date.now() >= this.expiresAt ? 'expired' : 'inactivity'): void {
     this.stop();
-    this.zone.run(() => this.expiredSubject.next());
+    this.zone.run(() => this.expiredSubject.next(reason));
   }
 
   stop(): void {
