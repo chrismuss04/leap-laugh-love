@@ -27,7 +27,7 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.12.6</jjwt.version>
-        <javadoc.output.dir>${project.build.directory}/site/javadoc</javadoc.output.dir>
+        <javadoc.output.dir>${project.build.directory}/site/</javadoc.output.dir>
         <jacoco.output.dir>${project.build.directory}/site/jacoco</jacoco.output.dir>
     </properties>
 
@@ -84,7 +84,7 @@
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <docencoding>${project.build.sourceEncoding}</docencoding>
                     <charset>${project.build.sourceEncoding}</charset>
-                    <outputDirectory>${javadoc.output.dir}</outputDirectory>
+                    <outputDirectory>${javadoc.output.dir}/javadoc</outputDirectory>
                     <reportOutputDirectory>${javadoc.output.dir}</reportOutputDirectory>
                     <destDir>javadoc</destDir>
                     <doclint>none</doclint>
@@ -130,7 +130,7 @@
         <profile>
             <id>docs</id>
             <properties>
-                <javadoc.output.dir>${maven.multiModuleProjectDirectory}/docs/javadoc</javadoc.output.dir>
+                <javadoc.output.dir>${maven.multiModuleProjectDirectory}/docs</javadoc.output.dir>
                 <jacoco.output.dir>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</jacoco.output.dir>
             </properties>
         </profile>
