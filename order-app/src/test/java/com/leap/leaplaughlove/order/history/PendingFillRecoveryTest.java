@@ -75,7 +75,7 @@ class PendingFillRecoveryTest {
         execution = new Execution(order, 10L, new BigDecimal("150.0000"), Execution.Status.FILLED,
                 "Executed at market price", acceptedAt);
 
-        when(jwtService.generateToken(any(), any())).thenReturn("token");
+        when(jwtService.generateSettlementToken(any())).thenReturn("token");
         when(accountRepository.findById(account.getAccountId())).thenReturn(Optional.of(account));
         when(orderRepository.findAcceptedWithFilledExecution(any())).thenReturn(List.of(order));
         when(orderRepository.findByIdForUpdate(order.getOrderId())).thenReturn(Optional.of(order));
@@ -96,7 +96,7 @@ class PendingFillRecoveryTest {
         ArgumentCaptor<PositionMovement> movement = ArgumentCaptor.forClass(PositionMovement.class);
         verify(positionMovementRepository).save(movement.capture());
         assertEquals(10L, movement.getValue().getQuantityDelta());
-        verify(jwtService).generateToken(account.getClientId(), null);
+        verify(jwtService).generateSettlementToken(account.getClientId());
     }
 
     @Test
