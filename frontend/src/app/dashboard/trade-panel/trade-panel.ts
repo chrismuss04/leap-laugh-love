@@ -4,7 +4,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionResponse } from '../../services/order';
-import { FlashDirective } from '../../shared/flash.directive';
+import { RollingNumberComponent } from '../../shared/rolling-number';
 import { formatMoney } from '../../shared/format';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
@@ -18,7 +18,7 @@ type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
  */
 @Component({
     selector: 'app-trade-panel',
-    imports: [CommonModule, FormsModule, FlashDirective],
+    imports: [CommonModule, FormsModule, RollingNumberComponent],
     templateUrl: './trade-panel.html',
     styleUrl: './trade-panel.css'
 })

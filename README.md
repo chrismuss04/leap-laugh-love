@@ -149,8 +149,8 @@ flowchart LR
     MD -- "depends on" --> CS
     ACCT -- "depends on" --> CS
     ORD -- "depends on" --> CS
-    ORD ..> ACCT
-    ORD ..> MD
+    ORD -. "calls" .-> ACCT
+    ORD -. "calls" .-> MD
 ```
 
 ### Common Security — `common-security`
