@@ -1,15 +1,41 @@
 <section class="panel" [attr.data-side]="side" aria-labelledby="trade-title">
+  <!-- Order placement confirmation: opened only after Submit buy/sell requires confirmation. -->
+  <dialog #confirmationDialog class="confirmation-dialog"
+          aria-labelledby="confirmation-title" aria-describedby="confirmation-description"
+          (cancel)="$event.preventDefault(); cancelConfirmation()"
+          (close)="confirmationOpen = false">
+    <h2 id="confirmation-title">Confirm your {{ side === 'BUY' ? 'buy' : 'sell' }} order</h2>
+    <p id="confirmation-description">Are you sure you want to submit this order?</p>
+    <dl class="summary">
+      <div><dt>Account</dt><dd>{{ account?.accountNumber }}</dd></div>
+      <div><dt>Stock</dt><dd>{{ symbol }}<span *ngIf="name"> — {{ name }}</span></dd></div>
+      <div><dt>Action</dt><dd>{{ side === 'BUY' ? 'Buy' : 'Sell' }}</dd></div>
+      <div><dt>Shares</dt><dd class="num">{{ quantity | number }}</dd></div>
+      <div><dt>Estimated price per share</dt><dd class="num">{{ money(price) }}</dd></div>
+      <div class="total"><dt>{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
+        <dd class="num">{{ money(estimate) }}</dd></div>
+    </dl>
+    <p class="confirmation-warning">Confirming submits this market order for execution.
+      The final price may differ from this live estimate. A filled trade cannot be cancelled.</p>
+    <p *ngIf="blocker" class="error" role="alert">{{ blocker }}</p>
+    <div class="confirmation-actions">
+      <button type="button" class="ghost" autofocus (click)="cancelConfirmation()">Go back</button>
+      <button type="button" class="cta" (click)="confirmOrder()"
+              [disabled]="!confirmationOpen || step !== 'review' || !canReview">Confirm and submit</button>
+    </div>
+  </dialog>
+
   <ng-container *ngIf="symbol; else noSymbol">
     <header class="panel-header">
       <div>
         <h2 id="trade-title">{{ side === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol }}</h2>
         <p class="name" *ngIf="name">{{ name }}</p>
       </div>
-      <span class="live-price num" [appFlash]="price">{{ money(price) }}</span>
+      <span class="live-price num" [appRollingNumber]="price"></span>
     </header>
 
     <!-- Result -->
-    <div *ngIf="step === 'result' && result" class="result" role="status">
+    <div *ngIf="step === 'result' && result" class="result" role="status" data-testid="trade-result">
       <ng-container *ngIf="result.status === 'FILLED'; else notFilled">
         <div class="result-icon ok" aria-hidden="true">✓</div>
         <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
@@ -40,7 +66,7 @@
     </div>
 
     <!-- Unconfirmed: the order may still go through -->
-    <div *ngIf="step === 'unconfirmed'" class="result" role="alert">
+    <div *ngIf="step === 'unconfirmed'" class="result" role="alert" data-testid="trade-unconfirmed">
       <div class="result-icon pending" aria-hidden="true">?</div>
       <p class="result-title">We couldn't confirm your order</p>
       <p class="result-text">Your order to {{ side === 'BUY' ? 'buy' : 'sell' }}

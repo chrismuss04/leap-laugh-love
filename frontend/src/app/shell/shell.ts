@@ -51,7 +51,10 @@ export class ShellComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.profileService.getMe().subscribe({
-      next: profile => this.profile.set(profile),
+      next: profile => {
+        this.profile.set(profile);
+        this.profileLoading.set(false);
+      },
       // The header still works without a name; the avatar falls back to "?".
       error: () => this.profileError.set(true)
     });

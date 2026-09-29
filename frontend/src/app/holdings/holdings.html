@@ -16,7 +16,7 @@
     </div>
 
     <div *ngIf="!loading() && accounts().length > 0" class="accounts-list">
-      <div *ngFor="let account of accounts()" class="account-block">
+      <div *ngFor="let account of accounts()" class="account-block" data-testid="holdings-account">
         <div class="account-heading">
           <span class="account-number">{{ account.accountNumber }}</span>
           <span class="account-currency">{{ account.baseCurrency }}</span>

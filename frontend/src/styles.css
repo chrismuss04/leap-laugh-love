@@ -59,18 +59,12 @@
   border-radius: 6px;
 }
 
-/* Set by FlashDirective when a live figure ticks. */
-.flash-up { animation: flash-up 0.7s ease-out; }
-.flash-down { animation: flash-down 0.7s ease-out; }
+/* Content that replaces a skeleton eases in rather than popping. */
+.fade-in { animation: fade-in 0.35s ease-out backwards; }
 
-@keyframes flash-up {
-  from { background-color: var(--gain-muted); }
-  to { background-color: transparent; }
-}
-
-@keyframes flash-down {
-  from { background-color: var(--loss-muted); }
-  to { background-color: transparent; }
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes skeleton-shimmer {
@@ -80,6 +74,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
+  .fade-in { animation: none; }
 }
 
 * {

@@ -19,10 +19,10 @@ import { formatMoney } from '../../shared/format';
         <div class="row" *ngFor="let _ of [1, 2, 3]"><span class="skeleton" style="width: 100%; height: 34px"></span></div>
       </div>
 
-      <p *ngIf="!loading && error" class="empty">{{ error }}</p>
-      <p *ngIf="!loading && !error && orders.length === 0" class="empty">No orders yet. Your trades will show up here.</p>
+      <p *ngIf="!loading && error" class="empty fade-in">{{ error }}</p>
+      <p *ngIf="!loading && !error && orders.length === 0" class="empty fade-in">No orders yet. Your trades will show up here.</p>
 
-      <ol *ngIf="!loading && orders.length > 0" class="rows">
+      <ol *ngIf="!loading && orders.length > 0" class="rows fade-in">
         <li class="row" *ngFor="let order of orders; trackBy: trackById">
           <span class="identity">
             <span class="symbol">{{ order.symbol }}</span>

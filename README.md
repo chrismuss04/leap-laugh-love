@@ -12,6 +12,18 @@ We are using the Trunk branching strategy because it best fits our development s
 
 ---
 
+## [Documentation and Code Coverage](https://chrismuss04.github.io/leap-laugh-love/)
+
+- **Javadoc API Reference**: [View Live Javadoc](https://chrismuss04.github.io/leap-laugh-love/javadoc/)
+- **JaCoCo Test Coverage**: [View Live Coverage Hub](https://chrismuss04.github.io/leap-laugh-love/jacoco/)
+  - [account-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/account-app/)
+  - [common-security](https://chrismuss04.github.io/leap-laugh-love/jacoco/common-security/)
+  - [iam-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/iam-app/)
+  - [market-data-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/market-data-app/)
+  - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
+
+---
+
 ## Architecture Overview
 
 The repository is structured as a **Multi-Module Maven Project** splitting identity and trading domains into independently deployable microservices along with a shared security library:
@@ -137,8 +149,8 @@ flowchart LR
     MD -- "depends on" --> CS
     ACCT -- "depends on" --> CS
     ORD -- "depends on" --> CS
-    ORD ..> ACCT
-    ORD ..> MD
+    ORD -. "calls" .-> ACCT
+    ORD -. "calls" .-> MD
 ```
 
 ### Common Security — `common-security`
@@ -682,6 +694,21 @@ mvn -pl order-app -am test
 # Test Market Data module (with dependency building)
 mvn -pl market-data-app -am test
 ```
+
+### End-to-end tests (Playwright)
+
+`e2e/` holds a small suite of browser and API tests for the critical paths (sign-in,
+registration, trading, order history, holdings) that run against the whole stack. Start the
+stack with the E2E overlay, which adds the suite's test users, then run them:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+cd e2e && npm install && npx playwright install chromium
+npm test            # or: npm run test:smoke, npm run test:ui
+```
+
+See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay isolated, and
+conventions for writing new ones.
 
 ### 2. Javadoc Documentation Generation
 

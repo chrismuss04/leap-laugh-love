@@ -1,11 +1,13 @@
-import { Component, ElementRef, EventEmitter, Input, OnChanges, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionResponse } from '../../services/order';
-import { FlashDirective } from '../../shared/flash.directive';
+import { RollingNumberComponent } from '../../shared/rolling-number';
 import { formatMoney } from '../../shared/format';
+// Order placement confirmation: use the authenticated client's experience level.
+import { ClientProfile, ProfileService } from '../../services/profile';
 
 type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
 
@@ -16,11 +18,11 @@ type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
  */
 @Component({
     selector: 'app-trade-panel',
-    imports: [CommonModule, FormsModule, FlashDirective],
+    imports: [CommonModule, FormsModule, RollingNumberComponent],
     templateUrl: './trade-panel.html',
     styleUrl: './trade-panel.css'
 })
-export class TradePanelComponent implements OnChanges {
+export class TradePanelComponent implements OnChanges, OnInit {
   @Input() symbol: string | null = null;
   @Input() name: string | null = null;
   @Input() price: number | null = null;
@@ -30,6 +32,24 @@ export class TradePanelComponent implements OnChanges {
   @Output() unconfirmed = new EventEmitter<void>();
 
   @ViewChild('quantityInput') quantityInput?: ElementRef<HTMLInputElement>;
+  // Order placement confirmation: the native dialog provides modal keyboard focus handling.
+  @ViewChild('confirmationDialog') confirmationDialog?: ElementRef<HTMLDialogElement>;
+  confirmationOpen = false;
+  private experienceLevel: ClientProfile['experienceLevel'] | null = null;
+  private readonly profileService = inject(ProfileService);
+
+  ngOnInit(): void {
+    this.profileService.getMe().subscribe({
+      next: profile => this.experienceLevel = profile.experienceLevel,
+      error: () => this.experienceLevel = null
+    });
+  }
+
+  // Order placement confirmation: unknown experience requires confirmation too.
+  get requiresConfirmation(): boolean {
+    return this.experienceLevel == null || this.experienceLevel === 'NOVICE'
+      || (this.estimate ?? 0) >= 25_000;
+  }
 
   side: OrderSide = 'BUY';
   accountId: string | null = null;
@@ -44,6 +64,8 @@ export class TradePanelComponent implements OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['accounts'] && (!this.accountId || !this.accounts.some(a => a.accountId === this.accountId))) {
+      // Order placement confirmation: don't confirm a different account than the one reviewed.
+      this.cancelConfirmation();
       this.accountId = this.accounts[0]?.accountId ?? null;
     }
     if (changes['symbol'] && !changes['symbol'].firstChange && this.step !== 'submitting') {
@@ -130,12 +152,45 @@ export class TradePanelComponent implements OnChanges {
   }
 
   edit(): void {
+    // Order placement confirmation: editing invalidates the previous prompt.
+    this.cancelConfirmation();
     this.step = 'edit';
     setTimeout(() => this.quantityInput?.nativeElement.focus());
   }
 
   submit(): void {
-    if (!this.canReview || !this.symbol || !this.accountId) {
+    // Order placement confirmation: clicking Submit opens the prompt before any API call.
+    if (this.step !== 'review' || this.confirmationOpen || !this.canReview) {
+      return;
+    }
+    if (this.requiresConfirmation) {
+      this.submitError = null;
+      this.confirmationOpen = true;
+      this.confirmationDialog?.nativeElement.showModal();
+      return;
+    }
+    this.placeOrder();
+  }
+
+  // Order placement confirmation: only the dialog's affirmative action reaches submission.
+  confirmOrder(): void {
+    if (!this.confirmationOpen || this.step !== 'review') {
+      return;
+    }
+    this.cancelConfirmation();
+    this.placeOrder();
+  }
+
+  // Order placement confirmation: Go back and Escape close the prompt without an API call.
+  cancelConfirmation(): void {
+    this.confirmationOpen = false;
+    this.confirmationDialog?.nativeElement.close();
+  }
+
+  // Order placement confirmation: revalidate live buying power and prevent repeat submissions.
+  private placeOrder(): void {
+    if (this.step !== 'review' || !this.canReview || !this.symbol || !this.accountId) {
+      this.submitError = this.blocker;
       return;
     }
     this.step = 'submitting';
@@ -175,6 +230,8 @@ export class TradePanelComponent implements OnChanges {
   }
 
   reset(): void {
+    // Order placement confirmation: a new ticket needs a new confirmation.
+    this.cancelConfirmation();
     this.step = 'edit';
     this.quantity = null;
     this.result = null;

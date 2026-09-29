@@ -273,3 +273,85 @@ h2 {
   font-size: 14px;
   color: var(--muted-foreground);
 }
+
+/* Order placement confirmation: match the panel while keeping the modal within the viewport. */
+.confirmation-dialog {
+  box-sizing: border-box;
+  width: min(480px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.confirmation-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.confirmation-dialog > p {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.confirmation-dialog .summary div {
+  gap: 16px;
+}
+
+.confirmation-dialog .summary dt,
+.confirmation-dialog .summary dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.confirmation-dialog .summary dd {
+  margin: 0;
+  text-align: right;
+}
+
+.confirmation-warning {
+  padding: 12px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--muted-foreground);
+}
+
+/* Order placement confirmation: keep both actions visible with clear keyboard focus. */
+.confirmation-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.confirmation-actions .ghost {
+  margin-top: 0;
+}
+
+.confirmation-actions button {
+  min-height: 44px;
+}
+
+.confirmation-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Order placement confirmation: stack actions on narrow screens without changing tab order. */
+@media (max-width: 480px) {
+  .confirmation-dialog {
+    padding: 16px;
+  }
+
+  .confirmation-actions {
+    grid-template-columns: 1fr;
+  }
+}
