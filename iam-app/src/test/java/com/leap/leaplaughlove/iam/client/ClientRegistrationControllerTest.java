@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.iam.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.iam.account.AccountClient;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -56,6 +58,9 @@ class ClientRegistrationControllerTest {
 
     @Autowired
     private JwtService jwtService;
+
+    @Autowired
+    private ClientSessionValidator sessionValidator;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -116,11 +121,16 @@ class ClientRegistrationControllerTest {
         UUID accountId = UUID.randomUUID();
         AtomicReference<String> tokenSeen = new AtomicReference<>();
         AtomicReference<String> committedStatusSeen = new AtomicReference<>();
+        AtomicReference<Boolean> sessionActiveDuringCall = new AtomicReference<>();
         Map<String, Object> payload = validPayload("funded.client@example.com");
         payload.put("initialDepositAmount", new BigDecimal("7500.00"));
 
         when(accountClient.createAccount(anyString(), eq("USD"))).thenAnswer(invocation -> {
             tokenSeen.set(invocation.getArgument(0));
+            // account-app's JwtAuthenticationFilter applies exactly this check to every client token.
+            JwtService.TokenIdentity identity = jwtService.parseIdentity(tokenSeen.get());
+            sessionActiveDuringCall.set(sessionValidator.isActive(
+                    identity.sessionId(), identity.clientId(), identity.expiresAt()));
             // A second thread has its own connection, so it only sees the client if it has committed.
             committedStatusSeen.set(CompletableFuture.supplyAsync(() -> jdbcTemplate.query(
                     "SELECT status FROM iam.clients WHERE email = ?",
@@ -134,8 +144,14 @@ class ClientRegistrationControllerTest {
         assertEquals("ACTIVE", committedStatusSeen.get(),
                 "the account must be opened only after the registration has committed");
         assertEquals(clientId, jwtService.parseAndValidate(tokenSeen.get()));
+        assertEquals(Boolean.TRUE, sessionActiveDuringCall.get(),
+                "account-app rejects tokens that are not backed by an active session");
         verify(accountClient).deposit(eq(tokenSeen.get()), eq(accountId),
                 argThat(amount -> amount.compareTo(new BigDecimal("7500.00")) == 0), eq("Initial deposit"));
+
+        JwtService.TokenIdentity identity = jwtService.parseIdentity(tokenSeen.get());
+        assertFalse(sessionValidator.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt()),
+                "the provisioning session must be revoked once the account is opened and funded");
     }
 
     @Test
