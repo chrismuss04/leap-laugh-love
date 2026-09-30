@@ -22,6 +22,8 @@ describe('AuthService', () => {
   });
 
   afterEach(() => {
+    // Session Timeout & Revocation: old logout tests also exercise the new revocation request.
+    httpMock.match('/api/iam/session/logout').forEach(request => request.flush(null));
     httpMock.verify();
     localStorage.clear();
   });

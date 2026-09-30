@@ -30,10 +30,23 @@ class ClientProfileControllerTest {
     @Autowired
     private JwtService jwtService;
 
+    // Session Timeout & Revocation: authenticate against a real stored session.
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+
+    private String activeToken() {
+        UUID sid = UUID.randomUUID();
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var expiry = now.plusSeconds(3600);
+        jdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, ?, NULL)",
+                sid, CLIENT_ID, now.atOffset(java.time.ZoneOffset.UTC), now.atOffset(java.time.ZoneOffset.UTC),
+                expiry.atOffset(java.time.ZoneOffset.UTC));
+        return jwtService.generateToken(CLIENT_ID, "alice@example.com", sid, now, expiry);
+    }
+
     @Test
     @DisplayName("GET /me returns the authenticated client's display profile without sensitive fields")
     void returnsOwnProfile() throws Exception {
-        String token = jwtService.generateToken(CLIENT_ID, "alice@example.com");
+        String token = activeToken();
 
         mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
@@ -46,18 +59,36 @@ class ClientProfileControllerTest {
     }
 
     @Test
-    @DisplayName("GET /me returns 404 when the token's client does not exist")
+    @DisplayName("GET /me returns 401 when no valid client session exists")
     void unknownClientIsNotFound() throws Exception {
         String token = jwtService.generateToken(UUID.randomUUID(), "ghost@example.com");
 
         mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + token))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test
     @DisplayName("GET /me returns 401 without a token")
     void unauthenticatedIsRejected() throws Exception {
         mockMvc.perform(get("/api/iam/v1/clients/me"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    // Session Timeout & Revocation: real database updates take effect on the next request.
+    @Test
+    void revokedSessionIsRejected() throws Exception {
+        String token = activeToken();
+        jdbc.update("UPDATE iam.client_sessions SET revoked_at = CURRENT_TIMESTAMP");
+        mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + token))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void idleSessionIsRejected() throws Exception {
+        String token = activeToken();
+        jdbc.update("UPDATE iam.client_sessions SET last_activity_at = ?",
+                java.time.OffsetDateTime.now().minusMinutes(10));
+        mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + token))
                 .andExpect(status().isUnauthorized());
     }
 }

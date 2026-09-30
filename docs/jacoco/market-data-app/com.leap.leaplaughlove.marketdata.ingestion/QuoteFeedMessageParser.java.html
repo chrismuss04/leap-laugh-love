@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QuoteFeedMessageParser.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.ingestion</a> &gt; <span class="el_source">QuoteFeedMessageParser.java</span></div><h1>QuoteFeedMessageParser.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.ingestion;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
+
+/**
+ * Parses raw pipe-delimited quote feed lines into {@link QuoteFeedMessage}. Structural/type
+ * validation only - business-rule validation (crossed quotes, known instruments, staleness,
+ * sequencing) happens downstream in QuoteIngestionService, which has the context to judge it.
+ */
+public final class QuoteFeedMessageParser {
+
+    private static final String DELIMITER = &quot;\\|&quot;;
+    private static final int FIELD_COUNT = 10;
+
+    private QuoteFeedMessageParser() {
+    }
+
+    /**
+     * Parses a raw pipe-delimited quote feed line into a {@link QuoteFeedMessage}.
+     * @param rawLine the raw feed line, in
+     *     symbol|bidPrice|bidSize|askPrice|askSize|lastPrice|lastSize|exchange|sequenceNumber|quoteTimestamp
+     *     format
+     * @return the parsed, structurally-valid quote feed message
+     * @throws QuoteParseException if the line is blank, has the wrong number of fields, or
+     *     any field fails to parse or fails its structural validation
+     */
+    public static QuoteFeedMessage parse(String rawLine) {
+<span class="pc bpc" id="L30" title="1 of 4 branches missed.">        if (rawLine == null || rawLine.isBlank()) {</span>
+<span class="fc" id="L31">            throw new QuoteParseException(rawLine, &quot;line is blank&quot;);</span>
+        }
+<span class="fc" id="L33">        String[] fields = rawLine.split(DELIMITER);</span>
+<span class="fc bfc" id="L34" title="All 2 branches covered.">        if (fields.length != FIELD_COUNT) {</span>
+<span class="fc" id="L35">            throw new QuoteParseException(rawLine,</span>
+                    &quot;expected &quot; + FIELD_COUNT + &quot; fields but found &quot; + fields.length);
+        }
+
+<span class="fc" id="L39">        String symbol = requireNonBlank(rawLine, fields[0], &quot;symbol&quot;);</span>
+<span class="fc" id="L40">        BigDecimal bidPrice = parsePositivePrice(rawLine, fields[1], &quot;bidPrice&quot;);</span>
+<span class="fc" id="L41">        long bidSize = parseNonNegativeSize(rawLine, fields[2], &quot;bidSize&quot;);</span>
+<span class="fc" id="L42">        BigDecimal askPrice = parsePositivePrice(rawLine, fields[3], &quot;askPrice&quot;);</span>
+<span class="fc" id="L43">        long askSize = parseNonNegativeSize(rawLine, fields[4], &quot;askSize&quot;);</span>
+<span class="fc" id="L44">        BigDecimal lastPrice = parsePositivePrice(rawLine, fields[5], &quot;lastPrice&quot;);</span>
+<span class="fc" id="L45">        long lastSize = parseNonNegativeSize(rawLine, fields[6], &quot;lastSize&quot;);</span>
+<span class="fc" id="L46">        String exchange = requireNonBlank(rawLine, fields[7], &quot;exchange&quot;);</span>
+<span class="fc" id="L47">        long sequenceNumber = parseSequenceNumber(rawLine, fields[8]);</span>
+<span class="fc" id="L48">        OffsetDateTime quoteTimestamp = parseTimestamp(rawLine, fields[9]);</span>
+
+<span class="fc" id="L50">        return new QuoteFeedMessage(symbol.toUpperCase(), bidPrice, bidSize, askPrice, askSize,</span>
+                lastPrice, lastSize, exchange, sequenceNumber, quoteTimestamp);
+    }
+
+    /**
+     * Validates that a field is present and non-blank.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the trimmed field value
+     * @throws QuoteParseException if the value is null or blank
+     */
+    private static String requireNonBlank(String rawLine, String value, String fieldName) {
+<span class="pc bpc" id="L63" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="nc" id="L64">            throw new QuoteParseException(rawLine, fieldName + &quot; must not be blank&quot;);</span>
+        }
+<span class="fc" id="L66">        return value.trim();</span>
+    }
+
+    /**
+     * Parses a price field, requiring it to be a positive number.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the parsed price
+     * @throws QuoteParseException if the value is not a number or is not positive
+     */
+    private static BigDecimal parsePositivePrice(String rawLine, String value, String fieldName) {
+        BigDecimal price;
+        try {
+<span class="fc" id="L80">            price = new BigDecimal(value.trim());</span>
+<span class="fc" id="L81">        } catch (NumberFormatException ex) {</span>
+<span class="fc" id="L82">            throw new QuoteParseException(rawLine, fieldName + &quot; is not a valid number: &quot; + value);</span>
+<span class="fc" id="L83">        }</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (price.compareTo(BigDecimal.ZERO) &lt;= 0) {</span>
+<span class="fc" id="L85">            throw new QuoteParseException(rawLine, fieldName + &quot; must be positive: &quot; + value);</span>
+        }
+<span class="fc" id="L87">        return price;</span>
+    }
+
+    /**
+     * Parses a size field, requiring it to be a non-negative integer.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @param fieldName the field's name, for error reporting
+     * @return the parsed size
+     * @throws QuoteParseException if the value is not an integer or is negative
+     */
+    private static long parseNonNegativeSize(String rawLine, String value, String fieldName) {
+        long size;
+        try {
+<span class="fc" id="L101">            size = Long.parseLong(value.trim());</span>
+<span class="nc" id="L102">        } catch (NumberFormatException ex) {</span>
+<span class="nc" id="L103">            throw new QuoteParseException(rawLine, fieldName + &quot; is not a valid integer: &quot; + value);</span>
+<span class="fc" id="L104">        }</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        if (size &lt; 0) {</span>
+<span class="fc" id="L106">            throw new QuoteParseException(rawLine, fieldName + &quot; must not be negative: &quot; + value);</span>
+        }
+<span class="fc" id="L108">        return size;</span>
+    }
+
+    /**
+     * Parses the sequence number field.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
+     * @return the parsed sequence number
+     * @throws QuoteParseException if the value is not an integer
+     */
+    private static long parseSequenceNumber(String rawLine, String value) {
+        try {
+<span class="fc" id="L120">            return Long.parseLong(value.trim());</span>
+<span class="nc" id="L121">        } catch (NumberFormatException ex) {</span>
+<span class="nc" id="L122">            throw new QuoteParseException(rawLine, &quot;sequenceNumber is not a valid integer: &quot; + value);</span>
+        }
+    }
+
+    /**
+     * Parses the quote timestamp field.
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value, in ISO-8601 offset date-time format
+     * @return the parsed timestamp
+     * @throws QuoteParseException if the value is not a valid ISO-8601 timestamp
+     */
+    private static OffsetDateTime parseTimestamp(String rawLine, String value) {
+        try {
+<span class="fc" id="L135">            return OffsetDateTime.parse(value.trim());</span>
+<span class="fc" id="L136">        } catch (DateTimeParseException ex) {</span>
+<span class="fc" id="L137">            throw new QuoteParseException(rawLine,</span>
+                    &quot;quoteTimestamp is not a valid ISO-8601 timestamp: &quot; + value);
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

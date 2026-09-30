@@ -4,6 +4,10 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { ClientProfile, ProfileService } from '../services/profile';
 import { PriceStreamService } from '../services/price-stream';
+// Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
+import { SessionActivityService } from '../services/session-activity';
+// Session Timeout & Revocation
+import { Subscription, asapScheduler, observeOn } from 'rxjs';
 
 const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
   NOVICE: 'Novice investor',
@@ -27,6 +31,9 @@ export class ShellComponent implements OnInit, OnDestroy {
   readonly menuOpen = signal(false);
 
   private readonly auth = inject(AuthService);
+  // Session Timeout & Revocation
+  private readonly sessionActivity = inject(SessionActivityService);
+  private expirySubscription?: Subscription;
   private readonly profileService = inject(ProfileService);
   readonly stream = inject(PriceStreamService);
 
@@ -50,6 +57,16 @@ export class ShellComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
+    // Session Timeout & Revocation
+    const token = this.auth.getToken();
+    // Session Timeout & Revocation: invalid tokens can expire synchronously during ngOnInit.
+    // Defer the parent authentication update until Angular finishes its current render.
+    this.expirySubscription = this.sessionActivity.expired$.pipe(observeOn(asapScheduler)).subscribe(reason => {
+      this.stream.stop();
+      this.auth.expireSession(token, reason);
+    });
+    this.sessionActivity.start();
+    if (!this.auth.isAuthenticated()) return;
     this.profileService.getMe().subscribe({
       next: profile => {
         this.profile.set(profile);
@@ -64,6 +81,9 @@ export class ShellComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    // Session Timeout & Revocation
+    this.sessionActivity.stop();
+    this.expirySubscription?.unsubscribe();
     this.stream.stop();
   }
 
@@ -77,6 +97,8 @@ export class ShellComponent implements OnInit, OnDestroy {
 
   logout(): void {
     this.closeMenu();
+    // Session Timeout & Revocation: stop activity before asking the server to revoke the session.
+    this.sessionActivity.stop();
     this.stream.stop();
     this.auth.logout();
   }

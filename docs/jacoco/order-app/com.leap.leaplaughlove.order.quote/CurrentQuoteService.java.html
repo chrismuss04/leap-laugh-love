@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CurrentQuoteService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.quote</a> &gt; <span class="el_source">CurrentQuoteService.java</span></div><h1>CurrentQuoteService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.quote;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.time.OffsetDateTime;
+
+/**
+ * Supplies the current market quote an order is priced against at execution time, rejecting
+ * quotes that are too old to reflect the market.
+ */
+@Service
+public class CurrentQuoteService {
+
+<span class="fc" id="L17">    private static final Logger log = LoggerFactory.getLogger(CurrentQuoteService.class);</span>
+
+    private final CurrentQuoteClient quoteClient;
+    private final long maxQuoteAgeSeconds;
+
+    /**
+     * Constructs a CurrentQuoteService with the specified quote client and maximum quote age.
+     * @param quoteClient the client used to fetch the latest quotes
+     * @param maxQuoteAgeSeconds the maximum age of a quote in seconds before it is considered stale
+     */
+    public CurrentQuoteService(CurrentQuoteClient quoteClient,
+<span class="fc" id="L28">                               @Value(&quot;${order.execution.max-quote-age-seconds:${trading.execution.max-quote-age-seconds:5}}&quot;) long maxQuoteAgeSeconds) {</span>
+<span class="fc" id="L29">        this.quoteClient = quoteClient;</span>
+<span class="fc" id="L30">        this.maxQuoteAgeSeconds = maxQuoteAgeSeconds;</span>
+<span class="fc" id="L31">    }</span>
+
+    /**
+     * Retrieves the current quote for the specified symbol, ensuring it is not stale.
+     * @param symbol the instrument symbol for which to fetch the current quote
+     * @return the latest QuoteSnapshot for the specified symbol
+     * @throws IllegalArgumentException if the symbol is null or blank
+     * @throws QuoteUnavailableException if no current quote is available for the symbol
+     * @throws StaleQuoteException if the retrieved quote is older than the maximum allowed age
+     */
+    public QuoteSnapshot getCurrentQuote(String symbol) {
+<span class="pc bpc" id="L42" title="1 of 4 branches missed.">        if (symbol == null || symbol.isBlank()) {</span>
+<span class="fc" id="L43">            throw new IllegalArgumentException(&quot;symbol must not be blank&quot;);</span>
+        }
+
+<span class="fc" id="L46">        QuoteSnapshot quote = quoteClient.fetchLatest(symbol)</span>
+<span class="fc" id="L47">                .orElseThrow(() -&gt; new QuoteUnavailableException(</span>
+                        &quot;No current quote is available for symbol &quot; + symbol));
+
+<span class="fc" id="L50">        OffsetDateTime staleBefore = OffsetDateTime.now().minusSeconds(maxQuoteAgeSeconds);</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (quote.quoteTimestamp().isBefore(staleBefore)) {</span>
+<span class="fc" id="L52">            log.warn(&quot;Rejected quote for {}: quoteTimestamp {} is older than {} seconds&quot;,</span>
+<span class="fc" id="L53">                    symbol, quote.quoteTimestamp(), maxQuoteAgeSeconds);</span>
+<span class="fc" id="L54">            throw new StaleQuoteException(&quot;Current quote for symbol &quot; + symbol</span>
+<span class="fc" id="L55">                    + &quot; is stale: quoteTimestamp &quot; + quote.quoteTimestamp()</span>
+                    + &quot; is older than the maximum quote age of &quot; + maxQuoteAgeSeconds + &quot; seconds&quot;);
+        }
+
+<span class="fc" id="L59">        return quote;</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

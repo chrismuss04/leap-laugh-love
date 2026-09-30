@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -63,6 +63,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
   money = formatMoney;
 
   private readonly orders = inject(OrderService);
+  // Notify Angular when a parent opens the ticket from an asynchronous callback.
+  private readonly changeDetector = inject(ChangeDetectorRef);
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['accounts'] && (!this.accountId || !this.accounts.some(a => a.accountId === this.accountId))) {
@@ -91,6 +93,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     this.side = side;
     this.reset();
+    this.changeDetector.markForCheck();
     setTimeout(() => this.quantityInput?.nativeElement.focus());
   }
 
