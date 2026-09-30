@@ -1,0 +1,113 @@
+<div class="accounts-page">
+  <app-account-switcher *ngIf="multiAccount() || accountId()" class="scope" basePath="/accounts"
+                        [accounts]="accounts()" [selected]="accountId()"
+                        [loading]="loading() && !error()"></app-account-switcher>
+
+  <div class="main">
+    <div *ngIf="error()" class="banner" role="alert">
+      <span>{{ error() }}</span>
+      <button type="button" (click)="load()">Try again</button>
+    </div>
+
+    <!-- Headline: cash is what this page manages -->
+    <section class="hero" aria-labelledby="accounts-page-title">
+      <p class="eyebrow" id="accounts-page-title">
+        <ng-container *ngIf="accountId(); else allTitle">
+          <span *ngIf="selectedAccount() as account" class="swatch" [style.background]="account.color" aria-hidden="true"></span>
+          {{ selectedAccount()?.name ?? 'Account' }}<span *ngIf="selectedAccount() as account" class="num"> · {{ account.accountNumber }}</span>
+        </ng-container>
+        <ng-template #allTitle>Accounts<span *ngIf="!loading()"> · {{ accounts().length }} open</span></ng-template>
+      </p>
+
+      <ng-container *ngIf="!loading(); else heroSkeleton">
+        <h1 class="value num fade-in" data-testid="accounts-cash">{{ money(selectedAccount()?.cash ?? totalCash()) }}</h1>
+        <p class="sub fade-in">
+          {{ accountId() ? 'Cash in this account, ready to trade or move to another account.'
+                         : 'Cash across all your accounts, ready to trade or move between them.' }}
+        </p>
+        <a *ngIf="selectedAccount() as account" class="pill fade-in" [routerLink]="['/dashboard', account.accountId]">
+          Performance &amp; trading <span aria-hidden="true">›</span>
+        </a>
+      </ng-container>
+      <ng-template #heroSkeleton>
+        <span class="skeleton" style="display: block; width: 240px; height: 44px; margin: 6px 0 10px"></span>
+        <span class="skeleton" style="display: block; width: 320px; height: 18px"></span>
+      </ng-template>
+    </section>
+
+    <!-- One account -->
+    <app-account-details *ngIf="accountId()" [account]="selectedAccount()" [showManage]="false"></app-account-details>
+
+    <!-- Every account -->
+    <ng-container *ngIf="!accountId()">
+      <div class="section-header">
+        <h2>Your brokerage accounts</h2>
+        <button type="button" class="pill" (click)="openNew()">
+          <span aria-hidden="true">+</span> Open account
+        </button>
+      </div>
+
+      <div *ngIf="loading() && !error()" class="grid" aria-busy="true">
+        <div *ngFor="let _ of [1, 2]" class="card"><span class="skeleton" style="display: block; height: 180px"></span></div>
+      </div>
+
+      <ul *ngIf="!loading()" class="grid fade-in">
+        <li *ngFor="let account of accounts(); trackBy: trackById" class="card" data-testid="account-card">
+          <a class="card-top" [routerLink]="['/accounts', account.accountId]">
+            <span class="identity">
+              <span class="name">
+                <span class="dot" [style.background]="account.color" aria-hidden="true"></span>
+                {{ account.name }}
+              </span>
+              <span class="number num">{{ account.accountNumber }}</span>
+            </span>
+            <span class="badges">
+              <span *ngIf="account.tradingEnabled === false" class="badge paused">Trading paused</span>
+              <span *ngIf="account.status && account.status !== 'ACTIVE'" class="badge">{{ account.status | titlecase }}</span>
+            </span>
+            <span class="chevron" aria-hidden="true">›</span>
+          </a>
+
+          <div class="figure">
+            <span class="figure-label">Account value</span>
+            <span class="figure-value num">{{ money(account.value) }}</span>
+            <span *ngIf="multiAccount()" class="share num">{{ percent(account.share) }} of total</span>
+          </div>
+
+          <dl class="meta">
+            <div><dt>Cash</dt><dd class="num">{{ money(account.cash) }}</dd></div>
+            <div><dt>Positions</dt><dd class="num">{{ account.positionCount }}</dd></div>
+            <div><dt>Opened</dt><dd>{{ account.openedAt ? (account.openedAt | date: 'MMM d, y') : '—' }}</dd></div>
+          </dl>
+
+          <div class="actions">
+            <a class="action primary" [routerLink]="['/dashboard', account.accountId]">Trade</a>
+            <button type="button" class="action" (click)="addCash(account.accountId)">Add cash</button>
+            <button *ngIf="accounts().length > 1" type="button" class="action" (click)="transferFrom(account.accountId)"
+                    [disabled]="account.cash <= 0" [attr.title]="account.cash <= 0 ? 'No cash to transfer' : null">Transfer</button>
+          </div>
+        </li>
+
+        <li class="card new-card">
+          <button type="button" class="new" (click)="openNew()">
+            <span class="new-icon" aria-hidden="true">+</span>
+            <span class="new-title">Open another account</span>
+            <span class="new-sub">Same profile, separate cash and positions</span>
+          </button>
+        </li>
+      </ul>
+    </ng-container>
+  </div>
+
+  <aside class="rail" id="accounts-rail" aria-label="Manage accounts">
+    <app-open-account-panel *ngIf="rail() === 'open'"
+                            (opened)="onOpened($event)"
+                            (deposited)="load()"
+                            (fund)="fund($event)"
+                            (closed)="rail.set('cash')"></app-open-account-panel>
+    <app-cash-panel *ngIf="rail() === 'cash'" [accounts]="cashAccounts()"
+                    [focusAccountId]="accountId()"
+                    (changed)="load()"
+                    (openAccount)="openNew()"></app-cash-panel>
+  </aside>
+</div>

@@ -9,7 +9,12 @@ COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
 COPY common-security/src common-security/src
 COPY market-data-app/src market-data-app/src
-RUN mvn -B clean package -DskipTests -pl market-data-app -am
+# Maven's local repository lives in a BuildKit cache mount, not the image, so it survives
+# between builds and is shared by all four service images: a code change no longer means
+# re-downloading every dependency. "locked" makes the four parallel builds take turns on it
+# instead of writing the same files at once.
+RUN --mount=type=cache,id=leap-maven-repo,target=/root/.m2,sharing=locked \
+    mvn -B clean package -DskipTests -pl market-data-app -am
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine

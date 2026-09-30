@@ -1,0 +1,107 @@
+.ends {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.field-label .optional {
+  font-size: 12px;
+}
+
+/* Sits on the gap between the two selects, level with their right edge. */
+.swap {
+  position: absolute;
+  right: 44px;
+  top: 50%;
+  z-index: 1;
+  width: 32px;
+  height: 32px;
+  margin-top: -16px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface);
+  color: var(--muted-foreground);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s ease, background 0.15s ease, transform 0.2s ease;
+}
+
+.swap:hover {
+  color: var(--accent);
+  background: var(--surface-hover);
+  transform: rotate(180deg);
+}
+
+select.field-input {
+  appearance: none;
+  -webkit-appearance: none;
+  text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5L6 6.5L11 1.5' stroke='%236b6b7a' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
+.note:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--muted);
+}
+
+.note {
+  flex: 1;
+  min-width: 0;
+  max-width: 180px;
+  padding: 6px 8px;
+  text-align: right;
+  font-size: 14px;
+  background: transparent;
+  color: var(--foreground);
+  border: 1px solid transparent;
+  border-radius: 6px;
+}
+
+.note::placeholder {
+  color: var(--muted-foreground);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swap:hover { transform: none; }
+}
+
+/* Add cash / Transfer, styled like the trade ticket's Buy / Sell. */
+.modes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 4px;
+  background: var(--muted);
+  border-radius: 999px;
+  margin-bottom: 14px;
+}
+
+.mode {
+  padding: 8px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 600;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.mode:hover {
+  color: var(--foreground);
+}
+
+.mode.on {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+}
+
+.ticket > .field {
+  margin-bottom: 4px;
+}
