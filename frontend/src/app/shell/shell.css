@@ -138,6 +138,11 @@
   color: var(--muted-foreground);
 }
 
+.profile-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .avatar {
   width: 34px;
   height: 34px;
