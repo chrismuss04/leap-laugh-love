@@ -26,9 +26,9 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
-    // Increase Test Coverage: authentication must fail closed before issuing a session/token.
+    // Verify missing credentials prevent password checks, session creation, and token issuance.
     @Test
-    void missingCredentialsDoesNotIssueTokenOrCheckPassword() {
+    void rejectsMissingCredentials() {
         when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
         when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.empty());
 
@@ -40,8 +40,9 @@ class AuthServiceTest {
         verify(clientRepository, never()).save(any());
     }
 
+    // Verify successful login clears failed attempts and refreshes the last-login timestamp.
     @Test
-    void successfulLoginClearsPreviousFailuresAndUpdatesLastLogin() {
+    void resetsLoginFailures() {
         var previousLogin = OffsetDateTime.now().minusDays(1);
         testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 2, previousLogin);
         stubValidPassword();
@@ -55,8 +56,9 @@ class AuthServiceTest {
         verify(clientRepository, never()).save(any());
     }
 
+    // Verify each successful login receives its own session ID.
     @Test
-    void consecutiveLoginsCreateDistinctSessions() {
+    void createsDistinctSessions() {
         stubValidPassword();
         when(jwtService.getExpirationSeconds()).thenReturn(3600L);
 
@@ -68,8 +70,9 @@ class AuthServiceTest {
         assertNotEquals(ids.getAllValues().get(0), ids.getAllValues().get(1));
     }
 
+    // Verify a session-storage failure prevents token issuance.
     @Test
-    void sessionStorageFailurePreventsTokenIssuance() {
+    void sessionFailureBlocksToken() {
         stubValidPassword();
         when(jwtService.getExpirationSeconds()).thenReturn(3600L);
         var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
@@ -82,8 +85,9 @@ class AuthServiceTest {
         // Transaction rollback is an integration concern; this unit test checks no token escapes.
     }
 
+    // Verify a credential-save failure prevents session creation and token issuance.
     @Test
-    void credentialSaveFailurePreventsSessionCreation() {
+    void credentialFailureBlocksLogin() {
         stubValidPassword();
         var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
         doThrow(failure).when(credentialsRepository).save(testCredentials);
@@ -93,8 +97,9 @@ class AuthServiceTest {
         verifyNoInteractions(sessionRepository, jwtService);
     }
 
+    // Verify the second failed attempt preserves the last login and leaves the account unlocked.
     @Test
-    void secondFailedAttemptDoesNotLockOrOverwriteLastLogin() {
+    void secondFailureDoesNotLock() {
         var previousLogin = OffsetDateTime.now().minusDays(1);
         testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 1, previousLogin);
         when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));

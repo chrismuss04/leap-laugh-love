@@ -37,11 +37,11 @@ class BalanceServiceTest {
         SecurityContextHolder.clearContext();
     }
 
-    // Increase Test Coverage: invalid amounts must never reach account or ledger storage.
+    // Verify null, zero, and negative cash amounts are rejected before accessing storage.
     @org.junit.jupiter.params.ParameterizedTest
     @org.junit.jupiter.params.provider.NullSource
     @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "-0.01"})
-    void invalidCashAmountsAreRejected(String value) {
+    void rejectsInvalidAmounts(String value) {
         var request = new CashMovementRequest(value == null ? null : new BigDecimal(value), "invalid");
         assertEquals(400, assertThrows(ResponseStatusException.class,
                 () -> balanceService.deposit(accountId, request)).getStatusCode().value());
@@ -50,8 +50,9 @@ class BalanceServiceTest {
         verifyNoInteractions(accountRepository, cashLedgerRepository);
     }
 
+    // Verify withdrawing the full balance succeeds and leaves zero cash.
     @Test
-    void withdrawalOfExactBalanceLeavesZero() {
+    void withdrawsExactBalance() {
         when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD")).thenReturn(new BigDecimal("100.00"));
         when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(call -> call.getArgument(0));
@@ -62,8 +63,9 @@ class BalanceServiceTest {
         assertEquals(new BigDecimal("-100.00"), response.amount());
     }
 
+    // Verify deposits round half up to cents in both the ledger and resulting balance.
     @Test
-    void depositRoundsHalfUpBeforeUpdatingBalance() {
+    void roundsDepositToCents() {
         when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
         when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD")).thenReturn(new BigDecimal("100.00"));
         when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(call -> call.getArgument(0));
@@ -77,8 +79,9 @@ class BalanceServiceTest {
         assertEquals(response.amount(), saved.getValue().getAmount());
     }
 
+    // Verify clients without active accounts receive empty balances without querying the ledger.
     @Test
-    void clientWithoutActiveAccountsHasNoBalances() {
+    void returnsEmptyBalances() {
         when(accountRepository.findByClientIdAndStatus(clientId, "ACTIVE")).thenReturn(List.of());
         var response = balanceService.getBalanceForClient();
         assertTrue(response.accounts().isEmpty());

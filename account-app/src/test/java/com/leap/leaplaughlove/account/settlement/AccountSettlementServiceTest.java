@@ -31,9 +31,9 @@ import static org.mockito.Mockito.*;
 @DisplayName("AccountSettlementService Unit Tests")
 class AccountSettlementServiceTest {
 
-    // Increase Test Coverage: selling the final shares clears their remaining cost basis.
+    // Verify selling all shares clears quantity and cost basis and credits the sale proceeds.
     @Test
-    void sellingEntirePositionClearsQuantityAndAverageCost() {
+    void sellsEntirePosition() {
         when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         var position = new Position(ACCOUNT_ID, INSTRUMENT_ID, 10L, new BigDecimal("100.00"), OffsetDateTime.now());
         when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.of(position));
@@ -56,8 +56,9 @@ class AccountSettlementServiceTest {
         assertEquals("SELL_SETTLEMENT", ledger.getValue().getEntryType());
     }
 
+    // Verify unauthorized settlement cannot read or write balances, holdings, or ledger entries.
     @Test
-    void unauthorizedSettlementDoesNotReadOrWriteFinancialData() {
+    void rejectsUnauthorizedSettlement() {
         when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID))
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
         var request = new SettlementRequest(UUID.randomUUID(), UUID.randomUUID(), INSTRUMENT_ID,
@@ -67,8 +68,9 @@ class AccountSettlementServiceTest {
         verifyNoInteractions(cashLedgerRepository, positionRepository, balanceService);
     }
 
+    // Verify a failed ledger write stops settlement before holdings are accessed or updated.
     @Test
-    void ledgerWriteFailureDoesNotUpdateHoldings() {
+    void ledgerFailureStopsSettlement() {
         when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
         var failure = new org.springframework.dao.DataAccessResourceFailureException("ledger unavailable");
         when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenThrow(failure);
@@ -79,8 +81,9 @@ class AccountSettlementServiceTest {
         verifyNoInteractions(positionRepository, balanceService);
     }
 
+    // Verify validation without an instrument skips holdings and defaults a missing balance to zero.
     @Test
-    void validationWithoutInstrumentDoesNotQueryHoldings() {
+    void validatesWithoutInstrument() {
         when(accountAuthorizationService.getAuthorizedAccount(ACCOUNT_ID)).thenReturn(account);
         when(balanceService.getCurrentBalance(account)).thenReturn(null);
         var result = service.getValidationData(ACCOUNT_ID, null);
