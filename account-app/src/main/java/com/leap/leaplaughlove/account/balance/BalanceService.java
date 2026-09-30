@@ -183,7 +183,7 @@ public class BalanceService {
      * @throws ResponseStatusException if the amount is null or less than or equal
      *                                 to zero
      */
-    private BigDecimal normalizeAmount(BigDecimal amount) {
+    static BigDecimal normalizeAmount(BigDecimal amount) {
         if (amount == null || amount.compareTo(BigDecimal.ZERO) <= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Amount must be greater than zero");
         }
