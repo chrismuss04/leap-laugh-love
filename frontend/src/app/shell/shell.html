@@ -32,6 +32,7 @@
             <span class="profile-text" *ngIf="!profileLoading(); else profileSkeleton">
               <span class="profile-name fade-in">{{ profile()?.fullName ?? 'My account' }}</span>
               <span class="profile-level fade-in" *ngIf="experienceLabel()">{{ experienceLabel() }}</span>
+              <span class="profile-error fade-in" *ngIf="profileError()" role="alert">Couldn't load profile</span>
             </span>
             <ng-template #profileSkeleton>
               <span class="profile-text" aria-hidden="true">
@@ -47,6 +48,7 @@
               <span class="menu-name">{{ profile()?.fullName }}</span>
               <span class="menu-email">{{ profile()?.email }}</span>
             </div>
+            <button type="button" class="menu-item" role="menuitem" routerLink="/profile" (click)="closeMenu()">My profile</button>
             <a routerLink="/accounts" class="menu-item narrow-only" role="menuitem" (click)="closeMenu()">Accounts</a>
             <button type="button" class="menu-item danger" role="menuitem" (click)="logout()">Log out</button>
           </div>

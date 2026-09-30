@@ -11,6 +11,7 @@ import { CreateAccountComponent } from './create-account/create-account.componen
 import { OrderHistoryComponent } from './order-history/order-history';
 import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
+import { ProfileComponent } from './profile/profile';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
@@ -26,6 +27,7 @@ const routes: Routes = [
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
+      { path: 'profile', component: ProfileComponent },
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
       { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },

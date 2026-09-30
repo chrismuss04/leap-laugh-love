@@ -8,18 +8,24 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.UUID;
 
 /**
- * Utility class for interacting with the Spring Security context in Leap Laugh Love services.
+ * Utility class for interacting with the Spring Security context in Leap Laugh
+ * Love services.
  */
 public final class SecurityUtils {
 
+    /**
+     * Private constructor for SecurityUtils
+     */
     private SecurityUtils() {
     }
 
     /**
-     * Resolves the authenticated client ID from the current Spring Security context.
+     * Resolves the authenticated client ID from the current Spring Security
+     * context.
      *
      * @return the UUID of the authenticated client
-     * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid authenticated principal is found
+     * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid
+     *                                 authenticated principal is found
      */
     public static UUID getAuthenticatedClientId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();

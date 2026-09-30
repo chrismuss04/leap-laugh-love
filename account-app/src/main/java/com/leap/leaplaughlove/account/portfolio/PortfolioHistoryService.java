@@ -38,12 +38,19 @@ import java.util.UUID;
 /**
  * Values the authenticated client's portfolio over a time range.
  *
- * <p>The walk runs backwards from what is known exactly - today's holdings and cash - undoing
- * each position movement and cash ledger entry as the timeline passes it. Walking back rather
- * than replaying forward from zero means holdings and cash that predate the ledgers (seeded
- * positions, opening balances) are still counted, as held for the whole range. Each holding is
- * priced from market data candles at that point, carrying the last close forward over gaps; the
- * final point is "now", priced at the live price so the chart ends on the value the rest of the
+ * <p>
+ * The walk runs backwards from what is known exactly - today's holdings and
+ * cash - undoing
+ * each position movement and cash ledger entry as the timeline passes it.
+ * Walking back rather
+ * than replaying forward from zero means holdings and cash that predate the
+ * ledgers (seeded
+ * positions, opening balances) are still counted, as held for the whole range.
+ * Each holding is
+ * priced from market data candles at that point, carrying the last close
+ * forward over gaps; the
+ * final point is "now", priced at the live price so the chart ends on the value
+ * the rest of the
  * dashboard shows.
  */
 @Service
@@ -62,22 +69,37 @@ public class PortfolioHistoryService {
      */
     @Autowired
     public PortfolioHistoryService(AccountRepository accountRepository,
-                                   PositionRepository positionRepository,
-                                   PositionMovementRepository positionMovementRepository,
-                                   CashLedgerRepository cashLedgerRepository,
-                                   InstrumentRepository instrumentRepository,
-                                   PriceHistoryClient priceHistoryClient) {
+            PositionRepository positionRepository,
+            PositionMovementRepository positionMovementRepository,
+            CashLedgerRepository cashLedgerRepository,
+            InstrumentRepository instrumentRepository,
+            PriceHistoryClient priceHistoryClient) {
         this(accountRepository, positionRepository, positionMovementRepository, cashLedgerRepository,
                 instrumentRepository, priceHistoryClient, Clock.systemUTC());
     }
 
+    /**
+     * Constructs a PortfolioHistoryService with a given clock
+     * 
+     * @param accountRepository          The repository for accessing account data.
+     * @param positionRepository         The repository for accessing position data.
+     * @param positionMovementRepository The repository for accessing position
+     *                                   movement data.
+     * @param cashLedgerRepository       The repository for accessing cash ledger
+     *                                   entries.
+     * @param instrumentRepository       The repository for accessing instrument
+     *                                   data.
+     * @param priceHistoryClient         The client for accessing price history
+     *                                   data.
+     * @param clock                      The clock to use for time-based operations.
+     */
     PortfolioHistoryService(AccountRepository accountRepository,
-                            PositionRepository positionRepository,
-                            PositionMovementRepository positionMovementRepository,
-                            CashLedgerRepository cashLedgerRepository,
-                            InstrumentRepository instrumentRepository,
-                            PriceHistoryClient priceHistoryClient,
-                            Clock clock) {
+            PositionRepository positionRepository,
+            PositionMovementRepository positionMovementRepository,
+            CashLedgerRepository cashLedgerRepository,
+            InstrumentRepository instrumentRepository,
+            PriceHistoryClient priceHistoryClient,
+            Clock clock) {
         this.accountRepository = accountRepository;
         this.positionRepository = positionRepository;
         this.positionMovementRepository = positionMovementRepository;
@@ -88,8 +110,10 @@ public class PortfolioHistoryService {
     }
 
     /**
-     * Values every active account of the authenticated client, combined, across the range.
+     * Values every active account of the authenticated client, combined, across the
+     * range.
      * Accounts are summed in their base currencies without conversion.
+     * 
      * @param range the range to chart
      * @return the portfolio value at each point of the range
      * @throws QuoteUnavailableException if market data could not be reached
@@ -130,7 +154,8 @@ public class PortfolioHistoryService {
                 .map(CashLedgerRepository.AccountTotal::getTotal)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Everything that happened inside the range, newest first, to undo on the way back.
+        // Everything that happened inside the range, newest first, to undo on the way
+        // back.
         List<PositionMovement> movements = new ArrayList<>(
                 positionMovementRepository.findByAccountIdInAndCreatedAtAfter(accountIds, window.from()));
         movements.sort(Comparator.comparing(PositionMovement::getCreatedAt).reversed());
@@ -189,9 +214,14 @@ public class PortfolioHistoryService {
     }
 
     /**
-     * Builds the chart's timestamps: the end of each candle bucket from the range start up to
-     * now, with "now" itself as the final point. Buckets are aligned to the epoch the same way
-     * market data aligns candles, so point k lines up with the candle starting one width earlier.
+     * Builds the chart's timestamps: the end of each candle bucket from the range
+     * start up to now, with "now" itself as the final point. Buckets are aligned to
+     * the epoch the same way market data aligns candles, so point k lines up with
+     * the candle starting one width earlier.
+     * 
+     * @param window The price history window.
+     * @param now    The current time.
+     * @return A list of timestamps for each point in the history.
      */
     static List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now) {
         long width = window.intervalSeconds();
@@ -206,13 +236,20 @@ public class PortfolioHistoryService {
     }
 
     /**
-     * Prices one symbol at every timeline point: the close of the latest candle that ended at or
-     * before the point, carried forward over gaps. Points before the first candle take that
-     * candle's close, so a symbol with thin history doesn't drop out of the early chart. The final
-     * point uses the live price when the instrument is currently held.
+     * Prices one symbol at every timeline point: the close of the latest candle
+     * that ended at or before the point, carried forward over gaps. Points before
+     * the first candle take that candle's close, so a symbol with thin history
+     * doesn't drop out of the early chart. The final point uses the live price when
+     * the instrument is currently held.
+     * 
+     * @param symbol        The instrument symbol to fetch prices for.
+     * @param window        The price history window.
+     * @param timeline      The timeline of timestamps to generate prices for.
+     * @param currentlyHeld Whether the instrument is currently held.
+     * @return An array of prices corresponding to each timestamp in the timeline.
      */
     private BigDecimal[] priceSeries(String symbol, PortfolioRange.Window window,
-                                     List<OffsetDateTime> timeline, boolean currentlyHeld) {
+            List<OffsetDateTime> timeline, boolean currentlyHeld) {
         int width = window.intervalSeconds();
         OffsetDateTime historyFrom = timeline.get(0).minusSeconds(width);
         List<CandleClose> closes = priceHistoryClient.fetchCloses(
@@ -233,15 +270,25 @@ public class PortfolioHistoryService {
             priceHistoryClient.fetchLatestPrice(symbol)
                     .ifPresent(live -> series[series.length - 1] = live);
         }
-        // No candles at all: the live price (if any) is the best estimate for every point.
+        // No candles at all: the live price (if any) is the best estimate for every
+        // point.
         if (closes.isEmpty() && series[series.length - 1] != null) {
             Arrays.fill(series, series[series.length - 1]);
         }
         return series;
     }
 
+    /**
+     * Converts the timeline and values into the response DTO.
+     * 
+     * @param range    The original range requested by the client.
+     * @param window   The effective window used for the calculation.
+     * @param timeline The timestamps for each point in the history.
+     * @param values   The calculated portfolio values at each timestamp.
+     * @return The PortfolioHistoryResponse containing the history data.
+     */
     private static PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
-                                                       List<OffsetDateTime> timeline, BigDecimal[] values) {
+            List<OffsetDateTime> timeline, BigDecimal[] values) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
         for (int k = 0; k < timeline.size(); k++) {
             BigDecimal value = values[k] != null ? values[k] : BigDecimal.ZERO.setScale(2);
@@ -256,4 +303,3 @@ public class PortfolioHistoryService {
                 start, end, change, changePercent);
     }
 }
-

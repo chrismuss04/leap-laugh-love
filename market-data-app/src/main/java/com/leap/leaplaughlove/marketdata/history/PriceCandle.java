@@ -11,13 +11,19 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * Represents one OHLC candle aggregated from the live simulation tick stream for an
+ * Represents one OHLC candle aggregated from the live simulation tick stream
+ * for an
  * instrument, over a fixed-width time bucket.
  *
- * <p>Identified by its natural key - instrument, width and bucket start - rather than a
- * surrogate id. The key is assigned, not generated, so the entity reports whether it is new
- * itself: otherwise Spring Data's {@code saveAll} would treat every candle as possibly existing
- * and merge it, issuing a SELECT per row and giving up the batched inserts the backfill and the
+ * <p>
+ * Identified by its natural key - instrument, width and bucket start - rather
+ * than a
+ * surrogate id. The key is assigned, not generated, so the entity reports
+ * whether it is new
+ * itself: otherwise Spring Data's {@code saveAll} would treat every candle as
+ * possibly existing
+ * and merge it, issuing a SELECT per row and giving up the batched inserts the
+ * backfill and the
  * accumulator's flush depend on. Candles are only ever inserted, never updated.
  */
 @Entity
@@ -29,8 +35,10 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
     @Column(name = "instrument_id", nullable = false)
     private UUID instrumentId;
 
-    // Read-only: instrument_id is written through the key column above. A @ManyToOne in the key
-    // itself makes Hibernate reject instruments loaded outside the saving transaction, which is
+    // Read-only: instrument_id is written through the key column above. A
+    // @ManyToOne in the key
+    // itself makes Hibernate reject instruments loaded outside the saving
+    // transaction, which is
     // how both the backfill and the accumulator hold them.
     @ManyToOne
     @JoinColumn(name = "instrument_id", insertable = false, updatable = false)
@@ -59,21 +67,25 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
     @Transient
     private boolean isNew = true;
 
+    /**
+     * No argument constructor required by JPA
+     */
     protected PriceCandle() {
     }
 
     /**
      * Creates a new PriceCandle entity with the specified details.
-     * @param instrument the instrument this candle is for
-     * @param bucketStart the start of the candle's time bucket
+     * 
+     * @param instrument    the instrument this candle is for
+     * @param bucketStart   the start of the candle's time bucket
      * @param bucketSeconds the width, in seconds, of the candle's time bucket
-     * @param open the opening price of the bucket
-     * @param high the highest price of the bucket
-     * @param low the lowest price of the bucket
-     * @param close the closing price of the bucket
+     * @param open          the opening price of the bucket
+     * @param high          the highest price of the bucket
+     * @param low           the lowest price of the bucket
+     * @param close         the closing price of the bucket
      */
     public PriceCandle(SimulatedInstrument instrument, OffsetDateTime bucketStart, int bucketSeconds,
-                        BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close) {
+            BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close) {
         this.instrumentId = instrument.getInstrumentId();
         this.instrument = instrument;
         this.bucketStart = bucketStart;
@@ -86,6 +98,7 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
 
     /**
      * Gets the candle's primary key.
+     * 
      * @return the instrument, width and bucket start identifying the candle
      */
     @Override
@@ -94,54 +107,93 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
     }
 
     /**
-     * Reports whether this candle has not been stored yet, so saving it inserts it directly.
-     * @return true until the candle has been persisted or was loaded from the database
+     * Reports whether this candle has not been stored yet, so saving it inserts it
+     * directly.
+     * 
+     * @return true until the candle has been persisted or was loaded from the
+     *         database
      */
     @Override
-    public boolean isNew() { return isNew; }
+    public boolean isNew() {
+        return isNew;
+    }
 
+    /**
+     * Marks this candle as no longer new, after it has been persisted or loaded
+     * from the database.
+     */
     @PostPersist
     @PostLoad
-    void markNotNew() { this.isNew = false; }
+    void markNotNew() {
+        this.isNew = false;
+    }
 
     /**
      * Gets the instrument this candle is for.
+     * 
      * @return the instrument of the candle
      */
-    public SimulatedInstrument getInstrument() { return instrument; }
-    /**
-     * Gets the start of the candle's time bucket.
-     * @return the bucketStart of the candle
-     */
-    public OffsetDateTime getBucketStart() { return bucketStart; }
-    /**
-     * Gets the width, in seconds, of the candle's time bucket.
-     * @return the bucketSeconds of the candle
-     */
-    public int getBucketSeconds() { return bucketSeconds; }
-    /**
-     * Gets the opening price of the bucket.
-     * @return the open price of the candle
-     */
-    public BigDecimal getOpen() { return open; }
-    /**
-     * Gets the highest price of the bucket.
-     * @return the high price of the candle
-     */
-    public BigDecimal getHigh() { return high; }
-    /**
-     * Gets the lowest price of the bucket.
-     * @return the low price of the candle
-     */
-    public BigDecimal getLow() { return low; }
-    /**
-     * Gets the closing price of the bucket.
-     * @return the close price of the candle
-     */
-    public BigDecimal getClose() { return close; }
+    public SimulatedInstrument getInstrument() {
+        return instrument;
+    }
 
     /**
-     * The composite primary key of a candle. Field names and types match the entity's
+     * Gets the start of the candle's time bucket.
+     * 
+     * @return the bucketStart of the candle
+     */
+    public OffsetDateTime getBucketStart() {
+        return bucketStart;
+    }
+
+    /**
+     * Gets the width, in seconds, of the candle's time bucket.
+     * 
+     * @return the bucketSeconds of the candle
+     */
+    public int getBucketSeconds() {
+        return bucketSeconds;
+    }
+
+    /**
+     * Gets the opening price of the bucket.
+     * 
+     * @return the open price of the candle
+     */
+    public BigDecimal getOpen() {
+        return open;
+    }
+
+    /**
+     * Gets the highest price of the bucket.
+     * 
+     * @return the high price of the candle
+     */
+    public BigDecimal getHigh() {
+        return high;
+    }
+
+    /**
+     * Gets the lowest price of the bucket.
+     * 
+     * @return the low price of the candle
+     */
+    public BigDecimal getLow() {
+        return low;
+    }
+
+    /**
+     * Gets the closing price of the bucket.
+     * 
+     * @return the close price of the candle
+     */
+    public BigDecimal getClose() {
+        return close;
+    }
+
+    /**
+     * The composite primary key of a candle. Field names and types match the
+     * entity's
      * {@code @Id} attributes, as {@code @IdClass} requires.
      */
     public static class Key implements Serializable {
@@ -150,14 +202,18 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
         private int bucketSeconds;
         private OffsetDateTime bucketStart;
 
+        /**
+         * No argument constructor required by JPA
+         */
         protected Key() {
         }
 
         /**
          * Creates a candle key.
-         * @param instrumentId the id of the candle's instrument
+         * 
+         * @param instrumentId  the id of the candle's instrument
          * @param bucketSeconds the width, in seconds, of the candle's time bucket
-         * @param bucketStart the start of the candle's time bucket
+         * @param bucketStart   the start of the candle's time bucket
          */
         public Key(UUID instrumentId, int bucketSeconds, OffsetDateTime bucketStart) {
             this.instrumentId = instrumentId;
@@ -165,6 +221,15 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
             this.bucketStart = bucketStart;
         }
 
+        /**
+         * Overrides the default equals method to compare candles by their natural
+         * key (instrumentId, bucketSeconds, and bucketStart)
+         * 
+         * @param other the object to compare to
+         * @return true if the other object is a key and has the same instrumentId,
+         *         bucketSeconds, and bucketStart
+         * @see java.lang.Object#equals(java.lang.Object)
+         */
         @Override
         public boolean equals(Object other) {
             if (this == other) {
@@ -178,9 +243,16 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
             return bucketSeconds == key.bucketSeconds
                     && Objects.equals(instrumentId, key.instrumentId)
                     && (bucketStart == null ? key.bucketStart == null
-                        : key.bucketStart != null && bucketStart.isEqual(key.bucketStart));
+                            : key.bucketStart != null && bucketStart.isEqual(key.bucketStart));
         }
 
+        /**
+         * Overrides the default hashCode method to generate a hash code based on the
+         * natural key (instrumentId, bucketSeconds, and bucketStart)
+         * 
+         * @return the hash code for this key
+         * @see java.lang.Object#hashCode()
+         */
         @Override
         public int hashCode() {
             return Objects.hash(instrumentId, bucketSeconds, bucketStart == null ? null : bucketStart.toInstant());
