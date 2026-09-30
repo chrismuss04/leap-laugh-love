@@ -30,6 +30,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @DisplayName("PriceStreamBroadcaster Edge Case & Robustness Tests")
 class PriceStreamBroadcasterEdgeCaseTest {
 
+    // Regression: Tomcat owns cleanup after send fails; do not complete the request again.
+    @Test
+    void failedSendDoesNotCompleteAnAlreadyFailedRequest() {
+        var broadcaster = new PriceStreamBroadcaster(Runnable::run);
+        var completions = new AtomicInteger();
+        var attempts = new AtomicInteger();
+        var emitter = new SseEmitter() {
+            @Override
+            public void send(SseEventBuilder event) throws IOException {
+                attempts.incrementAndGet();
+                throw new IOException("client disconnected");
+            }
+            @Override
+            public void complete() {
+                completions.incrementAndGet();
+                throw new IllegalStateException("AsyncContext already destroyed");
+            }
+        };
+        broadcaster.register(emitter, Set.of());
+        broadcaster.onPriceTick(tick("AAPL", "100"));
+        broadcaster.onPriceTick(tick("AAPL", "101"));
+        assertEquals(1, attempts.get());
+        assertEquals(0, completions.get());
+    }
+
+    @Test
+    void expiredSessionCompletionRaceDoesNotRetryCompletion() {
+        var broadcaster = new PriceStreamBroadcaster(Runnable::run);
+        var completions = new AtomicInteger();
+        var emitter = new SseEmitter() {
+            @Override
+            public void complete() {
+                completions.incrementAndGet();
+                throw new IllegalStateException("client disconnected during expiry");
+            }
+        };
+        broadcaster.register(emitter, Set.of(), () -> false);
+        broadcaster.onPriceTick(tick("AAPL", "100"));
+        broadcaster.onPriceTick(tick("AAPL", "101"));
+        assertEquals(1, completions.get());
+    }
+
     // Session Timeout & Revocation: an open stream cannot continue after session invalidation.
     @Test
     void stopsSendingWhenSessionIsRevoked() {

@@ -138,7 +138,14 @@ public class PriceStreamBroadcaster {
             try {
                 while (!closed) {
                     // Session Timeout & Revocation: validate each outgoing batch, without extending activity.
-                    if (!sessionActive.getAsBoolean()) {
+                    boolean active;
+                    try {
+                        active = sessionActive.getAsBoolean();
+                    } catch (RuntimeException ex) {
+                        // Session-store failures must close an otherwise healthy connection too.
+                        active = false;
+                    }
+                    if (!active) {
                         close();
                         emitter.complete();
                         return;
@@ -162,7 +169,8 @@ public class PriceStreamBroadcaster {
                 // handling for the request, and completeWithError() from a non-container thread
                 // makes Tomcat throw.
                 close();
-                emitter.complete();
+                // A failed send (or completion) already belongs to container error handling.
+                // Completing it again can access a destroyed Tomcat AsyncContext.
             }
         }
 
