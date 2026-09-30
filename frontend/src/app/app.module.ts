@@ -23,9 +23,14 @@ const routes: Routes = [
     children: [
       // Lazy: the dashboard is most of the app's code, and sign-in doesn't need it.
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
+      // The same dashboard scoped to one account; the overview above covers all of them.
+      { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
       { path: 'profile', component: ProfileComponent },
+      // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
+      { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
+      { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
