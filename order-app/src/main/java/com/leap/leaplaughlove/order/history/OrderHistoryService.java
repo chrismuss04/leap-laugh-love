@@ -26,55 +26,41 @@ import java.util.stream.Collectors;
 
 /**
  * Service for retrieving order history for clients.
- * Provides methods to fetch paginated order history along with associated
- * executions.
- * 
+ * Provides methods to fetch paginated order history along with associated executions.
  * @see OrderHistoryController
  */
 @Service
 public class OrderHistoryService {
 
     private static final int MAX_PAGE_SIZE = 100;
-    // Central time (CDT/CST), not UTC, so an evening trade is filed under the date
-    // the client saw.
+    // Central time (CDT/CST), not UTC, so an evening trade is filed under the date the client saw.
     private static final ZoneId FILTER_ZONE = ZoneId.of("America/Chicago");
 
-    /**
-     * Helper record to represent a range of dates for filtering orders
-     * 
-     * @param from the start of the date range
-     * @param to   the end of the date range
-     */
-    private record DateRange(OffsetDateTime from, OffsetDateTime to) {
-    }
+    private record DateRange(OffsetDateTime from, OffsetDateTime to) {}
 
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
     private final AccountClient accountClient;
 
     /**
-     * Constructs an instance of OrderHistoryService with the specified repositories
-     * and client.
-     * 
-     * @param orderRepository     the repository used to access order data
+     * Constructs an instance of OrderHistoryService with the specified repositories and client.
+     * @param orderRepository the repository used to access order data
      * @param executionRepository the repository used to access execution data
-     * @param accountClient       the client used to access account information
+     * @param accountClient the client used to access account information
      */
     public OrderHistoryService(OrderRepository orderRepository,
-            ExecutionRepository executionRepository,
-            AccountClient accountClient) {
+                               ExecutionRepository executionRepository,
+                               AccountClient accountClient) {
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
         this.accountClient = accountClient;
     }
 
     /**
-     * Retrieves the order history for the specified client with default null
-     * filters.
-     * 
+     * Retrieves the order history for the specified client with default null filters.
      * @param clientId the unique identifier of the client
-     * @param page     the page number to retrieve
-     * @param size     the number of items per page
+     * @param page the page number to retrieve
+     * @param size the number of items per page
      * @return a paginated list of order history items for the specified client
      */
     @Transactional(readOnly = true)
@@ -84,18 +70,17 @@ public class OrderHistoryService {
 
     /**
      * Retrieves the order history for the specified client.
-     * 
      * @param clientId the unique identifier of the client
-     * @param page     the page number to retrieve
-     * @param size     the number of items per page
-     * @param year     optional year filter; required when month or day is given
-     * @param month    optional month filter (1-12); required when day is given
-     * @param day      optional day-of-month filter
+     * @param page the page number to retrieve
+     * @param size the number of items per page
+     * @param year optional year filter; required when month or day is given
+     * @param month optional month filter (1-12); required when day is given
+     * @param day optional day-of-month filter
      * @return a paginated list of order history items for the specified client
      */
     @Transactional(readOnly = true)
     public Page<OrderHistoryItem> getOrderHistory(UUID clientId, int page, int size,
-            Integer year, Integer month, Integer day) {
+                                                  Integer year, Integer month, Integer day) {
         if (page < 0) {
             throw new IllegalArgumentException("page must not be negative");
         }
@@ -123,14 +108,11 @@ public class OrderHistoryService {
 
     /**
      * Converts the provided year, month, and day into a DateRange object.
-     * 
-     * @param year  the year component of the date range
+     * @param year the year component of the date range
      * @param month the month component of the date range
-     * @param day   the day component of the date range
-     * @return a DateRange object representing the specified date range, or null if
-     *         no date range is specified
-     * @throws IllegalArgumentException if the provided date components are invalid
-     *                                  or inconsistent
+     * @param day the day component of the date range
+     * @return a DateRange object representing the specified date range, or null if no date range is specified
+     * @throws IllegalArgumentException if the provided date components are invalid or inconsistent
      */
     private DateRange toDateRange(Integer year, Integer month, Integer day) {
         if (year == null) {
@@ -164,12 +146,9 @@ public class OrderHistoryService {
     }
 
     /**
-     * Converts an Order entity and its associated executions into an
-     * OrderHistoryItem DTO
-     * 
-     * @param order               the order entity to be converted
-     * @param executionsByOrderId a map of order IDs to their associated execution
-     *                            items
+     * Converts an Order entity and its associated executions into an OrderHistoryItem DTO
+     * @param order the order entity to be converted
+     * @param executionsByOrderId a map of order IDs to their associated execution items
      * @return the corresponding OrderHistoryItem DTO
      */
     private OrderHistoryItem toHistoryItem(Order order, Map<UUID, List<ExecutionItem>> executionsByOrderId) {
@@ -186,7 +165,6 @@ public class OrderHistoryService {
 
     /**
      * Converts an Execution entity into a ExecutionItem DTO
-     * 
      * @param execution the execution entity to be converted
      * @return the corresponding ExecutionItem DTO
      */
@@ -198,3 +176,4 @@ public class OrderHistoryService {
                 execution.getExecutedAt());
     }
 }
+

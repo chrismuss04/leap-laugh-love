@@ -27,7 +27,6 @@
         <java.version>21</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jjwt.version>0.12.6</jjwt.version>
-        <jacoco.output.dir>${project.build.directory}/site/jacoco</jacoco.output.dir>
     </properties>
 
     <dependencyManagement>
@@ -83,6 +82,9 @@
                     <encoding>${project.build.sourceEncoding}</encoding>
                     <docencoding>${project.build.sourceEncoding}</docencoding>
                     <charset>${project.build.sourceEncoding}</charset>
+                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</outputDirectory>
+                    <reportOutputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</reportOutputDirectory>
+                    <destDir>javadoc</destDir>
                     <doclint>none</doclint>
                     <failOnError>false</failOnError>
                 </configuration>
@@ -102,7 +104,7 @@
                 <artifactId>jacoco-maven-plugin</artifactId>
                 <version>0.8.14</version>
                 <configuration>
-                    <outputDirectory>${jacoco.output.dir}</outputDirectory>
+                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</outputDirectory>
                 </configuration>
                 <executions>
                     <execution>
@@ -121,39 +123,4 @@
             </plugin>
         </plugins>
     </build>
-
-    <profiles>
-        <profile>
-            <id>docs</id>
-            <properties>
-                <jacoco.output.dir>${maven.multiModuleProjectDirectory}/docs/jacoco/${project.artifactId}</jacoco.output.dir>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-resources-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>copy-javadoc-to-docs-root</id>
-                                <phase>prepare-package</phase>
-                                <goals>
-                                    <goal>copy-resources</goal>
-                                </goals>
-                                <inherited>false</inherited> <!-- run only once at the root -->
-                                <configuration>
-                                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs/javadoc</outputDirectory>
-                                    <resources>
-                                        <resource>
-                                            <directory>${project.build.directory}/reports/apidocs</directory>
-                                        </resource>
-                                    </resources>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>

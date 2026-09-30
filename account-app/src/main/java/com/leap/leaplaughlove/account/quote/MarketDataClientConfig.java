@@ -14,21 +14,9 @@ import java.time.Duration;
 @Configuration
 public class MarketDataClientConfig {
 
-    /**
-     * Construct a new MarketDataClientConfig
-     */
     public MarketDataClientConfig() {
     }
 
-    /**
-     * Create a RestClient for the market data service.
-     * 
-     * @param builder          The RestClient builder.
-     * @param baseUrl          The base URL for the market data service.
-     * @param connectTimeoutMs The connection timeout in milliseconds.
-     * @param readTimeoutMs    The read timeout in milliseconds.
-     * @return A RestClient for the market data service.
-     */
     @Bean
     public RestClient marketDataRestClient(
             RestClient.Builder builder,
@@ -41,3 +29,4 @@ public class MarketDataClientConfig {
         return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();
     }
 }
+

@@ -11,15 +11,11 @@ import java.util.List;
  */
 public final class CommonCorsConfiguration {
 
-    /**
-     * Private CorsConfiguration constructor
-     */
     private CommonCorsConfiguration() {
     }
 
     /**
      * Provides a standard CorsConfigurationSource for services.
-     * 
      * @return configured CorsConfigurationSource
      */
     public static CorsConfigurationSource corsConfigurationSource() {
@@ -33,3 +29,4 @@ public final class CommonCorsConfiguration {
         return source;
     }
 }
+

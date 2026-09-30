@@ -41,13 +41,6 @@ public class FillRecorder {
     private final PositionMovementRepository positionMovementRepository;
     private final AccountClient accountClient;
 
-    /**
-     * Constructs a FillRecorder with the required repositories and client.
-     * 
-     * @param executionRepository        the repository for persisting execution records
-     * @param positionMovementRepository the repository for recording position movements
-     * @param accountClient              the client for communicating settlement details to the account service
-     */
     public FillRecorder(ExecutionRepository executionRepository,
                         PositionMovementRepository positionMovementRepository,
                         AccountClient accountClient) {

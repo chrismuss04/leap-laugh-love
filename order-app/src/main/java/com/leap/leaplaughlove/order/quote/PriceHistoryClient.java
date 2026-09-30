@@ -71,16 +71,6 @@ public class PriceHistoryClient {
         return fetchCloses(symbol, from, to, intervalSeconds, headers -> headers.setBearerAuth(bearerToken));
     }
 
-    /**
-     * Fetches every candle close for a symbol within a time range, oldest first, with custom authentication.
-     * 
-     * @param symbol          the instrument symbol
-     * @param from            the start of the range
-     * @param to              the end of the range
-     * @param intervalSeconds the candle width, in seconds
-     * @param authentication  consumer to populate authentication headers
-     * @return the list of candle closes in the range
-     */
     private List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
                                           int intervalSeconds, Consumer<HttpHeaders> authentication) {
         List<CandleClose> closes = new ArrayList<>();
@@ -138,21 +128,11 @@ public class PriceHistoryClient {
         }
     }
 
-    /**
-     * Converts an offset date-time to a UTC ISO-8601 string truncated to seconds.
-     * 
-     * @param time the offset date-time to format
-     * @return the ISO-8601 string representation in UTC
-     */
+    // A non-UTC offset would put a literal '+' in the query string, which decodes as a space.
     private static String isoUtc(OffsetDateTime time) {
         return time.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();
     }
 
-    /**
-     * Forwards the incoming caller's bearer authorization header to outgoing requests.
-     * 
-     * @param headers the HTTP headers of the outgoing request
-     */
     private void forwardCallerToken(HttpHeaders headers) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);

@@ -17,25 +17,16 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
- * Broadcasts live simulation ticks to subscribed clients over Server-Sent
- * Events, optionally
+ * Broadcasts live simulation ticks to subscribed clients over Server-Sent Events, optionally
  * filtered to a subset of symbols per subscriber.
  *
- * <p>
- * Ticks arrive on the simulation's tick thread, and nothing here may block it:
- * an SSE write
- * blocks for as long as the client isn't reading (a stalled tab, a dropped
- * connection the proxy
- * hasn't noticed yet - up to the socket's write timeout), and writing inline
- * froze the whole
- * market for every instrument and every other subscriber while it waited. So
- * each subscriber
- * gets its own sender on a virtual thread, and the tick thread only hands it
- * the price. What a
- * subscriber hasn't been sent yet is conflated to the latest price per symbol,
- * which is all a
- * live view needs and bounds a slow client's backlog to one entry per symbol it
- * watches.
+ * <p>Ticks arrive on the simulation's tick thread, and nothing here may block it: an SSE write
+ * blocks for as long as the client isn't reading (a stalled tab, a dropped connection the proxy
+ * hasn't noticed yet - up to the socket's write timeout), and writing inline froze the whole
+ * market for every instrument and every other subscriber while it waited. So each subscriber
+ * gets its own sender on a virtual thread, and the tick thread only hands it the price. What a
+ * subscriber hasn't been sent yet is conflated to the latest price per symbol, which is all a
+ * live view needs and bounds a slow client's backlog to one entry per symbol it watches.
  */
 @Component
 public class PriceStreamBroadcaster {
@@ -50,35 +41,19 @@ public class PriceStreamBroadcaster {
         this(Executors.newVirtualThreadPerTaskExecutor());
     }
 
-    /**
-     * Creates a broadcaster that sends to subs using a given Executor.
-     * 
-     * @param sender the executor that will do the sending on virtual threads
-     */
     PriceStreamBroadcaster(Executor sender) {
         this.sender = sender;
     }
 
     /**
      * Registers a new SSE subscriber, optionally filtered to a set of symbols.
-     * 
-     * @param symbolFilter the symbols to send to this subscriber, or empty to send
-     *                     all
+     * @param symbolFilter the symbols to send to this subscriber, or empty to send all
      * @return the emitter the subscriber should be returned to the client
      */
     public SseEmitter subscribe(Set<String> symbolFilter) {
         return register(new SseEmitter(0L), symbolFilter);
     }
 
-    /**
-     * Registers a new SSE subscriber, optionally filtered to a set of symbols.
-     * 
-     * @param emitter      the emitter the subscriber should be returned to the
-     *                     client
-     * @param symbolFilter the symbols to send to this subscriber, or empty to send
-     *                     all
-     * @return the emitter the subscriber should be returned to the client
-     */
     SseEmitter register(SseEmitter emitter, Set<String> symbolFilter) {
         Subscription subscription = new Subscription(emitter, symbolFilter);
         subscriptions.add(subscription);
@@ -89,10 +64,8 @@ public class PriceStreamBroadcaster {
     }
 
     /**
-     * Queues a simulation tick for every subscriber whose symbol filter matches it.
-     * Never
+     * Queues a simulation tick for every subscriber whose symbol filter matches it. Never
      * blocks on a subscriber: the sends happen on each subscriber's own sender.
-     * 
      * @param event the simulation tick event to broadcast
      */
     @EventListener
@@ -106,8 +79,7 @@ public class PriceStreamBroadcaster {
     }
 
     /**
-     * One SSE subscriber: its symbol filter, the latest unsent price per symbol,
-     * and whether a
+     * One SSE subscriber: its symbol filter, the latest unsent price per symbol, and whether a
      * sender is currently draining those to the client.
      */
     private final class Subscription {
@@ -117,14 +89,6 @@ public class PriceStreamBroadcaster {
         private final AtomicBoolean draining = new AtomicBoolean();
         private volatile boolean closed;
 
-        /**
-         * Creates a subscription with given emitter and symbol filter.
-         *
-         * @param emitter      the emitter the subscriber should be returned to the
-         *                     client
-         * @param symbolFilter the symbols to send to this subscriber, or empty to send
-         *                     all
-         */
         private Subscription(SseEmitter emitter, Set<String> symbolFilter) {
             this.emitter = emitter;
             this.symbolFilter = symbolFilter;
@@ -132,7 +96,6 @@ public class PriceStreamBroadcaster {
 
         /**
          * Checks whether a symbol should be sent to this subscriber.
-         * 
          * @param symbol the instrument symbol of the tick being broadcast
          * @return true if this subscriber's filter is empty or contains the symbol
          */
@@ -141,8 +104,7 @@ public class PriceStreamBroadcaster {
         }
 
         /**
-         * Records the latest price for its symbol, replacing any not yet sent, and
-         * starts a
+         * Records the latest price for its symbol, replacing any not yet sent, and starts a
          * sender if none is running.
          */
         void offer(PriceState state) {
@@ -156,8 +118,7 @@ public class PriceStreamBroadcaster {
         }
 
         /**
-         * Sends unsent prices until there are none left. Only one drain runs per
-         * subscriber at a
+         * Sends unsent prices until there are none left. Only one drain runs per subscriber at a
          * time, so the client sees one ordered stream.
          */
         private void drain() {
@@ -185,9 +146,6 @@ public class PriceStreamBroadcaster {
             }
         }
 
-        /**
-         * Cleans up the subscription when the SSE connection closes or times out
-         */
         void close() {
             closed = true;
             unsent.clear();

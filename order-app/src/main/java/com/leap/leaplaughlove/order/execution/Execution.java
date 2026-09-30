@@ -14,12 +14,7 @@ import java.util.UUID;
 @Table(name = "executions", schema = "trading")
 public class Execution {
 
-    /**
-     * Enum describing the status of an execution
-     */
-    public enum Status {
-        FILLED, REJECTED
-    }
+    public enum Status { FILLED, REJECTED }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -51,20 +46,18 @@ public class Execution {
      */
     protected Execution() {
     }
-
     /**
      * Constructs a new Execution with the specified details.
-     * 
-     * @param executionId  the unique identifier of the execution
-     * @param order        the order associated with this execution
+     * @param executionId the unique identifier of the execution
+     * @param order the order associated with this execution
      * @param fillQuantity the quantity filled in this execution
-     * @param fillPrice    the price at which the order was filled
-     * @param status       the status of the execution (FILLED or REJECTED)
-     * @param reason       the reason for rejection, if applicable
-     * @param executedAt   the timestamp when the execution occurred
+     * @param fillPrice the price at which the order was filled
+     * @param status the status of the execution (FILLED or REJECTED)
+     * @param reason the reason for rejection, if applicable
+     * @param executedAt the timestamp when the execution occurred
      */
     public Execution(UUID executionId, Order order, Long fillQuantity, BigDecimal fillPrice,
-            Status status, String reason, OffsetDateTime executedAt) {
+                     Status status, String reason, OffsetDateTime executedAt) {
         this.executionId = executionId;
         this.order = order;
         this.fillQuantity = fillQuantity;
@@ -75,81 +68,57 @@ public class Execution {
     }
 
     /**
-     * Constructs a new Execution without specifying an execution ID. The execution
-     * ID will be generated automatically.
-     * 
-     * @param order        the order associated with this execution
+     * Constructs a new Execution without specifying an execution ID. The execution ID will be generated automatically.
+     * @param order the order associated with this execution
      * @param fillQuantity the quantity filled in this execution
-     * @param fillPrice    the price at which the order was filled
-     * @param status       the status of the execution (FILLED or REJECTED)
-     * @param reason       the reason for rejection, if applicable
-     * @param executedAt   the timestamp when the execution occurred
+     * @param fillPrice the price at which the order was filled
+     * @param status the status of the execution (FILLED or REJECTED)
+     * @param reason the reason for rejection, if applicable
+     * @param executedAt the timestamp when the execution occurred
      */
     public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
-            Status status, String reason, OffsetDateTime executedAt) {
+                     Status status, String reason, OffsetDateTime executedAt) {
         this(null, order, fillQuantity, fillPrice, status, reason, executedAt);
     }
-
+    
     /**
      * Returns the unique identifier of the execution.
-     * 
      * @return the execution ID
      */
-    public UUID getExecutionId() {
-        return executionId;
-    }
-
+    public UUID getExecutionId() { return executionId; }
     /**
      * Returns the Order object associated with this execution.
-     * 
      * @return the order associated with this execution
      */
-    public Order getOrder() {
-        return order;
-    }
-
+    public Order getOrder() { return order; }
     /**
      * Returns the quantity filled in this execution.
-     * 
      * @return the fill quantity
      */
-    public Long getFillQuantity() {
-        return fillQuantity;
-    }
+    public Long getFillQuantity() { return fillQuantity; }
 
     /**
      * Returns the price at which the order was filled.
-     * 
      * @return the fill price
      */
-    public BigDecimal getFillPrice() {
-        return fillPrice;
-    }
+    public BigDecimal getFillPrice() { return fillPrice; }
 
     /**
      * Returns the status of the execution (FILLED or REJECTED).
-     * 
      * @return the execution status
      */
-    public Status getStatus() {
-        return status;
-    }
+    public Status getStatus() { return status; }
 
     /**
      * Returns the timestamp when the execution occurred.
-     * 
      * @return the execution timestamp
      */
-    public OffsetDateTime getExecutedAt() {
-        return executedAt;
-    }
+    public OffsetDateTime getExecutedAt() { return executedAt; }
 
     /**
      * Returns the reason for rejection, if applicable.
-     * 
      * @return the rejection reason
      */
-    public String getReason() {
-        return reason;
-    }
+    public String getReason() { return reason; }
 }
+

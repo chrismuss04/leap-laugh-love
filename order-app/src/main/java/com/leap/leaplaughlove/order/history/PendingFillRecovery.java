@@ -50,17 +50,6 @@ public class PendingFillRecovery {
     private final TransactionTemplate transactionTemplate;
     private final long graceSeconds;
 
-    /**
-     * Constructs a PendingFillRecovery instance with the necessary repositories, services, and recovery configuration.
-     * 
-     * @param orderRepository     the repository for accessing order data
-     * @param executionRepository the repository for checking existing executions
-     * @param accountRepository   the repository for retrieving account ownership details
-     * @param fillRecorder        the fill recorder for booking recovered executions
-     * @param jwtService          the JWT service for generating system service tokens
-     * @param transactionTemplate the transaction template for managing atomic recovery units
-     * @param graceSeconds        the grace period in seconds before a pending order is considered orphaned
-     */
     public PendingFillRecovery(OrderRepository orderRepository,
                                ExecutionRepository executionRepository,
                                AccountRepository accountRepository,

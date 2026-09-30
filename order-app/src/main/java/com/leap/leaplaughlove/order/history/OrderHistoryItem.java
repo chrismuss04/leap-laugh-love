@@ -30,9 +30,6 @@ public record OrderHistoryItem(
         OffsetDateTime filledAt,
         List<ExecutionItem> executions
 ) { 
-    /**
-     * Compact constructor ensuring an unmodifiable list of executions.
-     */
     public OrderHistoryItem {
         executions = executions != null ? List.copyOf(executions) : List.of();
     }

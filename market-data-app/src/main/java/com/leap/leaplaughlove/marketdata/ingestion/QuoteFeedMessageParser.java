@@ -5,35 +5,26 @@ import java.time.OffsetDateTime;
 import java.time.format.DateTimeParseException;
 
 /**
- * Parses raw pipe-delimited quote feed lines into {@link QuoteFeedMessage}.
- * Structural/type
- * validation only - business-rule validation (crossed quotes, known
- * instruments, staleness,
- * sequencing) happens downstream in QuoteIngestionService, which has the
- * context to judge it.
+ * Parses raw pipe-delimited quote feed lines into {@link QuoteFeedMessage}. Structural/type
+ * validation only - business-rule validation (crossed quotes, known instruments, staleness,
+ * sequencing) happens downstream in QuoteIngestionService, which has the context to judge it.
  */
 public final class QuoteFeedMessageParser {
 
     private static final String DELIMITER = "\\|";
     private static final int FIELD_COUNT = 10;
 
-    /**
-     * Constructs a new QuoteFeedMessageParser
-     */
     private QuoteFeedMessageParser() {
     }
 
     /**
      * Parses a raw pipe-delimited quote feed line into a {@link QuoteFeedMessage}.
-     * 
      * @param rawLine the raw feed line, in
-     *                symbol|bidPrice|bidSize|askPrice|askSize|lastPrice|lastSize|exchange|sequenceNumber|quoteTimestamp
-     *                format
+     *     symbol|bidPrice|bidSize|askPrice|askSize|lastPrice|lastSize|exchange|sequenceNumber|quoteTimestamp
+     *     format
      * @return the parsed, structurally-valid quote feed message
-     * @throws QuoteParseException if the line is blank, has the wrong number of
-     *                             fields, or
-     *                             any field fails to parse or fails its structural
-     *                             validation
+     * @throws QuoteParseException if the line is blank, has the wrong number of fields, or
+     *     any field fails to parse or fails its structural validation
      */
     public static QuoteFeedMessage parse(String rawLine) {
         if (rawLine == null || rawLine.isBlank()) {
@@ -62,9 +53,8 @@ public final class QuoteFeedMessageParser {
 
     /**
      * Validates that a field is present and non-blank.
-     * 
-     * @param rawLine   the raw feed line, for error reporting
-     * @param value     the raw field value
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
      * @param fieldName the field's name, for error reporting
      * @return the trimmed field value
      * @throws QuoteParseException if the value is null or blank
@@ -78,9 +68,8 @@ public final class QuoteFeedMessageParser {
 
     /**
      * Parses a price field, requiring it to be a positive number.
-     * 
-     * @param rawLine   the raw feed line, for error reporting
-     * @param value     the raw field value
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
      * @param fieldName the field's name, for error reporting
      * @return the parsed price
      * @throws QuoteParseException if the value is not a number or is not positive
@@ -100,9 +89,8 @@ public final class QuoteFeedMessageParser {
 
     /**
      * Parses a size field, requiring it to be a non-negative integer.
-     * 
-     * @param rawLine   the raw feed line, for error reporting
-     * @param value     the raw field value
+     * @param rawLine the raw feed line, for error reporting
+     * @param value the raw field value
      * @param fieldName the field's name, for error reporting
      * @return the parsed size
      * @throws QuoteParseException if the value is not an integer or is negative
@@ -122,9 +110,8 @@ public final class QuoteFeedMessageParser {
 
     /**
      * Parses the sequence number field.
-     * 
      * @param rawLine the raw feed line, for error reporting
-     * @param value   the raw field value
+     * @param value the raw field value
      * @return the parsed sequence number
      * @throws QuoteParseException if the value is not an integer
      */
@@ -138,9 +125,8 @@ public final class QuoteFeedMessageParser {
 
     /**
      * Parses the quote timestamp field.
-     * 
      * @param rawLine the raw feed line, for error reporting
-     * @param value   the raw field value, in ISO-8601 offset date-time format
+     * @param value the raw field value, in ISO-8601 offset date-time format
      * @return the parsed timestamp
      * @throws QuoteParseException if the value is not a valid ISO-8601 timestamp
      */

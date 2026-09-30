@@ -17,10 +17,8 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * Fetches candle history and latest prices from the market data service, for
- * valuing holdings
- * over time. The caller's own bearer token is forwarded because the market data
- * endpoints are JWT-secured.
+ * Fetches candle history and latest prices from the market data service, for valuing holdings
+ * over time. The caller's own bearer token is forwarded because the market data endpoints are JWT-secured.
  */
 @Component
 public class PriceHistoryClient {
@@ -28,19 +26,14 @@ public class PriceHistoryClient {
     /** The largest page the market data history endpoint will serve. */
     static final int PAGE_SIZE = 1000;
 
-    /**
-     * Guards against paging forever if the market data service misreports its page
-     * count.
-     */
+    /** Guards against paging forever if the market data service misreports its page count. */
     private static final int MAX_PAGES = 20;
 
     private final RestClient restClient;
 
     /**
      * Creates a new PriceHistoryClient.
-     * 
-     * @param marketDataRestClient the RestClient configured for the market data
-     *                             service
+     * @param marketDataRestClient the RestClient configured for the market data service
      */
     public PriceHistoryClient(RestClient marketDataRestClient) {
         this.restClient = marketDataRestClient;
@@ -48,57 +41,38 @@ public class PriceHistoryClient {
 
     /**
      * Fetches every candle close for a symbol within a time range, oldest first.
-     * 
-     * @param symbol          the instrument symbol
-     * @param from            the start of the range
-     * @param to              the end of the range
+     * @param symbol the instrument symbol
+     * @param from the start of the range
+     * @param to the end of the range
      * @param intervalSeconds the candle width, in seconds (60, 300, 3600 or 86400)
-     * @return the candle closes in the range, oldest first; empty if the symbol has
-     *         no history
-     * @throws QuoteUnavailableException if the market data service could not be
-     *                                   reached or
-     *                                   returned an error
+     * @return the candle closes in the range, oldest first; empty if the symbol has no history
+     * @throws QuoteUnavailableException if the market data service could not be reached or
+     *     returned an error
      */
     public List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-            int intervalSeconds) {
+                                         int intervalSeconds) {
         return fetchCloses(symbol, from, to, intervalSeconds, this::forwardCallerToken);
     }
 
     /**
-     * Fetches every candle close for a symbol within a time range, oldest first,
-     * authenticating
-     * with the given token instead of the caller's. For work that runs outside any
-     * request.
-     * 
-     * @param symbol          the instrument symbol
-     * @param from            the start of the range
-     * @param to              the end of the range
+     * Fetches every candle close for a symbol within a time range, oldest first, authenticating
+     * with the given token instead of the caller's. For work that runs outside any request.
+     * @param symbol the instrument symbol
+     * @param from the start of the range
+     * @param to the end of the range
      * @param intervalSeconds the candle width, in seconds (60, 300, 3600 or 86400)
-     * @param bearerToken     the JWT to send to the market data service
-     * @return the candle closes in the range, oldest first; empty if the symbol has
-     *         no history
-     * @throws QuoteUnavailableException if the market data service could not be
-     *                                   reached or
-     *                                   returned an error
+     * @param bearerToken the JWT to send to the market data service
+     * @return the candle closes in the range, oldest first; empty if the symbol has no history
+     * @throws QuoteUnavailableException if the market data service could not be reached or
+     *     returned an error
      */
     public List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-            int intervalSeconds, String bearerToken) {
+                                         int intervalSeconds, String bearerToken) {
         return fetchCloses(symbol, from, to, intervalSeconds, headers -> headers.setBearerAuth(bearerToken));
     }
 
-    /**
-     * Fetches a page of candle closes for a symbol within a time range, oldest
-     * first.
-     * 
-     * @param symbol          The ticker to fetch closes for.
-     * @param from            The start of the range.
-     * @param to              The end of the range.
-     * @param intervalSeconds The interval in seconds.
-     * @param authentication  The authentication consumer.
-     * @return The candle closes in the range.
-     */
     private List<CandleClose> fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-            int intervalSeconds, Consumer<HttpHeaders> authentication) {
+                                          int intervalSeconds, Consumer<HttpHeaders> authentication) {
         List<CandleClose> closes = new ArrayList<>();
         try {
             for (int page = 0; page < MAX_PAGES; page++) {
@@ -134,13 +108,10 @@ public class PriceHistoryClient {
 
     /**
      * Fetches the latest simulated price for a symbol.
-     * 
      * @param symbol the instrument symbol
-     * @return the latest price, or empty if the market data service does not know
-     *         the symbol
-     * @throws QuoteUnavailableException if the market data service could not be
-     *                                   reached or
-     *                                   returned an error
+     * @return the latest price, or empty if the market data service does not know the symbol
+     * @throws QuoteUnavailableException if the market data service could not be reached or
+     *     returned an error
      */
     public Optional<BigDecimal> fetchLatestPrice(String symbol) {
         try {
@@ -157,21 +128,11 @@ public class PriceHistoryClient {
         }
     }
 
-    /**
-     * Converts an offset date-time to a UTC ISO string.
-     * 
-     * @param time The offset date-time to convert.
-     * @return The UTC ISO string.
-     */
+    // A non-UTC offset would put a literal '+' in the query string, which decodes as a space.
     private static String isoUtc(OffsetDateTime time) {
         return time.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();
     }
 
-    /**
-     * Forwards the caller's authentication token to the market data service.
-     * 
-     * @param headers The HTTP headers to add the authentication token to.
-     */
     private void forwardCallerToken(HttpHeaders headers) {
         if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {
             String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);
@@ -183,9 +144,8 @@ public class PriceHistoryClient {
 
     /**
      * One candle's close, the only field valuation needs.
-     * 
      * @param bucketStart the start of the candle's time bucket
-     * @param close       the closing price of the bucket
+     * @param close the closing price of the bucket
      */
     public record CandleClose(OffsetDateTime bucketStart, BigDecimal close) {
     }
@@ -198,3 +158,4 @@ public class PriceHistoryClient {
     record LatestPrice(String symbol, BigDecimal price) {
     }
 }
+

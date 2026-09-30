@@ -79,9 +79,7 @@ pipeline {
                     // The E2E overlay adds the Playwright suite's test users to the database seed
                     // and gives market-data enough history to chart every range. It has to apply
                     // from the first "up": the seed only runs when Postgres initialises the volume.
-                    // The CI overlay gives the frontend container an npm cache that outlives
-                    // the build (see docker-compose.ci.yml).
-                    env.COMPOSE_FILE = 'docker-compose.yml:docker-compose.e2e.yml:docker-compose.ci.yml'
+                    env.COMPOSE_FILE = 'docker-compose.yml:docker-compose.e2e.yml'
 
                     // The E2E runner image (e2e/Dockerfile) is tagged by its lockfile, so it is built
                     // once and reused by every build until the suite's dependencies change.
@@ -96,33 +94,6 @@ pipeline {
                     env.COMPOSE = sh(
                         script: 'if docker compose version >/dev/null 2>&1; then echo "docker compose"; else echo docker-compose; fi',
                         returnStdout: true).trim()
-
-                    // The service Dockerfiles cache Maven's repository with "RUN --mount", which
-                    // only BuildKit understands. Compose v2 always builds with BuildKit. The
-                    // standalone v1 binary uses the legacy builder unless told otherwise, and on
-                    // Docker 23+ BuildKit through the CLI needs the buildx plugin - say so up
-                    // front rather than failing later on a Dockerfile parse error.
-                    if (env.COMPOSE == 'docker-compose') {
-                        env.DOCKER_BUILDKIT = '1'
-                        env.COMPOSE_DOCKER_CLI_BUILD = '1'
-                        sh '''
-                            if ! docker buildx version >/dev/null 2>&1; then
-                                echo "This agent has standalone docker-compose (v1) and no docker buildx plugin."
-                                echo "Install the Compose v2 plugin (docker-compose-plugin) or buildx (docker-buildx-plugin)."
-                                exit 1
-                            fi
-                        '''
-                    }
-
-                    // Dependency caches that persist on the agent between builds, outside any
-                    // workspace, so every branch shares them and cleanWs can't delete them. Only
-                    // downloads live here, never build output, so a cold cache is just slower.
-                    // The npm volume is external in docker-compose.ci.yml so "down -v" keeps it;
-                    // creating one that already exists is a no-op.
-                    sh '''
-                        mkdir -p "$HOME/.m2-ci" "$HOME/.npm-ci"
-                        docker volume create leap-ci-npm-cache >/dev/null
-                    '''
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
                 }
             }
@@ -133,11 +104,12 @@ pipeline {
                 dir('frontend') {
                     // Its own npm cache rather than the agent user's ~/.npm: a single "sudo npm"
                     // ever run on the agent leaves root-owned files there, and every later
-                    // install fails with EACCES. It lives in the agent user's home rather than
-                    // beside the workspace so every branch shares it and cleanWs can't delete it.
+                    // install fails with EACCES. WORKSPACE_TMP (<workspace>@tmp) is outside the
+                    // checkout, so the Checkout stage's git clean keeps it and later builds
+                    // still reuse the downloads.
                     sh '''
                         node --version
-                        npm ci --cache "$HOME/.npm-ci" --no-audit --no-fund
+                        npm ci --cache "${WORKSPACE_TMP:-$WORKSPACE@tmp}/npm-cache" --no-audit --no-fund
                         npm run build
                     '''
                 }
@@ -219,15 +191,10 @@ pipeline {
                     #
                     # Sharing the postgres container's network namespace makes the database
                     # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
-                    #
-                    # The Maven repository is mounted from the agent so dependencies are
-                    # downloaded once, not on every build. The directory is created in Configure
-                    # Pipeline as the agent user; if Docker had to create it, it would be root's.
                     docker run --rm \
                         --network "container:${PG_CONTAINER}" \
                         --user "$(id -u):$(id -g)" \
                         -v "$WORKSPACE":/app \
-                        -v "$HOME/.m2-ci":/tmp/.m2 \
                         -w /app \
                         -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
                         -e MAVEN_CONFIG=/tmp/.m2 \
@@ -333,17 +300,6 @@ pipeline {
         }
 
         stage('E2E') {
-            // Feature-branch pushes stop at the smoke check above; main and pull requests get
-            // the full suite. "branch" and "changeRequest" only mean anything in a multibranch
-            // job, so a plain Pipeline job (no BRANCH_NAME) always runs E2E rather than
-            // skipping it on every build.
-            when {
-                anyOf {
-                    branch 'main'
-                    changeRequest()
-                    expression { !env.BRANCH_NAME }
-                }
-            }
             options {
                 timeout(time: 20, unit: 'MINUTES')
             }

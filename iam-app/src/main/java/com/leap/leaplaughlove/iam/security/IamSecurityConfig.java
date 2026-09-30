@@ -17,11 +17,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import org.springframework.web.cors.CorsConfigurationSource;
 
 import java.util.Map;
-
 /**
- * Security configuration for the IAM application
- * This class defines the JWT authentication and CORS settings, security filter
- * chain, password encoder, and exception handling for unauthorized access.
+ * Security configuration for the IAM application 
+ * This class defines the JWT authentication and CORS settings, security filter chain, password encoder, and exception handling for unauthorized access.
  */
 @Configuration
 public class IamSecurityConfig {
@@ -34,7 +32,6 @@ public class IamSecurityConfig {
 
     /**
      * Provides a password encoder bean for the IAM application.
-     * 
      * @return BCryptPasswordEncoder instance
      */
     @Bean
@@ -44,41 +41,32 @@ public class IamSecurityConfig {
 
     /**
      * Defines the security filter chain for the IAM application.
-     * 
-     * @param http         the HttpSecurity object to configure
-     * @param jwtService   the JWT service for authentication
+     * @param http the HttpSecurity object to configure
+     * @param jwtService the JWT service for authentication
      * @param objectMapper the ObjectMapper for JSON serialization
      * @return the configured SecurityFilterChain
-     * @throws Exception if an error occurs while configuring the security filter
-     *                   chain
+     * @throws Exception if an error occurs while configuring the security filter chain
      */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper)
-            throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         // LLL-117: registration must stay public - a new applicant has no JWT yet.
-                        .requestMatchers("/api/iam/auth/**", "/api/iam/v1/clients/register", "/actuator/health")
-                        .permitAll()
+                        .requestMatchers("/api/iam/auth/**", "/api/iam/v1/clients/register", "/actuator/health").permitAll()
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(handling -> handling
-                        .authenticationEntryPoint((request, response, authException) -> JwtAuthenticationEntryPoint
-                                .writeUnauthorized(response, objectMapper)))
+                        .authenticationEntryPoint((request, response, authException) ->
+                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 
-    /**
-     * Creates CORS configuration source from CommonCorsConfiguration
-     * 
-     * @return CORS configuration source
-     */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         return CommonCorsConfiguration.corsConfigurationSource();

@@ -15,19 +15,13 @@ import java.sql.Statement;
 import java.util.List;
 
 /**
- * Writes a large set of new candles in one transaction, as fast as the database
- * allows. Used by
- * the history backfill, which writes a few million rows on a fresh database
- * before the service
+ * Writes a large set of new candles in one transaction, as fast as the database allows. Used by
+ * the history backfill, which writes a few million rows on a fresh database before the service
  * is ready.
  *
- * <p>
- * On Postgres it streams the rows with {@code COPY}, which loads them without
- * per-row
- * statement, JPA entity or index-lookup overhead - several times faster than
- * even batched
- * {@code INSERT}s, which matters most on the small VMs the stack is often
- * brought up on. Any
+ * <p>On Postgres it streams the rows with {@code COPY}, which loads them without per-row
+ * statement, JPA entity or index-lookup overhead - several times faster than even batched
+ * {@code INSERT}s, which matters most on the small VMs the stack is often brought up on. Any
  * other database (the H2 the tests run against) falls back to {@code saveAll}.
  */
 @Component
@@ -42,26 +36,20 @@ public class PriceCandleBulkWriter {
 
     /**
      * Creates a new PriceCandleBulkWriter.
-     * 
-     * @param dataSource          the data source whose transaction-bound connection
-     *                            the COPY runs on
-     * @param candleRepository    repository used when the database doesn't support
-     *                            COPY
-     * @param transactionTemplate template used to write each set of candles in one
-     *                            transaction
+     * @param dataSource the data source whose transaction-bound connection the COPY runs on
+     * @param candleRepository repository used when the database doesn't support COPY
+     * @param transactionTemplate template used to write each set of candles in one transaction
      */
     public PriceCandleBulkWriter(DataSource dataSource,
-            PriceCandleRepository candleRepository,
-            TransactionTemplate transactionTemplate) {
+                                 PriceCandleRepository candleRepository,
+                                 TransactionTemplate transactionTemplate) {
         this.dataSource = dataSource;
         this.candleRepository = candleRepository;
         this.transactionTemplate = transactionTemplate;
     }
 
     /**
-     * Inserts the candles in one transaction: either all of them are stored or none
-     * are.
-     * 
+     * Inserts the candles in one transaction: either all of them are stored or none are.
      * @param candles new candles, none of which may already exist
      */
     public void write(List<PriceCandle> candles) {
@@ -82,24 +70,11 @@ public class PriceCandleBulkWriter {
         });
     }
 
-    /**
-     * Writes a list of price candles to the database using PostgreSQL's COPY
-     * command for high-performance bulk insertion.
-     * 
-     * @param connection the database connection to use for the COPY command (must
-     *                   be a PGConnection)
-     * @param candles    the list of price candles to write
-     * @throws SQLException if a database access error occurs
-     * @throws IOException  if an I/O error occurs while writing the candles
-     */
     private static void copy(Connection connection, List<PriceCandle> candles) throws SQLException, IOException {
         try (Statement statement = connection.createStatement()) {
-            // Skips waiting for this transaction's commit to reach disk - on a slow VM disk
-            // that
-            // wait is a large share of a small transaction. Still atomic: a crash can only
-            // lose
-            // the most recent commits whole, which leaves those instruments with no
-            // candles, and
+            // Skips waiting for this transaction's commit to reach disk - on a slow VM disk that
+            // wait is a large share of a small transaction. Still atomic: a crash can only lose
+            // the most recent commits whole, which leaves those instruments with no candles, and
             // the backfill regenerates those on the next start.
             statement.execute("SET LOCAL synchronous_commit TO OFF");
         }
@@ -107,8 +82,7 @@ public class PriceCandleBulkWriter {
     }
 
     /**
-     * Renders candles in COPY's default text format: tab-separated columns, one row
-     * per line.
+     * Renders candles in COPY's default text format: tab-separated columns, one row per line.
      * No value can contain a tab, newline or backslash, so none needs escaping.
      */
     static String toCopyText(List<PriceCandle> candles) {

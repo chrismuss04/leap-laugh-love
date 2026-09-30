@@ -138,6 +138,11 @@
   color: var(--muted-foreground);
 }
 
+.profile-error {
+  font-size: 11px;
+  color: var(--danger);
+}
+
 .avatar {
   width: 34px;
   height: 34px;
@@ -206,15 +211,6 @@
   color: var(--loss);
 }
 
-a.menu-item {
-  display: block;
-  text-decoration: none;
-}
-
-.narrow-only {
-  display: none;
-}
-
 @media (max-width: 760px) {
   .header-inner {
     padding: 0 16px;
@@ -225,14 +221,6 @@ a.menu-item {
   .profile-text,
   .live-label {
     display: none;
-  }
-
-  .wide-only {
-    display: none;
-  }
-
-  a.narrow-only {
-    display: block;
   }
 
   .main-nav {
