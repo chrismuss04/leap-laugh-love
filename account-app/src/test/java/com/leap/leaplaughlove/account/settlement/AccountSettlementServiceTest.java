@@ -31,6 +31,64 @@ import static org.mockito.Mockito.*;
 @DisplayName("AccountSettlementService Unit Tests")
 class AccountSettlementServiceTest {
 
+    // Increase Test Coverage: selling the final shares clears their remaining cost basis.
+    @Test
+    void sellingEntirePositionClearsQuantityAndAverageCost() {
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        var position = new Position(ACCOUNT_ID, INSTRUMENT_ID, 10L, new BigDecimal("100.00"), OffsetDateTime.now());
+        when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.of(position));
+        when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(call -> call.getArgument(0));
+        when(balanceService.getCurrentBalance(account)).thenReturn(new BigDecimal("1500.00"));
+        var time = OffsetDateTime.parse("2026-01-01T12:00:00Z");
+        var request = new SettlementRequest(UUID.randomUUID(), UUID.randomUUID(), INSTRUMENT_ID,
+                "AAPL", "SELL", 10, new BigDecimal("150.00"), time);
+
+        var result = service.settleOrder(ACCOUNT_ID, request);
+
+        assertEquals(0L, result.positionQuantity());
+        assertEquals(0, result.positionAvgCost().compareTo(BigDecimal.ZERO));
+        assertEquals(0L, position.getQuantity());
+        assertEquals(time, position.getUpdatedAt());
+        verify(positionRepository).save(position);
+        var ledger = ArgumentCaptor.forClass(CashLedgerEntry.class);
+        verify(cashLedgerRepository).save(ledger.capture());
+        assertEquals(new BigDecimal("1500.00"), ledger.getValue().getAmount());
+        assertEquals("SELL_SETTLEMENT", ledger.getValue().getEntryType());
+    }
+
+    @Test
+    void unauthorizedSettlementDoesNotReadOrWriteFinancialData() {
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND));
+        var request = new SettlementRequest(UUID.randomUUID(), UUID.randomUUID(), INSTRUMENT_ID,
+                "AAPL", "BUY", 1, new BigDecimal("100.00"), OffsetDateTime.now());
+        assertEquals(HttpStatus.NOT_FOUND, assertThrows(ResponseStatusException.class,
+                () -> service.settleOrder(ACCOUNT_ID, request)).getStatusCode());
+        verifyNoInteractions(cashLedgerRepository, positionRepository, balanceService);
+    }
+
+    @Test
+    void ledgerWriteFailureDoesNotUpdateHoldings() {
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("ledger unavailable");
+        when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenThrow(failure);
+        var request = new SettlementRequest(UUID.randomUUID(), UUID.randomUUID(), INSTRUMENT_ID,
+                "AAPL", "BUY", 1, new BigDecimal("100.00"), OffsetDateTime.now());
+        assertSame(failure, assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> service.settleOrder(ACCOUNT_ID, request)));
+        verifyNoInteractions(positionRepository, balanceService);
+    }
+
+    @Test
+    void validationWithoutInstrumentDoesNotQueryHoldings() {
+        when(accountAuthorizationService.getAuthorizedAccount(ACCOUNT_ID)).thenReturn(account);
+        when(balanceService.getCurrentBalance(account)).thenReturn(null);
+        var result = service.getValidationData(ACCOUNT_ID, null);
+        assertEquals(0L, result.holdingQuantity());
+        assertEquals(BigDecimal.ZERO, result.cashBalance());
+        verifyNoInteractions(positionRepository);
+    }
+
     private static final UUID CLIENT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID ACCOUNT_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID INSTRUMENT_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001");

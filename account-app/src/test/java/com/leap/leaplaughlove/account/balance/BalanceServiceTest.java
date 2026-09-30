@@ -31,6 +31,61 @@ import static org.mockito.Mockito.*;
 @DisplayName("BalanceService Unit Tests")
 class BalanceServiceTest {
 
+    // Increase Test Coverage: isolate the authenticated client between tests.
+    @org.junit.jupiter.api.AfterEach
+    void clearAuthentication() {
+        SecurityContextHolder.clearContext();
+    }
+
+    // Increase Test Coverage: invalid amounts must never reach account or ledger storage.
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "-0.01"})
+    void invalidCashAmountsAreRejected(String value) {
+        var request = new CashMovementRequest(value == null ? null : new BigDecimal(value), "invalid");
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+                () -> balanceService.deposit(accountId, request)).getStatusCode().value());
+        assertEquals(400, assertThrows(ResponseStatusException.class,
+                () -> balanceService.withdraw(accountId, request)).getStatusCode().value());
+        verifyNoInteractions(accountRepository, cashLedgerRepository);
+    }
+
+    @Test
+    void withdrawalOfExactBalanceLeavesZero() {
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
+        when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD")).thenReturn(new BigDecimal("100.00"));
+        when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = balanceService.withdraw(accountId, new CashMovementRequest(new BigDecimal("100.00"), "all cash"));
+
+        assertEquals(0, response.balanceAfter().compareTo(BigDecimal.ZERO));
+        assertEquals(new BigDecimal("-100.00"), response.amount());
+    }
+
+    @Test
+    void depositRoundsHalfUpBeforeUpdatingBalance() {
+        when(accountRepository.findByAccountIdAndClientIdForUpdate(accountId, clientId)).thenReturn(Optional.of(account));
+        when(cashLedgerRepository.sumAmountByAccountIdAndCurrency(accountId, "USD")).thenReturn(new BigDecimal("100.00"));
+        when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenAnswer(call -> call.getArgument(0));
+
+        var response = balanceService.deposit(accountId, new CashMovementRequest(new BigDecimal("10.005"), "rounded"));
+
+        assertEquals(new BigDecimal("10.01"), response.amount());
+        assertEquals(new BigDecimal("110.01"), response.balanceAfter());
+        var saved = ArgumentCaptor.forClass(CashLedgerEntry.class);
+        verify(cashLedgerRepository).save(saved.capture());
+        assertEquals(response.amount(), saved.getValue().getAmount());
+    }
+
+    @Test
+    void clientWithoutActiveAccountsHasNoBalances() {
+        when(accountRepository.findByClientIdAndStatus(clientId, "ACTIVE")).thenReturn(List.of());
+        var response = balanceService.getBalanceForClient();
+        assertTrue(response.accounts().isEmpty());
+        assertTrue(response.totalByCurrency().isEmpty());
+        verifyNoInteractions(cashLedgerRepository);
+    }
+
     @Mock private AccountRepository accountRepository;
     @Mock private CashLedgerRepository cashLedgerRepository;
 
