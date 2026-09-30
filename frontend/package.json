@@ -24,7 +24,14 @@
     "@angular/build": "^21.2.24",
     "@angular/cli": "^21.2.24",
     "@angular/compiler-cli": "^21.2.24",
+    "@types/jasmine": "~5.1.0",
     "@types/node": "^20.0.0",
+    "jasmine-core": "~5.9.0",
+    "karma": "^6.4.4",
+    "karma-chrome-launcher": "^3.2.0",
+    "karma-coverage": "^2.2.1",
+    "karma-jasmine": "^5.1.0",
+    "karma-jasmine-html-reporter": "^2.3.0",
     "typescript": "~5.9.3"
   },
   "allowScripts": {

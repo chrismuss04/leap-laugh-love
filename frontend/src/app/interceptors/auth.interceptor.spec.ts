@@ -12,7 +12,8 @@ describe('AuthInterceptor', () => {
 
   beforeEach(() => {
     // Create a spy object for AuthService
-    const authServiceSpy = jasmine.createSpyObj('AuthService', ['getToken', 'logout']);
+    // Session Timeout & Revocation: authentication failures end only the matching session.
+    const authServiceSpy = jasmine.createSpyObj('AuthService', ['getToken', 'logout', 'expireSession']);
 
     TestBed.configureTestingModule({
     imports: [],
@@ -118,12 +119,11 @@ describe('AuthInterceptor', () => {
       const req = httpMock.expectOne('/test-endpoint');
       req.flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
 
-      expect(authService.logout).toHaveBeenCalled();
+      expect(authService.expireSession).toHaveBeenCalledWith('test-token');
     });
 
     it('should redirect to home page when receiving 401 error', () => {
       authService.getToken.and.returnValue('test-token');
-      spyOn(window.location, 'href' as any).and.stub();
 
       httpClient.get('/test-endpoint').subscribe(
         () => fail('should have failed with 401 error'),
@@ -137,7 +137,7 @@ describe('AuthInterceptor', () => {
 
       // Note: window.location.href redirection is difficult to test in Angular
       // This test verifies the interceptor calls the logout method
-      expect(authService.logout).toHaveBeenCalled();
+      expect(authService.expireSession).toHaveBeenCalledWith('test-token');
     });
 
     it('should throw error after handling 401', (done) => {

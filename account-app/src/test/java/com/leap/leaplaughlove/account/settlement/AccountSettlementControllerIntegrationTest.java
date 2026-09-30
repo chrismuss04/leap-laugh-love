@@ -39,11 +39,28 @@ class AccountSettlementControllerIntegrationTest {
     @Autowired private ObjectMapper objectMapper;
     @Autowired private JwtService jwtService;
 
+    // Session Timeout & Revocation: exercise the real session validator with persisted test sessions.
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate sessionJdbc;
+
+    private String sessionToken(UUID clientId, String email) {
+        sessionJdbc.execute("CREATE SCHEMA IF NOT EXISTS iam");
+        sessionJdbc.execute("CREATE TABLE IF NOT EXISTS iam.client_sessions (session_id UUID PRIMARY KEY, "
+                + "client_id UUID NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, "
+                + "last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL, "
+                + "expires_at TIMESTAMP WITH TIME ZONE NOT NULL, revoked_at TIMESTAMP WITH TIME ZONE)");
+        UUID sid = UUID.randomUUID();
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var expiry = now.plusSeconds(3600);
+        sessionJdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, ?, NULL)",
+                sid, clientId, now.atOffset(java.time.ZoneOffset.UTC), now.atOffset(java.time.ZoneOffset.UTC),
+                expiry.atOffset(java.time.ZoneOffset.UTC));
+        return jwtService.generateToken(clientId, email, sid, now, expiry);
+    }
     private String ownerToken;
 
     @BeforeEach
     void setUp() {
-        ownerToken = jwtService.generateToken(UUID.fromString(CLIENT_OWNER_ID), CLIENT_OWNER_EMAIL);
+        ownerToken = sessionToken(UUID.fromString(CLIENT_OWNER_ID), CLIENT_OWNER_EMAIL);
     }
 
     @Test

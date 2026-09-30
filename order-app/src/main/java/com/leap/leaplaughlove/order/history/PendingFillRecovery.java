@@ -115,7 +115,7 @@ public class PendingFillRecovery {
         try {
             // No request is behind this, so there is no caller's token to forward; sign as the
             // order's owner, whose request this fill was.
-            fillRecorder.settle(order, execution, jwtService.generateToken(clientIdOf(order), null));
+            fillRecorder.settle(order, execution, jwtService.generateSettlementToken(clientIdOf(order)));
         } catch (RuntimeException ex) {
             if (!FillRecorder.isRefused(ex)) {
                 log.warn("Order {} is still waiting to settle; will retry: {}", order.getOrderId(), ex.getMessage());

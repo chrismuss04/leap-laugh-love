@@ -2,6 +2,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideZonelessChangeDetection } from '@angular/core';
 import { ClientProfile } from '../../services/profile';
 import { OrderSide } from '../../services/order';
 import { TradePanelComponent } from './trade-panel';
@@ -16,7 +17,7 @@ describe('TradePanelComponent order confirmation', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TradePanelComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideZonelessChangeDetection()]
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(TradePanelComponent);
@@ -42,6 +43,18 @@ describe('TradePanelComponent order confirmation', () => {
       experienceLevel, status: 'ACTIVE'
     });
   }
+
+  // Regression: opening from the dashboard timer must schedule a template refresh.
+  it('renders Sell after an asynchronous open without a manual change-detection pass', async () => {
+    loadProfile('ADVANCED');
+    await fixture.whenStable();
+    await new Promise<void>(resolve => setTimeout(() => {
+      component.open('SELL');
+      resolve();
+    }));
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('section.panel').getAttribute('data-side')).toBe('SELL');
+  });
 
   function button(selector: string): HTMLButtonElement {
     const element = fixture.nativeElement.querySelector(selector);

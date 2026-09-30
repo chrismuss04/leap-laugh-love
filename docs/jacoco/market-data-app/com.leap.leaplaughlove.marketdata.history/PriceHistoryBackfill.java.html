@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceHistoryBackfill.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.history</a> &gt; <span class="el_source">PriceHistoryBackfill.java</span></div><h1>PriceHistoryBackfill.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.history;
+
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
+import com.leap.leaplaughlove.marketdata.simulation.GbmPriceGenerator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.SplittableRandom;
+import java.util.random.RandomGenerator;
+
+/**
+ * Generates a synthetic price history for instruments that have none, so charts have something
+ * to draw before the live simulation has been running long enough to produce it. Without this,
+ * candle history only covers the current process's uptime and every range longer than that is
+ * empty.
+ *
+ * &lt;p&gt;One GBM path is walked per instrument at {@code stepSeconds} resolution across the whole
+ * lookback, and every configured bucket width is folded out of that single path. Deriving all
+ * widths from one walk is what keeps them consistent: the daily, hourly and minute series are
+ * aggregations of the same prices rather than independent random paths that would disagree
+ * about what the price was on a given afternoon. Only the finest width is stored at full
+ * resolution over a short window; wider widths cover proportionally longer ones, which is what
+ * makes a year of history cost thousands of rows per instrument instead of ~525,000.
+ *
+ * &lt;p&gt;Runs as an {@link ApplicationRunner}, which Spring Boot invokes before it publishes
+ * {@code ApplicationReadyEvent}. That ordering is deliberate and load-bearing: the backfill
+ * finishes before {@code MarketSimulationEngine.initialize()} reads the latest close, so the
+ * live feed resumes from the end of the generated history instead of jumping back to the seed
+ * price.
+ *
+ * &lt;p&gt;Idempotent per instrument - an instrument that already has any candle is left untouched,
+ * so this is a no-op on every boot after the first. Each instrument is written in its own
+ * transaction, so a failure part-way through cannot leave an instrument holding a truncated
+ * history that the idempotency check would then treat as complete.
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;marketdata.history.backfill&quot;, name = &quot;enabled&quot;,
+        havingValue = &quot;true&quot;, matchIfMissing = true)
+public class PriceHistoryBackfill implements ApplicationRunner {
+
+<span class="fc" id="L54">    private static final Logger log = LoggerFactory.getLogger(PriceHistoryBackfill.class);</span>
+
+    private static final int PRICE_SCALE = 6;
+    private static final double SECONDS_PER_YEAR = 365.0 * 24 * 60 * 60;
+    private static final long SECONDS_PER_DAY = 24L * 60 * 60;
+
+    /**
+     * Mixed into each instrument's configured seed so the generated history is deterministic
+     * (every developer's database looks the same) but is not the same sequence the live engine
+     * draws from that seed.
+     */
+    private static final long BACKFILL_SEED_MIX = 0x5F3B_1C27L;
+
+    private final SimulatedInstrumentRepository instrumentRepository;
+    private final PriceCandleRepository candleRepository;
+    private final PriceCandleBulkWriter bulkWriter;
+    private final long stepSeconds;
+    private final List&lt;CandleTier&gt; tiers;
+
+    /**
+     * Creates a new PriceHistoryBackfill.
+     * @param instrumentRepository repository used to look up the instruments to backfill
+     * @param candleRepository repository used to check for existing candles
+     * @param bulkWriter writer that stores each instrument's candles in one transaction
+     * @param stepSeconds the resolution, in seconds, of the underlying simulated walk
+     * @param tierSpec the bucket widths to emit and how far back each reaches, as
+     *                 {@code bucketSeconds:days} pairs
+     */
+    public PriceHistoryBackfill(SimulatedInstrumentRepository instrumentRepository,
+                                 PriceCandleRepository candleRepository,
+                                 PriceCandleBulkWriter bulkWriter,
+                                 @Value(&quot;${marketdata.history.backfill.step-seconds:60}&quot;) long stepSeconds,
+                                 @Value(&quot;${marketdata.history.backfill.tiers:86400:365,3600:90,300:7,60:2}&quot;)
+<span class="fc" id="L87">                                 List&lt;String&gt; tierSpec) {</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        if (stepSeconds &lt;= 0) {</span>
+<span class="nc" id="L89">            throw new IllegalArgumentException(&quot;step-seconds must be positive&quot;);</span>
+        }
+<span class="fc" id="L91">        this.instrumentRepository = instrumentRepository;</span>
+<span class="fc" id="L92">        this.candleRepository = candleRepository;</span>
+<span class="fc" id="L93">        this.bulkWriter = bulkWriter;</span>
+<span class="fc" id="L94">        this.stepSeconds = stepSeconds;</span>
+<span class="fc" id="L95">        this.tiers = parseTiers(tierSpec, stepSeconds);</span>
+<span class="fc" id="L96">    }</span>
+
+    /**
+     * Backfills every active instrument that has no candles yet.
+     * @param args the application arguments, unused
+     */
+    @Override
+    public void run(ApplicationArguments args) {
+<span class="fc" id="L104">        int backfilled = 0;</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        for (SimulatedInstrument instrument : instrumentRepository.findByActiveTrue()) {</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">            if (candleRepository.existsByInstrument_InstrumentId(instrument.getInstrumentId())) {</span>
+<span class="fc" id="L107">                continue;</span>
+            }
+<span class="fc" id="L109">            List&lt;PriceCandle&gt; candles = generate(instrument);</span>
+<span class="fc" id="L110">            bulkWriter.write(candles);</span>
+<span class="fc" id="L111">            backfilled++;</span>
+<span class="fc" id="L112">            log.info(&quot;Backfilled {} candles of price history for {}&quot;, candles.size(), instrument.getSymbol());</span>
+<span class="fc" id="L113">        }</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        if (backfilled &gt; 0) {</span>
+<span class="fc" id="L115">            log.info(&quot;Price history backfill complete for {} instrument(s)&quot;, backfilled);</span>
+        }
+<span class="fc" id="L117">    }</span>
+
+    /**
+     * Walks one instrument's simulated path and folds it into candles at every configured width.
+     *
+     * &lt;p&gt;The walk runs in epoch seconds and doubles rather than {@code OffsetDateTime} and
+     * {@code BigDecimal}, and converts only at the point a candle is emitted: at a year of
+     * minute-resolution steps this loop runs hundreds of thousands of times per instrument, and
+     * allocating two objects per step dominated everything else it does.
+     *
+     * @param instrument the instrument to generate history for
+     * @return the generated candles, in ascending bucket order per width
+     */
+    private List&lt;PriceCandle&gt; generate(SimulatedInstrument instrument) {
+        // The walk stops at the start of the current finest bucket, leaving that bucket to the
+        // live accumulator - otherwise both would write the same (instrument, start, width) row.
+<span class="fc" id="L133">        long end = floorTo(OffsetDateTime.now().toEpochSecond(), stepSeconds);</span>
+<span class="fc" id="L134">        long maxLookbackDays = tiers.stream().mapToLong(CandleTier::days).max().orElse(0);</span>
+<span class="fc" id="L135">        long start = end - maxLookbackDays * SECONDS_PER_DAY;</span>
+
+        // SplittableRandom, not java.util.Random: Random guards its seed with an atomic
+        // compare-and-set on every draw, which measured ~86ns/step against ~19ns here. Across a
+        // year of minute steps for a full index that is the difference between ~23s and ~5s of
+        // startup. Both are deterministic for a given seed, which is what this relies on.
+<span class="fc" id="L141">        RandomGenerator random = new SplittableRandom(instrument.getRngSeed() ^ BACKFILL_SEED_MIX);</span>
+<span class="fc" id="L142">        double drift = instrument.getDrift().doubleValue();</span>
+<span class="fc" id="L143">        double volatility = instrument.getVolatility().doubleValue();</span>
+<span class="fc" id="L144">        double dt = stepSeconds / SECONDS_PER_YEAR;</span>
+<span class="fc" id="L145">        double price = instrument.getInitialPrice().doubleValue();</span>
+
+<span class="fc" id="L147">        int tierCount = tiers.size();</span>
+<span class="fc" id="L148">        long[] tierStarts = new long[tierCount];</span>
+<span class="fc" id="L149">        Accumulation[] open = new Accumulation[tierCount];</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        for (int i = 0; i &lt; tierCount; i++) {</span>
+<span class="fc" id="L151">            CandleTier tier = tiers.get(i);</span>
+<span class="fc" id="L152">            tierStarts[i] = ceilTo(end - tier.days() * SECONDS_PER_DAY, tier.bucketSeconds());</span>
+        }
+
+<span class="fc" id="L155">        List&lt;PriceCandle&gt; candles = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">        for (long at = start; at &lt; end; at += stepSeconds) {</span>
+<span class="fc" id="L157">            price = GbmPriceGenerator.nextPrice(price, drift, volatility, dt, random);</span>
+<span class="fc bfc" id="L158" title="All 2 branches covered.">            for (int i = 0; i &lt; tierCount; i++) {</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">                if (at &lt; tierStarts[i]) {</span>
+<span class="fc" id="L160">                    continue;</span>
+                }
+<span class="fc" id="L162">                int bucketSeconds = tiers.get(i).bucketSeconds();</span>
+<span class="fc" id="L163">                long bucketStart = floorTo(at, bucketSeconds);</span>
+<span class="fc" id="L164">                Accumulation existing = open[i];</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">                if (existing == null) {</span>
+<span class="fc" id="L166">                    open[i] = new Accumulation(bucketStart, price);</span>
+<span class="fc bfc" id="L167" title="All 2 branches covered.">                } else if (existing.bucketStart == bucketStart) {</span>
+<span class="fc" id="L168">                    existing.extend(price);</span>
+                } else {
+<span class="fc" id="L170">                    candles.add(existing.toCandle(instrument, bucketSeconds));</span>
+<span class="fc" id="L171">                    open[i] = new Accumulation(bucketStart, price);</span>
+                }
+            }
+        }
+        // Each tier's trailing bucket is deliberately left unwritten: it is still in progress,
+        // and the live accumulator persists it when it rolls over.
+<span class="fc" id="L177">        return candles;</span>
+    }
+
+    /**
+     * Parses the configured tiers and rejects any width the walk cannot land on exactly.
+     * @param tierSpec the raw configured pairs
+     * @param stepSeconds the walk resolution every bucket width must be a multiple of
+     * @return the parsed tiers
+     */
+    private static List&lt;CandleTier&gt; parseTiers(List&lt;String&gt; tierSpec, long stepSeconds) {
+<span class="fc" id="L187">        List&lt;CandleTier&gt; parsed = CandleTier.parse(tierSpec);</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">        for (CandleTier tier : parsed) {</span>
+            // Buckets are aligned to the epoch, so a width that isn't a whole number of steps
+            // would put bucket boundaries between two walk points and silently drop prices.
+<span class="fc bfc" id="L191" title="All 2 branches covered.">            if (tier.bucketSeconds() % stepSeconds != 0) {</span>
+<span class="fc" id="L192">                throw new IllegalArgumentException(</span>
+<span class="fc" id="L193">                        &quot;backfill tier width &quot; + tier.bucketSeconds()</span>
+                                + &quot;s must be a multiple of step-seconds &quot; + stepSeconds);
+            }
+<span class="fc" id="L196">        }</span>
+<span class="fc" id="L197">        return parsed;</span>
+    }
+
+    /**
+     * Rounds an epoch second down to a bucket boundary.
+     * @param epochSeconds the timestamp to round
+     * @param bucketSeconds the bucket width, in seconds
+     * @return the start of the bucket containing the timestamp
+     */
+    private static long floorTo(long epochSeconds, long bucketSeconds) {
+<span class="fc" id="L207">        return epochSeconds - Math.floorMod(epochSeconds, bucketSeconds);</span>
+    }
+
+    /**
+     * Rounds an epoch second up to a bucket boundary, so a tier's first emitted bucket is one
+     * the walk covers in full.
+     * @param epochSeconds the timestamp to round
+     * @param bucketSeconds the bucket width, in seconds
+     * @return the first bucket boundary at or after the timestamp
+     */
+    private static long ceilTo(long epochSeconds, long bucketSeconds) {
+<span class="fc" id="L218">        long floored = floorTo(epochSeconds, bucketSeconds);</span>
+<span class="fc bfc" id="L219" title="All 2 branches covered.">        return floored == epochSeconds ? floored : floored + bucketSeconds;</span>
+    }
+
+    /**
+     * Mutable in-progress OHLC accumulation, held as primitives for the duration of the walk.
+     */
+    private static final class Accumulation {
+        private final long bucketStart;
+        private final double open;
+        private double high;
+        private double low;
+        private double close;
+
+<span class="fc" id="L232">        private Accumulation(long bucketStart, double price) {</span>
+<span class="fc" id="L233">            this.bucketStart = bucketStart;</span>
+<span class="fc" id="L234">            this.open = price;</span>
+<span class="fc" id="L235">            this.high = price;</span>
+<span class="fc" id="L236">            this.low = price;</span>
+<span class="fc" id="L237">            this.close = price;</span>
+<span class="fc" id="L238">        }</span>
+
+        void extend(double price) {
+<span class="fc" id="L241">            this.high = Math.max(high, price);</span>
+<span class="fc" id="L242">            this.low = Math.min(low, price);</span>
+<span class="fc" id="L243">            this.close = price;</span>
+<span class="fc" id="L244">        }</span>
+
+        PriceCandle toCandle(SimulatedInstrument instrument, int bucketSeconds) {
+<span class="fc" id="L247">            return new PriceCandle(</span>
+                    instrument,
+<span class="fc" id="L249">                    OffsetDateTime.ofInstant(Instant.ofEpochSecond(bucketStart), ZoneOffset.UTC),</span>
+                    bucketSeconds,
+<span class="fc" id="L251">                    scale(open), scale(high), scale(low), scale(close));</span>
+        }
+
+        private static BigDecimal scale(double price) {
+<span class="fc" id="L255">            return BigDecimal.valueOf(price).setScale(PRICE_SCALE, RoundingMode.HALF_UP);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MarketDataClientConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.quote</a> &gt; <span class="el_source">MarketDataClientConfig.java</span></div><h1>MarketDataClientConfig.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.quote;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
+
+import java.time.Duration;
+
+/**
+ * Configures the HTTP client account-app uses to reach the market data service.
+ */
+@Configuration
+public class MarketDataClientConfig {
+
+<span class="fc" id="L17">    public MarketDataClientConfig() {</span>
+<span class="fc" id="L18">    }</span>
+
+    @Bean
+    public RestClient marketDataRestClient(
+            RestClient.Builder builder,
+            @Value(&quot;${marketdata.client.base-url:http://localhost:8083}&quot;) String baseUrl,
+            @Value(&quot;${marketdata.client.connect-timeout-ms:2000}&quot;) int connectTimeoutMs,
+            @Value(&quot;${marketdata.client.read-timeout-ms:2000}&quot;) int readTimeoutMs) {
+<span class="fc" id="L26">        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();</span>
+<span class="fc" id="L27">        requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));</span>
+<span class="fc" id="L28">        requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));</span>
+<span class="fc" id="L29">        return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

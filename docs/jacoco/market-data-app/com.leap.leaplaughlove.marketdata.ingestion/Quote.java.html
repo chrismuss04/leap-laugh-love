@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Quote.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.ingestion</a> &gt; <span class="el_source">Quote.java</span></div><h1>Quote.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.ingestion;
+
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
+import jakarta.persistence.*;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Represents a single quote accepted by the ingestion pipeline for an instrument.
+ * Contains bid/ask/last price and size, the exchange it was quoted on, the feed's
+ * sequence number, and both the feed's own timestamp and this backend's ingestion time.
+ */
+@Entity
+@Table(name = &quot;quotes&quot;, schema = &quot;marketdata&quot;)
+public class Quote {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(name = &quot;quote_id&quot;)
+    private UUID quoteId;
+
+    @ManyToOne
+    @JoinColumn(name = &quot;instrument_id&quot;, nullable = false)
+    private SimulatedInstrument instrument;
+
+    @Column(name = &quot;bid_price&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal bidPrice;
+
+    @Column(name = &quot;bid_size&quot;, nullable = false)
+    private long bidSize;
+
+    @Column(name = &quot;ask_price&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal askPrice;
+
+    @Column(name = &quot;ask_size&quot;, nullable = false)
+    private long askSize;
+
+    @Column(name = &quot;last_price&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal lastPrice;
+
+    @Column(name = &quot;last_size&quot;, nullable = false)
+    private long lastSize;
+
+    @Column(name = &quot;exchange&quot;, nullable = false)
+    private String exchange;
+
+    @Column(name = &quot;sequence_number&quot;, nullable = false)
+    private long sequenceNumber;
+
+    @Column(name = &quot;quote_timestamp&quot;, nullable = false)
+    private OffsetDateTime quoteTimestamp;
+
+    @Column(name = &quot;received_at&quot;, nullable = false)
+    private OffsetDateTime receivedAt;
+
+    /**
+     * Protected no-argument constructor for JPA.
+     */
+<span class="fc" id="L61">    protected Quote() {</span>
+<span class="fc" id="L62">    }</span>
+
+    /**
+     * Creates a new Quote entity with the specified details.
+     * @param instrument the instrument this quote is for
+     * @param bidPrice the bid price of the quote
+     * @param bidSize the bid size of the quote
+     * @param askPrice the ask price of the quote
+     * @param askSize the ask size of the quote
+     * @param lastPrice the last-traded price of the quote
+     * @param lastSize the last-traded size of the quote
+     * @param exchange the exchange the quote was sourced from
+     * @param sequenceNumber the feed's sequence number for this quote
+     * @param quoteTimestamp the timestamp assigned by the feed
+     * @param receivedAt the timestamp this backend ingested the quote
+     */
+    public Quote(SimulatedInstrument instrument, BigDecimal bidPrice, long bidSize,
+                 BigDecimal askPrice, long askSize, BigDecimal lastPrice, long lastSize,
+                 String exchange, long sequenceNumber, OffsetDateTime quoteTimestamp,
+<span class="fc" id="L81">                 OffsetDateTime receivedAt) {</span>
+<span class="fc" id="L82">        this.instrument = instrument;</span>
+<span class="fc" id="L83">        this.bidPrice = bidPrice;</span>
+<span class="fc" id="L84">        this.bidSize = bidSize;</span>
+<span class="fc" id="L85">        this.askPrice = askPrice;</span>
+<span class="fc" id="L86">        this.askSize = askSize;</span>
+<span class="fc" id="L87">        this.lastPrice = lastPrice;</span>
+<span class="fc" id="L88">        this.lastSize = lastSize;</span>
+<span class="fc" id="L89">        this.exchange = exchange;</span>
+<span class="fc" id="L90">        this.sequenceNumber = sequenceNumber;</span>
+<span class="fc" id="L91">        this.quoteTimestamp = quoteTimestamp;</span>
+<span class="fc" id="L92">        this.receivedAt = receivedAt;</span>
+<span class="fc" id="L93">    }</span>
+
+    /**
+     * Gets the unique identifier of the quote.
+     * @return the quoteId of the quote
+     */
+<span class="nc" id="L99">    public UUID getQuoteId() { return quoteId; }</span>
+    /**
+     * Gets the instrument this quote is for.
+     * @return the instrument of the quote
+     */
+<span class="nc" id="L104">    public SimulatedInstrument getInstrument() { return instrument; }</span>
+    /**
+     * Gets the bid price of the quote.
+     * @return the bidPrice of the quote
+     */
+<span class="nc" id="L109">    public BigDecimal getBidPrice() { return bidPrice; }</span>
+    /**
+     * Gets the bid size of the quote.
+     * @return the bidSize of the quote
+     */
+<span class="nc" id="L114">    public long getBidSize() { return bidSize; }</span>
+    /**
+     * Gets the ask price of the quote.
+     * @return the askPrice of the quote
+     */
+<span class="nc" id="L119">    public BigDecimal getAskPrice() { return askPrice; }</span>
+    /**
+     * Gets the ask size of the quote.
+     * @return the askSize of the quote
+     */
+<span class="nc" id="L124">    public long getAskSize() { return askSize; }</span>
+    /**
+     * Gets the last-traded price of the quote.
+     * @return the lastPrice of the quote
+     */
+<span class="nc" id="L129">    public BigDecimal getLastPrice() { return lastPrice; }</span>
+    /**
+     * Gets the last-traded size of the quote.
+     * @return the lastSize of the quote
+     */
+<span class="nc" id="L134">    public long getLastSize() { return lastSize; }</span>
+    /**
+     * Gets the exchange the quote was sourced from.
+     * @return the exchange of the quote
+     */
+<span class="nc" id="L139">    public String getExchange() { return exchange; }</span>
+    /**
+     * Gets the feed's sequence number for this quote.
+     * @return the sequenceNumber of the quote
+     */
+<span class="nc" id="L144">    public long getSequenceNumber() { return sequenceNumber; }</span>
+    /**
+     * Gets the timestamp assigned by the feed.
+     * @return the quoteTimestamp of the quote
+     */
+<span class="nc" id="L149">    public OffsetDateTime getQuoteTimestamp() { return quoteTimestamp; }</span>
+    /**
+     * Gets the timestamp this backend ingested the quote.
+     * @return the receivedAt timestamp of the quote
+     */
+<span class="nc" id="L154">    public OffsetDateTime getReceivedAt() { return receivedAt; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -120,6 +120,10 @@
           </button>
 
           <!-- Error Message -->
+          <!-- Session Timeout & Revocation: explain why the client returned to sign-in. -->
+          <div class="error-alert" role="status" *ngIf="sessionMessage()">
+            {{ sessionMessage() }}
+          </div>
           <div class="error-alert" *ngIf="errorMessage()">
             {{ errorMessage() }}
           </div>

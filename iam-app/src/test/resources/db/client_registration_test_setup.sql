@@ -1,6 +1,9 @@
 -- LLL-117: minimal iam schema so ClientRegistrationControllerTest can register clients against H2.
 CREATE SCHEMA IF NOT EXISTS iam;
 
+-- Session Timeout & Revocation: reset sessions before their parent clients.
+DROP TABLE IF EXISTS iam.client_sessions;
+
 DROP TABLE IF EXISTS iam.client_profile CASCADE;
 -- CASCADE defensively, in case another iam-app test suite sharing this in-memory DB already
 -- created a table with a foreign key into iam.clients.
@@ -44,4 +47,14 @@ CREATE TABLE iam.client_credentials (
     failed_attempts INTEGER NOT NULL DEFAULT 0,
     last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Session Timeout & Revocation: support login session creation in integration tests.
+CREATE TABLE iam.client_sessions (
+    session_id UUID PRIMARY KEY,
+    client_id UUID NOT NULL REFERENCES iam.clients (client_id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked_at TIMESTAMP WITH TIME ZONE
 );

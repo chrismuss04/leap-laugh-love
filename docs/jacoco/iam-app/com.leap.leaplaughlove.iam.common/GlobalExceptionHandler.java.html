@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>GlobalExceptionHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.common</a> &gt; <span class="el_source">GlobalExceptionHandler.java</span></div><h1>GlobalExceptionHandler.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.common;
+
+import com.leap.leaplaughlove.iam.auth.AccountLockedException;
+import com.leap.leaplaughlove.iam.auth.InvalidCredentialsException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.Map;
+
+/**
+ * Global exception handler for the IAM application.
+ * Handles various exceptions and maps them to appropriate HTTP responses.
+ */
+@RestControllerAdvice
+public class GlobalExceptionHandler {
+
+    /**
+     * Constructs a new GlobalExceptionHandler instance.
+     */
+<span class="fc" id="L23">    public GlobalExceptionHandler() {</span>
+<span class="fc" id="L24">    }</span>
+
+    /**
+     * Handles InvalidCredentialsException
+     * @param  ex the exception indicating invalid credentials
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(InvalidCredentialsException.class)
+    public ResponseEntity&lt;Map&lt;String, String&gt;&gt; handleInvalidCredentials(InvalidCredentialsException ex) {
+<span class="fc" id="L33">        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of(</span>
+                &quot;error&quot;, &quot;INVALID_CREDENTIALS&quot;,
+<span class="fc" id="L35">                &quot;message&quot;, ex.getMessage()));</span>
+    }
+
+    /**
+     * Handles the AccountLockedException
+     * @param  ex the exception indicating the account is locked
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity&lt;Map&lt;String, String&gt;&gt; handleAccountLocked(AccountLockedException ex) {
+<span class="fc" id="L45">        return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of(</span>
+                &quot;error&quot;, &quot;ACCOUNT_LOCKED&quot;,
+<span class="fc" id="L47">                &quot;message&quot;, ex.getMessage()));</span>
+    }
+
+    /**
+     * Handles the MethodArgumentNotValidException
+     * @param  ex the exception containing validation errors
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity&lt;Map&lt;String, String&gt;&gt; handleValidation(MethodArgumentNotValidException ex) {
+<span class="fc" id="L57">        String detail = ex.getBindingResult().getFieldErrors().stream()</span>
+<span class="fc" id="L58">                .map(err -&gt; err.getField() + &quot;: &quot; + err.getDefaultMessage())</span>
+<span class="fc" id="L59">                .reduce((a, b) -&gt; a + &quot;; &quot; + b)</span>
+<span class="fc" id="L60">                .orElse(&quot;Validation failed&quot;);</span>
+<span class="fc" id="L61">        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(</span>
+                &quot;error&quot;, &quot;VALIDATION_FAILED&quot;,
+                &quot;message&quot;, detail));
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
