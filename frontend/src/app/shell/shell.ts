@@ -4,6 +4,10 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { ClientProfile, ProfileService } from '../services/profile';
 import { PriceStreamService } from '../services/price-stream';
+// Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
+import { SessionActivityService } from '../services/session-activity';
+// Session Timeout & Revocation
+import { Subscription, asapScheduler, observeOn } from 'rxjs';
 
 const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
   NOVICE: 'Novice investor',
@@ -24,10 +28,12 @@ const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
 export class ShellComponent implements OnInit, OnDestroy {
   readonly profile = signal<ClientProfile | null>(null);
   readonly profileLoading = signal(true);
-  readonly profileError = signal(false);
   readonly menuOpen = signal(false);
 
   private readonly auth = inject(AuthService);
+  // Session Timeout & Revocation
+  private readonly sessionActivity = inject(SessionActivityService);
+  private expirySubscription?: Subscription;
   private readonly profileService = inject(ProfileService);
   readonly stream = inject(PriceStreamService);
 
@@ -51,20 +57,33 @@ export class ShellComponent implements OnInit, OnDestroy {
   });
 
   ngOnInit(): void {
+    // Session Timeout & Revocation
+    const token = this.auth.getToken();
+    // Session Timeout & Revocation: invalid tokens can expire synchronously during ngOnInit.
+    // Defer the parent authentication update until Angular finishes its current render.
+    this.expirySubscription = this.sessionActivity.expired$.pipe(observeOn(asapScheduler)).subscribe(reason => {
+      this.stream.stop();
+      this.auth.expireSession(token, reason);
+    });
+    this.sessionActivity.start();
+    if (!this.auth.isAuthenticated()) return;
     this.profileService.getMe().subscribe({
       next: profile => {
         this.profile.set(profile);
         this.profileLoading.set(false);
       },
-      // Stop the skeleton so the header shows the error; the avatar falls back to "?".
+      // The header still works without a name; the avatar falls back to "?".
       error: () => {
-        this.profileError.set(true);
+        this.profile.set(null);
         this.profileLoading.set(false);
       }
     });
   }
 
   ngOnDestroy(): void {
+    // Session Timeout & Revocation
+    this.sessionActivity.stop();
+    this.expirySubscription?.unsubscribe();
     this.stream.stop();
   }
 
@@ -78,6 +97,8 @@ export class ShellComponent implements OnInit, OnDestroy {
 
   logout(): void {
     this.closeMenu();
+    // Session Timeout & Revocation: stop activity before asking the server to revoke the session.
+    this.sessionActivity.stop();
     this.stream.stop();
     this.auth.logout();
   }

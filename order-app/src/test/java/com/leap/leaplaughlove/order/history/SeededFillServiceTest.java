@@ -78,7 +78,9 @@ class SeededFillServiceTest {
                 msft = new Instrument(UUID.randomUUID(), "MSFT", "Microsoft Corporation", "EQUITY", "NASDAQ", "USD",
                                 true);
                 when(accountRepository.findById(any())).thenReturn(Optional.of(account));
-                when(jwtService.generateToken(any(), any())).thenReturn("token");
+                when(jwtService.generateSettlementToken(any())).thenReturn("token");
+                // Session Timeout & Revocation: price reads and settlement have separate token purposes.
+                when(jwtService.generateHistoryToken(any())).thenReturn("history-token");
                 when(priceHistoryClient.fetchCloses(anyString(), any(), any(), anyInt(), anyString()))
                                 .thenReturn(List.of());
                 when(orderRepository.findByIdForUpdate(any())).thenAnswer(invocation -> Optional.empty());
@@ -104,7 +106,7 @@ class SeededFillServiceTest {
                 Order order = filledOrder(aapl, Order.Side.BUY, FILLED_AT);
                 when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
                                 .thenReturn(List.of(order));
-                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), eq(FILLED_AT), eq(60), eq("token")))
+                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), eq(FILLED_AT), eq(60), eq("history-token")))
                                 .thenReturn(List.of(
                                                 // Minute buckets, epoch-aligned: the fill at 14:30:30 falls inside the
                                                 // 14:30 bucket.
@@ -128,7 +130,7 @@ class SeededFillServiceTest {
                 Order order = filledOrder(msft, Order.Side.SELL, filledAt);
                 when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
                                 .thenReturn(List.of(order));
-                when(priceHistoryClient.fetchCloses(eq("MSFT"), any(), eq(filledAt), eq(86400), eq("token")))
+                when(priceHistoryClient.fetchCloses(eq("MSFT"), any(), eq(filledAt), eq(86400), eq("history-token")))
                                 .thenReturn(List.of(
                                                 new CandleClose(filledAt.minusDays(1).withHour(0).withMinute(0)
                                                                 .withSecond(0), new BigDecimal("310.5"))));
@@ -217,7 +219,7 @@ class SeededFillServiceTest {
                                 .thenReturn(List.of(order));
                 when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(60), anyString())).thenReturn(List.of(
                                 new CandleClose(FILLED_AT.minusSeconds(60), new BigDecimal("461"))));
-                when(jwtService.generateToken(account.getClientId(), null)).thenReturn("owner-token");
+                when(jwtService.generateSettlementToken(account.getClientId())).thenReturn("owner-token");
 
                 assertEquals(0, service.bookPendingFills());
 

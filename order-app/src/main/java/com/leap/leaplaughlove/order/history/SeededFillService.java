@@ -202,9 +202,9 @@ public class SeededFillService {
             return false;
         }
 
-        // no request is behind this, so there is no caller's token to forward; sign as the order's
+        // Session Timeout & Revocation: use a restricted settlement token for the order's
         // owner, whose request this fill would have been.
-        fillRecorder.settle(order, execution, jwtService.generateToken(getClientId(order), null));
+        fillRecorder.settle(order, execution, jwtService.generateSettlementToken(getClientId(order)));
 
         Boolean booked = transactionTemplate.execute(status -> {
             orderRepository.findByIdForUpdate(order.getOrderId());
@@ -226,9 +226,10 @@ public class SeededFillService {
     private Optional<BigDecimal> priceAt(Order order) {
         OffsetDateTime filledAt = order.getFilledAt();
         String symbol = order.getInstrument().getSymbol();
-        // market data only needs a valid token; sign it as the order's owner, whose request
+        // Session Timeout & Revocation: historical pricing uses a restricted backend token;
         // this fill would have been.
-        String token = jwtService.generateToken(getClientId(order), null);
+        // Session Timeout & Revocation: only the historical price endpoint accepts this token.
+        String token = jwtService.generateHistoryToken(getClientId(order));
         try {
             for (int width : CANDLE_WIDTHS) {
                 List<CandleClose> closes = priceHistoryClient.fetchCloses(

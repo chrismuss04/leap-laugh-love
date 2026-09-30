@@ -5,6 +5,8 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+// Session Timeout & Revocation
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,6 +21,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Configures Spring Security for the market data service: stateless JWT authentication
  * (reusing iam-app's {@link JwtService}) for every endpoint except health and error.
  */
+// Session Timeout & Revocation: common-security is outside each app's component scan.
+@org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class MarketDataSecurityConfig {
 
@@ -32,7 +36,7 @@ public class MarketDataSecurityConfig {
      * @throws Exception if the security configuration cannot be built
      */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .csrf(AbstractHttpConfigurer::disable)
@@ -49,7 +53,7 @@ public class MarketDataSecurityConfig {
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
-                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, "market-history"), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

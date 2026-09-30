@@ -9,6 +9,23 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class JwtServiceTest {
 
+    // Session Timeout & Revocation: new claims must survive signature validation.
+    @Test
+    void parsesSessionAndRestrictedSettlementIdentities() {
+        UUID client = UUID.randomUUID();
+        UUID session = UUID.randomUUID();
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var identity = jwtService.parseIdentity(jwtService.generateToken(
+                client, "client@example.com", session, now, now.plusSeconds(3600)));
+        assertEquals(client, identity.clientId());
+        assertEquals(session, identity.sessionId());
+        assertEquals(now.plusSeconds(3600), identity.expiresAt());
+        assertNull(identity.purpose());
+        var internal = jwtService.parseIdentity(jwtService.generateSettlementToken(client));
+        assertEquals("account-settlement", internal.purpose());
+        assertNull(internal.sessionId());
+    }
+
     private static final String SECRET = "thisisasecretkeyforjwtsigningandvalidation123456";
     private JwtService jwtService;
 

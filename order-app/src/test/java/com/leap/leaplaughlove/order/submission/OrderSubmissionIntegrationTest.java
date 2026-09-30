@@ -74,13 +74,43 @@ class OrderSubmissionIntegrationTest {
     @MockBean private AccountClient accountClient;
     @MockBean private CurrentQuoteService currentQuoteService;
 
+    // Session Timeout & Revocation: exercise the real session validator with persisted test sessions.
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate sessionJdbc;
+
+    private String sessionToken(UUID clientId, String email) {
+        sessionJdbc.execute("CREATE SCHEMA IF NOT EXISTS iam");
+        sessionJdbc.execute("CREATE TABLE IF NOT EXISTS iam.client_sessions (session_id UUID PRIMARY KEY, "
+                + "client_id UUID NOT NULL, created_at TIMESTAMP WITH TIME ZONE NOT NULL, "
+                + "last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL, "
+                + "expires_at TIMESTAMP WITH TIME ZONE NOT NULL, revoked_at TIMESTAMP WITH TIME ZONE)");
+        UUID sid = UUID.randomUUID();
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var expiry = now.plusSeconds(3600);
+        sessionJdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, ?, NULL)",
+                sid, clientId, now.atOffset(java.time.ZoneOffset.UTC), now.atOffset(java.time.ZoneOffset.UTC),
+                expiry.atOffset(java.time.ZoneOffset.UTC));
+        return jwtService.generateToken(clientId, email, sid, now, expiry);
+    }
     private String ownerToken;
+
+    // Session Timeout & Revocation: reject an idle client before calling account validation or settlement.
+    @Test
+    void idleSessionCannotSubmitOrder() throws Exception {
+        sessionJdbc.update("UPDATE iam.client_sessions SET last_activity_at = ?",
+                java.time.OffsetDateTime.now().minusMinutes(10));
+        mockMvc.perform(post("/api/order/orders").header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"accountId\":\"" + ACCOUNT_OWNER_USD_ID
+                                + "\",\"symbol\":\"AAPL\",\"side\":\"BUY\",\"quantity\":1}"))
+                .andExpect(status().isUnauthorized());
+        verifyNoInteractions(accountClient);
+    }
     private UUID accountOwnerId;
     private UUID instrumentAaplId;
 
     @BeforeEach
     void setUp() {
-        ownerToken = jwtService.generateToken(UUID.fromString(CLIENT_OWNER_ID), CLIENT_OWNER_EMAIL);
+        ownerToken = sessionToken(UUID.fromString(CLIENT_OWNER_ID), CLIENT_OWNER_EMAIL);
         accountOwnerId = UUID.fromString(ACCOUNT_OWNER_USD_ID);
         instrumentAaplId = UUID.fromString(INSTRUMENT_AAPL_ID);
 

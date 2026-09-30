@@ -1,7 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Injectable, OnDestroy, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, BehaviorSubject } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { tap, timeout } from 'rxjs/operators';
 
 /**
  * Interface for login request
@@ -31,7 +31,22 @@ export interface LoginResponse {
 @Injectable({
   providedIn: 'root'
 })
-export class AuthService {
+export class AuthService implements OnDestroy {
+  // Session Timeout & Revocation: the sign-in screen reads this without a full page reload.
+  readonly sessionMessage = signal('');
+  private sessionGeneration = 0;
+  private readonly onStorage = (event: StorageEvent) => {
+    if (event.key !== 'auth_token' && event.key !== null) return;
+    if (!this.getToken()) {
+      this.sessionGeneration++;
+      this.sessionMessage.set('You have been signed out in another tab. Please sign in again.');
+      this.isAuthenticatedSubject.next(false);
+      this.currentUserSubject.next(null);
+    } else {
+      // A different login was established in another tab; discard the previous page's state.
+      window.location.reload();
+    }
+  };
   // Same-origin path: the dev server (see proxy.conf.js) and any deployment reverse proxy
   // forward /api/iam to iam-app, so this works wherever the browser is running.
   private apiUrl = '/api/iam/auth';
@@ -44,7 +59,14 @@ export class AuthService {
   private currentUserSubject = new BehaviorSubject<any>(this.getUserFromStorage());
   public currentUser$ = this.currentUserSubject.asObservable();
 
-  constructor(private httpClient: HttpClient) {}
+  // Session Timeout & Revocation: localStorage changes are delivered to the other tabs.
+  constructor(private httpClient: HttpClient) {
+    window.addEventListener('storage', this.onStorage);
+  }
+
+  ngOnDestroy(): void {
+    window.removeEventListener('storage', this.onStorage);
+  }
 
   /**
    * Login user with email and password
@@ -57,6 +79,10 @@ export class AuthService {
       loginRequest
     ).pipe(
       tap(response => {
+        // Session Timeout & Revocation: an old logout response must not affect a new login.
+        this.sessionGeneration++;
+        this.sessionMessage.set('');
+        localStorage.removeItem('session_activity');
         // Store token in localStorage
         localStorage.setItem('auth_token', response.accessToken);
         // Store user info, if the backend provided any
@@ -74,10 +100,38 @@ export class AuthService {
    * Logout user
    */
   logout(): void {
+    // Session Timeout & Revocation: dispatch revocation with the captured token before clearing it.
+    this.endSession('You have been signed out.');
+  }
+
+  expireSession(expectedToken: string | null, reason: 'inactivity' | 'expired' = 'expired'): void {
+    if (!expectedToken || this.getToken() !== expectedToken) return;
+    this.endSession(reason === 'inactivity'
+      ? 'Your session expired after 10 minutes of inactivity. Please sign in again.'
+      : 'Your session has expired or is no longer valid. Please sign in again.');
+  }
+
+  private endSession(message: string): void {
+    const token = this.getToken();
+    const generation = ++this.sessionGeneration;
+    this.sessionMessage.set(message);
+    if (token) {
+      this.httpClient.post<void>('/api/iam/session/logout', {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      }).pipe(timeout(10000)).subscribe({
+        error: error => {
+          // 401 means this session is already unusable. Other failures don't prove revocation.
+          if (error.status !== 401 && this.sessionGeneration === generation && !this.getToken()) {
+            this.sessionMessage.set('You are signed out on this device, but server logout could not be confirmed.');
+          }
+        }
+      });
+    }
     // Remove token and user from localStorage
     localStorage.removeItem('auth_token');
     localStorage.removeItem('current_user');
     localStorage.removeItem('rememberMe');
+    localStorage.removeItem('session_activity');
     // Update authentication state
     this.isAuthenticatedSubject.next(false);
     this.currentUserSubject.next(null);

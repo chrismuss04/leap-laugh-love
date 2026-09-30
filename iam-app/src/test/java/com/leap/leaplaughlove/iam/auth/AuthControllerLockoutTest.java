@@ -52,6 +52,30 @@ class AuthControllerLockoutTest {
                 .content("{\"email\":\"" + EMAIL + "\",\"password\":\"" + password + "\"}"));
     }
 
+    // Session Timeout & Revocation: real login persists a different session for each token.
+    @Test
+    void successfulLoginsCreateSessionsMatchingTokens() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var ids = new java.util.HashSet<String>();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            String body = login(PASSWORD).andExpect(status().isOk())
+                    .andReturn().getResponse().getContentAsString();
+            String token = mapper.readTree(body).get("accessToken").asText();
+            var claims = mapper.readTree(java.util.Base64.getUrlDecoder().decode(token.split("\\.")[1]));
+            String sessionId = claims.get("sid").asText();
+            org.junit.jupiter.api.Assertions.assertTrue(ids.add(sessionId));
+            var row = jdbcTemplate.queryForMap(
+                    "SELECT * FROM iam.client_sessions WHERE session_id = ?::uuid", sessionId);
+            assertEquals(CLIENT_ID, row.get("client_id").toString());
+            assertEquals(claims.get("iat").asLong(),
+                    ((java.time.OffsetDateTime) row.get("created_at")).toEpochSecond());
+            assertEquals(row.get("created_at"), row.get("last_activity_at"));
+            assertEquals(claims.get("exp").asLong(),
+                    ((java.time.OffsetDateTime) row.get("expires_at")).toEpochSecond());
+            org.junit.jupiter.api.Assertions.assertNull(row.get("revoked_at"));
+        }
+    }
+
     @Test
     @DisplayName("Failed attempts persist and the 3rd one locks the account with a locked message")
     void thirdFailedAttemptLocksAccount() throws Exception {

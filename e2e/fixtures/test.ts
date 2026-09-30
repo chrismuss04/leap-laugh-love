@@ -28,7 +28,7 @@ interface ApiFixtures {
   /** Unauthenticated API client; `.as(token)` for an authenticated one. */
   api: Api;
   trader: Trader;
-  /** Logs in through the API (cached per worker) and returns the JWT. */
+  /** Creates a fresh login session through the API for the current browser test. */
   tokenFor: (email: string) => Promise<string>;
 }
 
@@ -38,7 +38,6 @@ interface PageFixtures {
 
 interface WorkerFixtures {
   workerRequest: APIRequestContext;
-  workerTokens: Map<string, string>;
   workerTrader: Trader;
 }
 
@@ -58,15 +57,11 @@ export const apiTest = base.extend<ApiFixtures, WorkerFixtures>({
     { scope: 'worker' }
   ],
 
-  // Tokens last 60 minutes, far longer than a worker lives, so each persona logs in once.
-  workerTokens: [async ({}, use) => use(new Map()), { scope: 'worker' }],
-
   workerTrader: [
-    async ({ workerRequest, workerTokens }, use, workerInfo) => {
+    async ({ workerRequest }, use, workerInfo) => {
       const persona = traderFor(workerInfo.parallelIndex);
       const api = new Api(workerRequest);
       const token = await api.login(persona.email, PASSWORD);
-      workerTokens.set(persona.email, token);
       const accounts = await api.as(token).accounts();
       const account = accounts.find(a => a.accountNumber === persona.accountNumbers[0]);
       if (!account) {
@@ -77,14 +72,10 @@ export const apiTest = base.extend<ApiFixtures, WorkerFixtures>({
     { scope: 'worker' }
   ],
 
-  tokenFor: async ({ workerRequest, workerTokens }, use) => {
+  // Session Timeout & Revocation: a previous browser test may have revoked its token by signing out.
+  tokenFor: async ({ workerRequest }, use) => {
     await use(async (email: string) => {
-      let token = workerTokens.get(email);
-      if (!token) {
-        token = await new Api(workerRequest).login(email, PASSWORD);
-        workerTokens.set(email, token);
-      }
-      return token;
+      return new Api(workerRequest).login(email, PASSWORD);
     });
   },
 
@@ -105,7 +96,8 @@ export const test = apiTest.extend<Options & PageFixtures>({
       await use({ cookies: [], origins: [] });
       return;
     }
-    const token = persona === 'trader' ? workerTrader.token : await tokenFor(personas[persona].email);
+    // Keep browser logout independent of the worker's API session, including for trader tests.
+    const token = await tokenFor(persona === 'trader' ? workerTrader.persona.email : personas[persona].email);
     await use({
       cookies: [],
       origins: [{ origin: new URL(baseURL!).origin, localStorage: [{ name: 'auth_token', value: token }] }]
