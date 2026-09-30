@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -30,7 +31,8 @@ public class ClientProfileController {
 
     /**
      * Retrieves the profile of the authenticated client. Sensitive identity fields (SSN, date of
-     * birth, address) are deliberately left out - this is display data for the signed-in header.
+     * birth, address) are deliberately left out - this is display data for the signed-in header
+     * and the profile page.
      * @return the authenticated client's display profile
      * @throws ResponseStatusException with 404 NOT_FOUND if the token's client no longer exists
      */
@@ -40,7 +42,7 @@ public class ClientProfileController {
         Client client = clientRepository.findById(clientId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Client not found"));
         return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),
-                client.getExperienceLevel(), client.getStatus());
+                client.getExperienceLevel(), client.getStatus(), client.getCreatedAt());
     }
 
     /**
@@ -50,8 +52,9 @@ public class ClientProfileController {
      * @param fullName the client's full name
      * @param experienceLevel the client's investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
      * @param status the client's account status
+     * @param createdAt the timestamp when the client's account was created
      */
     public record ClientProfileResponse(UUID clientId, String email, String fullName,
-                                        String experienceLevel, String status) {
+                                        String experienceLevel, String status, OffsetDateTime createdAt) {
     }
 }
