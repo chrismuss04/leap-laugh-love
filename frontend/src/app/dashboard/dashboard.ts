@@ -2,16 +2,12 @@ import { Component, DestroyRef, OnInit, ViewChild, computed, effect, inject, sig
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { forkJoin, map } from 'rxjs';
-import { AccountSummary, ClientHoldings, HoldingsService, PositionItem } from '../services/holdings';
-import { BalanceResponse, BalanceService } from '../services/balance';
+import { map } from 'rxjs';
+import { AccountValuationService } from '../services/account-valuation';
 import { OrderHistoryItem, OrderService, OrderSide } from '../services/order';
-import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
 import { PORTFOLIO_RANGES, PortfolioHistory, PortfolioRange, PortfolioService } from '../services/portfolio';
-import {
-  ACCOUNT_COLORS, AccountView, HoldingView, MARKET_INDICES, MarketIndex, TradeAccount, accountMask, accountName
-} from './models';
+import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models';
 import { TickerStripComponent } from './ticker-strip/ticker-strip';
 import { SymbolSearchComponent } from './symbol-search/symbol-search';
 import { ChartPoint, LineChartComponent } from './line-chart/line-chart';
@@ -39,17 +35,16 @@ const INTRADAY_INTERVAL_MS = 300_000;
         AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent
     ],
     templateUrl: './dashboard.html',
-    styleUrl: './dashboard.css'
+    styleUrl: './dashboard.css',
+    providers: [AccountValuationService]
 })
 export class DashboardComponent implements OnInit {
   @ViewChild(TradePanelComponent) tradePanel?: TradePanelComponent;
 
   readonly ranges = PORTFOLIO_RANGES;
 
-  private readonly holdingsService = inject(HoldingsService);
-  private readonly balanceService = inject(BalanceService);
+  private readonly valuation = inject(AccountValuationService);
   private readonly orderService = inject(OrderService);
-  private readonly marketData = inject(MarketDataService);
   private readonly portfolioService = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
   private readonly destroyRef = inject(DestroyRef);
@@ -60,10 +55,10 @@ export class DashboardComponent implements OnInit {
     { initialValue: null });
 
   // ---- Loaded state ----
-  readonly holdingsResponse = signal<ClientHoldings | null>(null);
-  readonly balance = signal<BalanceResponse | null>(null);
-  readonly accountSummaries = signal<AccountSummary[]>([]);
-  readonly accountError = signal<string | null>(null);
+  // Accounts, balances and positions, valued live - shared with the Accounts page.
+  private readonly holdingsResponse = this.valuation.holdingsResponse;
+  private readonly balance = this.valuation.balance;
+  readonly accountError = this.valuation.accountError;
 
   readonly range = signal<PortfolioRange>('1D');
   readonly history = signal<PortfolioHistory | null>(null);
@@ -74,66 +69,16 @@ export class DashboardComponent implements OnInit {
   readonly ordersLoading = signal(true);
   readonly ordersError = signal<string | null>(null);
 
-  /** Latest price per symbol from REST, used until the live stream has ticked the symbol. */
-  private readonly snapshotPrices = signal<Record<string, number>>({});
-  /** Display name per symbol from market data, covering instruments the client doesn't hold. */
-  private readonly marketNames = signal<Record<string, string>>({});
-  readonly previousCloses = signal<Record<string, number | null>>({});
-  private readonly intraday = signal<Record<string, number[]>>({});
-  private readonly requestedCloses = new Set<string>();
-  private readonly requestedIntraday = new Set<string>();
-
   readonly selectedSymbol = signal<string | null>(null);
   readonly scrubIndex = signal<number | null>(null);
 
   // ---- Derived state ----
-  readonly accountsLoading = computed(() => this.holdingsResponse() === null || this.balance() === null);
-
-  readonly prices = computed<Record<string, number>>(() => ({ ...this.snapshotPrices(), ...this.stream.prices() }));
+  readonly accountsLoading = this.valuation.accountsLoading;
+  readonly prices = this.valuation.prices;
+  readonly previousCloses = this.valuation.previousCloses;
 
   /** Every account valued live, in the API's order so each keeps its colour. */
-  readonly accounts = computed<AccountView[]>(() => {
-    const holdings = this.holdingsResponse();
-    const balance = this.balance();
-    if (!holdings || !balance) {
-      return [];
-    }
-    const summaries = this.accountSummaries();
-    const views = balance.accounts.map((account, index) => {
-      const positions = this.openPositions(holdings.accounts.find(a => a.accountId === account.accountId)?.positions);
-      const priced = this.priceHoldings(positions);
-      const summary = summaries.find(s => s.accountId === account.accountId);
-      const marketValue = priced.reduce((sum, h) => sum + (h.marketValue ?? 0), 0);
-      const dayChanges = priced.filter(h => h.dayChange !== null);
-      const dayChange = dayChanges.length ? dayChanges.reduce((sum, h) => sum + h.dayChange!, 0) : null;
-      const returns = priced.filter(h => h.totalReturn !== null);
-      const previousCloseValue = priced.every(h => h.previousClose !== null)
-        ? account.balance + priced.reduce((sum, h) => sum + h.previousClose! * h.quantity, 0)
-        : null;
-      return {
-        accountId: account.accountId,
-        accountNumber: account.accountNumber,
-        name: accountName(account.accountNumber),
-        mask: accountMask(account.accountNumber),
-        color: ACCOUNT_COLORS[index % ACCOUNT_COLORS.length],
-        status: summary?.status ?? null,
-        tradingEnabled: summary?.tradingEnabled ?? null,
-        openedAt: summary?.createdAt ?? null,
-        cash: account.balance,
-        marketValue,
-        value: account.balance + marketValue,
-        dayChange,
-        dayChangePercent: dayChange === null ? null : percentChange(marketValue, marketValue - dayChange),
-        totalReturn: returns.length ? returns.reduce((sum, h) => sum + h.totalReturn!, 0) : null,
-        positionCount: priced.length,
-        share: 0,
-        intraday: this.intradayValue(priced, account.balance),
-        previousCloseValue
-      };
-    });
-    const total = views.reduce((sum, a) => sum + a.value, 0);
-    return views.map(view => ({ ...view, share: total ? view.value / total : 0 }));
-  });
+  readonly accounts = this.valuation.accounts;
 
   /** The scoped account's view, or null on the all-accounts overview. */
   readonly selectedAccount = computed(() => this.accounts().find(a => a.accountId === this.accountId()) ?? null);
@@ -141,7 +86,7 @@ export class DashboardComponent implements OnInit {
   readonly isAccountView = computed(() => this.accountId() !== null);
 
   /** The switcher and accounts card only earn their space once there's more than one account. */
-  readonly multiAccount = computed(() => (this.balance()?.accounts.length ?? 0) > 1);
+  readonly multiAccount = this.valuation.multiAccount;
 
   /** Holdings in scope - one account, or combined across accounts - largest position first. */
   readonly holdings = computed<HoldingView[]>(() => {
@@ -151,7 +96,7 @@ export class DashboardComponent implements OnInit {
     }
     const accountId = this.accountId();
     const scoped = accountId ? response.accounts.filter(a => a.accountId === accountId) : response.accounts;
-    return this.priceHoldings(scoped.flatMap(a => this.openPositions(a.positions)));
+    return this.valuation.priceHoldings(scoped.flatMap(a => this.valuation.openPositions(a.positions)));
   });
 
   readonly cash = computed(() => {
@@ -303,7 +248,7 @@ export class DashboardComponent implements OnInit {
   });
 
   readonly names = computed<Record<string, string>>(() => ({
-    ...this.marketNames(),
+    ...this.valuation.marketNames(),
     ...Object.fromEntries(this.holdings().map(h => [h.symbol, h.name]))
   }));
 
@@ -359,41 +304,15 @@ export class DashboardComponent implements OnInit {
     this.loadAccounts();
     this.loadHistory();
     this.loadOrders();
-
-    this.marketData.getAllLatestPrices()
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(prices => {
-        this.snapshotPrices.update(current => ({
-          ...Object.fromEntries(prices.map(p => [p.symbol, Number(p.price)])),
-          ...current
-        }));
-        this.marketNames.set(Object.fromEntries(
-          prices.filter(p => p.name).map(p => [p.symbol, p.name as string])));
-      });
-    this.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
+    this.valuation.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
   }
 
   loadAccounts(): void {
-    this.accountError.set(null);
-    forkJoin({
-      holdings: this.holdingsService.getHoldings(),
-      balance: this.balanceService.getBalance(),
-      summaries: this.holdingsService.getAccounts()
-    })
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: ({ holdings, balance, summaries }) => {
-          this.holdingsResponse.set(holdings);
-          this.balance.set(balance);
-          this.accountSummaries.set(summaries);
-          const symbols = [...new Set(holdings.accounts.flatMap(a => a.positions.map(p => p.symbol)))];
-          this.loadDailyContext(symbols, true);
-          if (!this.selectedSymbol()) {
-            this.selectedSymbol.set(this.holdings()[0]?.symbol ?? null);
-          }
-        },
-        error: err => this.accountError.set(err.error?.message || 'We couldn’t load your accounts.')
-      });
+    this.valuation.load(() => {
+      if (!this.selectedSymbol()) {
+        this.selectedSymbol.set(this.holdings()[0]?.symbol ?? null);
+      }
+    });
   }
 
   loadHistory(): void {
@@ -446,7 +365,7 @@ export class DashboardComponent implements OnInit {
 
   selectSymbol(symbol: string): void {
     this.selectedSymbol.set(symbol);
-    this.loadDailyContext([symbol], false);
+    this.valuation.loadDailyContext([symbol], false);
   }
 
   /** Search pick or position Buy/Sell: load the symbol and put the cursor in the shares field. */
@@ -463,74 +382,5 @@ export class DashboardComponent implements OnInit {
     this.loadAccounts();
     this.loadHistory();
     this.loadOrders();
-  }
-
-  private openPositions(positions: PositionItem[] | undefined): PositionItem[] {
-    return (positions ?? []).filter(p => p.quantity !== 0);
-  }
-
-  /** Prices positions live, merging the same symbol across accounts, largest position first. */
-  private priceHoldings(positions: PositionItem[]): HoldingView[] {
-    const prices = this.prices();
-    const closes = this.previousCloses();
-    const intraday = this.intraday();
-    const bySymbol = new Map<string, { name: string; quantity: number; cost: number }>();
-    for (const p of positions) {
-      const entry = bySymbol.get(p.symbol) ?? { name: p.instrumentName, quantity: 0, cost: 0 };
-      entry.quantity += p.quantity;
-      entry.cost += p.quantity * p.averageCost;
-      bySymbol.set(p.symbol, entry);
-    }
-    return [...bySymbol.entries()].map(([symbol, { name, quantity, cost }]) => {
-      const price = prices[symbol] ?? null;
-      const previousClose = closes[symbol] ?? null;
-      const marketValue = price !== null ? price * quantity : null;
-      const dayChange = price !== null && previousClose !== null ? (price - previousClose) * quantity : null;
-      const totalReturn = marketValue !== null ? marketValue - cost : null;
-      return {
-        symbol, name, quantity,
-        averageCost: quantity ? cost / quantity : 0,
-        price, previousClose, marketValue, dayChange,
-        dayChangePercent: percentChange(price, previousClose),
-        totalReturn,
-        totalReturnPercent: totalReturn !== null && cost ? (totalReturn / cost) * 100 : null,
-        intraday: intraday[symbol] ?? []
-      };
-    }).sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));
-  }
-
-  /**
-   * Today's value of some holdings plus cash at each intraday bucket, with every symbol's series
-   * aligned on its latest bucket. Empty until each holding's intraday prices have loaded.
-   */
-  private intradayValue(holdings: HoldingView[], cash: number): number[] {
-    if (!holdings.length || holdings.some(h => h.intraday.length < 2)) {
-      return [];
-    }
-    const length = Math.min(...holdings.map(h => h.intraday.length));
-    return Array.from({ length }, (_, i) => holdings.reduce(
-      (sum, h) => sum + h.quantity * h.intraday[h.intraday.length - length + i], cash));
-  }
-
-  /**
-   * Previous close for day-change figures, plus an intraday series for sparklines when wanted.
-   * Each is fetched once per symbol per visit - both describe completed buckets, which the live
-   * stream supersedes for the current price.
-   */
-  private loadDailyContext(symbols: string[], withIntraday: boolean): void {
-    for (const symbol of symbols) {
-      if (!this.requestedCloses.has(symbol)) {
-        this.requestedCloses.add(symbol);
-        this.marketData.getPreviousClose(symbol)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(close => this.previousCloses.update(current => ({ ...current, [symbol]: close })));
-      }
-      if (withIntraday && !this.requestedIntraday.has(symbol)) {
-        this.requestedIntraday.add(symbol);
-        this.marketData.getIntradayCloses(symbol)
-          .pipe(takeUntilDestroyed(this.destroyRef))
-          .subscribe(closes => this.intraday.update(current => ({ ...current, [symbol]: closes })));
-      }
-    }
   }
 }

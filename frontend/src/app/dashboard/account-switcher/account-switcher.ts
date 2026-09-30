@@ -4,21 +4,22 @@ import { RouterLink } from '@angular/router';
 import { AccountView } from '../models';
 
 /**
- * Tabs for scoping the dashboard: every account combined, or one account. Each tab is a link, so
- * an account view has its own URL and the browser's back button returns to the overview.
+ * Tabs for scoping a page: every account combined, or one account. Each tab is a link, so an
+ * account view has its own URL and the browser's back button returns to the overview. Used by the
+ * dashboard (/dashboard/:accountId) and the Accounts page (/accounts/:accountId).
  */
 @Component({
     selector: 'app-account-switcher',
     imports: [CommonModule, RouterLink],
     template: `
     <nav class="switcher" aria-label="Accounts">
-      <a class="tab" routerLink="/dashboard" [class.on]="selected === null"
+      <a class="tab" [routerLink]="basePath" [class.on]="selected === null"
          [attr.aria-current]="selected === null ? 'page' : null">
         All accounts
       </a>
       <ng-container *ngIf="!loading">
         <a *ngFor="let account of accounts; trackBy: trackById" class="tab fade-in"
-           [routerLink]="['/dashboard', account.accountId]" [class.on]="account.accountId === selected"
+           [routerLink]="[basePath, account.accountId]" [class.on]="account.accountId === selected"
            [attr.aria-current]="account.accountId === selected ? 'page' : null"
            [attr.aria-label]="account.name">
           <span class="dot" [style.background]="account.color" aria-hidden="true"></span>
@@ -69,6 +70,8 @@ export class AccountSwitcherComponent {
   @Input() accounts: AccountView[] = [];
   @Input() selected: string | null = null;
   @Input() loading = false;
+  /** Route of the all-accounts view; an account's tab links to basePath/:accountId. */
+  @Input() basePath = '/dashboard';
 
   trackById(_: number, account: AccountView): string {
     return account.accountId;

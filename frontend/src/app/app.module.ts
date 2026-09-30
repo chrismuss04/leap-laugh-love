@@ -26,6 +26,9 @@ const routes: Routes = [
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
+      // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
+      { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
+      { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

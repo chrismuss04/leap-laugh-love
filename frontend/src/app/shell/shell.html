@@ -16,6 +16,8 @@
         <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">Dashboard</a>
         <a routerLink="/orders" routerLinkActive="active" class="nav-link">Orders</a>
         <a routerLink="/holdings" routerLinkActive="active" class="nav-link">Holdings</a>
+        <!-- No room on phones; the profile menu carries it there. -->
+        <a routerLink="/accounts" routerLinkActive="active" class="nav-link wide-only">Accounts</a>
       </nav>
 
       <div class="header-right">
@@ -45,6 +47,7 @@
               <span class="menu-name">{{ profile()?.fullName }}</span>
               <span class="menu-email">{{ profile()?.email }}</span>
             </div>
+            <a routerLink="/accounts" class="menu-item narrow-only" role="menuitem" (click)="closeMenu()">Accounts</a>
             <button type="button" class="menu-item danger" role="menuitem" (click)="logout()">Log out</button>
           </div>
         </div>

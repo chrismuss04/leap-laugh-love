@@ -8,7 +8,8 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
 
 /**
  * Every account at a glance: how the combined value splits between them, and each account's value
- * and move today. A row opens that account's dashboard.
+ * and move today. A row opens that account's dashboard; opening, funding and moving cash between
+ * accounts is on the Accounts page, linked from the header.
  */
 @Component({
     selector: 'app-accounts-overview',
@@ -17,7 +18,10 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
     <section class="card" aria-labelledby="accounts-title">
       <header class="card-header">
         <h2 id="accounts-title">Accounts</h2>
-        <span class="meta" *ngIf="!loading">{{ accounts.length }} {{ accounts.length === 1 ? 'account' : 'accounts' }}</span>
+        <span class="header-end">
+          <span class="meta" *ngIf="!loading">{{ accounts.length }} {{ accounts.length === 1 ? 'account' : 'accounts' }}</span>
+          <a routerLink="/accounts" class="link">Manage</a>
+        </span>
       </header>
 
       <div *ngIf="loading" aria-busy="true">
@@ -74,6 +78,9 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
     .card-header { display: flex; align-items: baseline; justify-content: space-between; padding: 18px 20px 10px; }
     h2 { font-size: 16px; font-weight: 600; }
     .meta { font-size: 13px; color: var(--muted-foreground); }
+    .header-end { display: flex; align-items: baseline; gap: 12px; }
+    .link { font-size: 13px; font-weight: 600; color: var(--primary); text-decoration: none; }
+    .link:hover { text-decoration: underline; }
 
     .allocation { padding: 4px 20px 16px; }
     .bar { display: flex; gap: 3px; height: 8px; border-radius: 999px; overflow: hidden; }

@@ -1,12 +1,13 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { RouterLink } from '@angular/router';
 import { AccountView } from '../models';
 import { formatMoney } from '../../shared/format';
 
 /** Facts about one account that don't change tick to tick: number, status, and where its value sits. */
 @Component({
     selector: 'app-account-details',
-    imports: [CommonModule],
+    imports: [CommonModule, RouterLink],
     template: `
     <section class="card" aria-labelledby="account-details-title">
       <header class="card-header">
@@ -51,6 +52,10 @@ import { formatMoney } from '../../shared/format';
           <span><i class="key cash"></i>Cash <b class="num">{{ money(account.cash) }}</b></span>
         </span>
       </div>
+
+      <a *ngIf="account && showManage" class="manage" [routerLink]="['/accounts', account.accountId]">
+        Manage account &amp; transfers <span aria-hidden="true">›</span>
+      </a>
     </section>
   `,
     styles: [`
@@ -78,10 +83,19 @@ import { formatMoney } from '../../shared/format';
     .legend span { display: inline-flex; align-items: center; gap: 6px; }
     .legend b { color: var(--foreground); font-weight: 600; }
     .key { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+    .manage {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 20px; border-top: 1px solid var(--border);
+      font-size: 13px; font-weight: 600; color: var(--primary); text-decoration: none;
+      transition: background 0.15s ease;
+    }
+    .manage:hover { background: var(--surface-hover); border-radius: 0 0 var(--radius-lg) var(--radius-lg); }
   `]
 })
 export class AccountDetailsComponent {
   @Input() account: AccountView | null = null;
+  /** Off on the Accounts page itself, where the link would lead back to the same page. */
+  @Input() showManage = true;
 
   money = formatMoney;
 }
