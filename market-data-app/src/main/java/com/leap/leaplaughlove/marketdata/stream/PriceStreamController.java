@@ -28,9 +28,12 @@ public class PriceStreamController {
     }
 
     /**
-     * Subscribes the caller to the live tick stream, optionally filtered to a comma-separated
+     * Subscribes the caller to the live tick stream, optionally filtered to a
+     * comma-separated
      * list of symbols.
-     * @param symbols a comma-separated list of symbols to filter to, or null/blank for all
+     * 
+     * @param symbols a comma-separated list of symbols to filter to, or null/blank
+     *                for all
      * @return the SSE emitter streaming ticks to the caller
      */
     @GetMapping("/api/marketdata/stream")

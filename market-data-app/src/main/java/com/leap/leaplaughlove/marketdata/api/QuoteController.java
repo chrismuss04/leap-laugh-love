@@ -20,12 +20,19 @@ public class QuoteController {
 
     private final QuoteIngestionService quoteIngestionService;
 
+    /**
+     * Constructs a new QuoteController with the injected quote ingestion service
+     * 
+     * @param quoteIngestionService the quote ingestion service
+     */
     public QuoteController(QuoteIngestionService quoteIngestionService) {
         this.quoteIngestionService = quoteIngestionService;
     }
 
     /**
-     * Retrieves the latest quote for every instrument seen by the ingestion pipeline.
+     * Retrieves the latest quote for every instrument seen by the ingestion
+     * pipeline.
+     * 
      * @return the latest quote for each instrument
      */
     @GetMapping
@@ -35,10 +42,12 @@ public class QuoteController {
 
     /**
      * Retrieves the latest quote for a single instrument symbol.
+     * 
      * @param symbol the instrument symbol to look up
      * @return the latest quote for the symbol
-     * @throws ResponseStatusException with a 404 status if no quote has been ingested for
-     *     the symbol
+     * @throws ResponseStatusException with a 404 status if no quote has been
+     *                                 ingested for
+     *                                 the symbol
      */
     @GetMapping("/{symbol}")
     public QuoteResponse getLatestQuote(@PathVariable String symbol) {
@@ -48,6 +57,12 @@ public class QuoteController {
                         "Unknown instrument symbol: " + symbol));
     }
 
+    /**
+     * Converts a QuoteState to a QuoteResponse DTO.
+     * 
+     * @param state the QuoteState to convert
+     * @return the QuoteResponse
+     */
     private QuoteResponse toResponse(QuoteState state) {
         return new QuoteResponse(state.symbol(), state.bidPrice(), state.bidSize(),
                 state.askPrice(), state.askSize(), state.lastPrice(), state.lastSize(),

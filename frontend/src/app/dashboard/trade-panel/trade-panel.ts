@@ -27,6 +27,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
   @Input() name: string | null = null;
   @Input() price: number | null = null;
   @Input() accounts: TradeAccount[] = [];
+  /** Account to trade in by default, e.g. the one the dashboard is scoped to. */
+  @Input() preferredAccountId: string | null = null;
   @Output() placed = new EventEmitter<OrderSubmissionResponse>();
   /** The order may or may not have gone through; the account and activity should be reloaded. */
   @Output() unconfirmed = new EventEmitter<void>();
@@ -69,6 +71,15 @@ export class TradePanelComponent implements OnChanges, OnInit {
       // Order placement confirmation: don't confirm a different account than the one reviewed.
       this.cancelConfirmation();
       this.accountId = this.accounts[0]?.accountId ?? null;
+    }
+    // Applied when the preference changes or accounts first arrive, not on every refresh, so a
+    // manual pick in the ticket sticks.
+    const accountsArrived = changes['accounts'] && !changes['accounts'].previousValue?.length;
+    if ((changes['preferredAccountId'] || accountsArrived) && this.step !== 'submitting'
+        && this.preferredAccountId && this.preferredAccountId !== this.accountId
+        && this.accounts.some(a => a.accountId === this.preferredAccountId)) {
+      this.cancelConfirmation();
+      this.accountId = this.preferredAccountId;
     }
     if (changes['symbol'] && !changes['symbol'].firstChange && this.step !== 'submitting') {
       this.reset();

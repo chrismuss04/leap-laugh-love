@@ -14,6 +14,23 @@ export interface BalanceResponse {
   totalsByCurrency: Record<string, number>;
 }
 
+export interface CashMovementRequest {
+  amount: number;
+  description?: string;
+}
+
+/** One cash ledger entry, e.g. a deposit, and the account's balance after it. */
+export interface CashTransactionResponse {
+  cashLedgerId: string;
+  accountId: string;
+  entryType: string;
+  amount: number;
+  currency: string;
+  balanceAfter: number;
+  createdAt: string;
+  description: string | null;
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -25,5 +42,9 @@ export class BalanceService {
 
   getBalance(): Observable<BalanceResponse> {
     return this.http.get<BalanceResponse>(`${this.API_URL}/balance`);
+  }
+
+  deposit(accountId: string, request: CashMovementRequest): Observable<CashTransactionResponse> {
+    return this.http.post<CashTransactionResponse>(`${this.API_URL}/balance/accounts/${accountId}/deposit`, request);
   }
 }

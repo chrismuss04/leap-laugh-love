@@ -1,0 +1,102 @@
+<section class="panel" aria-labelledby="open-title">
+  <header class="panel-header">
+    <div>
+      <h2 id="open-title">Open an account</h2>
+      <p class="name">Under your existing profile</p>
+    </div>
+    <button *ngIf="!busy" type="button" class="close" (click)="closed.emit()" aria-label="Close">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+      </svg>
+    </button>
+  </header>
+
+  <!-- Result -->
+  <div *ngIf="step === 'result' && account" class="result" role="status">
+    <div class="result-icon" [class.ok]="deposit === 'none' || deposit === 'done'"
+         [class.pending]="deposit === 'failed' || deposit === 'unknown'" aria-hidden="true">
+      {{ deposit === 'none' || deposit === 'done' ? '✓' : '!' }}
+    </div>
+    <p class="result-title">{{ accountName(account.accountNumber) }} is open</p>
+
+    <!-- The account exists either way; only the starting cash can have gone wrong. -->
+    <p *ngIf="deposit === 'failed'" class="result-text">
+      Your starting deposit didn't go through<ng-container *ngIf="depositError">: {{ depositError }}</ng-container>.
+      You can try again, or add cash later.
+    </p>
+    <p *ngIf="deposit === 'unknown'" class="result-text">
+      We couldn't confirm your {{ money(amount) }} starting deposit. It may still have gone through, so check
+      this account's cash before depositing again.
+    </p>
+
+    <dl class="summary">
+      <div><dt>Account number</dt><dd class="num">{{ account.accountNumber }}</dd></div>
+      <div><dt>Opened</dt><dd>{{ account.createdAt | date: 'MMM d, y' }}</dd></div>
+      <div><dt>Cash</dt><dd class="num">{{ deposit === 'unknown' ? '—' : money(cash) }}</dd></div>
+    </dl>
+
+    <!-- A refusal may be about the amount itself (e.g. a limit), so it can be changed before retrying. -->
+    <form *ngIf="deposit === 'failed'" class="retry" (ngSubmit)="makeDeposit()">
+      <div class="field-row">
+        <label class="field-label" for="retry-cash">Deposit</label>
+        <span class="amount">
+          <span class="currency" aria-hidden="true">$</span>
+          <input id="retry-cash" name="retryAmount" class="qty num" type="number" inputmode="decimal"
+                 min="0.01" step="0.01" placeholder="0.00" [(ngModel)]="amount" />
+        </span>
+      </div>
+      <p *ngIf="amountError" class="hint error" aria-live="polite">{{ amountError }}</p>
+      <button type="submit" class="cta" [disabled]="!wantsDeposit || !!amountError">
+        Deposit {{ wantsDeposit && !amountError ? money(amount) : '' }}
+      </button>
+    </form>
+    <button *ngIf="deposit === 'none'" type="button" class="cta" (click)="fund.emit(account.accountId)">Add cash</button>
+    <button type="button" [class]="deposit === 'failed' || deposit === 'none' ? 'ghost' : 'cta'"
+            (click)="closed.emit()">Done</button>
+  </div>
+
+  <!-- Form -->
+  <form *ngIf="step !== 'result'" (ngSubmit)="submit()">
+    <ul class="facts">
+      <li>
+        <span class="fact-icon shared" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><circle cx="7" cy="4.5" r="2.5" stroke="currentColor" stroke-width="1.4" /><path d="M2 12.5c.6-2.4 2.6-3.8 5-3.8s4.4 1.4 5 3.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" /></svg>
+        </span>
+        <span><strong>Shared</strong> — your profile, sign-in and personal details. Nothing to fill in again.</span>
+      </li>
+      <li>
+        <span class="fact-icon separate" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="1.5" width="4.5" height="11" rx="1" stroke="currentColor" stroke-width="1.4" /><rect x="8" y="1.5" width="4.5" height="11" rx="1" stroke="currentColor" stroke-width="1.4" /></svg>
+        </span>
+        <span><strong>Separate</strong> — cash, positions and orders. Trades in one account never touch another.</span>
+      </li>
+    </ul>
+
+    <div class="field-row">
+      <span class="field-label">Base currency</span>
+      <span class="field-value">{{ baseCurrency }}</span>
+    </div>
+    <div class="field-row total">
+      <label class="field-label" for="starting-cash">Starting cash</label>
+      <span class="amount">
+        <span class="currency" aria-hidden="true">$</span>
+        <input id="starting-cash" name="amount" class="qty num" type="number" inputmode="decimal"
+               min="0" step="0.01" placeholder="0.00" [(ngModel)]="amount" [disabled]="busy"
+               aria-describedby="starting-cash-hint" />
+      </span>
+    </div>
+
+    <p id="starting-cash-hint" class="hint" [class.error]="amountError" aria-live="polite">
+      {{ amountError ?? (wantsDeposit ? 'Deposited as soon as the account opens.' : 'Optional. Leave empty to start at $0.00.') }}
+    </p>
+
+    <p *ngIf="submitError" class="error" role="alert">{{ submitError }}</p>
+    <button type="submit" class="cta" [disabled]="busy || !!amountError">
+      <ng-container *ngIf="!busy">
+        {{ wantsDeposit && !amountError ? 'Open account & deposit ' + money(amount) : 'Open account' }}
+      </ng-container>
+      <span *ngIf="busy" class="spinner" [attr.aria-label]="step === 'opening' ? 'Opening account' : 'Depositing'"></span>
+    </button>
+    <button type="button" class="ghost" (click)="closed.emit()" [disabled]="busy">Cancel</button>
+  </form>
+</section>
