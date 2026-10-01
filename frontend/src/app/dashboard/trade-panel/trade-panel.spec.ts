@@ -2,6 +2,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideZonelessChangeDetection } from '@angular/core';
 import { ClientProfile } from '../../services/profile';
 import { OrderSide } from '../../services/order';
 import { TradePanelComponent } from './trade-panel';
@@ -16,7 +17,7 @@ describe('TradePanelComponent order confirmation', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TradePanelComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [provideHttpClient(), provideHttpClientTesting(), provideZonelessChangeDetection()]
     }).compileComponents();
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(TradePanelComponent);
@@ -43,6 +44,18 @@ describe('TradePanelComponent order confirmation', () => {
     });
   }
 
+  // Regression: opening from the dashboard timer must schedule a template refresh.
+  it('renders Sell after an asynchronous open without a manual change-detection pass', async () => {
+    loadProfile('ADVANCED');
+    await fixture.whenStable();
+    await new Promise<void>(resolve => setTimeout(() => {
+      component.open('SELL');
+      resolve();
+    }));
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('section.panel').getAttribute('data-side')).toBe('SELL');
+  });
+
   function button(selector: string): HTMLButtonElement {
     const element = fixture.nativeElement.querySelector(selector);
     if (!element) throw new Error(`Missing button: ${selector}`);
@@ -54,8 +67,8 @@ describe('TradePanelComponent order confirmation', () => {
   }
 
   function review(quantity = 1, side: OrderSide = 'BUY'): void {
-    component.quantity = quantity;
-    component.side = side;
+    component.quantity.set(quantity);
+    component.side.set(side);
     component.review();
     fixture.detectChanges();
   }
@@ -116,11 +129,43 @@ describe('TradePanelComponent order confirmation', () => {
       component.confirmOrder();
       component.submit();
       expect(dialog().open).toBe(false);
-      expect(component.step).toBe('submitting');
+      expect(component.step()).toBe('submitting');
       completeOrder(side, 3);
-      expect(component.step).toBe('result');
+      expect(component.step()).toBe('result');
     });
   }
+
+  // Regression: the app is zoneless, so an HTTP callback only refreshes the view through signals.
+  // E2E saw NG0100 when a later, unrelated refresh found the error the panel never rendered.
+  describe('renders the submission outcome without a manual change-detection pass', () => {
+    beforeEach(() => {
+      loadProfile('ADVANCED');
+      review(2);
+      submit();
+    });
+
+    it('shows a refusal and keeps the review open', async () => {
+      http.expectOne(ordersUrl).flush(
+        { error: 'STALE_QUOTE', message: 'Quote for AAPL is stale; please retry' },
+        { status: 409, statusText: 'Conflict' });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('.review .error')?.textContent).toContain('Quote for AAPL is stale; please retry');
+      expect(button('.review .cta').disabled).toBe(false);
+    });
+
+    it('shows a fill', async () => {
+      completeOrder('BUY', 2);
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="trade-result"]')?.textContent).toContain('Bought 2');
+    });
+
+    it('warns when the outcome is unknown', async () => {
+      http.expectOne(ordersUrl).flush({ message: 'boom' }, { status: 500, statusText: 'Server Error' });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="trade-unconfirmed"]')?.textContent)
+        .toContain("We couldn't confirm your order");
+    });
+  });
 
   it('Go back closes the popup and requires confirmation again', () => {
     loadProfile('NOVICE');
@@ -128,7 +173,7 @@ describe('TradePanelComponent order confirmation', () => {
     submit();
     button('.confirmation-actions .ghost').click();
     expect(dialog().open).toBe(false);
-    expect(component.step).toBe('review');
+    expect(component.step()).toBe('review');
     component.confirmOrder();
     http.expectNone(ordersUrl);
     submit();
@@ -141,7 +186,7 @@ describe('TradePanelComponent order confirmation', () => {
     submit();
     dialog().dispatchEvent(new Event('cancel', { cancelable: true }));
     expect(dialog().open).toBe(false);
-    expect(component.confirmationOpen).toBe(false);
+    expect(component.confirmationOpen()).toBe(false);
     http.expectNone(ordersUrl);
   });
 
@@ -151,7 +196,7 @@ describe('TradePanelComponent order confirmation', () => {
     expect(dialog().open).toBe(true);
     http.expectNone(ordersUrl);
     loadProfile('ADVANCED');
-    expect(component.confirmationOpen).toBe(true);
+    expect(component.confirmationOpen()).toBe(true);
   });
 
   it('requires confirmation if the profile request fails', () => {
@@ -181,8 +226,8 @@ describe('TradePanelComponent order confirmation', () => {
     fixture.detectChanges();
     expect(button('.confirmation-actions .cta').disabled).toBe(true);
     component.confirmOrder();
-    expect(component.step).toBe('review');
-    expect(component.submitError).toContain('Not enough buying power');
+    expect(component.step()).toBe('review');
+    expect(component.submitError()).toContain('Not enough buying power');
     http.expectNone(ordersUrl);
   });
 
@@ -192,7 +237,7 @@ describe('TradePanelComponent order confirmation', () => {
     submit();
     button('.confirmation-actions .ghost').click();
     button('.review .ghost').click();
-    expect(component.step).toBe('edit');
+    expect(component.step()).toBe('edit');
     review(2);
     submit();
     expect(dialog().open).toBe(true);
@@ -207,7 +252,7 @@ describe('TradePanelComponent order confirmation', () => {
     fixture.componentRef.setInput('symbol', 'MSFT');
     fixture.detectChanges();
     expect(dialog().open).toBe(false);
-    expect(component.step).toBe('edit');
+    expect(component.step()).toBe('edit');
     component.confirmOrder();
     http.expectNone(ordersUrl);
   });

@@ -24,21 +24,29 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.random.RandomGenerator;
 
 /**
- * Simulates instrument prices using Geometric Brownian Motion, ticking every active
- * instrument on a fixed schedule and publishing a {@link PriceTickEvent} per tick.
+ * Simulates instrument prices using Geometric Brownian Motion, ticking every
+ * active
+ * instrument on a fixed schedule and publishing a {@link PriceTickEvent} per
+ * tick.
  */
 @Service
 public class MarketSimulationEngine {
 
     /**
-     * Order of {@link #initialize()} among {@code ApplicationReadyEvent} listeners: last. Seeding
-     * the state is what starts ticks flowing (the scheduled {@link #tick()} is already running),
-     * so every tick consumer that loads a lookup on the same event must run before it - order
+     * Order of {@link #initialize()} among {@code ApplicationReadyEvent} listeners:
+     * last. Seeding
+     * the state is what starts ticks flowing (the scheduled {@link #tick()} is
+     * already running),
+     * so every tick consumer that loads a lookup on the same event must run before
+     * it - order
      * those with {@link #TICK_CONSUMER_ORDER}.
      */
     public static final int START_ORDER = Ordered.LOWEST_PRECEDENCE;
 
-    /** Order for tick consumers' {@code ApplicationReadyEvent} setup: before {@link #START_ORDER}. */
+    /**
+     * Order for tick consumers' {@code ApplicationReadyEvent} setup: before
+     * {@link #START_ORDER}.
+     */
     public static final int TICK_CONSUMER_ORDER = START_ORDER - 1;
 
     private static final int PRICE_SCALE = 6;
@@ -53,19 +61,25 @@ public class MarketSimulationEngine {
     private final Map<String, InstrumentSimState> statesBySymbol = new ConcurrentHashMap<>();
 
     /**
-     * Creates a new MarketSimulationEngine with the given collaborators and tick interval.
-     * @param instrumentRepository repository used to look up active instruments at startup
-     * @param candleRepository repository used to resume each instrument's last persisted price
-     * @param eventPublisher publisher used to broadcast {@link PriceTickEvent}s
-     * @param tickIntervalMs the interval, in milliseconds, between simulation ticks
-     * @param candleBucketSeconds the candle widths, in seconds, searched for the price to resume from
+     * Creates a new MarketSimulationEngine with the given collaborators and tick
+     * interval.
+     * 
+     * @param instrumentRepository repository used to look up active instruments at
+     *                             startup
+     * @param candleRepository     repository used to resume each instrument's last
+     *                             persisted price
+     * @param eventPublisher       publisher used to broadcast
+     *                             {@link PriceTickEvent}s
+     * @param tickIntervalMs       the interval, in milliseconds, between simulation
+     *                             ticks
+     * @param candleBucketSeconds  the candle widths, in seconds, searched for the
+     *                             price to resume from
      */
     public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
-                                   PriceCandleRepository candleRepository,
-                                   ApplicationEventPublisher eventPublisher,
-                                   @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs,
-                                   @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}")
-                                   List<Integer> candleBucketSeconds) {
+            PriceCandleRepository candleRepository,
+            ApplicationEventPublisher eventPublisher,
+            @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs,
+            @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}") List<Integer> candleBucketSeconds) {
         this.instrumentRepository = instrumentRepository;
         this.candleRepository = candleRepository;
         this.eventPublisher = eventPublisher;
@@ -74,14 +88,21 @@ public class MarketSimulationEngine {
     }
 
     /**
-     * Seeds the simulation state for every active instrument once the application context is
-     * ready, resuming from the newest persisted candle close where one exists and falling back
+     * Seeds the simulation state for every active instrument once the application
+     * context is
+     * ready, resuming from the newest persisted candle close where one exists and
+     * falling back
      * to the instrument's configured initial price otherwise.
      *
-     * <p>Resuming matters because this runs on every boot. Restarting each instrument at its
-     * seed price made the persisted series jump back to that price at every restart, so a chart
-     * drawn over the candle history showed a sawtooth no market movement produced. It is also
-     * what lets the historical backfill hand off continuously: the backfill's final close
+     * <p>
+     * Resuming matters because this runs on every boot. Restarting each instrument
+     * at its
+     * seed price made the persisted series jump back to that price at every
+     * restart, so a chart
+     * drawn over the candle history showed a sawtooth no market movement produced.
+     * It is also
+     * what lets the historical backfill hand off continuously: the backfill's final
+     * close
      * becomes the live feed's opening price.
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -107,7 +128,8 @@ public class MarketSimulationEngine {
     }
 
     /**
-     * Advances every active instrument's simulated price by one GBM step and publishes a
+     * Advances every active instrument's simulated price by one GBM step and
+     * publishes a
      * {@link PriceTickEvent} for each.
      */
     @Scheduled(fixedRateString = "${marketdata.simulation.tick-interval-ms:1000}")
@@ -127,6 +149,7 @@ public class MarketSimulationEngine {
 
     /**
      * Gets the latest simulated price for a single instrument symbol.
+     * 
      * @param symbol the instrument symbol to look up
      * @return the latest price state for the symbol, if it is being simulated
      */
@@ -135,7 +158,9 @@ public class MarketSimulationEngine {
     }
 
     /**
-     * Gets the display name of an actively-simulated instrument, e.g. "Apple Inc." for AAPL.
+     * Gets the display name of an actively-simulated instrument, e.g. "Apple Inc."
+     * for AAPL.
+     * 
      * @param symbol the instrument symbol to look up
      * @return the instrument's display name, if it is being simulated
      */
@@ -145,6 +170,7 @@ public class MarketSimulationEngine {
 
     /**
      * Gets the latest simulated price for every actively-simulated instrument.
+     * 
      * @return the latest price state for each simulated instrument
      */
     public List<PriceState> latestAll() {
@@ -152,7 +178,8 @@ public class MarketSimulationEngine {
     }
 
     /**
-     * Per-instrument simulation state: its display name, GBM parameters, random generator, and
+     * Per-instrument simulation state: its display name, GBM parameters, random
+     * generator, and
      * the most recently simulated price.
      */
     private static final class InstrumentSimState {
@@ -162,8 +189,17 @@ public class MarketSimulationEngine {
         private final RandomGenerator random;
         private volatile PriceState current;
 
+        /**
+         * Creates a new InstrumentSimState.
+         * 
+         * @param displayName the display name of the instrument
+         * @param drift       the drift used by the GBM simulation
+         * @param volatility  the volatility used by the GBM simulation
+         * @param random      the random generator used by the GBM simulation
+         * @param current     the current price state
+         */
         private InstrumentSimState(String displayName, double drift, double volatility,
-                                   RandomGenerator random, PriceState current) {
+                RandomGenerator random, PriceState current) {
             this.displayName = displayName;
             this.drift = drift;
             this.volatility = volatility;
@@ -171,11 +207,58 @@ public class MarketSimulationEngine {
             this.current = current;
         }
 
-        String displayName() { return displayName; }
-        double drift() { return drift; }
-        double volatility() { return volatility; }
-        RandomGenerator random() { return random; }
-        PriceState current() { return current; }
-        void update(PriceState next) { this.current = next; }
+        /**
+         * Gets the display name of the instrument.
+         * 
+         * @return the display name of the instrument
+         */
+        String displayName() {
+            return displayName;
+        }
+
+        /**
+         * Gets the drift used by the GBM simulation.
+         * 
+         * @return the drift used by the GBM simulation
+         */
+        double drift() {
+            return drift;
+        }
+
+        /**
+         * Gets the volatility used by the GBM simulation.
+         * 
+         * @return the volatility used by the GBM simulation
+         */
+        double volatility() {
+            return volatility;
+        }
+
+        /**
+         * Gets the random generator used by the GBM simulation.
+         * 
+         * @return the random generator used by the GBM simulation
+         */
+        RandomGenerator random() {
+            return random;
+        }
+
+        /**
+         * Gets the current price state.
+         * 
+         * @return the current price state
+         */
+        PriceState current() {
+            return current;
+        }
+
+        /**
+         * Updates the current price state.
+         * 
+         * @param next the next price state
+         */
+        void update(PriceState next) {
+            this.current = next;
+        }
     }
 }

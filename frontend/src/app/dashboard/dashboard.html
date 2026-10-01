@@ -1,6 +1,10 @@
 <app-ticker-strip [indices]="indices()"></app-ticker-strip>
 
 <div class="dashboard">
+  <app-account-switcher *ngIf="multiAccount() || isAccountView()" class="scope"
+                        [accounts]="accounts()" [selected]="accountId()"
+                        [loading]="accountsLoading() && !accountError()"></app-account-switcher>
+
   <div class="main">
     <app-symbol-search [names]="names()" [livePrices]="prices()" (pick)="trade($event)"></app-symbol-search>
 
@@ -9,15 +13,17 @@
       <button type="button" (click)="loadAccounts()">Try again</button>
     </div>
 
-    <!-- Portfolio headline + chart -->
+    <!-- Headline value + chart, for all accounts or the scoped one -->
     <section class="hero" aria-labelledby="portfolio-title">
       <p class="eyebrow" id="portfolio-title">
-        Investing<span *ngIf="accountLabel()" class="account"> · {{ accountLabel() }}</span>
+        <span *ngIf="selectedAccount() as account" class="swatch" [style.background]="account.color" aria-hidden="true"></span>
+        {{ heroTitle() }}<span *ngIf="accountLabel()" class="account"> · {{ accountLabel() }}</span>
       </p>
 
       <ng-container *ngIf="headlineValue() !== null; else heroSkeleton">
-        <h1 class="value num">{{ money(headlineValue()) }}</h1>
-        <p class="change num" [ngClass]="'text-' + dir(headlineChange())">
+        <h1 class="value num fade-in" data-testid="headline-value"
+            [appRollingNumber]="headlineValue()" [animate]="scrubIndex() === null"></h1>
+        <p class="change num fade-in" [ngClass]="'text-' + dir(headlineChange())">
           <ng-container *ngIf="headlineChange() !== null">
             <span aria-hidden="true">{{ headlineChange()! > 0 ? '▲' : headlineChange()! < 0 ? '▼' : '' }}</span>
             {{ signedMoney(headlineChange()) }} ({{ signedPercent(headlineChangePercent()) }})
@@ -31,46 +37,52 @@
       </ng-template>
 
       <div class="chart-area">
-        <div *ngIf="historyLoading() && !history()" class="skeleton chart-skeleton"></div>
-        <div *ngIf="historyError() && !historyLoading()" class="chart-message">
-          <p>{{ historyError() }}</p>
+        <div *ngIf="chartLoading() && !chartPoints().length && !chartEmpty()" class="skeleton chart-skeleton"></div>
+        <div *ngIf="chartError() && !chartLoading()" class="chart-message">
+          <p>{{ chartError() }}</p>
           <button type="button" (click)="loadHistory()">Try again</button>
         </div>
-        <app-line-chart *ngIf="history() && !historyError()" [class.stale]="historyLoading()"
+        <div *ngIf="chartEmpty()" class="chart-message">
+          <p>Nothing invested in this account yet, so there's no movement to chart.</p>
+        </div>
+        <app-line-chart *ngIf="chartPoints().length && !chartError()" class="fade-in" [class.stale]="chartLoading()"
                         [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()"
                         [label]="'Portfolio value, ' + headlineLabel()"
                         (scrub)="scrubIndex.set($event)"></app-line-chart>
       </div>
 
       <div class="ranges" role="tablist" aria-label="Chart range" [attr.data-tone]="tone()">
-        <button type="button" role="tab" *ngFor="let r of ranges" class="range"
-                [class.on]="r.range === range()" [attr.aria-selected]="r.range === range()"
+        <button type="button" role="tab" *ngFor="let r of visibleRanges()" class="range"
+                [class.on]="r.range === activeRange()" [attr.aria-selected]="r.range === activeRange()"
                 [attr.aria-label]="r.label" (click)="setRange(r.range)">{{ r.range }}</button>
       </div>
     </section>
 
-    <!-- Key figures -->
+    <!-- Key figures for the current scope -->
     <section class="stats" aria-label="Account summary">
       <div class="stat">
         <span class="stat-label">Buying power</span>
-        <span class="stat-value num">{{ money(cash()) }}</span>
+        <span class="stat-value num" data-testid="stat-buying-power">{{ money(cash()) }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Investments</span>
-        <span class="stat-value num">{{ accountsLoading() ? '—' : money(marketValue()) }}</span>
+        <span class="stat-value num" data-testid="stat-investments">{{ accountsLoading() ? '—' : money(marketValue()) }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Today's return</span>
-        <span class="stat-value num" [ngClass]="'text-' + dir(todaysReturn())">
+        <span class="stat-value num" data-testid="stat-todays-return" [ngClass]="'text-' + dir(todaysReturn())">
           {{ signedMoney(todaysReturn()) }}
           <small *ngIf="todaysReturnPercent() !== null">{{ signedPercent(todaysReturnPercent()) }}</small>
         </span>
       </div>
       <div class="stat">
         <span class="stat-label">Total return</span>
-        <span class="stat-value num" [ngClass]="'text-' + dir(totalReturn())">{{ signedMoney(totalReturn()) }}</span>
+        <span class="stat-value num" data-testid="stat-total-return" [ngClass]="'text-' + dir(totalReturn())">{{ signedMoney(totalReturn()) }}</span>
       </div>
     </section>
+
+    <app-accounts-overview *ngIf="multiAccount() && !isAccountView()"
+                           [accounts]="accounts()" [loading]="accountsLoading()"></app-accounts-overview>
 
     <app-positions-list [holdings]="holdings()" [loading]="accountsLoading() && !accountError()"
                         [selected]="selectedSymbol()"
@@ -81,8 +93,10 @@
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
                      [price]="selectedPrice()" [accounts]="tradeAccounts()"
+                     [preferredAccountId]="accountId()"
                      (placed)="onOrderPlaced()"
                      (unconfirmed)="onOrderPlaced()"></app-trade-panel>
-    <app-recent-activity [orders]="orders()" [loading]="ordersLoading()" [error]="ordersError()"></app-recent-activity>
+    <app-account-details *ngIf="isAccountView()" [account]="selectedAccount()"></app-account-details>
+    <app-recent-activity *ngIf="!isAccountView()" [orders]="orders()" [loading]="ordersLoading()" [error]="ordersError()"></app-recent-activity>
   </aside>
 </div>

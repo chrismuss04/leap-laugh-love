@@ -5,7 +5,8 @@ import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
 
-// repository interface for accessing read-only Account entities
-@Repository
+/**
+ * Interface repository for accessing read-only Account entities
+ */
 public interface AccountRepository extends JpaRepository<Account, UUID> {
 }

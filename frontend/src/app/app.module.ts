@@ -11,6 +11,7 @@ import { CreateAccountComponent } from './create-account/create-account.componen
 import { OrderHistoryComponent } from './order-history/order-history';
 import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
+import { ProfileComponent } from './profile/profile';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
@@ -22,8 +23,11 @@ const routes: Routes = [
     children: [
       // Lazy: the dashboard is most of the app's code, and sign-in doesn't need it.
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
+      // The same dashboard scoped to one account; the overview above covers all of them.
+      { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
+      { path: 'profile', component: ProfileComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

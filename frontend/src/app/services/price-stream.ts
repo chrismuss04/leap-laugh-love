@@ -8,14 +8,26 @@ export type StreamStatus = 'idle' | 'connecting' | 'live' | 'reconnecting';
  *
  * The stream is JWT-secured and the browser's EventSource cannot send an Authorization header,
  * so this reads the stream with fetch() and parses the SSE frames itself. Parsing runs outside
- * Angular's zone and ticks are flushed into the `prices` signal a few times a second, so a
- * 1-second simulation tick across dozens of symbols doesn't run change detection per message.
+ * Angular's zone, so a 1-second simulation tick across dozens of symbols doesn't run change
+ * detection per message.
+ *
+ * The simulation ticks every symbol in lockstep, which reads as robotic on screen. Instead each
+ * symbol re-prices on its own randomized schedule, and only jumps the queue when it has moved
+ * enough to matter - so the board updates a few names at a time, like a real market.
  */
 @Injectable({
   providedIn: 'root'
 })
 export class PriceStreamService implements OnDestroy {
-  private static readonly FLUSH_MS = 400;
+  /** How often buffered ticks are checked for symbols that are due to re-price. */
+  private static readonly FLUSH_MS = 250;
+  /** A symbol re-prices at a random point in this window after its last update... */
+  private static readonly MIN_QUIET_MS = 4_000;
+  private static readonly MAX_QUIET_MS = 12_000;
+  /** ...unless it has moved at least this fraction since then, */
+  private static readonly BIG_MOVE = 0.0005;
+  /** ...and even a big move waits this long, so one volatile name can't flicker. */
+  private static readonly MIN_GAP_MS = 1_500;
   private static readonly MAX_BACKOFF_MS = 30_000;
   /**
    * Every instrument ticks once a second, so this long without a byte means the connection is
@@ -34,8 +46,11 @@ export class PriceStreamService implements OnDestroy {
   private symbols = new Set<string>();
   private controller?: AbortController;
   private retryTimer?: ReturnType<typeof setTimeout>;
-  private flushTimer?: ReturnType<typeof setTimeout>;
+  private flushTimer?: ReturnType<typeof setInterval>;
+  /** Latest unpublished tick per symbol. */
   private pending: Record<string, number> = {};
+  private publishedAt: Record<string, number> = {};
+  private dueAt: Record<string, number> = {};
   private attempt = 0;
 
   /** Adds symbols to the stream. Reconnects only if the set actually grew. */
@@ -60,9 +75,11 @@ export class PriceStreamService implements OnDestroy {
     this.controller?.abort();
     this.controller = undefined;
     clearTimeout(this.retryTimer);
-    clearTimeout(this.flushTimer);
+    clearInterval(this.flushTimer);
     this.flushTimer = undefined;
     this.pending = {};
+    this.publishedAt = {};
+    this.dueAt = {};
     this.prices.set({});
     this.status.set('idle');
   }
@@ -148,17 +165,33 @@ export class PriceStreamService implements OnDestroy {
     try {
       const tick = JSON.parse(data.join('\n')) as { symbol: string; price: number };
       this.pending[tick.symbol] = Number(tick.price);
-      this.flushTimer ??= setTimeout(() => this.flush(), PriceStreamService.FLUSH_MS);
+      this.flushTimer ??= setInterval(() => this.flush(), PriceStreamService.FLUSH_MS);
     } catch {
       // A malformed frame is dropped; the next tick for the symbol replaces it.
     }
   }
 
+  /** Publishes each buffered tick whose symbol is due, has moved enough, or has never been shown. */
   private flush(): void {
-    const batch = this.pending;
-    this.pending = {};
-    this.flushTimer = undefined;
-    this.zone.run(() => this.prices.update(current => ({ ...current, ...batch })));
+    const now = Date.now();
+    const shown = this.prices();
+    const batch: Record<string, number> = {};
+    for (const [symbol, price] of Object.entries(this.pending)) {
+      const last = shown[symbol];
+      const bigMove = last !== undefined && last !== 0
+        && Math.abs(price - last) / Math.abs(last) >= PriceStreamService.BIG_MOVE
+        && now - (this.publishedAt[symbol] ?? 0) >= PriceStreamService.MIN_GAP_MS;
+      if (last === undefined || bigMove || now >= (this.dueAt[symbol] ?? 0)) {
+        batch[symbol] = price;
+        delete this.pending[symbol];
+        this.publishedAt[symbol] = now;
+        this.dueAt[symbol] = now + PriceStreamService.MIN_QUIET_MS
+          + Math.random() * (PriceStreamService.MAX_QUIET_MS - PriceStreamService.MIN_QUIET_MS);
+      }
+    }
+    if (Object.keys(batch).length) {
+      this.zone.run(() => this.prices.update(current => ({ ...current, ...batch })));
+    }
   }
 
   private scheduleReconnect(): void {

@@ -1,49 +1,49 @@
-<section class="panel" [attr.data-side]="side" aria-labelledby="trade-title">
+<section class="panel" [attr.data-side]="side()" aria-labelledby="trade-title">
   <!-- Order placement confirmation: opened only after Submit buy/sell requires confirmation. -->
   <dialog #confirmationDialog class="confirmation-dialog"
           aria-labelledby="confirmation-title" aria-describedby="confirmation-description"
           (cancel)="$event.preventDefault(); cancelConfirmation()"
-          (close)="confirmationOpen = false">
-    <h2 id="confirmation-title">Confirm your {{ side === 'BUY' ? 'buy' : 'sell' }} order</h2>
+          (close)="confirmationOpen.set(false)">
+    <h2 id="confirmation-title">Confirm your {{ side() === 'BUY' ? 'buy' : 'sell' }} order</h2>
     <p id="confirmation-description">Are you sure you want to submit this order?</p>
     <dl class="summary">
-      <div><dt>Account</dt><dd>{{ account?.accountNumber }}</dd></div>
-      <div><dt>Stock</dt><dd>{{ symbol }}<span *ngIf="name"> — {{ name }}</span></dd></div>
-      <div><dt>Action</dt><dd>{{ side === 'BUY' ? 'Buy' : 'Sell' }}</dd></div>
-      <div><dt>Shares</dt><dd class="num">{{ quantity | number }}</dd></div>
-      <div><dt>Estimated price per share</dt><dd class="num">{{ money(price) }}</dd></div>
-      <div class="total"><dt>{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
-        <dd class="num">{{ money(estimate) }}</dd></div>
+      <div><dt>Account</dt><dd>{{ account()?.accountNumber }}</dd></div>
+      <div><dt>Stock</dt><dd>{{ symbol() }}<span *ngIf="name()"> — {{ name() }}</span></dd></div>
+      <div><dt>Action</dt><dd>{{ side() === 'BUY' ? 'Buy' : 'Sell' }}</dd></div>
+      <div><dt>Shares</dt><dd class="num">{{ quantity() | number }}</dd></div>
+      <div><dt>Estimated price per share</dt><dd class="num">{{ money(price()) }}</dd></div>
+      <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
+        <dd class="num">{{ money(estimate()) }}</dd></div>
     </dl>
     <p class="confirmation-warning">Confirming submits this market order for execution.
       The final price may differ from this live estimate. A filled trade cannot be cancelled.</p>
-    <p *ngIf="blocker" class="error" role="alert">{{ blocker }}</p>
+    <p *ngIf="blocker()" class="error" role="alert">{{ blocker() }}</p>
     <div class="confirmation-actions">
       <button type="button" class="ghost" autofocus (click)="cancelConfirmation()">Go back</button>
       <button type="button" class="cta" (click)="confirmOrder()"
-              [disabled]="!confirmationOpen || step !== 'review' || !canReview">Confirm and submit</button>
+              [disabled]="!confirmationOpen() || step() !== 'review' || !canReview()">Confirm and submit</button>
     </div>
   </dialog>
 
-  <ng-container *ngIf="symbol; else noSymbol">
+  <ng-container *ngIf="symbol(); else noSymbol">
     <header class="panel-header">
       <div>
-        <h2 id="trade-title">{{ side === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol }}</h2>
-        <p class="name" *ngIf="name">{{ name }}</p>
+        <h2 id="trade-title">{{ side() === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol() }}</h2>
+        <p class="name" *ngIf="name()">{{ name() }}</p>
       </div>
-      <span class="live-price num" [appFlash]="price">{{ money(price) }}</span>
+      <span class="live-price num" [appRollingNumber]="price()"></span>
     </header>
 
     <!-- Result -->
-    <div *ngIf="step === 'result' && result" class="result" role="status">
+    <div *ngIf="step() === 'result' && result() as result" class="result" role="status" data-testid="trade-result">
       <ng-container *ngIf="result.status === 'FILLED'; else notFilled">
         <div class="result-icon ok" aria-hidden="true">✓</div>
         <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
           {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</p>
         <dl class="summary">
-          <div><dt>Fill price</dt><dd class="num">{{ money(fillPrice) }}</dd></div>
+          <div><dt>Fill price</dt><dd class="num">{{ money(fillPrice()) }}</dd></div>
           <div><dt>{{ result.side === 'BUY' ? 'Total cost' : 'Total credit' }}</dt>
-            <dd class="num">{{ money(fillPrice !== null ? fillPrice * result.quantity : null) }}</dd></div>
+            <dd class="num">{{ money(fillPrice() !== null ? fillPrice()! * result.quantity : null) }}</dd></div>
           <div *ngIf="result.accountBalanceAfter !== null"><dt>Buying power</dt>
             <dd class="num">{{ money(result.accountBalanceAfter) }}</dd></div>
         </dl>
@@ -66,50 +66,50 @@
     </div>
 
     <!-- Unconfirmed: the order may still go through -->
-    <div *ngIf="step === 'unconfirmed'" class="result" role="alert">
+    <div *ngIf="step() === 'unconfirmed'" class="result" role="alert" data-testid="trade-unconfirmed">
       <div class="result-icon pending" aria-hidden="true">?</div>
       <p class="result-title">We couldn't confirm your order</p>
-      <p class="result-text">Your order to {{ side === 'BUY' ? 'buy' : 'sell' }}
-        {{ quantity | number }} {{ quantity === 1 ? 'share' : 'shares' }} of {{ symbol }} may still go through.
+      <p class="result-text">Your order to {{ side() === 'BUY' ? 'buy' : 'sell' }}
+        {{ quantity() | number }} {{ quantity() === 1 ? 'share' : 'shares' }} of {{ symbol() }} may still go through.
         Check Recent activity in a minute before placing it again, so you don't
-        {{ side === 'BUY' ? 'buy' : 'sell' }} twice.</p>
+        {{ side() === 'BUY' ? 'buy' : 'sell' }} twice.</p>
       <button type="button" class="cta" (click)="reset()">Done</button>
     </div>
 
     <!-- Review -->
-    <div *ngIf="step === 'review' || step === 'submitting'" class="review">
+    <div *ngIf="step() === 'review' || step() === 'submitting'" class="review">
       <p class="review-text">
-        You're placing a <strong>market order</strong> to {{ side === 'BUY' ? 'buy' : 'sell' }}
-        <strong>{{ quantity | number }} {{ quantity === 1 ? 'share' : 'shares' }}</strong> of {{ symbol }}.
+        You're placing a <strong>market order</strong> to {{ side() === 'BUY' ? 'buy' : 'sell' }}
+        <strong>{{ quantity() | number }} {{ quantity() === 1 ? 'share' : 'shares' }}</strong> of {{ symbol() }}.
         It will fill right away at the best available price, which may differ slightly from the estimate.
       </p>
       <dl class="summary">
-        <div><dt>Account</dt><dd>{{ account?.accountNumber }}</dd></div>
-        <div><dt>Market price</dt><dd class="num">{{ money(price) }}</dd></div>
-        <div class="total"><dt>{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
-          <dd class="num">{{ money(estimate) }}</dd></div>
+        <div><dt>Account</dt><dd>{{ account()?.accountNumber }}</dd></div>
+        <div><dt>Market price</dt><dd class="num">{{ money(price()) }}</dd></div>
+        <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
+          <dd class="num">{{ money(estimate()) }}</dd></div>
       </dl>
-      <p *ngIf="submitError" class="error" role="alert">{{ submitError }}</p>
-      <button type="button" class="cta" (click)="submit()" [disabled]="step === 'submitting'">
-        <span *ngIf="step !== 'submitting'">{{ side === 'BUY' ? 'Submit buy' : 'Submit sell' }}</span>
-        <span *ngIf="step === 'submitting'" class="spinner" aria-label="Placing order"></span>
+      <p *ngIf="submitError()" class="error" role="alert">{{ submitError() }}</p>
+      <button type="button" class="cta" (click)="submit()" [disabled]="step() === 'submitting'">
+        <span *ngIf="step() !== 'submitting'">{{ side() === 'BUY' ? 'Submit buy' : 'Submit sell' }}</span>
+        <span *ngIf="step() === 'submitting'" class="spinner" aria-label="Placing order"></span>
       </button>
-      <button type="button" class="ghost" (click)="edit()" [disabled]="step === 'submitting'">Edit order</button>
+      <button type="button" class="ghost" (click)="edit()" [disabled]="step() === 'submitting'">Edit order</button>
     </div>
 
     <!-- Edit -->
-    <form *ngIf="step === 'edit'" class="ticket" (ngSubmit)="review()">
+    <form *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
       <div class="sides" role="radiogroup" aria-label="Order side">
-        <button type="button" role="radio" class="side buy" [class.on]="side === 'BUY'"
-                [attr.aria-checked]="side === 'BUY'" (click)="setSide('BUY')">Buy</button>
-        <button type="button" role="radio" class="side sell" [class.on]="side === 'SELL'"
-                [attr.aria-checked]="side === 'SELL'" (click)="setSide('SELL')">Sell</button>
+        <button type="button" role="radio" class="side buy" [class.on]="side() === 'BUY'"
+                [attr.aria-checked]="side() === 'BUY'" (click)="setSide('BUY')">Buy</button>
+        <button type="button" role="radio" class="side sell" [class.on]="side() === 'SELL'"
+                [attr.aria-checked]="side() === 'SELL'" (click)="setSide('SELL')">Sell</button>
       </div>
 
-      <label class="field" *ngIf="accounts.length > 1">
+      <label class="field" *ngIf="accounts().length > 1">
         <span class="field-label">Account</span>
         <select class="field-input" name="account" [(ngModel)]="accountId">
-          <option *ngFor="let a of accounts" [ngValue]="a.accountId">{{ a.accountNumber }}</option>
+          <option *ngFor="let a of accounts()" [ngValue]="a.accountId">{{ a.accountNumber }}</option>
         </select>
       </label>
 
@@ -130,26 +130,26 @@
 
       <div class="field-row">
         <span class="field-label">Market price</span>
-        <span class="field-value num">{{ money(price) }}</span>
+        <span class="field-value num">{{ money(price()) }}</span>
       </div>
 
       <div class="field-row total">
-        <span class="field-label">{{ side === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</span>
-        <span class="field-value num">{{ money(estimate) }}</span>
+        <span class="field-label">{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</span>
+        <span class="field-value num">{{ money(estimate()) }}</span>
       </div>
 
-      <p class="hint" [class.error]="blocker && quantity !== null" aria-live="polite">
-        <ng-container *ngIf="blocker && (quantity !== null || price === null || !account); else available">{{ blocker }}</ng-container>
+      <p class="hint" [class.error]="blocker() && quantity() !== null" aria-live="polite">
+        <ng-container *ngIf="blocker() && (quantity() !== null || price() === null || !account()); else available">{{ blocker() }}</ng-container>
         <ng-template #available>
-          <ng-container *ngIf="side === 'BUY'">{{ money(account?.buyingPower) }} buying power available</ng-container>
-          <ng-container *ngIf="side === 'SELL'">
-            {{ sharesHeld | number }} {{ sharesHeld === 1 ? 'share' : 'shares' }} available
-            <button *ngIf="sharesHeld > 0" type="button" class="link-btn" (click)="sellAll()">Sell all</button>
+          <ng-container *ngIf="side() === 'BUY'">{{ money(account()?.buyingPower) }} buying power available</ng-container>
+          <ng-container *ngIf="side() === 'SELL'">
+            {{ sharesHeld() | number }} {{ sharesHeld() === 1 ? 'share' : 'shares' }} available
+            <button *ngIf="sharesHeld() > 0" type="button" class="link-btn" (click)="sellAll()">Sell all</button>
           </ng-container>
         </ng-template>
       </p>
 
-      <button type="submit" class="cta" [disabled]="!canReview">Review order</button>
+      <button type="submit" class="cta" [disabled]="!canReview()">Review order</button>
     </form>
   </ng-container>
 

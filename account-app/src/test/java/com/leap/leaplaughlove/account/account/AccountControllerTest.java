@@ -26,6 +26,7 @@ import static org.hamcrest.Matchers.is;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -39,13 +40,16 @@ class AccountControllerTest {
     @Mock
     private AccountAuthorizationService accountAuthorizationService;
 
+    @Mock
+    private AccountService accountService;
+
     private MockMvc mockMvc;
 
     private final UUID authenticatedClientId = UUID.randomUUID();
 
     @BeforeEach
     void setUp() {
-        AccountController controller = new AccountController(accountRepository, accountAuthorizationService);
+        AccountController controller = new AccountController(accountRepository, accountAuthorizationService, accountService);
         mockMvc = MockMvcBuilders.standaloneSetup(controller)
                 .setControllerAdvice(new AccountGlobalExceptionHandler())
                 .build();
@@ -118,6 +122,54 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.tradingEnabled", is(true)));
 
         verify(accountAuthorizationService).getAuthorizedAccount(accountId);
+    }
+
+    @Test
+    @DisplayName("POST /api/account/accounts returns 201 with the new account's summary")
+    void testCreateAccount() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        Account created = new Account(accountId, authenticatedClientId, "ACC-AB12CD34", "ACTIVE", "USD", true,
+                OffsetDateTime.now());
+        when(accountService.createAccount(new CreateAccountRequest("USD"))).thenReturn(created);
+
+        mockMvc.perform(post("/api/account/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseCurrency\":\"USD\"}")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.accountId", is(accountId.toString())))
+                .andExpect(jsonPath("$.accountNumber", is("ACC-AB12CD34")))
+                .andExpect(jsonPath("$.status", is("ACTIVE")))
+                .andExpect(jsonPath("$.baseCurrency", is("USD")))
+                .andExpect(jsonPath("$.tradingEnabled", is(true)));
+    }
+
+    @Test
+    @DisplayName("POST /api/account/accounts accepts an empty body and delegates with a null request")
+    void testCreateAccountWithoutBody() throws Exception {
+        Account created = new Account(UUID.randomUUID(), authenticatedClientId, "ACC-AB12CD34", "ACTIVE", "USD",
+                true, OffsetDateTime.now());
+        when(accountService.createAccount(null)).thenReturn(created);
+
+        mockMvc.perform(post("/api/account/accounts").accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.baseCurrency", is("USD")));
+
+        verify(accountService).createAccount(null);
+    }
+
+    @Test
+    @DisplayName("POST /api/account/accounts surfaces a service rejection as a 4xx with the message")
+    void testCreateAccountRejected() throws Exception {
+        when(accountService.createAccount(new CreateAccountRequest("EUR")))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Only USD accounts are supported"));
+
+        mockMvc.perform(post("/api/account/accounts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"baseCurrency\":\"EUR\"}")
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", is("Only USD accounts are supported")));
     }
 
     @Test

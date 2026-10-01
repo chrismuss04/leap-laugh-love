@@ -69,6 +69,20 @@ public class SeededFillService {
     private final long retrySeconds;
     private final int maxAttempts;
 
+    /**
+     * Constructs a SeededFillService with the required repositories, clients, and execution parameters.
+     * 
+     * @param orderRepository            the repository for querying orders
+     * @param accountRepository          the repository for looking up account details
+     * @param executionRepository        the repository for execution records
+     * @param positionMovementRepository the repository for recording position movements
+     * @param fillRecorder               the fill recorder component for booking fills
+     * @param priceHistoryClient         the client for fetching historical prices
+     * @param jwtService                 the JWT service for authenticating service requests
+     * @param transactionTemplate        the transaction template for executing atomic units of work
+     * @param retrySeconds               the interval in seconds between retry attempts
+     * @param maxAttempts                the maximum number of retry attempts before giving up
+     */
     public SeededFillService(OrderRepository orderRepository,
                              AccountRepository accountRepository,
                              ExecutionRepository executionRepository,
@@ -101,6 +115,9 @@ public class SeededFillService {
         worker.start();
     }
 
+    /**
+     * Loops attempting to book pending seeded fills until all fills are booked or max attempts are exceeded.
+     */
     private void bookUntilDone() {
         for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             int remaining;
@@ -185,9 +202,9 @@ public class SeededFillService {
             return false;
         }
 
-        // no request is behind this, so there is no caller's token to forward; sign as the order's
+        // Session Timeout & Revocation: use a restricted settlement token for the order's
         // owner, whose request this fill would have been.
-        fillRecorder.settle(order, execution, jwtService.generateToken(getClientId(order), null));
+        fillRecorder.settle(order, execution, jwtService.generateSettlementToken(getClientId(order)));
 
         Boolean booked = transactionTemplate.execute(status -> {
             orderRepository.findByIdForUpdate(order.getOrderId());
@@ -209,9 +226,10 @@ public class SeededFillService {
     private Optional<BigDecimal> priceAt(Order order) {
         OffsetDateTime filledAt = order.getFilledAt();
         String symbol = order.getInstrument().getSymbol();
-        // market data only needs a valid token; sign it as the order's owner, whose request
+        // Session Timeout & Revocation: historical pricing uses a restricted backend token;
         // this fill would have been.
-        String token = jwtService.generateToken(getClientId(order), null);
+        // Session Timeout & Revocation: only the historical price endpoint accepts this token.
+        String token = jwtService.generateHistoryToken(getClientId(order));
         try {
             for (int width : CANDLE_WIDTHS) {
                 List<CandleClose> closes = priceHistoryClient.fetchCloses(
@@ -230,6 +248,12 @@ public class SeededFillService {
         return Optional.empty();
     }
 
+    /**
+     * Resolves the client ID associated with an order's account.
+     * 
+     * @param order the order whose client ID is to be looked up
+     * @return the associated client UUID
+     */
     private UUID getClientId(Order order) {
         return accountRepository.findById(order.getAccountId())
                 .map(Account::getClientId)

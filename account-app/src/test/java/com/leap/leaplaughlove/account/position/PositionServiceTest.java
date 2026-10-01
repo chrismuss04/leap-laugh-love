@@ -119,6 +119,38 @@ class PositionServiceTest {
     }
 
     @Test
+    @DisplayName("the same instrument held in two accounts of one client has independent quantity and cost")
+    void testHoldingsAreIndependentPerAccount() {
+        UUID secondAccountId = UUID.randomUUID();
+        Account secondAccount = new Account(secondAccountId, clientId, "ACC-998", "ACTIVE", "USD", true,
+                OffsetDateTime.now());
+        String aapl = UUID.randomUUID().toString();
+        String msft = UUID.randomUUID().toString();
+
+        when(accountAuthorizationService.getAuthorizedAccount(accountId)).thenReturn(testAccount);
+        when(accountAuthorizationService.getAuthorizedAccount(secondAccountId)).thenReturn(secondAccount);
+        when(positionRepository.findPositionsByAccountId(accountId)).thenReturn(List.of(
+                createMockRow(aapl, "AAPL", "Apple Inc.", "EQUITY", 100L, new BigDecimal("150.00"))));
+        when(positionRepository.findPositionsByAccountId(secondAccountId)).thenReturn(List.of(
+                createMockRow(aapl, "AAPL", "Apple Inc.", "EQUITY", 7L, new BigDecimal("210.00")),
+                createMockRow(msft, "MSFT", "Microsoft Corp.", "EQUITY", 3L, new BigDecimal("300.00"))));
+
+        PositionsResponse first = positionService.getPositionsForAuthenticatedClientAccount(accountId);
+        PositionsResponse second = positionService.getPositionsForAuthenticatedClientAccount(secondAccountId);
+
+        assertEquals(accountId, first.accountId());
+        assertEquals(1, first.positions().size());
+        assertEquals(100L, first.positions().get(0).quantity());
+        assertEquals(new BigDecimal("150.00"), first.positions().get(0).averageCost());
+
+        assertEquals(secondAccountId, second.accountId());
+        assertEquals(2, second.positions().size());
+        assertEquals(7L, second.positions().get(0).quantity());
+        assertEquals(new BigDecimal("210.00"), second.positions().get(0).averageCost());
+        assertEquals("MSFT", second.positions().get(1).symbol());
+    }
+
+    @Test
     @DisplayName("toPositionsResponse returns empty positions list when account has no positions")
     void testToPositionsResponseEmpty() {
         when(positionRepository.findPositionsByAccountId(accountId)).thenReturn(List.of());

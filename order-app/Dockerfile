@@ -9,7 +9,19 @@ COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
 COPY common-security/src common-security/src
 COPY order-app/src order-app/src
-RUN mvn -B clean package -DskipTests -pl order-app -am
+# Maven's local repository lives in a BuildKit cache mount, not the image, so it survives
+# between builds and is shared by all four service images: a code change no longer means
+# re-downloading every dependency. The mount is "shared" so the four images build at the
+# same time rather than queueing for it; Maven's file-lock sync context is what keeps two
+# builds from writing the same artifact at once.
+#
+# The root POM binds an aggregate Javadoc run (which forks a compile of every module) and
+# JaCoCo to the build. Neither ends up in the image, and the Javadoc alone was most of the
+# build time - paid four times over, once per service.
+RUN --mount=type=cache,id=leap-maven-repo,target=/root/.m2,sharing=shared \
+    mvn -B clean package -DskipTests -Dmaven.javadoc.skip=true -Djacoco.skip=true \
+        -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav \
+        -pl order-app -am
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine

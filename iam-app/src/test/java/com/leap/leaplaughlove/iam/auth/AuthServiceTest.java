@@ -5,6 +5,8 @@ import com.leap.leaplaughlove.iam.client.ClientCredentials;
 import com.leap.leaplaughlove.iam.client.ClientCredentialsRepository;
 import com.leap.leaplaughlove.iam.client.ClientRepository;
 import com.leap.leaplaughlove.common.security.JwtService;
+// Session Timeout & Revocation
+import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +30,8 @@ class AuthServiceTest {
     @Mock private ClientCredentialsRepository credentialsRepository;
     @Mock private PasswordEncoder passwordEncoder;
     @Mock private JwtService jwtService;
+    // Session Timeout & Revocation
+    @Mock private ClientSessionRepository sessionRepository;
 
     private AuthService authService;
     private UUID clientId;
@@ -36,7 +40,8 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(clientRepository, credentialsRepository, passwordEncoder, jwtService);
+        // Session Timeout & Revocation
+        authService = new AuthService(clientRepository, credentialsRepository, passwordEncoder, jwtService, sessionRepository);
         clientId = UUID.randomUUID();
 
         testClient = new Client(
@@ -53,7 +58,9 @@ class AuthServiceTest {
         when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
         when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.of(testCredentials));
         when(passwordEncoder.matches("rawPassword", "$2a$10$hashedpassword")).thenReturn(true);
-        when(jwtService.generateToken(clientId, "alice@example.com")).thenReturn("mock-jwt-token");
+        // Session Timeout & Revocation
+        when(jwtService.generateToken(eq(clientId), eq("alice@example.com"), any(UUID.class),
+                any(java.time.Instant.class), any(java.time.Instant.class))).thenReturn("mock-jwt-token");
         when(jwtService.getExpirationSeconds()).thenReturn(3600L);
 
         LoginResponse response = authService.authenticate("alice@example.com", "rawPassword");
@@ -65,6 +72,14 @@ class AuthServiceTest {
         assertEquals(0, testCredentials.getFailedAttempts());
         assertNotNull(testCredentials.getLastLoginAt());
         verify(credentialsRepository).save(testCredentials);
+        // Session Timeout & Revocation: the persisted session and signed token share ID and expiry.
+        var id = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        var start = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        var end = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        verify(sessionRepository).create(id.capture(), eq(clientId), start.capture(), end.capture());
+        assertEquals(3600L, java.time.Duration.between(start.getValue(), end.getValue()).getSeconds());
+        verify(jwtService).generateToken(clientId, "alice@example.com",
+                id.getValue(), start.getValue(), end.getValue());
     }
 
     @Test
@@ -85,6 +100,8 @@ class AuthServiceTest {
                 () -> authService.authenticate("alice@example.com", "wrongPassword"));
 
         assertEquals(1, testCredentials.getFailedAttempts());
+        // Session Timeout & Revocation: failed authentication must not create a session.
+        verifyNoInteractions(sessionRepository);
         verify(credentialsRepository).save(testCredentials);
     }
 
