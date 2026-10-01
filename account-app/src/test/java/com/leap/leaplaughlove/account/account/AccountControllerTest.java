@@ -17,16 +17,20 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -199,5 +203,34 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.error", is("404 NOT_FOUND")))
                 .andExpect(jsonPath("$.message", is("Account not found")));
     }
-}
 
+    @Test
+    @DisplayName("PUT /api/account/accounts/{accountId}/trade-settings saves the price tolerance and returns the account")
+    void testUpdateTradeSettings() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account(accountId, authenticatedClientId, "ACC-001", "ACTIVE", "USD", true, OffsetDateTime.now());
+        account.setMaxSlippagePercent(new BigDecimal("1.50"));
+        when(accountService.updateTradeSettings(accountId, new TradeSettingsRequest(new BigDecimal("1.50"))))
+                .thenReturn(account);
+
+        mockMvc.perform(put("/api/account/accounts/{accountId}/trade-settings", accountId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxSlippagePercent\":1.50}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountId", is(accountId.toString())))
+                .andExpect(jsonPath("$.maxSlippagePercent", is(1.50)));
+    }
+
+    @Test
+    @DisplayName("PUT /api/account/accounts/{accountId}/trade-settings returns 400 for a tolerance above 10%")
+    void testUpdateTradeSettingsRejectsToleranceAboveCap() throws Exception {
+        UUID accountId = UUID.randomUUID();
+
+        mockMvc.perform(put("/api/account/accounts/{accountId}/trade-settings", accountId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"maxSlippagePercent\":12}"))
+                .andExpect(status().isBadRequest());
+
+        verify(accountService, never()).updateTradeSettings(any(), any());
+    }
+}

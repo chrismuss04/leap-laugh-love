@@ -51,8 +51,9 @@ class AccountSettlementServiceTest {
     }
 
     @Test
-    @DisplayName("Pre-trade validation returns eligibility and balance")
+    @DisplayName("Pre-trade validation returns eligibility, balance and the saved price tolerance")
     void testGetValidationData() {
+        account.setMaxSlippagePercent(new BigDecimal("1.25"));
         when(accountAuthorizationService.getAuthorizedAccount(ACCOUNT_ID)).thenReturn(account);
         when(balanceService.getCurrentBalance(account)).thenReturn(new BigDecimal("5000.00"));
         Position position = new Position(ACCOUNT_ID, INSTRUMENT_ID, 25L, new BigDecimal("100.00"), OffsetDateTime.now());
@@ -66,6 +67,7 @@ class AccountSettlementServiceTest {
         assertEquals(25L, dto.holdingQuantity());
         assertEquals("USD", dto.baseCurrency());
         assertEquals("ACC-TEST", dto.accountNumber());
+        assertEquals(new BigDecimal("1.25"), dto.maxSlippagePercent());
     }
 
     @Test

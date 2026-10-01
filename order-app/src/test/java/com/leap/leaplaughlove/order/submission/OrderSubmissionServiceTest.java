@@ -82,7 +82,7 @@ class OrderSubmissionServiceTest {
 
         accountId = UUID.randomUUID();
         instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
-        validationDto = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-TEST-01");
+        validationDto = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-TEST-01", null);
 
         when(instrumentRepository.findBySymbol("AAPL")).thenReturn(Optional.of(instrument));
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
@@ -97,8 +97,9 @@ class OrderSubmissionServiceTest {
     @DisplayName("Successful BUY order: SUBMITTED -> ACCEPTED -> FILLED, updates execution, position movements, and settles via account-app")
     void testSuccessfulBuyOrder() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
+        quoteAt("150.00");
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(validationDto);
         when(tradeValidationService.validateTrade(eq(validationDto), eq(instrument), eq(Order.Side.BUY), eq(10L), eq(new BigDecimal("150.0000"))))
@@ -138,9 +139,10 @@ class OrderSubmissionServiceTest {
     @DisplayName("Successful SELL order: SUBMITTED -> ACCEPTED -> FILLED, updates position movement and settles via account-app")
     void testSuccessfulSellOrder() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"), null);
+        quoteAt("160.00");
 
-        AccountValidationDto sellValidation = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 20L, "USD", "ACC-TEST-01");
+        AccountValidationDto sellValidation = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 20L, "USD", "ACC-TEST-01", null);
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(sellValidation);
         when(tradeValidationService.validateTrade(eq(sellValidation), eq(instrument), eq(Order.Side.SELL), eq(5L), eq(new BigDecimal("160.0000"))))
@@ -170,9 +172,10 @@ class OrderSubmissionServiceTest {
     @DisplayName("Sell settlement fails when the validated position is missing")
     void testSellSettlement_MissingPosition_Throws() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"), null);
+        quoteAt("160.00");
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01", null));
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
         when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
@@ -192,9 +195,10 @@ class OrderSubmissionServiceTest {
     @DisplayName("Sell settlement fails without clamping insufficient holdings to zero")
     void testSellSettlement_InsufficientPosition_Throws() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"));
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("160.00"), null);
+        quoteAt("160.00");
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 5L, "USD", "ACC-TEST-01", null));
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
         when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
@@ -230,7 +234,8 @@ class OrderSubmissionServiceTest {
         // account-app settles on its own database connection and its ledger rows reference the
         // order and execution by foreign key, so it can't settle rows this app hasn't committed.
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
+        quoteAt("150.00");
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(validationDto);
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
@@ -252,7 +257,8 @@ class OrderSubmissionServiceTest {
     @DisplayName("Rejected order: SUBMITTED -> REJECTED, execution saved as REJECTED for audit, no settlement or movement")
     void testRejectedOrder_SavesAuditExecutionAndSkipsSettlement() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 1000, new BigDecimal("150.00"));
+                accountId, "AAPL", null, Order.Side.BUY, 1000, new BigDecimal("150.00"), null);
+        quoteAt("150.00");
 
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(validationDto);
@@ -283,7 +289,7 @@ class OrderSubmissionServiceTest {
     @DisplayName("Market BUY order without explicit price: resolves askPrice from CurrentQuoteService")
     void testMarketOrderBuy_ResolvesAskPriceFromQuote() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 10, null);
+                accountId, "AAPL", null, Order.Side.BUY, 10, null, null);
 
         QuoteSnapshot quote = new QuoteSnapshot(
                 "AAPL", new BigDecimal("149.50"), 100L, new BigDecimal("150.50"), 100L,
@@ -308,14 +314,14 @@ class OrderSubmissionServiceTest {
     @DisplayName("Market SELL order without explicit price: resolves bidPrice from CurrentQuoteService")
     void testMarketOrderSell_ResolvesBidPriceFromQuote() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.SELL, 5, null);
+                accountId, "AAPL", null, Order.Side.SELL, 5, null, null);
 
         QuoteSnapshot quote = new QuoteSnapshot(
                 "AAPL", new BigDecimal("149.50"), 100L, new BigDecimal("150.50"), 100L,
                 new BigDecimal("150.00"), 100L, "NASDAQ", OffsetDateTime.now());
         when(currentQuoteService.getCurrentQuote("AAPL")).thenReturn(quote);
 
-        AccountValidationDto sellValidation = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 10L, "USD", "ACC-TEST-01");
+        AccountValidationDto sellValidation = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 10L, "USD", "ACC-TEST-01", null);
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(sellValidation);
         when(tradeValidationService.validateTrade(eq(sellValidation), eq(instrument), eq(Order.Side.SELL), eq(5L), eq(new BigDecimal("149.5000"))))
@@ -335,7 +341,7 @@ class OrderSubmissionServiceTest {
     @DisplayName("Market order when quote is unavailable: order and execution rejected for audit tracking")
     void testMarketOrder_QuoteUnavailable_RejectsOrder() {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 10, null);
+                accountId, "AAPL", null, Order.Side.BUY, 10, null, null);
 
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(validationDto);
@@ -355,12 +361,20 @@ class OrderSubmissionServiceTest {
         verify(accountClient, never()).settleOrder(any(), any());
     }
 
+    /** A flat market at the given price, so buys and sells fill at it alike. */
+    private void quoteAt(String price) {
+        BigDecimal value = new BigDecimal(price);
+        when(currentQuoteService.getCurrentQuote("AAPL")).thenReturn(new QuoteSnapshot(
+                "AAPL", value, 100L, value, 100L, value, 100L, "NASDAQ", OffsetDateTime.now()));
+    }
+
     private OrderSubmissionRequest acceptedBuy() {
+        quoteAt("150.00");
         when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
                 .thenReturn(validationDto);
         when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
                 .thenReturn(TradeValidationResult.accepted());
-        return new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+        return new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
     }
 
     @Test
@@ -435,5 +449,100 @@ class OrderSubmissionServiceTest {
 
         assertEquals("FILLED", response.status());
         verify(positionMovementRepository, never()).save(any(PositionMovement.class));
+    }
+
+    @Test
+    @DisplayName("The client's quoted price is never the fill price: orders fill at the live quote")
+    void testQuotedPriceIsNotUsedAsFillPrice() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("100.00"), null);
+        quoteAt("150.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), eq(new BigDecimal("150.0000"))))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("FILLED", response.status());
+        assertEquals(new BigDecimal("150.0000"), response.execution().fillPrice());
+        // No tolerance on the order or the account, so the move isn't checked.
+        verify(tradeValidationService, never()).checkPriceTolerance(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("Price moved beyond the order's tolerance: order and execution rejected, nothing settled")
+    void testPriceMovedBeyondTolerance_RejectsOrder() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), new BigDecimal("1.00"));
+        quoteAt("152.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        String reason = "Price moved 1.33% from your quoted $150.00 to $152.00, beyond your 1.00% tolerance - order rejected";
+        when(tradeValidationService.checkPriceTolerance(
+                new BigDecimal("150.00"), new BigDecimal("152.0000"), new BigDecimal("1.00")))
+                .thenReturn(TradeValidationResult.rejected(reason));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("REJECTED", response.status());
+        assertEquals(reason, response.rejectionReason());
+        assertEquals("REJECTED", response.execution().status());
+        assertEquals(reason, response.execution().reason());
+        assertNull(response.execution().fillPrice());
+        // The quote and tolerance are kept on the order to explain the rejection.
+        assertEquals(new BigDecimal("150.00"), storedOrder.getQuotedPrice());
+        assertEquals(new BigDecimal("1.00"), storedOrder.getMaxSlippagePercent());
+        verify(tradeValidationService, never()).validateTrade(any(), any(), any(), anyLong(), any());
+        verify(accountClient, never()).settleOrder(any(), any());
+        verify(positionMovementRepository, never()).save(any(PositionMovement.class));
+    }
+
+    @Test
+    @DisplayName("Order without its own tolerance is checked against the account's saved one")
+    void testAccountSavedTolerance_AppliesWhenOrderHasNone() {
+        AccountValidationDto withSavedTolerance = new AccountValidationDto(
+                true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-TEST-01", new BigDecimal("2.00"));
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
+        quoteAt("151.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(withSavedTolerance);
+        when(tradeValidationService.checkPriceTolerance(any(), any(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8490.00"), 10L, new BigDecimal("151.00")));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("FILLED", response.status());
+        verify(tradeValidationService).checkPriceTolerance(
+                new BigDecimal("150.00"), new BigDecimal("151.0000"), new BigDecimal("2.00"));
+        assertEquals(new BigDecimal("2.00"), storedOrder.getMaxSlippagePercent());
+    }
+
+    @Test
+    @DisplayName("Order's own tolerance overrides the account's saved one")
+    void testOrderTolerance_OverridesAccountSavedTolerance() {
+        AccountValidationDto withSavedTolerance = new AccountValidationDto(
+                true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-TEST-01", new BigDecimal("2.00"));
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("150.00"), new BigDecimal("0.50"));
+        quoteAt("149.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(withSavedTolerance);
+        when(tradeValidationService.checkPriceTolerance(any(), any(), any()))
+                .thenReturn(TradeValidationResult.rejected("Price moved too far"));
+
+        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);
+
+        assertEquals("REJECTED", response.status());
+        verify(tradeValidationService).checkPriceTolerance(
+                new BigDecimal("150.00"), new BigDecimal("149.0000"), new BigDecimal("0.50"));
+        assertEquals(new BigDecimal("0.50"), storedOrder.getMaxSlippagePercent());
     }
 }

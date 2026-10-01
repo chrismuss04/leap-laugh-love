@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -34,6 +35,9 @@ public class Account {
 
     @Column(name = "trading_enabled", nullable = false)
     private boolean tradingEnabled;
+
+    @Column(name = "max_slippage_pct", precision = 5, scale = 2)
+    private BigDecimal maxSlippagePercent;
 
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
@@ -100,6 +104,19 @@ public class Account {
      * @return true if trading is enabled, false otherwise
      */
     public boolean isTradingEnabled() { return tradingEnabled; }
+
+    /**
+     * Returns the saved price tolerance: the most, in percent, the price may move either way
+     * between an order's quote and its execution before order-app rejects it.
+     * @return the tolerance in percent, or null when none is saved
+     */
+    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }
+
+    /**
+     * Saves the account's price tolerance.
+     * @param maxSlippagePercent the tolerance in percent, or null to clear it
+     */
+    public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }
 
     /**
      * Returns the creation timestamp of the account.

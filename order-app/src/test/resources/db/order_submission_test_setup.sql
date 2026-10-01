@@ -23,6 +23,7 @@ CREATE TABLE trading.accounts (
     status VARCHAR(20) NOT NULL,
     base_currency CHAR(3) NOT NULL,
     trading_enabled BOOLEAN NOT NULL,
+    max_slippage_pct NUMERIC(5,2),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
@@ -50,6 +51,8 @@ CREATE TABLE trading.orders (
     rejected_at TIMESTAMP WITH TIME ZONE,
     filled_at TIMESTAMP WITH TIME ZONE,
     rejection_reason VARCHAR(500),
+    quoted_price NUMERIC(18,6),
+    max_slippage_pct NUMERIC(5,2),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );

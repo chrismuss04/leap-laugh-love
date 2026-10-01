@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.account.account;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -10,6 +11,7 @@ import java.util.UUID;
  * @param status the status of the account
  * @param baseCurrency the base currency of the account
  * @param tradingEnabled indicates if trading is enabled for the account
+ * @param maxSlippagePercent the saved price tolerance in percent, or null when none is saved
  * @param createdAt the timestamp when the account was created
  */
 public record AccountSummary(
@@ -18,6 +20,7 @@ public record AccountSummary(
         String status,
         String baseCurrency,
         boolean tradingEnabled,
+        BigDecimal maxSlippagePercent,
         OffsetDateTime createdAt
 ) {}
 
