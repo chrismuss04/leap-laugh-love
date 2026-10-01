@@ -194,6 +194,9 @@
 }
 
 .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   padding: 10px;

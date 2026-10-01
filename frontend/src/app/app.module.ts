@@ -12,6 +12,7 @@ import { OrderHistoryComponent } from './order-history/order-history';
 import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
 import { ProfileComponent } from './profile/profile';
+import { SettingsComponent } from './settings/settings';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
@@ -28,6 +29,7 @@ const routes: Routes = [
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
       { path: 'profile', component: ProfileComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

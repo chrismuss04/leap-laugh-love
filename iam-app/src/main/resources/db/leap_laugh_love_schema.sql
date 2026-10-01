@@ -32,6 +32,8 @@ CREATE TABLE IF NOT EXISTS iam.client_profile (
     experience_level TEXT NOT NULL
         CHECK (experience_level IN ('NOVICE', 'INTERMEDIATE', 'ADVANCED')),
     initial_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+    notify_order_fills BOOLEAN NOT NULL DEFAULT TRUE,
+    notify_price_alerts BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

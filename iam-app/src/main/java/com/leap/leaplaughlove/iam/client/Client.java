@@ -64,6 +64,13 @@ public class Client {
     @Column(table = "client_profile", name = "initial_deposit_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal initialDepositAmount;
 
+    // Boxed: a client without a client_profile row loads these as null, read as the DB default (on).
+    @Column(table = "client_profile", name = "notify_order_fills", nullable = false)
+    private Boolean notifyOrderFills = true;
+
+    @Column(table = "client_profile", name = "notify_price_alerts", nullable = false)
+    private Boolean notifyPriceAlerts = true;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -198,4 +205,50 @@ public class Client {
      * @return the initial deposit amount of the client
      */
     public BigDecimal getInitialDepositAmount() { return initialDepositAmount; }
+    /**
+     * Method to check whether the client wants email notifications when their orders fill.
+     * @return true if order fill notifications are enabled
+     */
+    public boolean isNotifyOrderFills() { return !Boolean.FALSE.equals(notifyOrderFills); }
+    /**
+     * Method to check whether the client wants email notifications for price alerts.
+     * @return true if price alert notifications are enabled
+     */
+    public boolean isNotifyPriceAlerts() { return !Boolean.FALSE.equals(notifyPriceAlerts); }
+
+    /**
+     * Method to update the account settings the client can change themselves.
+     * @param fullName the new full name of the client
+     * @param email the new email address of the client
+     * @param phone the new phone number of the client
+     * @param notifyOrderFills whether the client wants order fill notifications
+     * @param notifyPriceAlerts whether the client wants price alert notifications
+     */
+    public void updateSettings(String fullName, String email, String phone,
+                               boolean notifyOrderFills, boolean notifyPriceAlerts) {
+        this.fullName = fullName;
+        this.email = email;
+        this.phone = phone;
+        this.notifyOrderFills = notifyOrderFills;
+        this.notifyPriceAlerts = notifyPriceAlerts;
+    }
+
+    /**
+     * Method to update the client's address.
+     * @param addressLine1 the first line of the address
+     * @param addressLine2 the second line of the address (optional)
+     * @param city the city of the address
+     * @param stateRegion the state or region of the address
+     * @param postalCode the postal code of the address
+     * @param countryCode the country code of the address
+     */
+    public void updateAddress(String addressLine1, String addressLine2, String city, String stateRegion,
+                              String postalCode, String countryCode) {
+        this.addressLine1 = addressLine1;
+        this.addressLine2 = addressLine2;
+        this.city = city;
+        this.stateRegion = stateRegion;
+        this.postalCode = postalCode;
+        this.countryCode = countryCode;
+    }
 }
