@@ -14,14 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/**
- * Nightly job that flags accounts left empty for longer than the threshold, and clears the flag
- * once they hold cash or shares again. Rerunning it changes nothing.
- */
+/** Nightly job that flags accounts empty for longer than the threshold and clears accounts that no longer are. */
 @Component
 @ConditionalOnProperty(prefix = "account.inactivity", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class InactiveAccountDetector {
@@ -45,7 +43,6 @@ public class InactiveAccountDetector {
         this.clock = clock;
     }
 
-    /** Flags newly inactive accounts and clears accounts that are no longer empty. */
     @Scheduled(cron = "${account.inactivity.cron:0 0 2 * * *}", zone = "UTC")
     @Transactional
     public void detect() {
@@ -53,20 +50,12 @@ public class InactiveAccountDetector {
                 .findEmptySince(OffsetDateTime.now(clock).minusDays(thresholdDays)).stream()
                 .collect(Collectors.toMap(EmptyAccount::getAccountId, EmptyAccount::getEmptySince));
 
-        int cleared = 0;
-        for (Account account : accountRepository.findByInactiveSinceIsNotNull()) {
-            if (!empty.containsKey(account.getAccountId())) {
-                account.setInactiveSince(null);
-                cleared++;
-            }
-        }
-        int flagged = 0;
-        for (Account account : accountRepository.findAllById(empty.keySet())) {
-            if (account.getInactiveSince() == null) {
-                flagged++;
-            }
-            account.setInactiveSince(empty.get(account.getAccountId()));
-        }
-        log.info("Inactive account check flagged {} and cleared {} account(s)", flagged, cleared);
+        List<Account> cleared = accountRepository.findByInactiveSinceIsNotNull().stream()
+                .filter(a -> !empty.containsKey(a.getAccountId())).toList();
+        cleared.forEach(a -> a.setInactiveSince(null));
+        List<Account> flagged = accountRepository.findAllById(empty.keySet()).stream()
+                .filter(a -> a.getInactiveSince() == null).toList();
+        flagged.forEach(a -> a.setInactiveSince(empty.get(a.getAccountId())));
+        log.info("Inactive account check flagged {} and cleared {} account(s)", flagged.size(), cleared.size());
     }
 }

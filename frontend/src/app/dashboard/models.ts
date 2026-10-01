@@ -53,6 +53,8 @@ export interface AccountView {
   status: string | null;
   tradingEnabled: boolean | null;
   openedAt: string | null;
+  /** When the account became empty, if the nightly job flagged it inactive. */
+  inactiveSince: string | null;
   cash: number;
   marketValue: number;
   value: number;

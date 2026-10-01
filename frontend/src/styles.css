@@ -22,6 +22,8 @@
   --loss-muted: color-mix(in srgb, var(--loss) 14%, transparent);
   --info: #5b9dff;
   --info-muted: color-mix(in srgb, var(--info) 14%, transparent);
+  --warning: #f5b544;
+  --warning-muted: color-mix(in srgb, var(--warning) 14%, transparent);
 
   /* Dashboard surfaces: softer corners than the square auth forms. */
   --surface: #121216;
@@ -358,4 +360,13 @@ select.form-input.placeholder-selected {
 
 .password-toggle:hover {
   color: var(--foreground);
+}
+
+.badge-inactive {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--warning-muted);
+  color: var(--warning);
 }

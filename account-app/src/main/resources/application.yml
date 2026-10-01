@@ -21,9 +21,3 @@ marketdata:
     base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}
     connect-timeout-ms: 2000
     read-timeout-ms: 2000
-
-account:
-  inactivity:
-    enabled: ${ACCOUNT_INACTIVITY_ENABLED:true}
-    threshold-days: 30
-    cron: "0 0 2 * * *"

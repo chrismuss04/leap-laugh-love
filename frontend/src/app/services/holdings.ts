@@ -29,6 +29,7 @@ export interface AccountSummary {
   baseCurrency: string;
   tradingEnabled: boolean;
   createdAt: string;
+  inactiveSince: string | null;
 }
 
 @Injectable({

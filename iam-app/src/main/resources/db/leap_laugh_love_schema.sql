@@ -91,9 +91,7 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
     base_currency CHAR(3) NOT NULL DEFAULT 'USD',
     trading_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- Inactive Accounts: set by the nightly job to when the balance went to 0, once it has
-    -- stayed there past the threshold; NULL while the account is funded. Kept apart from
-    -- status so a flagged account can still be viewed and deposited into.
+    -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
     inactive_since TIMESTAMPTZ
 );
 
