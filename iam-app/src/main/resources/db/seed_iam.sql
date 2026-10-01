@@ -5,7 +5,7 @@ INSERT INTO iam.clients (email, phone, status) VALUES
     ('alice.johnson@leap.com', '+1-212-555-0101', 'ACTIVE'),
     ('bob.smith@leap.com', '+1-212-555-0102', 'ACTIVE'),
     ('carol.williams@leap.com', '+1-212-555-0103', 'ACTIVE'),
-    ('david.brown@leap.com', '+1-212-555-0104', 'PENDING'),
+    ('david.brown@leap.com', '+1-212-555-0104', 'ACTIVE'),
     ('emma.davis@leap.com', '+1-212-555-0105', 'ACTIVE'),
     ('frank.miller@leap.com', '+1-212-555-0106', 'ACTIVE'),
     ('grace.wilson@leap.com', '+1-212-555-0107', 'LOCKED'),

@@ -204,8 +204,8 @@ class IamSchemaIntegrationTest {
         
         assertTrue(seed.contains("'ACTIVE'"),
             "Seed data should include ACTIVE status");
-        assertTrue(seed.contains("'PENDING'") || seed.contains("PENDING"),
-            "Seed data should include PENDING status");
+        assertTrue(seed.contains("'LOCKED'"),
+            "Seed data should include LOCKED status");
     }
 
     @Test

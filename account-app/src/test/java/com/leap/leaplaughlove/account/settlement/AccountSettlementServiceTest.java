@@ -96,6 +96,34 @@ class AccountSettlementServiceTest {
     }
 
     @Test
+    @DisplayName("Settling a BUY on one account writes only to that account's ledger and position")
+    void testSettleBuyOrder_doesNotTouchSiblingAccount() {
+        UUID siblingId = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);
+        when(positionRepository.findByIdForUpdate(ACCOUNT_ID, INSTRUMENT_ID)).thenReturn(Optional.empty());
+        CashLedgerEntry savedLedger = new CashLedgerEntry(
+                ACCOUNT_ID, UUID.randomUUID(), UUID.randomUUID(), "BUY_SETTLEMENT",
+                new BigDecimal("-1500.00"), "USD", OffsetDateTime.now(), "Buy settlement");
+        when(cashLedgerRepository.save(any(CashLedgerEntry.class))).thenReturn(savedLedger);
+        when(balanceService.getCurrentBalance(account)).thenReturn(new BigDecimal("3500.00"));
+
+        service.settleOrder(ACCOUNT_ID, new SettlementRequest(
+                UUID.randomUUID(), UUID.randomUUID(), INSTRUMENT_ID, "AAPL", "BUY",
+                10, new BigDecimal("150.00"), OffsetDateTime.now()));
+
+        ArgumentCaptor<CashLedgerEntry> ledgerCaptor = ArgumentCaptor.forClass(CashLedgerEntry.class);
+        verify(cashLedgerRepository).save(ledgerCaptor.capture());
+        assertEquals(ACCOUNT_ID, ledgerCaptor.getValue().getAccountId());
+
+        ArgumentCaptor<Position> positionCaptor = ArgumentCaptor.forClass(Position.class);
+        verify(positionRepository).save(positionCaptor.capture());
+        assertEquals(ACCOUNT_ID, positionCaptor.getValue().getAccountId());
+
+        verify(accountAuthorizationService, never()).getAuthorizedAccountForUpdate(siblingId);
+        verify(positionRepository, never()).findByIdForUpdate(eq(siblingId), any());
+    }
+
+    @Test
     @DisplayName("Settle BUY order updates average cost for existing position")
     void testSettleBuyOrder_existingPosition() {
         when(accountAuthorizationService.getAuthorizedAccountForUpdate(ACCOUNT_ID)).thenReturn(account);

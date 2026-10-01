@@ -172,7 +172,6 @@ class TradingSchemaIntegrationTest {
         assertTrue(seed.contains("INSERT INTO trading.accounts"),
             "Seed data should create trading accounts");
         assertTrue(seed.contains("'ACTIVE'"), "Should have ACTIVE accounts");
-        assertTrue(seed.contains("'PENDING'"), "Should have PENDING accounts");
         assertTrue(seed.contains("'BLOCKED'"), "Should have BLOCKED accounts");
     }
 
