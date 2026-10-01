@@ -17,8 +17,10 @@ import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
- * Fetches candle history and latest prices from the market data service, for valuing holdings
- * over time. The caller's own bearer token is forwarded because the market data endpoints are JWT-secured.
+ * Fetches candle history and latest prices from the market data service, for
+ * valuing holdings
+ * over time. The caller's own bearer token is forwarded because the market data
+ * endpoints are JWT-secured.
  */
 @Component
 public class PriceHistoryClient {
@@ -26,137 +28,174 @@ public class PriceHistoryClient {
     /** The largest page the market data history endpoint will serve. */
     static final int PAGE_SIZE = 1000;
 
-    /** Guards against paging forever if the market data service misreports its page count. */
+    /**
+     * Guards against paging forever if the market data service misreports its page
+     * count.
+     */
     private static final int MAX_PAGES = 20;
 
     private final RestClient restClient;
 
     /**
      * Creates a new PriceHistoryClient.
-     * @param marketDataRestClient the RestClient configured for the market data service
+     * 
+     * @param marketDataRestClient the RestClient configured for the market data
+     *                             service
      */
-<span class="fc" id="L38">    public PriceHistoryClient(RestClient marketDataRestClient) {</span>
-<span class="fc" id="L39">        this.restClient = marketDataRestClient;</span>
-<span class="fc" id="L40">    }</span>
+<span class="fc" id="L45">    public PriceHistoryClient(RestClient marketDataRestClient) {</span>
+<span class="fc" id="L46">        this.restClient = marketDataRestClient;</span>
+<span class="fc" id="L47">    }</span>
 
     /**
      * Fetches every candle close for a symbol within a time range, oldest first.
-     * @param symbol the instrument symbol
-     * @param from the start of the range
-     * @param to the end of the range
+     * 
+     * @param symbol          the instrument symbol
+     * @param from            the start of the range
+     * @param to              the end of the range
      * @param intervalSeconds the candle width, in seconds (60, 300, 3600 or 86400)
-     * @return the candle closes in the range, oldest first; empty if the symbol has no history
-     * @throws QuoteUnavailableException if the market data service could not be reached or
-     *     returned an error
+     * @return the candle closes in the range, oldest first; empty if the symbol has
+     *         no history
+     * @throws QuoteUnavailableException if the market data service could not be
+     *                                   reached or
+     *                                   returned an error
      */
     public List&lt;CandleClose&gt; fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-                                         int intervalSeconds) {
-<span class="fc" id="L54">        return fetchCloses(symbol, from, to, intervalSeconds, this::forwardCallerToken);</span>
+            int intervalSeconds) {
+<span class="fc" id="L64">        return fetchCloses(symbol, from, to, intervalSeconds, this::forwardCallerToken);</span>
     }
 
     /**
-     * Fetches every candle close for a symbol within a time range, oldest first, authenticating
-     * with the given token instead of the caller's. For work that runs outside any request.
-     * @param symbol the instrument symbol
-     * @param from the start of the range
-     * @param to the end of the range
+     * Fetches every candle close for a symbol within a time range, oldest first,
+     * authenticating
+     * with the given token instead of the caller's. For work that runs outside any
+     * request.
+     * 
+     * @param symbol          the instrument symbol
+     * @param from            the start of the range
+     * @param to              the end of the range
      * @param intervalSeconds the candle width, in seconds (60, 300, 3600 or 86400)
-     * @param bearerToken the JWT to send to the market data service
-     * @return the candle closes in the range, oldest first; empty if the symbol has no history
-     * @throws QuoteUnavailableException if the market data service could not be reached or
-     *     returned an error
+     * @param bearerToken     the JWT to send to the market data service
+     * @return the candle closes in the range, oldest first; empty if the symbol has
+     *         no history
+     * @throws QuoteUnavailableException if the market data service could not be
+     *                                   reached or
+     *                                   returned an error
      */
     public List&lt;CandleClose&gt; fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-                                         int intervalSeconds, String bearerToken) {
-<span class="nc" id="L71">        return fetchCloses(symbol, from, to, intervalSeconds, headers -&gt; headers.setBearerAuth(bearerToken));</span>
+            int intervalSeconds, String bearerToken) {
+<span class="nc" id="L86">        return fetchCloses(symbol, from, to, intervalSeconds, headers -&gt; headers.setBearerAuth(bearerToken));</span>
     }
 
+    /**
+     * Fetches a page of candle closes for a symbol within a time range, oldest
+     * first.
+     * 
+     * @param symbol          The ticker to fetch closes for.
+     * @param from            The start of the range.
+     * @param to              The end of the range.
+     * @param intervalSeconds The interval in seconds.
+     * @param authentication  The authentication consumer.
+     * @return The candle closes in the range.
+     */
     private List&lt;CandleClose&gt; fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
-                                          int intervalSeconds, Consumer&lt;HttpHeaders&gt; authentication) {
-<span class="fc" id="L76">        List&lt;CandleClose&gt; closes = new ArrayList&lt;&gt;();</span>
+            int intervalSeconds, Consumer&lt;HttpHeaders&gt; authentication) {
+<span class="fc" id="L102">        List&lt;CandleClose&gt; closes = new ArrayList&lt;&gt;();</span>
         try {
-<span class="pc bpc" id="L78" title="1 of 2 branches missed.">            for (int page = 0; page &lt; MAX_PAGES; page++) {</span>
-<span class="fc" id="L79">                int pageNumber = page;</span>
-<span class="fc" id="L80">                CandlePage body = restClient.get()</span>
-<span class="fc" id="L81">                        .uri(uri -&gt; uri.path(&quot;/api/marketdata/prices/{symbol}/history&quot;)</span>
-<span class="fc" id="L82">                                .queryParam(&quot;from&quot;, isoUtc(from))</span>
-<span class="fc" id="L83">                                .queryParam(&quot;to&quot;, isoUtc(to))</span>
-<span class="fc" id="L84">                                .queryParam(&quot;interval&quot;, intervalSeconds)</span>
-<span class="fc" id="L85">                                .queryParam(&quot;page&quot;, pageNumber)</span>
-<span class="fc" id="L86">                                .queryParam(&quot;size&quot;, PAGE_SIZE)</span>
-<span class="fc" id="L87">                                .build(symbol))</span>
-<span class="fc" id="L88">                        .headers(authentication)</span>
-<span class="fc" id="L89">                        .retrieve()</span>
-<span class="fc" id="L90">                        .body(CandlePage.class);</span>
-<span class="pc bpc" id="L91" title="2 of 4 branches missed.">                if (body == null || body.content() == null) {</span>
-<span class="nc" id="L92">                    break;</span>
+<span class="pc bpc" id="L104" title="1 of 2 branches missed.">            for (int page = 0; page &lt; MAX_PAGES; page++) {</span>
+<span class="fc" id="L105">                int pageNumber = page;</span>
+<span class="fc" id="L106">                CandlePage body = restClient.get()</span>
+<span class="fc" id="L107">                        .uri(uri -&gt; uri.path(&quot;/api/marketdata/prices/{symbol}/history&quot;)</span>
+<span class="fc" id="L108">                                .queryParam(&quot;from&quot;, isoUtc(from))</span>
+<span class="fc" id="L109">                                .queryParam(&quot;to&quot;, isoUtc(to))</span>
+<span class="fc" id="L110">                                .queryParam(&quot;interval&quot;, intervalSeconds)</span>
+<span class="fc" id="L111">                                .queryParam(&quot;page&quot;, pageNumber)</span>
+<span class="fc" id="L112">                                .queryParam(&quot;size&quot;, PAGE_SIZE)</span>
+<span class="fc" id="L113">                                .build(symbol))</span>
+<span class="fc" id="L114">                        .headers(authentication)</span>
+<span class="fc" id="L115">                        .retrieve()</span>
+<span class="fc" id="L116">                        .body(CandlePage.class);</span>
+<span class="pc bpc" id="L117" title="2 of 4 branches missed.">                if (body == null || body.content() == null) {</span>
+<span class="nc" id="L118">                    break;</span>
                 }
-<span class="fc" id="L94">                closes.addAll(body.content());</span>
-<span class="pc bpc" id="L95" title="1 of 4 branches missed.">                if (body.last() || body.content().isEmpty()) {</span>
-<span class="nc" id="L96">                    break;</span>
+<span class="fc" id="L120">                closes.addAll(body.content());</span>
+<span class="pc bpc" id="L121" title="1 of 4 branches missed.">                if (body.last() || body.content().isEmpty()) {</span>
+<span class="nc" id="L122">                    break;</span>
                 }
             }
-<span class="nc" id="L99">        } catch (HttpClientErrorException.NotFound ex) {</span>
-<span class="nc" id="L100">            return List.of();</span>
-<span class="fc" id="L101">        } catch (RestClientException ex) {</span>
-<span class="fc" id="L102">            throw new QuoteUnavailableException(&quot;Failed to fetch price history for symbol &quot; + symbol, ex);</span>
-<span class="fc" id="L103">        }</span>
+<span class="nc" id="L125">        } catch (HttpClientErrorException.NotFound ex) {</span>
+<span class="nc" id="L126">            return List.of();</span>
+<span class="fc" id="L127">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L128">            throw new QuoteUnavailableException(&quot;Failed to fetch price history for symbol &quot; + symbol, ex);</span>
+<span class="fc" id="L129">        }</span>
         // The history endpoint is newest-first; valuation walks forward in time.
-<span class="fc" id="L105">        closes.sort((a, b) -&gt; a.bucketStart().compareTo(b.bucketStart()));</span>
-<span class="fc" id="L106">        return closes;</span>
+<span class="fc" id="L131">        closes.sort((a, b) -&gt; a.bucketStart().compareTo(b.bucketStart()));</span>
+<span class="fc" id="L132">        return closes;</span>
     }
 
     /**
      * Fetches the latest simulated price for a symbol.
+     * 
      * @param symbol the instrument symbol
-     * @return the latest price, or empty if the market data service does not know the symbol
-     * @throws QuoteUnavailableException if the market data service could not be reached or
-     *     returned an error
+     * @return the latest price, or empty if the market data service does not know
+     *         the symbol
+     * @throws QuoteUnavailableException if the market data service could not be
+     *                                   reached or
+     *                                   returned an error
      */
     public Optional&lt;BigDecimal&gt; fetchLatestPrice(String symbol) {
         try {
-<span class="fc" id="L118">            LatestPrice latest = restClient.get()</span>
-<span class="fc" id="L119">                    .uri(&quot;/api/marketdata/prices/{symbol}&quot;, symbol)</span>
-<span class="fc" id="L120">                    .headers(this::forwardCallerToken)</span>
-<span class="fc" id="L121">                    .retrieve()</span>
-<span class="fc" id="L122">                    .body(LatestPrice.class);</span>
-<span class="fc" id="L123">            return Optional.ofNullable(latest).map(LatestPrice::price);</span>
-<span class="fc" id="L124">        } catch (HttpClientErrorException.NotFound ex) {</span>
-<span class="fc" id="L125">            return Optional.empty();</span>
-<span class="nc" id="L126">        } catch (RestClientException ex) {</span>
-<span class="nc" id="L127">            throw new QuoteUnavailableException(&quot;Failed to fetch latest price for symbol &quot; + symbol, ex);</span>
+<span class="fc" id="L147">            LatestPrice latest = restClient.get()</span>
+<span class="fc" id="L148">                    .uri(&quot;/api/marketdata/prices/{symbol}&quot;, symbol)</span>
+<span class="fc" id="L149">                    .headers(this::forwardCallerToken)</span>
+<span class="fc" id="L150">                    .retrieve()</span>
+<span class="fc" id="L151">                    .body(LatestPrice.class);</span>
+<span class="fc" id="L152">            return Optional.ofNullable(latest).map(LatestPrice::price);</span>
+<span class="fc" id="L153">        } catch (HttpClientErrorException.NotFound ex) {</span>
+<span class="fc" id="L154">            return Optional.empty();</span>
+<span class="nc" id="L155">        } catch (RestClientException ex) {</span>
+<span class="nc" id="L156">            throw new QuoteUnavailableException(&quot;Failed to fetch latest price for symbol &quot; + symbol, ex);</span>
         }
     }
 
-    // A non-UTC offset would put a literal '+' in the query string, which decodes as a space.
+    /**
+     * Converts an offset date-time to a UTC ISO string.
+     * 
+     * @param time The offset date-time to convert.
+     * @return The UTC ISO string.
+     */
     private static String isoUtc(OffsetDateTime time) {
-<span class="fc" id="L133">        return time.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();</span>
+<span class="fc" id="L167">        return time.toInstant().truncatedTo(ChronoUnit.SECONDS).toString();</span>
     }
 
+    /**
+     * Forwards the caller's authentication token to the market data service.
+     * 
+     * @param headers The HTTP headers to add the authentication token to.
+     */
     private void forwardCallerToken(HttpHeaders headers) {
-<span class="pc bpc" id="L137" title="1 of 2 branches missed.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
-<span class="fc" id="L138">            String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);</span>
-<span class="pc bpc" id="L139" title="1 of 2 branches missed.">            if (authorization != null) {</span>
-<span class="fc" id="L140">                headers.set(HttpHeaders.AUTHORIZATION, authorization);</span>
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
+<span class="fc" id="L177">            String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);</span>
+<span class="pc bpc" id="L178" title="1 of 2 branches missed.">            if (authorization != null) {</span>
+<span class="fc" id="L179">                headers.set(HttpHeaders.AUTHORIZATION, authorization);</span>
             }
         }
-<span class="fc" id="L143">    }</span>
+<span class="fc" id="L182">    }</span>
 
     /**
      * One candle's close, the only field valuation needs.
+     * 
      * @param bucketStart the start of the candle's time bucket
-     * @param close the closing price of the bucket
+     * @param close       the closing price of the bucket
      */
-<span class="fc" id="L150">    public record CandleClose(OffsetDateTime bucketStart, BigDecimal close) {</span>
+<span class="fc" id="L190">    public record CandleClose(OffsetDateTime bucketStart, BigDecimal close) {</span>
     }
 
     /** The subset of a Spring Data page the client reads. */
-<span class="fc" id="L154">    record CandlePage(List&lt;CandleClose&gt; content, boolean last) {</span>
+<span class="fc" id="L194">    record CandlePage(List&lt;CandleClose&gt; content, boolean last) {</span>
     }
 
     /** The subset of the market data latest-price response the client reads. */
-<span class="fc" id="L158">    record LatestPrice(String symbol, BigDecimal price) {</span>
+<span class="fc" id="L198">    record LatestPrice(String symbol, BigDecimal price) {</span>
     }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

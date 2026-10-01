@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientSessionRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.session</a> &gt; <span class="el_source">ClientSessionRepository.java</span></div><h1>ClientSessionRepository.java</h1><pre class="source lang-java linenums">// Session Timeout &amp; Revocation: persist each successful login without storing its JWT.
+package com.leap.leaplaughlove.iam.session;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+@Repository
+public class ClientSessionRepository {
+    private final JdbcTemplate jdbcTemplate;
+
+<span class="fc" id="L17">    public ClientSessionRepository(JdbcTemplate jdbcTemplate) {</span>
+<span class="fc" id="L18">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L19">    }</span>
+
+    // Join the login transaction so session storage and credential updates commit together.
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void create(UUID sessionId, UUID clientId, Instant issuedAt, Instant expiresAt) {
+<span class="fc" id="L24">        jdbcTemplate.update(&quot;&quot;&quot;</span>
+                INSERT INTO iam.client_sessions
+                    (session_id, client_id, created_at, last_activity_at, expires_at)
+                VALUES (?, ?, ?, ?, ?)
+<span class="fc" id="L28">                &quot;&quot;&quot;, sessionId, clientId, issuedAt.atOffset(ZoneOffset.UTC),</span>
+<span class="fc" id="L29">                issuedAt.atOffset(ZoneOffset.UTC), expiresAt.atOffset(ZoneOffset.UTC));</span>
+<span class="fc" id="L30">    }</span>
+
+    // Session Timeout &amp; Revocation: a conditional update prevents expired/revoked sessions being revived.
+    @Transactional
+    public boolean recordActivity(UUID sessionId, UUID clientId, Instant now) {
+<span class="fc bfc" id="L35" title="All 2 branches covered.">        return jdbcTemplate.update(&quot;&quot;&quot;</span>
+                UPDATE iam.client_sessions
+                SET last_activity_at = GREATEST(last_activity_at, ?)
+                WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
+                  AND expires_at &gt; ? AND last_activity_at &gt; ?
+<span class="fc" id="L40">                &quot;&quot;&quot;, now.atOffset(ZoneOffset.UTC), sessionId, clientId, now.atOffset(ZoneOffset.UTC),</span>
+<span class="fc" id="L41">                now.minus(com.leap.leaplaughlove.common.security.ClientSessionValidator.IDLE_TIMEOUT)</span>
+<span class="fc" id="L42">                        .atOffset(ZoneOffset.UTC)) == 1;</span>
+    }
+
+    // Session Timeout &amp; Revocation: revoke only this login, preserving other devices' sessions.
+    @Transactional
+    public void revoke(UUID sessionId, UUID clientId, Instant now) {
+<span class="fc" id="L48">        jdbcTemplate.update(&quot;&quot;&quot;</span>
+                UPDATE iam.client_sessions SET revoked_at = ?
+                WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
+<span class="fc" id="L51">                &quot;&quot;&quot;, now.atOffset(ZoneOffset.UTC), sessionId, clientId);</span>
+<span class="fc" id="L52">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

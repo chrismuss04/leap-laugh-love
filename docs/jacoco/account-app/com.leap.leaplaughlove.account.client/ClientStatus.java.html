@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientStatus.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.client</a> &gt; <span class="el_source">ClientStatus.java</span></div><h1>ClientStatus.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.client;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+import org.hibernate.annotations.Immutable;
+
+import java.util.UUID;
+
+/**
+ * Read-only view of a client's status in the iam schema. account-app never writes to it; it only
+ * needs the status to decide how a newly opened account starts out.
+ */
+@Entity
+@Immutable
+@Table(name = &quot;clients&quot;, schema = &quot;iam&quot;)
+public class ClientStatus {
+
+    @Id
+    @Column(name = &quot;client_id&quot;)
+    private UUID clientId;
+
+    @Column(name = &quot;status&quot;, nullable = false)
+    private String status;
+
+    /**
+     * Protected no-argument constructor for JPA.
+     */
+<span class="fc" id="L30">    protected ClientStatus() {</span>
+<span class="fc" id="L31">    }</span>
+
+    /**
+     * Constructs a ClientStatus.
+     * @param clientId the unique identifier of the client
+     * @param status the client's status (PENDING, ACTIVE, LOCKED or DELETED)
+     */
+<span class="fc" id="L38">    public ClientStatus(UUID clientId, String status) {</span>
+<span class="fc" id="L39">        this.clientId = clientId;</span>
+<span class="fc" id="L40">        this.status = status;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * Returns the client identifier.
+     * @return the unique identifier of the client
+     */
+<span class="nc" id="L47">    public UUID getClientId() { return clientId; }</span>
+
+    /**
+     * Returns the client's status.
+     * @return the status of the client
+     */
+<span class="fc" id="L53">    public String getStatus() { return status; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

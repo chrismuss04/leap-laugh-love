@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountProvisioningListener.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.account</a> &gt; <span class="el_source">AccountProvisioningListener.java</span></div><h1>AccountProvisioningListener.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.account;
+
+import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.UUID;
+
+/**
+ * Opens and funds a newly registered client's first account once the registration has committed.
+ * account-app reads the client's status from the database, so it cannot see the client before then.
+ *
+ * The calls are authenticated with a short-lived login session created for this purpose, because
+ * account-app rejects tokens that are not backed by an active session. The session is revoked afterwards.
+ *
+ * Failures are logged, never thrown: the registration is already committed and must still succeed.
+ * Nothing is retried, because a timed-out call may still have created the account or booked the deposit.
+ */
+@Component
+public class AccountProvisioningListener {
+
+    static final String BASE_CURRENCY = &quot;USD&quot;;
+    static final String DEPOSIT_DESCRIPTION = &quot;Initial deposit&quot;;
+
+<span class="fc" id="L34">    private static final Logger log = LoggerFactory.getLogger(AccountProvisioningListener.class);</span>
+
+    private final AccountClient accountClient;
+    private final JwtService jwtService;
+    private final ClientSessionRepository sessionRepository;
+    private final TransactionTemplate newTransaction;
+
+    /**
+     * Constructs an AccountProvisioningListener.
+     * @param accountClient the client used to reach account-app
+     * @param jwtService issues the token that authenticates the calls as the new client
+     * @param sessionRepository stores the session that backs that token
+     * @param transactionManager runs each session write in its own transaction, since the registration's has ended
+     */
+    public AccountProvisioningListener(AccountClient accountClient, JwtService jwtService,
+                                       ClientSessionRepository sessionRepository,
+<span class="fc" id="L50">                                       PlatformTransactionManager transactionManager) {</span>
+<span class="fc" id="L51">        this.accountClient = accountClient;</span>
+<span class="fc" id="L52">        this.jwtService = jwtService;</span>
+<span class="fc" id="L53">        this.sessionRepository = sessionRepository;</span>
+<span class="fc" id="L54">        this.newTransaction = new TransactionTemplate(transactionManager);</span>
+<span class="fc" id="L55">        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);</span>
+<span class="fc" id="L56">    }</span>
+
+    /**
+     * Creates the client's first account and deposits their initial deposit amount into it.
+     * @param event the registration that just committed
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onClientRegistered(ClientRegisteredEvent event) {
+<span class="fc" id="L64">        UUID clientId = event.clientId();</span>
+<span class="fc" id="L65">        UUID sessionId = UUID.randomUUID();</span>
+
+        String token;
+        try {
+            // Committed before any call is made: account-app validates the session on its own connection.
+<span class="fc" id="L70">            Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);</span>
+<span class="fc" id="L71">            Instant expiresAt = issuedAt.plusSeconds(jwtService.getExpirationSeconds());</span>
+<span class="fc" id="L72">            newTransaction.executeWithoutResult(status -&gt;</span>
+<span class="fc" id="L73">                    sessionRepository.create(sessionId, clientId, issuedAt, expiresAt));</span>
+<span class="fc" id="L74">            token = jwtService.generateToken(clientId, event.email(), sessionId, issuedAt, expiresAt);</span>
+<span class="fc" id="L75">        } catch (RuntimeException e) {</span>
+<span class="fc" id="L76">            log.error(&quot;Registered client {} but could not start a session to open their first account; &quot;</span>
+                    + &quot;no account or initial deposit was made&quot;, clientId, e);
+<span class="fc" id="L78">            return;</span>
+<span class="fc" id="L79">        }</span>
+
+        try {
+<span class="fc" id="L82">            provision(event, token);</span>
+        } finally {
+<span class="fc" id="L84">            revokeSession(clientId, sessionId);</span>
+        }
+<span class="fc" id="L86">    }</span>
+
+    private void provision(ClientRegisteredEvent event, String token) {
+<span class="fc" id="L89">        UUID clientId = event.clientId();</span>
+
+        UUID accountId;
+        try {
+<span class="fc" id="L93">            accountId = accountClient.createAccount(token, BASE_CURRENCY);</span>
+<span class="fc" id="L94">        } catch (RuntimeException e) {</span>
+<span class="fc" id="L95">            log.error(&quot;Registered client {} but could not open their first account; no initial deposit was made&quot;,</span>
+                    clientId, e);
+<span class="fc" id="L97">            return;</span>
+<span class="fc" id="L98">        }</span>
+
+        try {
+<span class="fc" id="L101">            accountClient.deposit(token, accountId, event.initialDepositAmount(), DEPOSIT_DESCRIPTION);</span>
+<span class="fc" id="L102">        } catch (RuntimeException e) {</span>
+<span class="fc" id="L103">            log.error(&quot;Opened account {} for client {} but the initial deposit of {} is unconfirmed; &quot;</span>
+                            + &quot;check the ledger before depositing again&quot;,
+<span class="fc" id="L105">                    accountId, clientId, event.initialDepositAmount(), e);</span>
+<span class="fc" id="L106">        }</span>
+<span class="fc" id="L107">    }</span>
+
+    private void revokeSession(UUID clientId, UUID sessionId) {
+        try {
+<span class="fc" id="L111">            newTransaction.executeWithoutResult(status -&gt;</span>
+<span class="fc" id="L112">                    sessionRepository.revoke(sessionId, clientId, Instant.now()));</span>
+<span class="fc" id="L113">        } catch (RuntimeException e) {</span>
+<span class="fc" id="L114">            log.warn(&quot;Could not revoke provisioning session {} for client {}; it will expire on its own&quot;,</span>
+                    sessionId, clientId, e);
+<span class="fc" id="L116">        }</span>
+<span class="fc" id="L117">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

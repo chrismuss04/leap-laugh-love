@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.account</a> &gt; <span class="el_source">AccountController.java</span></div><h1>AccountController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.account;
 
 import com.leap.leaplaughlove.common.security.SecurityUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -12,7 +15,8 @@ import java.util.UUID;
 
 /**
  * REST controller for managing accounts.
- * Provides endpoints to retrieve account summaries and details for the authenticated client.
+ * Provides endpoints to retrieve account summaries and details for the
+ * authenticated client.
  */
 @RestController
 @RequestMapping(&quot;/api/account/accounts&quot;)
@@ -20,60 +24,81 @@ public class AccountController {
 
     private final AccountRepository accountRepository;
     private final AccountAuthorizationService accountAuthorizationService;
+    private final AccountService accountService;
 
     /**
-     * Constructs an AccountController with the injected account repository and account authorization service.
-     * @param accountRepository the repository used to access account data
-     * @param accountAuthorizationService the service used to perform authorization checks on accounts
+     * Constructs an AccountController with the injected account repository,
+     * account authorization service and account service.
+     *
+     * @param accountRepository           the repository used to access account data
+     * @param accountAuthorizationService the service used to perform authorization
+     *                                    checks on accounts
+     * @param accountService              the service used to open new accounts
      */
     public AccountController(AccountRepository accountRepository,
-<span class="fc" id="L30">                             AccountAuthorizationService accountAuthorizationService) {</span>
-<span class="fc" id="L31">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L32">        this.accountAuthorizationService = accountAuthorizationService;</span>
-<span class="fc" id="L33">    }</span>
+            AccountAuthorizationService accountAuthorizationService,
+<span class="fc" id="L40">            AccountService accountService) {</span>
+<span class="fc" id="L41">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L42">        this.accountAuthorizationService = accountAuthorizationService;</span>
+<span class="fc" id="L43">        this.accountService = accountService;</span>
+<span class="fc" id="L44">    }</span>
+
+    /**
+     * Opens a new account for the authenticated client.
+     *
+     * @param request the creation request; the body may be omitted to default to USD
+     * @return the summary of the newly created account
+     */
+    @PostMapping
+    public ResponseEntity&lt;AccountSummary&gt; createAccount(@RequestBody(required = false) CreateAccountRequest request) {
+<span class="fc" id="L54">        Account account = accountService.createAccount(request);</span>
+<span class="fc" id="L55">        return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(account));</span>
+    }
 
     /**
      * Retrieves a list of account summaries for the authenticated client.
      * Only accounts with ACTIVE status are included.
+     * 
      * @return a list of account summaries for the authenticated client
      */
     @GetMapping
     public ResponseEntity&lt;List&lt;AccountSummary&gt;&gt; getAccountsForClient() {
-<span class="fc" id="L42">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
-<span class="fc" id="L43">        List&lt;Account&gt; accounts = accountRepository.findByClientIdAndStatus(</span>
+<span class="fc" id="L66">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L67">        List&lt;Account&gt; accounts = accountRepository.findByClientIdAndStatus(</span>
                 clientId, AccountAuthorizationService.ACTIVE_STATUS);
-<span class="fc" id="L45">        List&lt;AccountSummary&gt; summaries = accounts.stream()</span>
-<span class="fc" id="L46">                .map(this::toSummary)</span>
-<span class="fc" id="L47">                .toList();</span>
-<span class="fc" id="L48">        return ResponseEntity.ok(summaries);</span>
+<span class="fc" id="L69">        List&lt;AccountSummary&gt; summaries = accounts.stream()</span>
+<span class="fc" id="L70">                .map(this::toSummary)</span>
+<span class="fc" id="L71">                .toList();</span>
+<span class="fc" id="L72">        return ResponseEntity.ok(summaries);</span>
     }
 
     /**
      * Retrieves the summary of a specific account for the authenticated client.
+     * 
      * @param accountId the unique identifier of the account to retrieve
-     * @return the account summary for the specified account if it exists and belongs to the authenticated client
-     * @throws ResponseStatusException if the account is not found or is not active
+     * @return the account summary for the specified account if it exists and
+     *         belongs to the authenticated client
      */
     @GetMapping(&quot;/{accountId}&quot;)
     public ResponseEntity&lt;AccountSummary&gt; getAccount(@PathVariable UUID accountId) {
-<span class="fc" id="L59">        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);</span>
-<span class="fc" id="L60">        return ResponseEntity.ok(toSummary(account));</span>
+<span class="fc" id="L84">        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);</span>
+<span class="fc" id="L85">        return ResponseEntity.ok(toSummary(account));</span>
     }
 
     /**
      * Helper method to convert an Account entity to an AccountSummary DTO.
+     * 
      * @param account the account entity to be converted
      * @return the corresponding account summary DTO
      */
     private AccountSummary toSummary(Account account) {
-<span class="fc" id="L69">        return new AccountSummary(</span>
-<span class="fc" id="L70">                account.getAccountId(),</span>
-<span class="fc" id="L71">                account.getAccountNumber(),</span>
-<span class="fc" id="L72">                account.getStatus(),</span>
-<span class="fc" id="L73">                account.getBaseCurrency(),</span>
-<span class="fc" id="L74">                account.isTradingEnabled(),</span>
-<span class="fc" id="L75">                account.getCreatedAt());</span>
+<span class="fc" id="L95">        return new AccountSummary(</span>
+<span class="fc" id="L96">                account.getAccountId(),</span>
+<span class="fc" id="L97">                account.getAccountNumber(),</span>
+<span class="fc" id="L98">                account.getStatus(),</span>
+<span class="fc" id="L99">                account.getBaseCurrency(),</span>
+<span class="fc" id="L100">                account.isTradingEnabled(),</span>
+<span class="fc" id="L101">                account.getCreatedAt());</span>
     }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

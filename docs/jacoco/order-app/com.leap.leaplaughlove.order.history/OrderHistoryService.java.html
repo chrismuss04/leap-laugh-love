@@ -26,155 +26,176 @@ import java.util.stream.Collectors;
 
 /**
  * Service for retrieving order history for clients.
- * Provides methods to fetch paginated order history along with associated executions.
+ * Provides methods to fetch paginated order history along with associated
+ * executions.
+ * 
  * @see OrderHistoryController
  */
 @Service
 public class OrderHistoryService {
 
     private static final int MAX_PAGE_SIZE = 100;
-    // Central time (CDT/CST), not UTC, so an evening trade is filed under the date the client saw.
-<span class="fc" id="L37">    private static final ZoneId FILTER_ZONE = ZoneId.of(&quot;America/Chicago&quot;);</span>
+    // Central time (CDT/CST), not UTC, so an evening trade is filed under the date
+    // the client saw.
+<span class="fc" id="L40">    private static final ZoneId FILTER_ZONE = ZoneId.of(&quot;America/Chicago&quot;);</span>
 
-<span class="fc" id="L39">    private record DateRange(OffsetDateTime from, OffsetDateTime to) {}</span>
+    /**
+     * Helper record to represent a range of dates for filtering orders
+     * 
+     * @param from the start of the date range
+     * @param to   the end of the date range
+     */
+<span class="fc" id="L48">    private record DateRange(OffsetDateTime from, OffsetDateTime to) {</span>
+    }
 
     private final OrderRepository orderRepository;
     private final ExecutionRepository executionRepository;
     private final AccountClient accountClient;
 
     /**
-     * Constructs an instance of OrderHistoryService with the specified repositories and client.
-     * @param orderRepository the repository used to access order data
+     * Constructs an instance of OrderHistoryService with the specified repositories
+     * and client.
+     * 
+     * @param orderRepository     the repository used to access order data
      * @param executionRepository the repository used to access execution data
-     * @param accountClient the client used to access account information
+     * @param accountClient       the client used to access account information
      */
     public OrderHistoryService(OrderRepository orderRepository,
-                               ExecutionRepository executionRepository,
-<span class="fc" id="L53">                               AccountClient accountClient) {</span>
-<span class="fc" id="L54">        this.orderRepository = orderRepository;</span>
-<span class="fc" id="L55">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L56">        this.accountClient = accountClient;</span>
-<span class="fc" id="L57">    }</span>
+            ExecutionRepository executionRepository,
+<span class="fc" id="L65">            AccountClient accountClient) {</span>
+<span class="fc" id="L66">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L67">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L68">        this.accountClient = accountClient;</span>
+<span class="fc" id="L69">    }</span>
 
     /**
-     * Retrieves the order history for the specified client with default null filters.
+     * Retrieves the order history for the specified client with default null
+     * filters.
+     * 
      * @param clientId the unique identifier of the client
-     * @param page the page number to retrieve
-     * @param size the number of items per page
+     * @param page     the page number to retrieve
+     * @param size     the number of items per page
      * @return a paginated list of order history items for the specified client
      */
     @Transactional(readOnly = true)
     public Page&lt;OrderHistoryItem&gt; getOrderHistory(UUID clientId, int page, int size) {
-<span class="fc" id="L68">        return getOrderHistory(clientId, page, size, null, null, null);</span>
+<span class="fc" id="L82">        return getOrderHistory(clientId, page, size, null, null, null);</span>
     }
 
     /**
      * Retrieves the order history for the specified client.
+     * 
      * @param clientId the unique identifier of the client
-     * @param page the page number to retrieve
-     * @param size the number of items per page
-     * @param year optional year filter; required when month or day is given
-     * @param month optional month filter (1-12); required when day is given
-     * @param day optional day-of-month filter
+     * @param page     the page number to retrieve
+     * @param size     the number of items per page
+     * @param year     optional year filter; required when month or day is given
+     * @param month    optional month filter (1-12); required when day is given
+     * @param day      optional day-of-month filter
      * @return a paginated list of order history items for the specified client
      */
     @Transactional(readOnly = true)
     public Page&lt;OrderHistoryItem&gt; getOrderHistory(UUID clientId, int page, int size,
-                                                  Integer year, Integer month, Integer day) {
-<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (page &lt; 0) {</span>
-<span class="fc" id="L85">            throw new IllegalArgumentException(&quot;page must not be negative&quot;);</span>
+            Integer year, Integer month, Integer day) {
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (page &lt; 0) {</span>
+<span class="fc" id="L100">            throw new IllegalArgumentException(&quot;page must not be negative&quot;);</span>
         }
-<span class="pc bpc" id="L87" title="1 of 4 branches missed.">        if (size &lt; 1 || size &gt; MAX_PAGE_SIZE) {</span>
-<span class="fc" id="L88">            throw new IllegalArgumentException(&quot;size must be between 1 and &quot; + MAX_PAGE_SIZE);</span>
+<span class="pc bpc" id="L102" title="1 of 4 branches missed.">        if (size &lt; 1 || size &gt; MAX_PAGE_SIZE) {</span>
+<span class="fc" id="L103">            throw new IllegalArgumentException(&quot;size must be between 1 and &quot; + MAX_PAGE_SIZE);</span>
         }
-<span class="fc" id="L90">        DateRange range = toDateRange(year, month, day);</span>
-<span class="fc" id="L91">        Pageable pageable = PageRequest.of(page, size);</span>
-<span class="fc bfc" id="L92" title="All 2 branches covered.">        Page&lt;Order&gt; orders = range == null</span>
-<span class="fc" id="L93">                ? orderRepository.findByClientId(clientId, pageable)</span>
-<span class="fc" id="L94">                : orderRepository.findByClientIdSubmittedBetween(clientId, range.from(), range.to(), pageable);</span>
+<span class="fc" id="L105">        DateRange range = toDateRange(year, month, day);</span>
+<span class="fc" id="L106">        Pageable pageable = PageRequest.of(page, size);</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        Page&lt;Order&gt; orders = range == null</span>
+<span class="fc" id="L108">                ? orderRepository.findByClientId(clientId, pageable)</span>
+<span class="fc" id="L109">                : orderRepository.findByClientIdSubmittedBetween(clientId, range.from(), range.to(), pageable);</span>
 
-<span class="fc" id="L96">        List&lt;UUID&gt; orderIds = orders.map(Order::getOrderId).getContent();</span>
-<span class="fc" id="L97">        Map&lt;UUID, List&lt;ExecutionItem&gt;&gt; executionsByOrderId = executionRepository</span>
-<span class="fc" id="L98">                .findByOrder_OrderIdIn(orderIds).stream()</span>
-<span class="fc bfc" id="L99" title="All 2 branches covered.">                .filter(execution -&gt; execution.getStatus() == Execution.Status.FILLED)</span>
-<span class="fc" id="L100">                .sorted(Comparator.comparing(Execution::getExecutedAt,</span>
-<span class="fc" id="L101">                        Comparator.nullsLast(Comparator.naturalOrder())))</span>
-<span class="fc" id="L102">                .collect(Collectors.groupingBy(</span>
-<span class="fc" id="L103">                        execution -&gt; execution.getOrder().getOrderId(),</span>
-<span class="fc" id="L104">                        Collectors.mapping(this::toExecutionItem, Collectors.toList())));</span>
+<span class="fc" id="L111">        List&lt;UUID&gt; orderIds = orders.map(Order::getOrderId).getContent();</span>
+<span class="fc" id="L112">        Map&lt;UUID, List&lt;ExecutionItem&gt;&gt; executionsByOrderId = executionRepository</span>
+<span class="fc" id="L113">                .findByOrder_OrderIdIn(orderIds).stream()</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">                .filter(execution -&gt; execution.getStatus() == Execution.Status.FILLED)</span>
+<span class="fc" id="L115">                .sorted(Comparator.comparing(Execution::getExecutedAt,</span>
+<span class="fc" id="L116">                        Comparator.nullsLast(Comparator.naturalOrder())))</span>
+<span class="fc" id="L117">                .collect(Collectors.groupingBy(</span>
+<span class="fc" id="L118">                        execution -&gt; execution.getOrder().getOrderId(),</span>
+<span class="fc" id="L119">                        Collectors.mapping(this::toExecutionItem, Collectors.toList())));</span>
 
-<span class="fc" id="L106">        return orders.map(order -&gt; toHistoryItem(order, executionsByOrderId));</span>
+<span class="fc" id="L121">        return orders.map(order -&gt; toHistoryItem(order, executionsByOrderId));</span>
     }
 
     /**
      * Converts the provided year, month, and day into a DateRange object.
-     * @param year the year component of the date range
+     * 
+     * @param year  the year component of the date range
      * @param month the month component of the date range
-     * @param day the day component of the date range
-     * @return a DateRange object representing the specified date range, or null if no date range is specified
-     * @throws IllegalArgumentException if the provided date components are invalid or inconsistent
+     * @param day   the day component of the date range
+     * @return a DateRange object representing the specified date range, or null if
+     *         no date range is specified
+     * @throws IllegalArgumentException if the provided date components are invalid
+     *                                  or inconsistent
      */
     private DateRange toDateRange(Integer year, Integer month, Integer day) {
-<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (year == null) {</span>
-<span class="fc bfc" id="L119" title="All 4 branches covered.">            if (month != null || day != null) {</span>
-<span class="fc" id="L120">                throw new IllegalArgumentException(&quot;year is required when month or day is provided&quot;);</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (year == null) {</span>
+<span class="fc bfc" id="L137" title="All 4 branches covered.">            if (month != null || day != null) {</span>
+<span class="fc" id="L138">                throw new IllegalArgumentException(&quot;year is required when month or day is provided&quot;);</span>
             }
-<span class="fc" id="L122">            return null;</span>
+<span class="fc" id="L140">            return null;</span>
         }
-<span class="fc bfc" id="L124" title="All 4 branches covered.">        if (month == null &amp;&amp; day != null) {</span>
-<span class="fc" id="L125">            throw new IllegalArgumentException(&quot;month is required when day is provided&quot;);</span>
+<span class="fc bfc" id="L142" title="All 4 branches covered.">        if (month == null &amp;&amp; day != null) {</span>
+<span class="fc" id="L143">            throw new IllegalArgumentException(&quot;month is required when day is provided&quot;);</span>
         }
         LocalDate start;
         LocalDate end;
         try {
-<span class="fc bfc" id="L130" title="All 2 branches covered.">            if (month == null) {</span>
-<span class="fc" id="L131">                start = LocalDate.of(year, 1, 1);</span>
-<span class="fc" id="L132">                end = start.plusYears(1);</span>
-<span class="fc bfc" id="L133" title="All 2 branches covered.">            } else if (day == null) {</span>
-<span class="fc" id="L134">                start = LocalDate.of(year, month, 1);</span>
-<span class="fc" id="L135">                end = start.plusMonths(1);</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">            if (month == null) {</span>
+<span class="fc" id="L149">                start = LocalDate.of(year, 1, 1);</span>
+<span class="fc" id="L150">                end = start.plusYears(1);</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">            } else if (day == null) {</span>
+<span class="fc" id="L152">                start = LocalDate.of(year, month, 1);</span>
+<span class="fc" id="L153">                end = start.plusMonths(1);</span>
             } else {
-<span class="fc" id="L137">                start = LocalDate.of(year, month, day);</span>
-<span class="fc" id="L138">                end = start.plusDays(1);</span>
+<span class="fc" id="L155">                start = LocalDate.of(year, month, day);</span>
+<span class="fc" id="L156">                end = start.plusDays(1);</span>
             }
-<span class="fc" id="L140">        } catch (DateTimeException ex) {</span>
-<span class="fc" id="L141">            throw new IllegalArgumentException(&quot;invalid date filter: &quot; + ex.getMessage(), ex);</span>
-<span class="fc" id="L142">        }</span>
-<span class="fc" id="L143">        return new DateRange(</span>
-<span class="fc" id="L144">                start.atStartOfDay(FILTER_ZONE).toOffsetDateTime(),</span>
-<span class="fc" id="L145">                end.atStartOfDay(FILTER_ZONE).toOffsetDateTime());</span>
+<span class="fc" id="L158">        } catch (DateTimeException ex) {</span>
+<span class="fc" id="L159">            throw new IllegalArgumentException(&quot;invalid date filter: &quot; + ex.getMessage(), ex);</span>
+<span class="fc" id="L160">        }</span>
+<span class="fc" id="L161">        return new DateRange(</span>
+<span class="fc" id="L162">                start.atStartOfDay(FILTER_ZONE).toOffsetDateTime(),</span>
+<span class="fc" id="L163">                end.atStartOfDay(FILTER_ZONE).toOffsetDateTime());</span>
     }
 
     /**
-     * Converts an Order entity and its associated executions into an OrderHistoryItem DTO
-     * @param order the order entity to be converted
-     * @param executionsByOrderId a map of order IDs to their associated execution items
+     * Converts an Order entity and its associated executions into an
+     * OrderHistoryItem DTO
+     * 
+     * @param order               the order entity to be converted
+     * @param executionsByOrderId a map of order IDs to their associated execution
+     *                            items
      * @return the corresponding OrderHistoryItem DTO
      */
     private OrderHistoryItem toHistoryItem(Order order, Map&lt;UUID, List&lt;ExecutionItem&gt;&gt; executionsByOrderId) {
-<span class="fc" id="L155">        return new OrderHistoryItem(</span>
-<span class="fc" id="L156">                order.getOrderId(),</span>
-<span class="fc" id="L157">                order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L158">                order.getSide().name(),</span>
-<span class="fc" id="L159">                order.getQuantity(),</span>
-<span class="fc" id="L160">                order.getStatus().name(),</span>
-<span class="fc" id="L161">                order.getSubmittedAt(),</span>
-<span class="fc" id="L162">                order.getFilledAt(),</span>
-<span class="fc" id="L163">                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));</span>
+<span class="fc" id="L176">        return new OrderHistoryItem(</span>
+<span class="fc" id="L177">                order.getOrderId(),</span>
+<span class="fc" id="L178">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L179">                order.getSide().name(),</span>
+<span class="fc" id="L180">                order.getQuantity(),</span>
+<span class="fc" id="L181">                order.getStatus().name(),</span>
+<span class="fc" id="L182">                order.getSubmittedAt(),</span>
+<span class="fc" id="L183">                order.getFilledAt(),</span>
+<span class="fc" id="L184">                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));</span>
     }
 
     /**
      * Converts an Execution entity into a ExecutionItem DTO
+     * 
      * @param execution the execution entity to be converted
      * @return the corresponding ExecutionItem DTO
      */
     private ExecutionItem toExecutionItem(Execution execution) {
-<span class="fc" id="L172">        return new ExecutionItem(</span>
-<span class="fc" id="L173">                execution.getExecutionId(),</span>
-<span class="fc" id="L174">                execution.getFillQuantity(),</span>
-<span class="fc" id="L175">                execution.getFillPrice(),</span>
-<span class="fc" id="L176">                execution.getExecutedAt());</span>
+<span class="fc" id="L194">        return new ExecutionItem(</span>
+<span class="fc" id="L195">                execution.getExecutionId(),</span>
+<span class="fc" id="L196">                execution.getFillQuantity(),</span>
+<span class="fc" id="L197">                execution.getFillPrice(),</span>
+<span class="fc" id="L198">                execution.getExecutedAt());</span>
     }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

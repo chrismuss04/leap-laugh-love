@@ -20,38 +20,53 @@ public class QuoteController {
 
     private final QuoteIngestionService quoteIngestionService;
 
-<span class="fc" id="L23">    public QuoteController(QuoteIngestionService quoteIngestionService) {</span>
-<span class="fc" id="L24">        this.quoteIngestionService = quoteIngestionService;</span>
-<span class="fc" id="L25">    }</span>
+    /**
+     * Constructs a new QuoteController with the injected quote ingestion service
+     * 
+     * @param quoteIngestionService the quote ingestion service
+     */
+<span class="fc" id="L28">    public QuoteController(QuoteIngestionService quoteIngestionService) {</span>
+<span class="fc" id="L29">        this.quoteIngestionService = quoteIngestionService;</span>
+<span class="fc" id="L30">    }</span>
 
     /**
-     * Retrieves the latest quote for every instrument seen by the ingestion pipeline.
+     * Retrieves the latest quote for every instrument seen by the ingestion
+     * pipeline.
+     * 
      * @return the latest quote for each instrument
      */
     @GetMapping
     public List&lt;QuoteResponse&gt; getLatestQuotes() {
-<span class="fc" id="L33">        return quoteIngestionService.latestAll().stream().map(this::toResponse).toList();</span>
+<span class="fc" id="L40">        return quoteIngestionService.latestAll().stream().map(this::toResponse).toList();</span>
     }
 
     /**
      * Retrieves the latest quote for a single instrument symbol.
+     * 
      * @param symbol the instrument symbol to look up
      * @return the latest quote for the symbol
-     * @throws ResponseStatusException with a 404 status if no quote has been ingested for
-     *     the symbol
+     * @throws ResponseStatusException with a 404 status if no quote has been
+     *                                 ingested for
+     *                                 the symbol
      */
     @GetMapping(&quot;/{symbol}&quot;)
     public QuoteResponse getLatestQuote(@PathVariable String symbol) {
-<span class="fc" id="L45">        return quoteIngestionService.latest(symbol.toUpperCase())</span>
-<span class="fc" id="L46">                .map(this::toResponse)</span>
-<span class="fc" id="L47">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND,</span>
+<span class="fc" id="L54">        return quoteIngestionService.latest(symbol.toUpperCase())</span>
+<span class="fc" id="L55">                .map(this::toResponse)</span>
+<span class="fc" id="L56">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND,</span>
                         &quot;Unknown instrument symbol: &quot; + symbol));
     }
 
+    /**
+     * Converts a QuoteState to a QuoteResponse DTO.
+     * 
+     * @param state the QuoteState to convert
+     * @return the QuoteResponse
+     */
     private QuoteResponse toResponse(QuoteState state) {
-<span class="fc" id="L52">        return new QuoteResponse(state.symbol(), state.bidPrice(), state.bidSize(),</span>
-<span class="fc" id="L53">                state.askPrice(), state.askSize(), state.lastPrice(), state.lastSize(),</span>
-<span class="fc" id="L54">                state.exchange(), state.quoteTimestamp());</span>
+<span class="fc" id="L67">        return new QuoteResponse(state.symbol(), state.bidPrice(), state.bidSize(),</span>
+<span class="fc" id="L68">                state.askPrice(), state.askSize(), state.lastPrice(), state.lastSize(),</span>
+<span class="fc" id="L69">                state.exchange(), state.quoteTimestamp());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -5,6 +5,8 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+// Session Timeout &amp; Revocation
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -19,8 +21,10 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Configures Spring Security for the market data service: stateless JWT authentication
  * (reusing iam-app's {@link JwtService}) for every endpoint except health and error.
  */
+// Session Timeout &amp; Revocation: common-security is outside each app's component scan.
+@org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
-<span class="fc" id="L23">public class MarketDataSecurityConfig {</span>
+<span class="fc" id="L27">public class MarketDataSecurityConfig {</span>
 
     /**
      * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
@@ -32,25 +36,25 @@ import org.springframework.web.cors.CorsConfigurationSource;
      * @throws Exception if the security configuration cannot be built
      */
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper) throws Exception {
-<span class="fc" id="L36">        http</span>
-<span class="fc" id="L37">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
-<span class="fc" id="L38">                .csrf(AbstractHttpConfigurer::disable)</span>
-<span class="fc" id="L39">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
-<span class="fc" id="L40">                .authorizeHttpRequests(auth -&gt; auth</span>
-<span class="fc" id="L41">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
+<span class="fc" id="L40">        http</span>
+<span class="fc" id="L41">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
+<span class="fc" id="L42">                .csrf(AbstractHttpConfigurer::disable)</span>
+<span class="fc" id="L43">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L44">                .authorizeHttpRequests(auth -&gt; auth</span>
+<span class="fc" id="L45">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
-<span class="fc" id="L44">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+<span class="fc" id="L48">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
                         // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
                         // the original REQUEST dispatch was already authenticated
-<span class="fc" id="L47">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
-<span class="fc" id="L48">                        .anyRequest().authenticated())</span>
-<span class="fc" id="L49">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L50">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="nc" id="L51">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L52">                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L53">        return http.build();</span>
+<span class="fc" id="L51">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
+<span class="fc" id="L52">                        .anyRequest().authenticated())</span>
+<span class="fc" id="L53">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L54">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="nc" id="L55">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L56">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;market-history&quot;), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L57">        return http.build();</span>
     }
 
     /**
@@ -59,7 +63,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L62">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L66">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

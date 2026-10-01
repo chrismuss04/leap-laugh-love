@@ -41,13 +41,20 @@ public class FillRecorder {
     private final PositionMovementRepository positionMovementRepository;
     private final AccountClient accountClient;
 
+    /**
+     * Constructs a FillRecorder with the required repositories and client.
+     * 
+     * @param executionRepository        the repository for persisting execution records
+     * @param positionMovementRepository the repository for recording position movements
+     * @param accountClient              the client for communicating settlement details to the account service
+     */
     public FillRecorder(ExecutionRepository executionRepository,
                         PositionMovementRepository positionMovementRepository,
-<span class="fc" id="L46">                        AccountClient accountClient) {</span>
-<span class="fc" id="L47">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L48">        this.positionMovementRepository = positionMovementRepository;</span>
-<span class="fc" id="L49">        this.accountClient = accountClient;</span>
-<span class="fc" id="L50">    }</span>
+<span class="fc" id="L53">                        AccountClient accountClient) {</span>
+<span class="fc" id="L54">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L55">        this.positionMovementRepository = positionMovementRepository;</span>
+<span class="fc" id="L56">        this.accountClient = accountClient;</span>
+<span class="fc" id="L57">    }</span>
 
     /**
      * Writes the FILLED execution for a fill of the whole order at one price. Does not change the
@@ -58,8 +65,8 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
-<span class="fc" id="L61">        return executionRepository.saveAndFlush(new Execution(</span>
-<span class="fc" id="L62">                order, order.getQuantity(), price, Execution.Status.FILLED,</span>
+<span class="fc" id="L68">        return executionRepository.saveAndFlush(new Execution(</span>
+<span class="fc" id="L69">                order, order.getQuantity(), price, Execution.Status.FILLED,</span>
                 &quot;Executed at market price&quot;, time));
     }
 
@@ -74,19 +81,19 @@ public class FillRecorder {
      * @return account-app's settlement result
      */
     public SettlementResponse settle(Order order, Execution execution, String bearerToken) {
-<span class="fc" id="L77">        SettlementRequest request = new SettlementRequest(</span>
-<span class="fc" id="L78">                order.getOrderId(),</span>
-<span class="fc" id="L79">                execution.getExecutionId(),</span>
-<span class="fc" id="L80">                order.getInstrument().getInstrumentId(),</span>
-<span class="fc" id="L81">                order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L82">                order.getSide().name(),</span>
-<span class="fc" id="L83">                order.getQuantity(),</span>
-<span class="fc" id="L84">                execution.getFillPrice(),</span>
-<span class="fc" id="L85">                execution.getExecutedAt()</span>
+<span class="fc" id="L84">        SettlementRequest request = new SettlementRequest(</span>
+<span class="fc" id="L85">                order.getOrderId(),</span>
+<span class="fc" id="L86">                execution.getExecutionId(),</span>
+<span class="fc" id="L87">                order.getInstrument().getInstrumentId(),</span>
+<span class="fc" id="L88">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L89">                order.getSide().name(),</span>
+<span class="fc" id="L90">                order.getQuantity(),</span>
+<span class="fc" id="L91">                execution.getFillPrice(),</span>
+<span class="fc" id="L92">                execution.getExecutedAt()</span>
         );
-<span class="fc bfc" id="L87" title="All 2 branches covered.">        return bearerToken == null</span>
-<span class="fc" id="L88">                ? accountClient.settleOrder(order.getAccountId(), request)</span>
-<span class="fc" id="L89">                : accountClient.settleOrderAs(order.getAccountId(), request, bearerToken);</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        return bearerToken == null</span>
+<span class="fc" id="L95">                ? accountClient.settleOrder(order.getAccountId(), request)</span>
+<span class="fc" id="L96">                : accountClient.settleOrderAs(order.getAccountId(), request, bearerToken);</span>
     }
 
     /**
@@ -100,7 +107,7 @@ public class FillRecorder {
      * @return true only if account-app answered with a refusal
      */
     public static boolean isRefused(RuntimeException failure) {
-<span class="fc" id="L103">        return failure instanceof HttpClientErrorException;</span>
+<span class="fc" id="L110">        return failure instanceof HttpClientErrorException;</span>
     }
 
     /**
@@ -110,17 +117,17 @@ public class FillRecorder {
      * @return the reason, or the exception's message if the body has none
      */
     public static String refusalReason(RuntimeException refusal) {
-<span class="pc bpc" id="L113" title="1 of 2 branches missed.">        if (refusal instanceof HttpClientErrorException clientError) {</span>
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">        if (refusal instanceof HttpClientErrorException clientError) {</span>
             try {
-<span class="fc" id="L115">                Map&lt;?, ?&gt; body = clientError.getResponseBodyAs(Map.class);</span>
-<span class="pc bpc" id="L116" title="3 of 6 branches missed.">                if (body != null &amp;&amp; body.get(&quot;message&quot;) instanceof String message &amp;&amp; !message.isBlank()) {</span>
-<span class="fc" id="L117">                    return message;</span>
+<span class="fc" id="L122">                Map&lt;?, ?&gt; body = clientError.getResponseBodyAs(Map.class);</span>
+<span class="pc bpc" id="L123" title="3 of 6 branches missed.">                if (body != null &amp;&amp; body.get(&quot;message&quot;) instanceof String message &amp;&amp; !message.isBlank()) {</span>
+<span class="fc" id="L124">                    return message;</span>
                 }
-<span class="fc" id="L119">            } catch (RuntimeException unreadable) {</span>
+<span class="fc" id="L126">            } catch (RuntimeException unreadable) {</span>
                 // Not account-app's JSON error body; fall back to the exception's message.
-<span class="nc" id="L121">            }</span>
+<span class="nc" id="L128">            }</span>
         }
-<span class="fc" id="L123">        return refusal.getMessage();</span>
+<span class="fc" id="L130">        return refusal.getMessage();</span>
     }
 
     /**
@@ -133,12 +140,12 @@ public class FillRecorder {
      * @return true if this call finished the fill, false if it was already finished
      */
     public boolean completeFill(Order lockedOrder, Execution execution) {
-<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (positionMovementRepository.existsByOrderId(lockedOrder.getOrderId())) {</span>
-<span class="fc" id="L137">            return false;</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        if (positionMovementRepository.existsByOrderId(lockedOrder.getOrderId())) {</span>
+<span class="fc" id="L144">            return false;</span>
         }
-<span class="fc" id="L139">        recordPositionMovement(lockedOrder, execution);</span>
-<span class="fc" id="L140">        lockedOrder.markFilled(execution.getExecutedAt());</span>
-<span class="fc" id="L141">        return true;</span>
+<span class="fc" id="L146">        recordPositionMovement(lockedOrder, execution);</span>
+<span class="fc" id="L147">        lockedOrder.markFilled(execution.getExecutedAt());</span>
+<span class="fc" id="L148">        return true;</span>
     }
 
     /**
@@ -147,16 +154,16 @@ public class FillRecorder {
      * @param execution its settled FILLED execution
      */
     public void recordPositionMovement(Order order, Execution execution) {
-<span class="fc" id="L150">        long quantity = order.getQuantity();</span>
-<span class="fc" id="L151">        BigDecimal tradeCost = execution.getFillPrice().multiply(BigDecimal.valueOf(quantity))</span>
-<span class="fc" id="L152">                .setScale(2, RoundingMode.HALF_UP);</span>
-<span class="fc bfc" id="L153" title="All 2 branches covered.">        boolean buy = order.getSide() == Order.Side.BUY;</span>
+<span class="fc" id="L157">        long quantity = order.getQuantity();</span>
+<span class="fc" id="L158">        BigDecimal tradeCost = execution.getFillPrice().multiply(BigDecimal.valueOf(quantity))</span>
+<span class="fc" id="L159">                .setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">        boolean buy = order.getSide() == Order.Side.BUY;</span>
 
-<span class="fc" id="L155">        positionMovementRepository.save(new PositionMovement(</span>
-<span class="fc" id="L156">                order.getAccountId(), order.getInstrument().getInstrumentId(), order.getOrderId(),</span>
-<span class="fc bfc" id="L157" title="All 2 branches covered.">                execution.getExecutionId(), buy ? &quot;BUY_FILL&quot; : &quot;SELL_FILL&quot;,</span>
-<span class="fc bfc" id="L158" title="All 4 branches covered.">                buy ? quantity : -quantity, buy ? tradeCost : tradeCost.negate(),</span>
-<span class="fc" id="L159">                execution.getExecutedAt()));</span>
-<span class="fc" id="L160">    }</span>
+<span class="fc" id="L162">        positionMovementRepository.save(new PositionMovement(</span>
+<span class="fc" id="L163">                order.getAccountId(), order.getInstrument().getInstrumentId(), order.getOrderId(),</span>
+<span class="fc bfc" id="L164" title="All 2 branches covered.">                execution.getExecutionId(), buy ? &quot;BUY_FILL&quot; : &quot;SELL_FILL&quot;,</span>
+<span class="fc bfc" id="L165" title="All 4 branches covered.">                buy ? quantity : -quantity, buy ? tradeCost : tradeCost.negate(),</span>
+<span class="fc" id="L166">                execution.getExecutedAt()));</span>
+<span class="fc" id="L167">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

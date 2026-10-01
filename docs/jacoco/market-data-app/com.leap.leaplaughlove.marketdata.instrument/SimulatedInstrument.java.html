@@ -6,7 +6,8 @@ import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
- * Represents the GBM simulation parameters for one instrument: its starting price, drift,
+ * Represents the GBM simulation parameters for one instrument: its starting
+ * price, drift,
  * volatility, and reproducibility seed.
  */
 @Entity
@@ -39,71 +40,106 @@ public class SimulatedInstrument {
     @Column(name = &quot;is_active&quot;, nullable = false)
     private boolean active;
 
-<span class="fc" id="L42">    protected SimulatedInstrument() {</span>
-<span class="fc" id="L43">    }</span>
+    /**
+     * Protected no arg constructor for JPA
+     */
+<span class="fc" id="L46">    protected SimulatedInstrument() {</span>
+<span class="fc" id="L47">    }</span>
 
     /**
      * Creates a new SimulatedInstrument entity with the specified details.
+     * 
      * @param instrumentId the unique identifier of the instrument
-     * @param symbol the instrument symbol
-     * @param displayName the human-readable display name of the instrument
+     * @param symbol       the instrument symbol
+     * @param displayName  the human-readable display name of the instrument
      * @param initialPrice the starting price for the simulation
-     * @param drift the annualized drift used by the GBM simulation
-     * @param volatility the annualized volatility used by the GBM simulation
-     * @param rngSeed the seed used to make the simulated path reproducible
-     * @param active whether the instrument is actively simulated
+     * @param drift        the annualized drift used by the GBM simulation
+     * @param volatility   the annualized volatility used by the GBM simulation
+     * @param rngSeed      the seed used to make the simulated path reproducible
+     * @param active       whether the instrument is actively simulated
      */
     public SimulatedInstrument(UUID instrumentId, String symbol, String displayName, BigDecimal initialPrice,
-<span class="fc" id="L57">                                BigDecimal drift, BigDecimal volatility, long rngSeed, boolean active) {</span>
-<span class="fc" id="L58">        this.instrumentId = instrumentId;</span>
-<span class="fc" id="L59">        this.symbol = symbol;</span>
-<span class="fc" id="L60">        this.displayName = displayName;</span>
-<span class="fc" id="L61">        this.initialPrice = initialPrice;</span>
-<span class="fc" id="L62">        this.drift = drift;</span>
-<span class="fc" id="L63">        this.volatility = volatility;</span>
-<span class="fc" id="L64">        this.rngSeed = rngSeed;</span>
-<span class="fc" id="L65">        this.active = active;</span>
-<span class="fc" id="L66">    }</span>
+<span class="fc" id="L62">            BigDecimal drift, BigDecimal volatility, long rngSeed, boolean active) {</span>
+<span class="fc" id="L63">        this.instrumentId = instrumentId;</span>
+<span class="fc" id="L64">        this.symbol = symbol;</span>
+<span class="fc" id="L65">        this.displayName = displayName;</span>
+<span class="fc" id="L66">        this.initialPrice = initialPrice;</span>
+<span class="fc" id="L67">        this.drift = drift;</span>
+<span class="fc" id="L68">        this.volatility = volatility;</span>
+<span class="fc" id="L69">        this.rngSeed = rngSeed;</span>
+<span class="fc" id="L70">        this.active = active;</span>
+<span class="fc" id="L71">    }</span>
 
     /**
      * Gets the unique identifier of the instrument.
+     * 
      * @return the instrumentId of the instrument
      */
-<span class="fc" id="L72">    public UUID getInstrumentId() { return instrumentId; }</span>
+    public UUID getInstrumentId() {
+<span class="fc" id="L79">        return instrumentId;</span>
+    }
+
     /**
      * Gets the instrument symbol.
+     * 
      * @return the symbol of the instrument
      */
-<span class="fc" id="L77">    public String getSymbol() { return symbol; }</span>
+    public String getSymbol() {
+<span class="fc" id="L88">        return symbol;</span>
+    }
+
     /**
      * Gets the human-readable display name of the instrument.
+     * 
      * @return the displayName of the instrument
      */
-<span class="fc" id="L82">    public String getDisplayName() { return displayName; }</span>
+    public String getDisplayName() {
+<span class="fc" id="L97">        return displayName;</span>
+    }
+
     /**
      * Gets the starting price for the simulation.
+     * 
      * @return the initialPrice of the instrument
      */
-<span class="fc" id="L87">    public BigDecimal getInitialPrice() { return initialPrice; }</span>
+    public BigDecimal getInitialPrice() {
+<span class="fc" id="L106">        return initialPrice;</span>
+    }
+
     /**
      * Gets the annualized drift used by the GBM simulation.
+     * 
      * @return the drift of the instrument
      */
-<span class="fc" id="L92">    public BigDecimal getDrift() { return drift; }</span>
+    public BigDecimal getDrift() {
+<span class="fc" id="L115">        return drift;</span>
+    }
+
     /**
      * Gets the annualized volatility used by the GBM simulation.
+     * 
      * @return the volatility of the instrument
      */
-<span class="fc" id="L97">    public BigDecimal getVolatility() { return volatility; }</span>
+    public BigDecimal getVolatility() {
+<span class="fc" id="L124">        return volatility;</span>
+    }
+
     /**
      * Gets the seed used to make the simulated path reproducible.
+     * 
      * @return the rngSeed of the instrument
      */
-<span class="fc" id="L102">    public long getRngSeed() { return rngSeed; }</span>
+    public long getRngSeed() {
+<span class="fc" id="L133">        return rngSeed;</span>
+    }
+
     /**
      * Gets whether the instrument is actively simulated.
+     * 
      * @return true if the instrument is active
      */
-<span class="nc" id="L107">    public boolean isActive() { return active; }</span>
+    public boolean isActive() {
+<span class="nc" id="L142">        return active;</span>
+    }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

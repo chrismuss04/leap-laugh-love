@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
@@ -24,23 +25,24 @@ public class ClientProfileController {
      * Constructs a new ClientProfileController with the specified client repository.
      * @param clientRepository the client repository used to look up the authenticated client
      */
-<span class="fc" id="L27">    public ClientProfileController(ClientRepository clientRepository) {</span>
-<span class="fc" id="L28">        this.clientRepository = clientRepository;</span>
-<span class="fc" id="L29">    }</span>
+<span class="fc" id="L28">    public ClientProfileController(ClientRepository clientRepository) {</span>
+<span class="fc" id="L29">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L30">    }</span>
 
     /**
      * Retrieves the profile of the authenticated client. Sensitive identity fields (SSN, date of
-     * birth, address) are deliberately left out - this is display data for the signed-in header.
+     * birth, address) are deliberately left out - this is display data for the signed-in header
+     * and the profile page.
      * @return the authenticated client's display profile
      * @throws ResponseStatusException with 404 NOT_FOUND if the token's client no longer exists
      */
     @GetMapping(&quot;/me&quot;)
     public ClientProfileResponse me() {
-<span class="fc" id="L39">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
-<span class="fc" id="L40">        Client client = clientRepository.findById(clientId)</span>
-<span class="fc" id="L41">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
-<span class="fc" id="L42">        return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),</span>
-<span class="fc" id="L43">                client.getExperienceLevel(), client.getStatus());</span>
+<span class="fc" id="L41">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L42">        Client client = clientRepository.findById(clientId)</span>
+<span class="pc" id="L43">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
+<span class="fc" id="L44">        return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),</span>
+<span class="fc" id="L45">                client.getExperienceLevel(), client.getStatus(), client.getCreatedAt());</span>
     }
 
     /**
@@ -50,9 +52,10 @@ public class ClientProfileController {
      * @param fullName the client's full name
      * @param experienceLevel the client's investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
      * @param status the client's account status
+     * @param createdAt the timestamp when the client's account was created
      */
-<span class="fc" id="L54">    public record ClientProfileResponse(UUID clientId, String email, String fullName,</span>
-                                        String experienceLevel, String status) {
+<span class="fc" id="L57">    public record ClientProfileResponse(UUID clientId, String email, String fullName,</span>
+                                        String experienceLevel, String status, OffsetDateTime createdAt) {
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -69,6 +69,20 @@ public class SeededFillService {
     private final long retrySeconds;
     private final int maxAttempts;
 
+    /**
+     * Constructs a SeededFillService with the required repositories, clients, and execution parameters.
+     * 
+     * @param orderRepository            the repository for querying orders
+     * @param accountRepository          the repository for looking up account details
+     * @param executionRepository        the repository for execution records
+     * @param positionMovementRepository the repository for recording position movements
+     * @param fillRecorder               the fill recorder component for booking fills
+     * @param priceHistoryClient         the client for fetching historical prices
+     * @param jwtService                 the JWT service for authenticating service requests
+     * @param transactionTemplate        the transaction template for executing atomic units of work
+     * @param retrySeconds               the interval in seconds between retry attempts
+     * @param maxAttempts                the maximum number of retry attempts before giving up
+     */
     public SeededFillService(OrderRepository orderRepository,
                              AccountRepository accountRepository,
                              ExecutionRepository executionRepository,
@@ -78,92 +92,95 @@ public class SeededFillService {
                              JwtService jwtService,
                              TransactionTemplate transactionTemplate,
                              @Value(&quot;${trading.seeded-fills.retry-seconds:10}&quot;) long retrySeconds,
-<span class="fc" id="L81">                             @Value(&quot;${trading.seeded-fills.max-attempts:60}&quot;) int maxAttempts) {</span>
-<span class="fc" id="L82">        this.orderRepository = orderRepository;</span>
-<span class="fc" id="L83">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L84">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L85">        this.positionMovementRepository = positionMovementRepository;</span>
-<span class="fc" id="L86">        this.fillRecorder = fillRecorder;</span>
-<span class="fc" id="L87">        this.priceHistoryClient = priceHistoryClient;</span>
-<span class="fc" id="L88">        this.jwtService = jwtService;</span>
-<span class="fc" id="L89">        this.transactionTemplate = transactionTemplate;</span>
-<span class="fc" id="L90">        this.retrySeconds = retrySeconds;</span>
-<span class="fc" id="L91">        this.maxAttempts = maxAttempts;</span>
-<span class="fc" id="L92">    }</span>
+<span class="fc" id="L95">                             @Value(&quot;${trading.seeded-fills.max-attempts:60}&quot;) int maxAttempts) {</span>
+<span class="fc" id="L96">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L97">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L98">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L99">        this.positionMovementRepository = positionMovementRepository;</span>
+<span class="fc" id="L100">        this.fillRecorder = fillRecorder;</span>
+<span class="fc" id="L101">        this.priceHistoryClient = priceHistoryClient;</span>
+<span class="fc" id="L102">        this.jwtService = jwtService;</span>
+<span class="fc" id="L103">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L104">        this.retrySeconds = retrySeconds;</span>
+<span class="fc" id="L105">        this.maxAttempts = maxAttempts;</span>
+<span class="fc" id="L106">    }</span>
 
     /**
      * Starts booking pending seeded fills in the background once the app is ready.
      */
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
-<span class="nc" id="L99">        Thread worker = new Thread(this::bookUntilDone, &quot;seeded-fills&quot;);</span>
-<span class="nc" id="L100">        worker.setDaemon(true);</span>
-<span class="nc" id="L101">        worker.start();</span>
-<span class="nc" id="L102">    }</span>
+<span class="nc" id="L113">        Thread worker = new Thread(this::bookUntilDone, &quot;seeded-fills&quot;);</span>
+<span class="nc" id="L114">        worker.setDaemon(true);</span>
+<span class="nc" id="L115">        worker.start();</span>
+<span class="nc" id="L116">    }</span>
 
+    /**
+     * Loops attempting to book pending seeded fills until all fills are booked or max attempts are exceeded.
+     */
     private void bookUntilDone() {
-<span class="nc bnc" id="L105" title="All 2 branches missed.">        for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {</span>
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {</span>
             int remaining;
             try {
-<span class="nc" id="L108">                remaining = bookPendingFills();</span>
-<span class="nc" id="L109">            } catch (RuntimeException ex) {</span>
-<span class="nc" id="L110">                log.warn(&quot;Booking seeded fills failed (attempt {}/{}): {}&quot;, attempt, maxAttempts, ex.getMessage());</span>
-<span class="nc" id="L111">                remaining = -1;</span>
-<span class="nc" id="L112">            }</span>
-<span class="nc bnc" id="L113" title="All 2 branches missed.">            if (remaining == 0) {</span>
-<span class="nc" id="L114">                return;</span>
+<span class="nc" id="L125">                remaining = bookPendingFills();</span>
+<span class="nc" id="L126">            } catch (RuntimeException ex) {</span>
+<span class="nc" id="L127">                log.warn(&quot;Booking seeded fills failed (attempt {}/{}): {}&quot;, attempt, maxAttempts, ex.getMessage());</span>
+<span class="nc" id="L128">                remaining = -1;</span>
+<span class="nc" id="L129">            }</span>
+<span class="nc bnc" id="L130" title="All 2 branches missed.">            if (remaining == 0) {</span>
+<span class="nc" id="L131">                return;</span>
             }
             try {
-<span class="nc" id="L117">                Thread.sleep(retrySeconds * 1000);</span>
-<span class="nc" id="L118">            } catch (InterruptedException ex) {</span>
-<span class="nc" id="L119">                Thread.currentThread().interrupt();</span>
-<span class="nc" id="L120">                return;</span>
-<span class="nc" id="L121">            }</span>
+<span class="nc" id="L134">                Thread.sleep(retrySeconds * 1000);</span>
+<span class="nc" id="L135">            } catch (InterruptedException ex) {</span>
+<span class="nc" id="L136">                Thread.currentThread().interrupt();</span>
+<span class="nc" id="L137">                return;</span>
+<span class="nc" id="L138">            }</span>
         }
-<span class="nc" id="L123">        log.warn(&quot;Gave up booking seeded fills after {} attempts; they will be retried on the next start&quot;,</span>
-<span class="nc" id="L124">                maxAttempts);</span>
-<span class="nc" id="L125">    }</span>
+<span class="nc" id="L140">        log.warn(&quot;Gave up booking seeded fills after {} attempts; they will be retried on the next start&quot;,</span>
+<span class="nc" id="L141">                maxAttempts);</span>
+<span class="nc" id="L142">    }</span>
 
     /**
      * Books every pending fill that market data can price now, in fill-time order.
      * @return how many pending fills are still unbooked
      */
     int bookPendingFills() {
-<span class="fc" id="L132">        List&lt;Order&gt; pending = orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED);</span>
+<span class="fc" id="L149">        List&lt;Order&gt; pending = orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED);</span>
         // A holding's average cost depends on the order of its fills, so once one fill for an
         // account/instrument can't be priced yet, its later fills wait for it.
-<span class="fc" id="L135">        Set&lt;String&gt; blocked = new HashSet&lt;&gt;();</span>
-<span class="fc" id="L136">        int booked = 0;</span>
-<span class="fc bfc" id="L137" title="All 2 branches covered.">        for (Order order : pending) {</span>
-<span class="fc" id="L138">            String holding = order.getAccountId() + &quot;/&quot; + order.getInstrument().getInstrumentId();</span>
-<span class="fc bfc" id="L139" title="All 2 branches covered.">            if (blocked.contains(holding)) {</span>
-<span class="fc" id="L140">                continue;</span>
+<span class="fc" id="L152">        Set&lt;String&gt; blocked = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L153">        int booked = 0;</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        for (Order order : pending) {</span>
+<span class="fc" id="L155">            String holding = order.getAccountId() + &quot;/&quot; + order.getInstrument().getInstrumentId();</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">            if (blocked.contains(holding)) {</span>
+<span class="fc" id="L157">                continue;</span>
             }
-<span class="pc bpc" id="L142" title="1 of 2 branches missed.">            Optional&lt;BigDecimal&gt; price = order.getFilledAt() == null ? Optional.empty() : priceAt(order);</span>
-<span class="fc bfc" id="L143" title="All 2 branches covered.">            if (price.isEmpty()) {</span>
-<span class="fc" id="L144">                blocked.add(holding);</span>
-<span class="fc" id="L145">                continue;</span>
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">            Optional&lt;BigDecimal&gt; price = order.getFilledAt() == null ? Optional.empty() : priceAt(order);</span>
+<span class="fc bfc" id="L160" title="All 2 branches covered.">            if (price.isEmpty()) {</span>
+<span class="fc" id="L161">                blocked.add(holding);</span>
+<span class="fc" id="L162">                continue;</span>
             }
             try {
-<span class="fc bfc" id="L148" title="All 2 branches covered.">                if (book(order, price.get())) {</span>
-<span class="fc" id="L149">                    booked++;</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">                if (book(order, price.get())) {</span>
+<span class="fc" id="L166">                    booked++;</span>
                 }
-<span class="fc" id="L151">            } catch (RuntimeException ex) {</span>
+<span class="fc" id="L168">            } catch (RuntimeException ex) {</span>
                 // e.g. a seeded sell with no holding to settle against (LLL-133). The fill stays
                 // pending and is retried on the next pass; hold back this holding's later fills
                 // and carry on with the rest.
-<span class="fc" id="L155">                log.warn(&quot;Could not book seeded fill for order {}: {}&quot;, order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L156">                blocked.add(holding);</span>
-<span class="fc" id="L157">            }</span>
-<span class="fc" id="L158">        }</span>
-<span class="fc" id="L159">        int remaining = pending.size() - booked;</span>
-<span class="fc bfc" id="L160" title="All 2 branches covered.">        if (booked &gt; 0) {</span>
-<span class="fc" id="L161">            log.info(&quot;Booked {} seeded fill(s) at market data prices&quot;, booked);</span>
+<span class="fc" id="L172">                log.warn(&quot;Could not book seeded fill for order {}: {}&quot;, order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L173">                blocked.add(holding);</span>
+<span class="fc" id="L174">            }</span>
+<span class="fc" id="L175">        }</span>
+<span class="fc" id="L176">        int remaining = pending.size() - booked;</span>
+<span class="fc bfc" id="L177" title="All 2 branches covered.">        if (booked &gt; 0) {</span>
+<span class="fc" id="L178">            log.info(&quot;Booked {} seeded fill(s) at market data prices&quot;, booked);</span>
         }
-<span class="fc bfc" id="L163" title="All 2 branches covered.">        if (remaining &gt; 0) {</span>
-<span class="fc" id="L164">            log.info(&quot;{} seeded fill(s) waiting for market data price history&quot;, remaining);</span>
+<span class="fc bfc" id="L180" title="All 2 branches covered.">        if (remaining &gt; 0) {</span>
+<span class="fc" id="L181">            log.info(&quot;{} seeded fill(s) waiting for market data price history&quot;, remaining);</span>
         }
-<span class="fc" id="L166">        return remaining;</span>
+<span class="fc" id="L183">        return remaining;</span>
     }
 
     /**
@@ -172,32 +189,32 @@ public class SeededFillService {
      * here and settled with that same execution, which account-app settles only once.
      */
     private boolean book(Order order, BigDecimal price) {
-<span class="fc" id="L175">        Execution execution = transactionTemplate.execute(status -&gt; {</span>
-<span class="fc" id="L176">            Optional&lt;Order&gt; locked = orderRepository.findByIdForUpdate(order.getOrderId());</span>
+<span class="fc" id="L192">        Execution execution = transactionTemplate.execute(status -&gt; {</span>
+<span class="fc" id="L193">            Optional&lt;Order&gt; locked = orderRepository.findByIdForUpdate(order.getOrderId());</span>
             // Another instance may have booked it between the query and the lock.
-<span class="pc bpc" id="L178" title="1 of 4 branches missed.">            if (locked.isEmpty() || positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
-<span class="fc" id="L179">                return null;</span>
+<span class="pc bpc" id="L195" title="1 of 4 branches missed.">            if (locked.isEmpty() || positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
+<span class="fc" id="L196">                return null;</span>
             }
-<span class="fc" id="L181">            return executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED)</span>
-<span class="fc" id="L182">                    .orElseGet(() -&gt; fillRecorder.recordExecution(locked.get(), price, locked.get().getFilledAt()));</span>
+<span class="fc" id="L198">            return executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED)</span>
+<span class="fc" id="L199">                    .orElseGet(() -&gt; fillRecorder.recordExecution(locked.get(), price, locked.get().getFilledAt()));</span>
         });
-<span class="fc bfc" id="L184" title="All 2 branches covered.">        if (execution == null) {</span>
-<span class="fc" id="L185">            return false;</span>
+<span class="fc bfc" id="L201" title="All 2 branches covered.">        if (execution == null) {</span>
+<span class="fc" id="L202">            return false;</span>
         }
 
-        // no request is behind this, so there is no caller's token to forward; sign as the order's
+        // Session Timeout &amp; Revocation: use a restricted settlement token for the order's
         // owner, whose request this fill would have been.
-<span class="fc" id="L190">        fillRecorder.settle(order, execution, jwtService.generateToken(getClientId(order), null));</span>
+<span class="fc" id="L207">        fillRecorder.settle(order, execution, jwtService.generateSettlementToken(getClientId(order)));</span>
 
-<span class="fc" id="L192">        Boolean booked = transactionTemplate.execute(status -&gt; {</span>
-<span class="fc" id="L193">            orderRepository.findByIdForUpdate(order.getOrderId());</span>
-<span class="pc bpc" id="L194" title="1 of 2 branches missed.">            if (positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
-<span class="nc" id="L195">                return false;</span>
+<span class="fc" id="L209">        Boolean booked = transactionTemplate.execute(status -&gt; {</span>
+<span class="fc" id="L210">            orderRepository.findByIdForUpdate(order.getOrderId());</span>
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">            if (positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
+<span class="nc" id="L212">                return false;</span>
             }
-<span class="fc" id="L197">            fillRecorder.recordPositionMovement(order, execution);</span>
-<span class="fc" id="L198">            return true;</span>
+<span class="fc" id="L214">            fillRecorder.recordPositionMovement(order, execution);</span>
+<span class="fc" id="L215">            return true;</span>
         });
-<span class="fc" id="L200">        return Boolean.TRUE.equals(booked);</span>
+<span class="fc" id="L217">        return Boolean.TRUE.equals(booked);</span>
     }
 
     /**
@@ -207,33 +224,40 @@ public class SeededFillService {
      * @return the fill price, or empty if market data has no history covering the fill yet
      */
     private Optional&lt;BigDecimal&gt; priceAt(Order order) {
-<span class="fc" id="L210">        OffsetDateTime filledAt = order.getFilledAt();</span>
-<span class="fc" id="L211">        String symbol = order.getInstrument().getSymbol();</span>
-        // market data only needs a valid token; sign it as the order's owner, whose request
+<span class="fc" id="L227">        OffsetDateTime filledAt = order.getFilledAt();</span>
+<span class="fc" id="L228">        String symbol = order.getInstrument().getSymbol();</span>
+        // Session Timeout &amp; Revocation: historical pricing uses a restricted backend token;
         // this fill would have been.
-<span class="fc" id="L214">        String token = jwtService.generateToken(getClientId(order), null);</span>
+        // Session Timeout &amp; Revocation: only the historical price endpoint accepts this token.
+<span class="fc" id="L232">        String token = jwtService.generateHistoryToken(getClientId(order));</span>
         try {
-<span class="fc bfc" id="L216" title="All 2 branches covered.">            for (int width : CANDLE_WIDTHS) {</span>
-<span class="fc" id="L217">                List&lt;CandleClose&gt; closes = priceHistoryClient.fetchCloses(</span>
-<span class="fc" id="L218">                        symbol, filledAt.minusSeconds(2L * width), filledAt, width, token);</span>
-<span class="fc" id="L219">                Optional&lt;BigDecimal&gt; close = closes.stream()</span>
-<span class="fc bfc" id="L220" title="All 2 branches covered.">                        .filter(candle -&gt; !candle.bucketStart().plusSeconds(width).isAfter(filledAt))</span>
-<span class="fc" id="L221">                        .reduce((earlier, later) -&gt; later)</span>
-<span class="fc" id="L222">                        .map(CandleClose::close);</span>
-<span class="fc bfc" id="L223" title="All 2 branches covered.">                if (close.isPresent()) {</span>
-<span class="fc" id="L224">                    return close.map(value -&gt; value.setScale(PRICE_SCALE, RoundingMode.HALF_UP));</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">            for (int width : CANDLE_WIDTHS) {</span>
+<span class="fc" id="L235">                List&lt;CandleClose&gt; closes = priceHistoryClient.fetchCloses(</span>
+<span class="fc" id="L236">                        symbol, filledAt.minusSeconds(2L * width), filledAt, width, token);</span>
+<span class="fc" id="L237">                Optional&lt;BigDecimal&gt; close = closes.stream()</span>
+<span class="fc bfc" id="L238" title="All 2 branches covered.">                        .filter(candle -&gt; !candle.bucketStart().plusSeconds(width).isAfter(filledAt))</span>
+<span class="fc" id="L239">                        .reduce((earlier, later) -&gt; later)</span>
+<span class="fc" id="L240">                        .map(CandleClose::close);</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">                if (close.isPresent()) {</span>
+<span class="fc" id="L242">                    return close.map(value -&gt; value.setScale(PRICE_SCALE, RoundingMode.HALF_UP));</span>
                 }
             }
-<span class="fc" id="L227">        } catch (QuoteUnavailableException ex) {</span>
-<span class="fc" id="L228">            log.debug(&quot;Market data unavailable pricing seeded fill for {}: {}&quot;, symbol, ex.getMessage());</span>
-<span class="fc" id="L229">        }</span>
-<span class="fc" id="L230">        return Optional.empty();</span>
+<span class="fc" id="L245">        } catch (QuoteUnavailableException ex) {</span>
+<span class="fc" id="L246">            log.debug(&quot;Market data unavailable pricing seeded fill for {}: {}&quot;, symbol, ex.getMessage());</span>
+<span class="fc" id="L247">        }</span>
+<span class="fc" id="L248">        return Optional.empty();</span>
     }
 
+    /**
+     * Resolves the client ID associated with an order's account.
+     * 
+     * @param order the order whose client ID is to be looked up
+     * @return the associated client UUID
+     */
     private UUID getClientId(Order order) {
-<span class="fc" id="L234">        return accountRepository.findById(order.getAccountId())</span>
-<span class="fc" id="L235">                .map(Account::getClientId)</span>
-<span class="pc" id="L236">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
+<span class="fc" id="L258">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L259">                .map(Account::getClientId)</span>
+<span class="pc" id="L260">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

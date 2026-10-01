@@ -30,9 +30,12 @@ public record OrderHistoryItem(
         OffsetDateTime filledAt,
         List&lt;ExecutionItem&gt; executions
 ) { 
-<span class="fc" id="L33">    public OrderHistoryItem {</span>
-<span class="pc bpc" id="L34" title="1 of 2 branches missed.">        executions = executions != null ? List.copyOf(executions) : List.of();</span>
-<span class="fc" id="L35">    }</span>
+    /**
+     * Compact constructor ensuring an unmodifiable list of executions.
+     */
+<span class="fc" id="L36">    public OrderHistoryItem {</span>
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">        executions = executions != null ? List.copyOf(executions) : List.of();</span>
+<span class="fc" id="L38">    }</span>
 
     /**
      * Returns the first execution associated with the order, if any.
@@ -40,7 +43,7 @@ public record OrderHistoryItem(
      */
     @JsonProperty(&quot;execution&quot;)
     public ExecutionItem execution() {
-<span class="fc bfc" id="L43" title="All 2 branches covered.">        return executions.isEmpty() ? null : executions.get(0);</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">        return executions.isEmpty() ? null : executions.get(0);</span>
     }
 }
 

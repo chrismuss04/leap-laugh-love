@@ -7,30 +7,37 @@ import java.util.random.RandomGenerator;
  */
 public final class GbmPriceGenerator {
 
+    /**
+     * Constructs a new GbmPriceGenerator.
+     */
     private GbmPriceGenerator() {
     }
 
     /**
      * Computes one discretized step of Geometric Brownian Motion:
-     * next = prev * exp((drift - volatility^2 / 2) * dt + volatility * sqrt(dt) * Z), Z ~ N(0,1).
+     * next = prev * exp((drift - volatility^2 / 2) * dt + volatility * sqrt(dt) *
+     * Z), Z ~ N(0,1).
+     * 
      * @param previousPrice the price at the start of the step; must be positive
-     * @param drift the annualized drift
-     * @param volatility the annualized volatility
-     * @param dt the time step, in years; must be positive
-     * @param random the random generator used to draw the standard normal shock
+     * @param drift         the annualized drift
+     * @param volatility    the annualized volatility
+     * @param dt            the time step, in years; must be positive
+     * @param random        the random generator used to draw the standard normal
+     *                      shock
      * @return the simulated price after the step
      * @throws IllegalArgumentException if previousPrice or dt is not positive
      */
-    public static double nextPrice(double previousPrice, double drift, double volatility, double dt, RandomGenerator random) {
-<span class="fc bfc" id="L25" title="All 2 branches covered.">        if (previousPrice &lt;= 0) {</span>
-<span class="fc" id="L26">            throw new IllegalArgumentException(&quot;previousPrice must be positive&quot;);</span>
+    public static double nextPrice(double previousPrice, double drift, double volatility, double dt,
+            RandomGenerator random) {
+<span class="fc bfc" id="L32" title="All 2 branches covered.">        if (previousPrice &lt;= 0) {</span>
+<span class="fc" id="L33">            throw new IllegalArgumentException(&quot;previousPrice must be positive&quot;);</span>
         }
-<span class="fc bfc" id="L28" title="All 2 branches covered.">        if (dt &lt;= 0) {</span>
-<span class="fc" id="L29">            throw new IllegalArgumentException(&quot;dt must be positive&quot;);</span>
+<span class="fc bfc" id="L35" title="All 2 branches covered.">        if (dt &lt;= 0) {</span>
+<span class="fc" id="L36">            throw new IllegalArgumentException(&quot;dt must be positive&quot;);</span>
         }
-<span class="fc" id="L31">        double z = random.nextGaussian();</span>
-<span class="fc" id="L32">        double exponent = (drift - 0.5 * volatility * volatility) * dt + volatility * Math.sqrt(dt) * z;</span>
-<span class="fc" id="L33">        return previousPrice * Math.exp(exponent);</span>
+<span class="fc" id="L38">        double z = random.nextGaussian();</span>
+<span class="fc" id="L39">        double exponent = (drift - 0.5 * volatility * volatility) * dt + volatility * Math.sqrt(dt) * z;</span>
+<span class="fc" id="L40">        return previousPrice * Math.exp(exponent);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -50,21 +50,32 @@ public class PendingFillRecovery {
     private final TransactionTemplate transactionTemplate;
     private final long graceSeconds;
 
+    /**
+     * Constructs a PendingFillRecovery instance with the necessary repositories, services, and recovery configuration.
+     * 
+     * @param orderRepository     the repository for accessing order data
+     * @param executionRepository the repository for checking existing executions
+     * @param accountRepository   the repository for retrieving account ownership details
+     * @param fillRecorder        the fill recorder for booking recovered executions
+     * @param jwtService          the JWT service for generating system service tokens
+     * @param transactionTemplate the transaction template for managing atomic recovery units
+     * @param graceSeconds        the grace period in seconds before a pending order is considered orphaned
+     */
     public PendingFillRecovery(OrderRepository orderRepository,
                                ExecutionRepository executionRepository,
                                AccountRepository accountRepository,
                                FillRecorder fillRecorder,
                                JwtService jwtService,
                                TransactionTemplate transactionTemplate,
-<span class="fc" id="L59">                               @Value(&quot;${trading.fill-recovery.grace-seconds:30}&quot;) long graceSeconds) {</span>
-<span class="fc" id="L60">        this.orderRepository = orderRepository;</span>
-<span class="fc" id="L61">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L62">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L63">        this.fillRecorder = fillRecorder;</span>
-<span class="fc" id="L64">        this.jwtService = jwtService;</span>
-<span class="fc" id="L65">        this.transactionTemplate = transactionTemplate;</span>
-<span class="fc" id="L66">        this.graceSeconds = graceSeconds;</span>
-<span class="fc" id="L67">    }</span>
+<span class="fc" id="L70">                               @Value(&quot;${trading.fill-recovery.grace-seconds:30}&quot;) long graceSeconds) {</span>
+<span class="fc" id="L71">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L72">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L73">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L74">        this.fillRecorder = fillRecorder;</span>
+<span class="fc" id="L75">        this.jwtService = jwtService;</span>
+<span class="fc" id="L76">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L77">        this.graceSeconds = graceSeconds;</span>
+<span class="fc" id="L78">    }</span>
 
     /**
      * Scheduled entry point; never throws, so one bad run doesn't stop later ones.
@@ -73,30 +84,30 @@ public class PendingFillRecovery {
                fixedDelayString = &quot;${trading.fill-recovery.interval-ms:30000}&quot;)
     public void run() {
         try {
-<span class="fc" id="L76">            recoverPendingFills();</span>
-<span class="nc" id="L77">        } catch (RuntimeException ex) {</span>
-<span class="nc" id="L78">            log.warn(&quot;Recovering pending fills failed: {}&quot;, ex.getMessage());</span>
-<span class="fc" id="L79">        }</span>
-<span class="fc" id="L80">    }</span>
+<span class="fc" id="L87">            recoverPendingFills();</span>
+<span class="nc" id="L88">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L89">            log.warn(&quot;Recovering pending fills failed: {}&quot;, ex.getMessage());</span>
+<span class="fc" id="L90">        }</span>
+<span class="fc" id="L91">    }</span>
 
     /**
      * Settles and finishes every live fill left part-way that is older than the grace period.
      * @return how many stuck fills are still unresolved after this run
      */
     int recoverPendingFills() {
-<span class="fc" id="L87">        List&lt;Order&gt; pending = orderRepository.findAcceptedWithFilledExecution(</span>
-<span class="fc" id="L88">                OffsetDateTime.now().minusSeconds(graceSeconds));</span>
-<span class="fc" id="L89">        int unresolved = 0;</span>
-<span class="fc bfc" id="L90" title="All 2 branches covered.">        for (Order order : pending) {</span>
-<span class="fc bfc" id="L91" title="All 2 branches covered.">            if (!recover(order)) {</span>
-<span class="fc" id="L92">                unresolved++;</span>
+<span class="fc" id="L98">        List&lt;Order&gt; pending = orderRepository.findAcceptedWithFilledExecution(</span>
+<span class="fc" id="L99">                OffsetDateTime.now().minusSeconds(graceSeconds));</span>
+<span class="fc" id="L100">        int unresolved = 0;</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        for (Order order : pending) {</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">            if (!recover(order)) {</span>
+<span class="fc" id="L103">                unresolved++;</span>
             }
-<span class="fc" id="L94">        }</span>
-<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (!pending.isEmpty()) {</span>
-<span class="fc" id="L96">            log.info(&quot;Recovered {} of {} fill(s) left part-way by a platform failure&quot;,</span>
-<span class="fc" id="L97">                    pending.size() - unresolved, pending.size());</span>
+<span class="fc" id="L105">        }</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        if (!pending.isEmpty()) {</span>
+<span class="fc" id="L107">            log.info(&quot;Recovered {} of {} fill(s) left part-way by a platform failure&quot;,</span>
+<span class="fc" id="L108">                    pending.size() - unresolved, pending.size());</span>
         }
-<span class="fc" id="L99">        return unresolved;</span>
+<span class="fc" id="L110">        return unresolved;</span>
     }
 
     /**
@@ -105,36 +116,36 @@ public class PendingFillRecovery {
      * @return true if the order is now FILLED or REJECTED, false if it is still pending
      */
     private boolean recover(Order order) {
-<span class="fc" id="L108">        Optional&lt;Execution&gt; filled = executionRepository.findFirstByOrder_OrderIdAndStatus(</span>
-<span class="fc" id="L109">                order.getOrderId(), Execution.Status.FILLED);</span>
-<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        if (filled.isEmpty()) {</span>
-<span class="nc" id="L111">            return true;</span>
+<span class="fc" id="L119">        Optional&lt;Execution&gt; filled = executionRepository.findFirstByOrder_OrderIdAndStatus(</span>
+<span class="fc" id="L120">                order.getOrderId(), Execution.Status.FILLED);</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">        if (filled.isEmpty()) {</span>
+<span class="nc" id="L122">            return true;</span>
         }
-<span class="fc" id="L113">        Execution execution = filled.get();</span>
+<span class="fc" id="L124">        Execution execution = filled.get();</span>
 
         try {
             // No request is behind this, so there is no caller's token to forward; sign as the
             // order's owner, whose request this fill was.
-<span class="fc" id="L118">            fillRecorder.settle(order, execution, jwtService.generateToken(clientIdOf(order), null));</span>
-<span class="fc" id="L119">        } catch (RuntimeException ex) {</span>
-<span class="fc bfc" id="L120" title="All 2 branches covered.">            if (!FillRecorder.isRefused(ex)) {</span>
-<span class="fc" id="L121">                log.warn(&quot;Order {} is still waiting to settle; will retry: {}&quot;, order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L122">                return false;</span>
+<span class="fc" id="L129">            fillRecorder.settle(order, execution, jwtService.generateSettlementToken(clientIdOf(order)));</span>
+<span class="fc" id="L130">        } catch (RuntimeException ex) {</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">            if (!FillRecorder.isRefused(ex)) {</span>
+<span class="fc" id="L132">                log.warn(&quot;Order {} is still waiting to settle; will retry: {}&quot;, order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L133">                return false;</span>
             }
-<span class="fc" id="L124">            String reason = &quot;Settlement failed: &quot; + FillRecorder.refusalReason(ex);</span>
-<span class="fc" id="L125">            transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
-<span class="pc bpc" id="L126" title="1 of 2 branches missed.">                    .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
-<span class="fc" id="L127">                    .ifPresent(locked -&gt; locked.markRejected(reason, OffsetDateTime.now())));</span>
-<span class="fc" id="L128">            log.warn(&quot;Order {} was refused by account-app on recovery and is now REJECTED: {}&quot;,</span>
-<span class="fc" id="L129">                    order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L130">            return true;</span>
-<span class="fc" id="L131">        }</span>
+<span class="fc" id="L135">            String reason = &quot;Settlement failed: &quot; + FillRecorder.refusalReason(ex);</span>
+<span class="fc" id="L136">            transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc bpc" id="L137" title="1 of 2 branches missed.">                    .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
+<span class="fc" id="L138">                    .ifPresent(locked -&gt; locked.markRejected(reason, OffsetDateTime.now())));</span>
+<span class="fc" id="L139">            log.warn(&quot;Order {} was refused by account-app on recovery and is now REJECTED: {}&quot;,</span>
+<span class="fc" id="L140">                    order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L141">            return true;</span>
+<span class="fc" id="L142">        }</span>
 
-<span class="fc" id="L133">        transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
-<span class="pc bpc" id="L134" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
-<span class="fc" id="L135">                .ifPresent(locked -&gt; fillRecorder.completeFill(locked, execution)));</span>
-<span class="fc" id="L136">        log.info(&quot;Order {} settled and recorded as FILLED on recovery&quot;, order.getOrderId());</span>
-<span class="fc" id="L137">        return true;</span>
+<span class="fc" id="L144">        transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.ACCEPTED)</span>
+<span class="fc" id="L146">                .ifPresent(locked -&gt; fillRecorder.completeFill(locked, execution)));</span>
+<span class="fc" id="L147">        log.info(&quot;Order {} settled and recorded as FILLED on recovery&quot;, order.getOrderId());</span>
+<span class="fc" id="L148">        return true;</span>
     }
 
     /**
@@ -144,9 +155,9 @@ public class PendingFillRecovery {
      * @return its account's client ID
      */
     private UUID clientIdOf(Order order) {
-<span class="fc" id="L147">        return accountRepository.findById(order.getAccountId())</span>
-<span class="fc" id="L148">                .map(Account::getClientId)</span>
-<span class="pc" id="L149">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
+<span class="fc" id="L158">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L159">                .map(Account::getClientId)</span>
+<span class="pc" id="L160">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

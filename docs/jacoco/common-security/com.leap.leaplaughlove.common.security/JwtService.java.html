@@ -57,12 +57,61 @@ public class JwtService {
 <span class="fc" id="L57">                .compact();</span>
     }
 
+    // Session Timeout &amp; Revocation: use the same timestamps as the persisted login session.
+    public String generateToken(UUID clientId, String email, UUID sessionId,
+                                Instant issuedAt, Instant expiresAt) {
+<span class="pc bpc" id="L63" title="2 of 4 branches missed.">        if (sessionId == null || !expiresAt.isAfter(issuedAt)) {</span>
+<span class="nc" id="L64">            throw new IllegalArgumentException(&quot;A session ID and valid expiration are required&quot;);</span>
+        }
+<span class="fc" id="L66">        return Jwts.builder()</span>
+<span class="fc" id="L67">                .subject(clientId.toString())</span>
+<span class="fc" id="L68">                .claim(&quot;email&quot;, email)</span>
+<span class="fc" id="L69">                .claim(&quot;sid&quot;, sessionId.toString())</span>
+<span class="fc" id="L70">                .issuedAt(Date.from(issuedAt))</span>
+<span class="fc" id="L71">                .expiration(Date.from(expiresAt))</span>
+<span class="fc" id="L72">                .signWith(signingKey)</span>
+<span class="fc" id="L73">                .compact();</span>
+    }
+
+    // Session Timeout &amp; Revocation: background recovery uses short-lived, purpose-scoped tokens.
+    public String generateSettlementToken(UUID clientId) {
+<span class="fc" id="L78">        return generateServiceToken(clientId, &quot;account-settlement&quot;);</span>
+    }
+
+    // Session Timeout &amp; Revocation: historical seeding can read prices, but not client APIs.
+    public String generateHistoryToken(UUID clientId) {
+<span class="nc" id="L83">        return generateServiceToken(clientId, &quot;market-history&quot;);</span>
+    }
+
+    private String generateServiceToken(UUID clientId, String purpose) {
+<span class="fc" id="L87">        Instant now = Instant.now();</span>
+<span class="fc" id="L88">        return Jwts.builder().subject(clientId.toString())</span>
+<span class="fc" id="L89">                .claim(&quot;purpose&quot;, purpose)</span>
+<span class="fc" id="L90">                .issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(60)))</span>
+<span class="fc" id="L91">                .signWith(signingKey).compact();</span>
+    }
+
+    // Session Timeout &amp; Revocation: parse verified claims once, preserving the session identity.
+<span class="fc" id="L95">    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {}</span>
+
+    public TokenIdentity parseIdentity(String token) {
+<span class="fc" id="L98">        Claims claims = Jwts.parser().verifyWith(signingKey).build()</span>
+<span class="fc" id="L99">                .parseSignedClaims(token).getPayload();</span>
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        if (claims.getExpiration() == null) {</span>
+<span class="nc" id="L101">            throw new IllegalArgumentException(&quot;Token expiration is required&quot;);</span>
+        }
+<span class="fc" id="L103">        String sessionId = claims.get(&quot;sid&quot;, String.class);</span>
+<span class="fc" id="L104">        return new TokenIdentity(UUID.fromString(claims.getSubject()),</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">                sessionId == null ? null : UUID.fromString(sessionId),</span>
+<span class="fc" id="L106">                claims.getExpiration().toInstant(), claims.get(&quot;purpose&quot;, String.class));</span>
+    }
+
     /**
      * Gets the expiration time of the JWT token in seconds.
      * @return expiration time in seconds
      */
     public long getExpirationSeconds() {
-<span class="fc" id="L65">        return expirationMinutes * 60;</span>
+<span class="fc" id="L114">        return expirationMinutes * 60;</span>
     }
 
     /**
@@ -71,12 +120,12 @@ public class JwtService {
      * @return the clientId extracted from the token
      */
     public UUID parseAndValidate(String token) {
-<span class="fc" id="L74">        Claims claims = Jwts.parser()</span>
-<span class="fc" id="L75">                .verifyWith(signingKey)</span>
-<span class="fc" id="L76">                .build()</span>
-<span class="fc" id="L77">                .parseSignedClaims(token)</span>
-<span class="fc" id="L78">                .getPayload();</span>
-<span class="fc" id="L79">        return UUID.fromString(claims.getSubject());</span>
+<span class="fc" id="L123">        Claims claims = Jwts.parser()</span>
+<span class="fc" id="L124">                .verifyWith(signingKey)</span>
+<span class="fc" id="L125">                .build()</span>
+<span class="fc" id="L126">                .parseSignedClaims(token)</span>
+<span class="fc" id="L127">                .getPayload();</span>
+<span class="fc" id="L128">        return UUID.fromString(claims.getSubject());</span>
     }
 }
 

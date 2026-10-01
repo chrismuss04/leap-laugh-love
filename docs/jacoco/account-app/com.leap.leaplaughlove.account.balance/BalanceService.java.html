@@ -20,7 +20,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Service for handling balance-related operations such as retrieving account balances, performing deposits, and executing withdrawals.
+ * Service for handling balance-related operations such as retrieving account
+ * balances, performing deposits, and executing withdrawals.
  */
 @Service
 public class BalanceService {
@@ -34,165 +35,188 @@ public class BalanceService {
     private final AccountAuthorizationService accountAuthorizationService;
 
     /**
-     * Constructs a new BalanceService with the injected repositories and authorization service.
-     * @param accountRepository the repository for accessing account data
-     * @param cashLedgerRepository the repository for accessing cash ledger entries
-     * @param accountAuthorizationService the service for handling account authorization
+     * Constructs a new BalanceService with the injected repositories and
+     * authorization service.
+     * 
+     * @param accountRepository           the repository for accessing account data
+     * @param cashLedgerRepository        the repository for accessing cash ledger
+     *                                    entries
+     * @param accountAuthorizationService the service for handling account
+     *                                    authorization
      */
     @Autowired
     public BalanceService(AccountRepository accountRepository,
-                          CashLedgerRepository cashLedgerRepository,
-<span class="fc" id="L45">                          AccountAuthorizationService accountAuthorizationService) {</span>
-<span class="fc" id="L46">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L47">        this.cashLedgerRepository = cashLedgerRepository;</span>
-<span class="fc bfc" id="L48" title="All 2 branches covered.">        this.accountAuthorizationService = accountAuthorizationService != null</span>
-<span class="fc" id="L49">                ? accountAuthorizationService</span>
-<span class="fc" id="L50">                : new AccountAuthorizationService(accountRepository);</span>
-<span class="fc" id="L51">    }</span>
+            CashLedgerRepository cashLedgerRepository,
+<span class="fc" id="L50">            AccountAuthorizationService accountAuthorizationService) {</span>
+<span class="fc" id="L51">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L52">        this.cashLedgerRepository = cashLedgerRepository;</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        this.accountAuthorizationService = accountAuthorizationService != null</span>
+<span class="fc" id="L54">                ? accountAuthorizationService</span>
+<span class="fc" id="L55">                : new AccountAuthorizationService(accountRepository);</span>
+<span class="fc" id="L56">    }</span>
 
+    /**
+     * Overloaded BalanceService constructor without auth service
+     * 
+     * @param accountRepository
+     * @param cashLedgerRepository
+     */
     public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
-<span class="nc" id="L54">        this(accountRepository, cashLedgerRepository, new AccountAuthorizationService(accountRepository));</span>
-<span class="nc" id="L55">    }</span>
+<span class="nc" id="L65">        this(accountRepository, cashLedgerRepository, new AccountAuthorizationService(accountRepository));</span>
+<span class="nc" id="L66">    }</span>
 
     /**
      * Retrieves the balance information for the authenticated client.
-     * @return a BalanceResponse containing the individual account balances and the total balance by currency
+     * 
+     * @return a BalanceResponse containing the individual account balances and the
+     *         total balance by currency
      */
     public BalanceResponse getBalanceForClient() {
-<span class="fc" id="L62">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
-<span class="fc" id="L63">        List&lt;Account&gt; accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);</span>
-<span class="fc" id="L64">        List&lt;UUID&gt; accountIds = accounts.stream().map(Account::getAccountId).toList();</span>
+<span class="fc" id="L75">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L76">        List&lt;Account&gt; accounts = accountRepository.findByClientIdAndStatus(clientId, ACTIVE_STATUS);</span>
+<span class="fc" id="L77">        List&lt;UUID&gt; accountIds = accounts.stream().map(Account::getAccountId).toList();</span>
 
-<span class="pc bpc" id="L66" title="1 of 2 branches missed.">        Map&lt;AccountCurrencyKey, BigDecimal&gt; totalsByAccountAndCurrency = accountIds.isEmpty()</span>
-<span class="nc" id="L67">                ? Map.of()</span>
-<span class="fc" id="L68">                : cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()</span>
-<span class="fc" id="L69">                        .collect(Collectors.toMap(</span>
-<span class="fc" id="L70">                                total -&gt; new AccountCurrencyKey(total.getAccountId(), total.getCurrency()),</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        Map&lt;AccountCurrencyKey, BigDecimal&gt; totalsByAccountAndCurrency = accountIds.isEmpty()</span>
+<span class="nc" id="L80">                ? Map.of()</span>
+<span class="fc" id="L81">                : cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()</span>
+<span class="fc" id="L82">                        .collect(Collectors.toMap(</span>
+<span class="fc" id="L83">                                total -&gt; new AccountCurrencyKey(total.getAccountId(), total.getCurrency()),</span>
                                 CashLedgerRepository.AccountTotal::getTotal));
 
-<span class="fc" id="L73">        List&lt;AccountBalance&gt; balances = accounts.stream()</span>
-<span class="fc" id="L74">                .map(account -&gt; new AccountBalance(</span>
-<span class="fc" id="L75">                        account.getAccountId(),</span>
-<span class="fc" id="L76">                        account.getAccountNumber(),</span>
-<span class="fc" id="L77">                        account.getBaseCurrency(),</span>
-<span class="fc" id="L78">                        totalsByAccountAndCurrency.getOrDefault(</span>
-<span class="fc" id="L79">                                new AccountCurrencyKey(account.getAccountId(), account.getBaseCurrency()),</span>
+<span class="fc" id="L86">        List&lt;AccountBalance&gt; balances = accounts.stream()</span>
+<span class="fc" id="L87">                .map(account -&gt; new AccountBalance(</span>
+<span class="fc" id="L88">                        account.getAccountId(),</span>
+<span class="fc" id="L89">                        account.getAccountNumber(),</span>
+<span class="fc" id="L90">                        account.getBaseCurrency(),</span>
+<span class="fc" id="L91">                        totalsByAccountAndCurrency.getOrDefault(</span>
+<span class="fc" id="L92">                                new AccountCurrencyKey(account.getAccountId(), account.getBaseCurrency()),</span>
                                 BigDecimal.ZERO)))
-<span class="fc" id="L81">                .toList();</span>
+<span class="fc" id="L94">                .toList();</span>
 
-<span class="fc" id="L83">        Map&lt;String, BigDecimal&gt; totalsByCurrency = balances.stream()</span>
-<span class="fc" id="L84">                .collect(Collectors.groupingBy(</span>
+<span class="fc" id="L96">        Map&lt;String, BigDecimal&gt; totalsByCurrency = balances.stream()</span>
+<span class="fc" id="L97">                .collect(Collectors.groupingBy(</span>
                         AccountBalance::currency,
-<span class="fc" id="L86">                        Collectors.reducing(BigDecimal.ZERO, AccountBalance::balance, BigDecimal::add)));</span>
+<span class="fc" id="L99">                        Collectors.reducing(BigDecimal.ZERO, AccountBalance::balance, BigDecimal::add)));</span>
 
-<span class="fc" id="L88">        return new BalanceResponse(balances, totalsByCurrency);</span>
+<span class="fc" id="L101">        return new BalanceResponse(balances, totalsByCurrency);</span>
     }
 
     /**
      * Deposits the specified amount into the given account.
+     * 
      * @param accountId the unique identifier of the account
-     * @param request the cash movement request containing deposit details
-     * @return a CashTransactionResponse containing the result of the deposit transaction
+     * @param request   the cash movement request containing deposit details
+     * @return a CashTransactionResponse containing the result of the deposit
+     *         transaction
      * @throws IllegalArgumentException if the deposit request is invalid
      */
     @Transactional
     public CashTransactionResponse deposit(UUID accountId, CashMovementRequest request) {
-<span class="fc" id="L100">        BigDecimal amount = normalizeAmount(request.amount());</span>
+<span class="fc" id="L115">        BigDecimal amount = normalizeAmount(request.amount());</span>
         // LLL-133
         // Serialize cash movements with trades before reading the balance.
-<span class="fc" id="L103">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
-<span class="fc" id="L104">        BigDecimal currentBalance = getCurrentBalance(account);</span>
+<span class="fc" id="L118">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
+<span class="fc" id="L119">        BigDecimal currentBalance = getCurrentBalance(account);</span>
 
-<span class="fc" id="L106">        CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(</span>
-<span class="fc" id="L107">                account.getAccountId(),</span>
+<span class="fc" id="L121">        CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(</span>
+<span class="fc" id="L122">                account.getAccountId(),</span>
                 ENTRY_TYPE_DEPOSIT,
                 amount,
-<span class="fc" id="L110">                account.getBaseCurrency(),</span>
-<span class="fc" id="L111">                OffsetDateTime.now(),</span>
-<span class="fc" id="L112">                request.description()));</span>
+<span class="fc" id="L125">                account.getBaseCurrency(),</span>
+<span class="fc" id="L126">                OffsetDateTime.now(),</span>
+<span class="fc" id="L127">                request.description()));</span>
 
-<span class="fc" id="L114">        return toResponse(saved, currentBalance.add(amount));</span>
+<span class="fc" id="L129">        return toResponse(saved, currentBalance.add(amount));</span>
     }
 
     /**
      * Withdraws the specified amount from the given account.
+     * 
      * @param accountId the unique identifier of the account
-     * @param request the cash movement request containing withdrawal details
-     * @return a CashTransactionResponse containing the result of the withdrawal transaction
+     * @param request   the cash movement request containing withdrawal details
+     * @return a CashTransactionResponse containing the result of the withdrawal
+     *         transaction
      * @throws IllegalArgumentException if the withdrawal request is invalid
      */
     @Transactional
     public CashTransactionResponse withdraw(UUID accountId, CashMovementRequest request) {
-<span class="fc" id="L126">        BigDecimal amount = normalizeAmount(request.amount());</span>
+<span class="fc" id="L143">        BigDecimal amount = normalizeAmount(request.amount());</span>
         // LLL-133
-        // Hold the account lock through validation and commit to prevent concurrent overspending.
-<span class="fc" id="L129">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
-<span class="fc" id="L130">        BigDecimal currentBalance = getCurrentBalance(account);</span>
+        // Hold the account lock through validation and commit to prevent concurrent
+        // overspending.
+<span class="fc" id="L147">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
+<span class="fc" id="L148">        BigDecimal currentBalance = getCurrentBalance(account);</span>
 
-<span class="fc bfc" id="L132" title="All 2 branches covered.">        if (amount.compareTo(currentBalance) &gt; 0) {</span>
-<span class="fc" id="L133">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (amount.compareTo(currentBalance) &gt; 0) {</span>
+<span class="fc" id="L151">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
                     &quot;Withdrawal amount cannot exceed available account balance&quot;);
         }
 
-<span class="fc" id="L137">        BigDecimal ledgerAmount = amount.negate();</span>
-<span class="fc" id="L138">        CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(</span>
-<span class="fc" id="L139">                account.getAccountId(),</span>
+<span class="fc" id="L155">        BigDecimal ledgerAmount = amount.negate();</span>
+<span class="fc" id="L156">        CashLedgerEntry saved = cashLedgerRepository.save(new CashLedgerEntry(</span>
+<span class="fc" id="L157">                account.getAccountId(),</span>
                 ENTRY_TYPE_WITHDRAWAL,
                 ledgerAmount,
-<span class="fc" id="L142">                account.getBaseCurrency(),</span>
-<span class="fc" id="L143">                OffsetDateTime.now(),</span>
-<span class="fc" id="L144">                request.description()));</span>
+<span class="fc" id="L160">                account.getBaseCurrency(),</span>
+<span class="fc" id="L161">                OffsetDateTime.now(),</span>
+<span class="fc" id="L162">                request.description()));</span>
 
-<span class="fc" id="L146">        return toResponse(saved, currentBalance.add(ledgerAmount));</span>
+<span class="fc" id="L164">        return toResponse(saved, currentBalance.add(ledgerAmount));</span>
     }
 
     /**
      * Retrieves the current balance for the specified account.
+     * 
      * @param account the account for which to retrieve the current balance
      * @return the current balance of the specified account
      */
     public BigDecimal getCurrentBalance(Account account) {
-<span class="fc" id="L155">        return cashLedgerRepository.sumAmountByAccountIdAndCurrency(account.getAccountId(), account.getBaseCurrency());</span>
+<span class="fc" id="L174">        return cashLedgerRepository.sumAmountByAccountIdAndCurrency(account.getAccountId(), account.getBaseCurrency());</span>
     }
 
     /**
-     * Normalizes the specified amount by ensuring it is greater than zero and rounding it to two decimal places.
+     * Normalizes the specified amount by ensuring it is greater than zero and
+     * rounding it to two decimal places.
+     * 
      * @param amount the amount to be normalized
      * @return the normalized amount
-     * @throws ResponseStatusException if the amount is null or less than or equal to zero
+     * @throws ResponseStatusException if the amount is null or less than or equal
+     *                                 to zero
      */
-    private BigDecimal normalizeAmount(BigDecimal amount) {
-<span class="pc bpc" id="L165" title="2 of 4 branches missed.">        if (amount == null || amount.compareTo(BigDecimal.ZERO) &lt;= 0) {</span>
-<span class="nc" id="L166">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Amount must be greater than zero&quot;);</span>
+    static BigDecimal normalizeAmount(BigDecimal amount) {
+<span class="pc bpc" id="L187" title="1 of 4 branches missed.">        if (amount == null || amount.compareTo(BigDecimal.ZERO) &lt;= 0) {</span>
+<span class="fc" id="L188">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Amount must be greater than zero&quot;);</span>
         }
-<span class="fc" id="L168">        return amount.setScale(2, java.math.RoundingMode.HALF_UP);</span>
+<span class="fc" id="L190">        return amount.setScale(2, java.math.RoundingMode.HALF_UP);</span>
     }
 
     /**
-     * Converts a cash ledger entry and the resulting balance into a cash transaction response.
-     * @param entry the cash ledger entry to be converted
+     * Converts a cash ledger entry and the resulting balance into a cash
+     * transaction response.
+     * 
+     * @param entry        the cash ledger entry to be converted
      * @param balanceAfter the resulting balance after the transaction
      * @return the corresponding cash transaction response
      */
     private CashTransactionResponse toResponse(CashLedgerEntry entry, BigDecimal balanceAfter) {
-<span class="fc" id="L178">        return new CashTransactionResponse(</span>
-<span class="fc" id="L179">                entry.getCashLedgerId(),</span>
-<span class="fc" id="L180">                entry.getAccountId(),</span>
-<span class="fc" id="L181">                entry.getEntryType(),</span>
-<span class="fc" id="L182">                entry.getAmount(),</span>
-<span class="fc" id="L183">                entry.getCurrency(),</span>
+<span class="fc" id="L202">        return new CashTransactionResponse(</span>
+<span class="fc" id="L203">                entry.getCashLedgerId(),</span>
+<span class="fc" id="L204">                entry.getAccountId(),</span>
+<span class="fc" id="L205">                entry.getEntryType(),</span>
+<span class="fc" id="L206">                entry.getAmount(),</span>
+<span class="fc" id="L207">                entry.getCurrency(),</span>
                 balanceAfter,
-<span class="fc" id="L185">                entry.getCreatedAt(),</span>
-<span class="fc" id="L186">                entry.getDescription());</span>
+<span class="fc" id="L209">                entry.getCreatedAt(),</span>
+<span class="fc" id="L210">                entry.getDescription());</span>
     }
 
     /**
      * Represents a composite key consisting of an account ID and a currency.
+     * 
      * @param accountId the unique identifier of the account
-     * @param currency the currency associated with the account
+     * @param currency  the currency associated with the account
      */
-<span class="fc" id="L194">    private record AccountCurrencyKey(UUID accountId, String currency) {</span>
+<span class="fc" id="L219">    private record AccountCurrencyKey(UUID accountId, String currency) {</span>
     }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

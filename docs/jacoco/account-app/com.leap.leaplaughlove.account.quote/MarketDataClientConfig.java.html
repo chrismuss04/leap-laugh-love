@@ -14,20 +14,31 @@ import java.time.Duration;
 @Configuration
 public class MarketDataClientConfig {
 
-<span class="fc" id="L17">    public MarketDataClientConfig() {</span>
-<span class="fc" id="L18">    }</span>
+    /**
+     * Construct a new MarketDataClientConfig
+     */
+<span class="fc" id="L20">    public MarketDataClientConfig() {</span>
+<span class="fc" id="L21">    }</span>
 
+    /**
+     * Create a RestClient for the market data service.
+     * 
+     * @param builder          The RestClient builder.
+     * @param baseUrl          The base URL for the market data service.
+     * @param connectTimeoutMs The connection timeout in milliseconds.
+     * @param readTimeoutMs    The read timeout in milliseconds.
+     * @return A RestClient for the market data service.
+     */
     @Bean
     public RestClient marketDataRestClient(
             RestClient.Builder builder,
             @Value(&quot;${marketdata.client.base-url:http://localhost:8083}&quot;) String baseUrl,
             @Value(&quot;${marketdata.client.connect-timeout-ms:2000}&quot;) int connectTimeoutMs,
             @Value(&quot;${marketdata.client.read-timeout-ms:2000}&quot;) int readTimeoutMs) {
-<span class="fc" id="L26">        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();</span>
-<span class="fc" id="L27">        requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));</span>
-<span class="fc" id="L28">        requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));</span>
-<span class="fc" id="L29">        return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();</span>
+<span class="fc" id="L38">        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();</span>
+<span class="fc" id="L39">        requestFactory.setConnectTimeout(Duration.ofMillis(connectTimeoutMs));</span>
+<span class="fc" id="L40">        requestFactory.setReadTimeout(Duration.ofMillis(readTimeoutMs));</span>
+<span class="fc" id="L41">        return builder.baseUrl(baseUrl).requestFactory(requestFactory).build();</span>
     }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -8,38 +8,44 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.UUID;
 
 /**
- * Utility class for interacting with the Spring Security context in Leap Laugh Love services.
+ * Utility class for interacting with the Spring Security context in Leap Laugh
+ * Love services.
  */
 public final class SecurityUtils {
 
+    /**
+     * Private constructor for SecurityUtils
+     */
     private SecurityUtils() {
     }
 
     /**
-     * Resolves the authenticated client ID from the current Spring Security context.
+     * Resolves the authenticated client ID from the current Spring Security
+     * context.
      *
      * @return the UUID of the authenticated client
-     * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid authenticated principal is found
+     * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid
+     *                                 authenticated principal is found
      */
     public static UUID getAuthenticatedClientId() {
-<span class="fc" id="L25">        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();</span>
-<span class="fc bfc" id="L26" title="All 4 branches covered.">        if (authentication == null || !authentication.isAuthenticated()) {</span>
-<span class="fc" id="L27">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
+<span class="fc" id="L31">        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();</span>
+<span class="fc bfc" id="L32" title="All 4 branches covered.">        if (authentication == null || !authentication.isAuthenticated()) {</span>
+<span class="fc" id="L33">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
                     &quot;A valid authenticated principal is required&quot;);
         }
-<span class="fc" id="L30">        Object principal = authentication.getPrincipal();</span>
-<span class="fc bfc" id="L31" title="All 2 branches covered.">        if (principal instanceof UUID clientId) {</span>
-<span class="fc" id="L32">            return clientId;</span>
+<span class="fc" id="L36">        Object principal = authentication.getPrincipal();</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">        if (principal instanceof UUID clientId) {</span>
+<span class="fc" id="L38">            return clientId;</span>
         }
-<span class="pc bpc" id="L34" title="2 of 4 branches missed.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
-<span class="pc bpc" id="L35" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(principalString)) {</span>
+<span class="pc bpc" id="L40" title="2 of 4 branches missed.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
+<span class="pc bpc" id="L41" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(principalString)) {</span>
             try {
-<span class="fc" id="L37">                return UUID.fromString(principalString);</span>
-<span class="fc" id="L38">            } catch (IllegalArgumentException ignored) {</span>
+<span class="fc" id="L43">                return UUID.fromString(principalString);</span>
+<span class="fc" id="L44">            } catch (IllegalArgumentException ignored) {</span>
                 // fall through to unauthorized
             }
         }
-<span class="fc" id="L42">        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
+<span class="fc" id="L48">        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
                 &quot;Authenticated principal is invalid for this operation&quot;);
     }
 }

@@ -14,7 +14,12 @@ import java.util.UUID;
 @Table(name = &quot;executions&quot;, schema = &quot;trading&quot;)
 public class Execution {
 
-<span class="fc" id="L17">    public enum Status { FILLED, REJECTED }</span>
+    /**
+     * Enum describing the status of an execution
+     */
+<span class="fc" id="L20">    public enum Status {</span>
+<span class="fc" id="L21">        FILLED, REJECTED</span>
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -44,82 +49,108 @@ public class Execution {
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L47">    protected Execution() {</span>
-<span class="fc" id="L48">    }</span>
-    /**
-     * Constructs a new Execution with the specified details.
-     * @param executionId the unique identifier of the execution
-     * @param order the order associated with this execution
-     * @param fillQuantity the quantity filled in this execution
-     * @param fillPrice the price at which the order was filled
-     * @param status the status of the execution (FILLED or REJECTED)
-     * @param reason the reason for rejection, if applicable
-     * @param executedAt the timestamp when the execution occurred
-     */
-    public Execution(UUID executionId, Order order, Long fillQuantity, BigDecimal fillPrice,
-<span class="fc" id="L60">                     Status status, String reason, OffsetDateTime executedAt) {</span>
-<span class="fc" id="L61">        this.executionId = executionId;</span>
-<span class="fc" id="L62">        this.order = order;</span>
-<span class="fc" id="L63">        this.fillQuantity = fillQuantity;</span>
-<span class="fc" id="L64">        this.fillPrice = fillPrice;</span>
-<span class="fc" id="L65">        this.status = status;</span>
-<span class="fc" id="L66">        this.reason = reason;</span>
-<span class="pc bpc" id="L67" title="1 of 2 branches missed.">        this.executedAt = executedAt != null ? executedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L68">    }</span>
+<span class="fc" id="L52">    protected Execution() {</span>
+<span class="fc" id="L53">    }</span>
 
     /**
-     * Constructs a new Execution without specifying an execution ID. The execution ID will be generated automatically.
-     * @param order the order associated with this execution
+     * Constructs a new Execution with the specified details.
+     * 
+     * @param executionId  the unique identifier of the execution
+     * @param order        the order associated with this execution
      * @param fillQuantity the quantity filled in this execution
-     * @param fillPrice the price at which the order was filled
-     * @param status the status of the execution (FILLED or REJECTED)
-     * @param reason the reason for rejection, if applicable
-     * @param executedAt the timestamp when the execution occurred
+     * @param fillPrice    the price at which the order was filled
+     * @param status       the status of the execution (FILLED or REJECTED)
+     * @param reason       the reason for rejection, if applicable
+     * @param executedAt   the timestamp when the execution occurred
+     */
+    public Execution(UUID executionId, Order order, Long fillQuantity, BigDecimal fillPrice,
+<span class="fc" id="L67">            Status status, String reason, OffsetDateTime executedAt) {</span>
+<span class="fc" id="L68">        this.executionId = executionId;</span>
+<span class="fc" id="L69">        this.order = order;</span>
+<span class="fc" id="L70">        this.fillQuantity = fillQuantity;</span>
+<span class="fc" id="L71">        this.fillPrice = fillPrice;</span>
+<span class="fc" id="L72">        this.status = status;</span>
+<span class="fc" id="L73">        this.reason = reason;</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">        this.executedAt = executedAt != null ? executedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L75">    }</span>
+
+    /**
+     * Constructs a new Execution without specifying an execution ID. The execution
+     * ID will be generated automatically.
+     * 
+     * @param order        the order associated with this execution
+     * @param fillQuantity the quantity filled in this execution
+     * @param fillPrice    the price at which the order was filled
+     * @param status       the status of the execution (FILLED or REJECTED)
+     * @param reason       the reason for rejection, if applicable
+     * @param executedAt   the timestamp when the execution occurred
      */
     public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
-                     Status status, String reason, OffsetDateTime executedAt) {
-<span class="fc" id="L81">        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);</span>
-<span class="fc" id="L82">    }</span>
-    
+            Status status, String reason, OffsetDateTime executedAt) {
+<span class="fc" id="L90">        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);</span>
+<span class="fc" id="L91">    }</span>
+
     /**
      * Returns the unique identifier of the execution.
+     * 
      * @return the execution ID
      */
-<span class="fc" id="L88">    public UUID getExecutionId() { return executionId; }</span>
+    public UUID getExecutionId() {
+<span class="fc" id="L99">        return executionId;</span>
+    }
+
     /**
      * Returns the Order object associated with this execution.
+     * 
      * @return the order associated with this execution
      */
-<span class="fc" id="L93">    public Order getOrder() { return order; }</span>
+    public Order getOrder() {
+<span class="fc" id="L108">        return order;</span>
+    }
+
     /**
      * Returns the quantity filled in this execution.
+     * 
      * @return the fill quantity
      */
-<span class="fc" id="L98">    public Long getFillQuantity() { return fillQuantity; }</span>
+    public Long getFillQuantity() {
+<span class="fc" id="L117">        return fillQuantity;</span>
+    }
 
     /**
      * Returns the price at which the order was filled.
+     * 
      * @return the fill price
      */
-<span class="fc" id="L104">    public BigDecimal getFillPrice() { return fillPrice; }</span>
+    public BigDecimal getFillPrice() {
+<span class="fc" id="L126">        return fillPrice;</span>
+    }
 
     /**
      * Returns the status of the execution (FILLED or REJECTED).
+     * 
      * @return the execution status
      */
-<span class="fc" id="L110">    public Status getStatus() { return status; }</span>
+    public Status getStatus() {
+<span class="fc" id="L135">        return status;</span>
+    }
 
     /**
      * Returns the timestamp when the execution occurred.
+     * 
      * @return the execution timestamp
      */
-<span class="fc" id="L116">    public OffsetDateTime getExecutedAt() { return executedAt; }</span>
+    public OffsetDateTime getExecutedAt() {
+<span class="fc" id="L144">        return executedAt;</span>
+    }
 
     /**
      * Returns the reason for rejection, if applicable.
+     * 
      * @return the rejection reason
      */
-<span class="fc" id="L122">    public String getReason() { return reason; }</span>
+    public String getReason() {
+<span class="fc" id="L153">        return reason;</span>
+    }
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
