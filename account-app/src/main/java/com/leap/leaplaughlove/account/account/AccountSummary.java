@@ -11,6 +11,7 @@ import java.util.UUID;
  * @param baseCurrency the base currency of the account
  * @param tradingEnabled indicates if trading is enabled for the account
  * @param createdAt the timestamp when the account was created
+ * @param inactiveSince when the account became empty, if flagged inactive; otherwise null
  */
 public record AccountSummary(
         UUID accountId,
@@ -18,6 +19,7 @@ public record AccountSummary(
         String status,
         String baseCurrency,
         boolean tradingEnabled,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        OffsetDateTime inactiveSince
 ) {}
 

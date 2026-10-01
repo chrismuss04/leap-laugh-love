@@ -98,6 +98,7 @@ public class AccountController {
                 account.getStatus(),
                 account.getBaseCurrency(),
                 account.isTradingEnabled(),
-                account.getCreatedAt());
+                account.getCreatedAt(),
+                account.getInactiveSince());
     }
 }

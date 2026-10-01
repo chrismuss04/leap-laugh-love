@@ -23,6 +23,7 @@ import java.util.UUID;
 
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -73,6 +74,7 @@ class AccountControllerTest {
 
         Account account1 = new Account(accountId1, authenticatedClientId, "ACC-001", "ACTIVE", "USD", true, now);
         Account account2 = new Account(accountId2, authenticatedClientId, "ACC-002", "ACTIVE", "USD", false, now);
+        account2.setInactiveSince(now.minusDays(40));
 
         when(accountRepository.findByClientIdAndStatus(authenticatedClientId, AccountAuthorizationService.ACTIVE_STATUS))
                 .thenReturn(List.of(account1, account2));
@@ -87,7 +89,9 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$[0].tradingEnabled", is(true)))
                 .andExpect(jsonPath("$[1].accountId", is(accountId2.toString())))
                 .andExpect(jsonPath("$[1].accountNumber", is("ACC-002")))
-                .andExpect(jsonPath("$[1].tradingEnabled", is(false)));
+                .andExpect(jsonPath("$[0].inactiveSince").value(nullValue()))
+                .andExpect(jsonPath("$[1].tradingEnabled", is(false)))
+                .andExpect(jsonPath("$[1].inactiveSince").isNotEmpty());
 
         verify(accountRepository).findByClientIdAndStatus(authenticatedClientId, AccountAuthorizationService.ACTIVE_STATUS);
     }
