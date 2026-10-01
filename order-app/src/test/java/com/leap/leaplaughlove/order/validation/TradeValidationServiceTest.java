@@ -47,7 +47,7 @@ class TradeValidationServiceTest {
     // Verify a buy can use the exact available balance after rounding its cost to cents.
     @Test
     void acceptsExactCash() {
-        var account = new AccountValidationDto(true, true, new BigDecimal("10.01"), 0, "USD", "ACC-01");
+        var account = new AccountValidationDto(true, true, new BigDecimal("10.01"), 0, "USD", "ACC-01", null);
         var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, new BigDecimal("10.005"));
         assertTrue(result.isValid());
         assertNull(result.reason());
@@ -56,7 +56,7 @@ class TradeValidationServiceTest {
     // Verify rounding up cannot allow a buy that exceeds cash by one cent.
     @Test
     void rejectsRoundedOverdraft() {
-        var account = new AccountValidationDto(true, true, new BigDecimal("10.00"), 0, "USD", "ACC-01");
+        var account = new AccountValidationDto(true, true, new BigDecimal("10.00"), 0, "USD", "ACC-01", null);
         var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, new BigDecimal("10.005"));
         assertFalse(result.isValid());
         assertEquals("Insufficient funds - order rejected", result.reason());
@@ -65,7 +65,7 @@ class TradeValidationServiceTest {
     // Verify unavailable cash data cannot authorize a buy.
     @Test
     void rejectsMissingCash() {
-        var account = new AccountValidationDto(true, true, null, 20, "USD", "ACC-01");
+        var account = new AccountValidationDto(true, true, null, 20, "USD", "ACC-01", null);
         var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, BigDecimal.ONE);
         assertFalse(result.isValid());
         assertEquals("Insufficient funds - order rejected", result.reason());
@@ -74,7 +74,7 @@ class TradeValidationServiceTest {
     // Verify selling exactly the owned shares is permitted even with no available cash.
     @Test
     void acceptsAllShares() {
-        var account = new AccountValidationDto(true, true, BigDecimal.ZERO, 20, "USD", "ACC-01");
+        var account = new AccountValidationDto(true, true, BigDecimal.ZERO, 20, "USD", "ACC-01", null);
         var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.SELL, 20, BigDecimal.ONE);
         assertTrue(result.isValid());
         assertNull(result.reason());
