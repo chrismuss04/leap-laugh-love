@@ -1,6 +1,9 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
+-- Tables other setup scripts create that reference accounts, so accounts can be dropped.
+DROP TABLE IF EXISTS trading.positions;
+DROP TABLE IF EXISTS trading.position_movements;
 DROP TABLE IF EXISTS trading.cash_ledger;
 DROP TABLE IF EXISTS trading.accounts;
 DROP TABLE IF EXISTS iam.clients;
