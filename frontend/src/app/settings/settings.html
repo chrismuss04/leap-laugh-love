@@ -1,0 +1,149 @@
+<div class="page"><div class="page-container">
+  <div class="page-header">
+    <p class="eyebrow">Account</p>
+    <h1 class="font-display headline-page">Account <em>Settings</em></h1>
+  </div>
+
+  <section *ngIf="shell.profile(); else loading" class="settings-section">
+    <button type="button" class="section-toggle" (click)="accountOpen.set(!accountOpen())"
+            [attr.aria-expanded]="accountOpen()" aria-controls="account-settings">
+      <span>Account information</span>
+      <svg class="chevron" [class.open]="accountOpen()" width="16" height="16" viewBox="0 0 24 24" fill="none"
+           xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <form id="account-settings" [hidden]="!accountOpen()" [formGroup]="form" (ngSubmit)="save()" novalidate>
+      <fieldset>
+        <div class="form-group">
+          <label class="form-label" for="fullName">Name</label>
+          <input id="fullName" class="form-input" formControlName="fullName" autocomplete="name"
+                 [class.error]="showError('fullName')" />
+          <span *ngIf="showError('fullName')" class="error-message">Please enter your name</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="email">Email</label>
+          <input id="email" class="form-input" type="email" formControlName="email" autocomplete="email"
+                 [class.error]="showError('email')" />
+          <span *ngIf="showError('email')" class="error-message">Please enter a valid email address</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="phone">Phone number</label>
+          <input id="phone" class="form-input" type="tel" formControlName="phone" autocomplete="tel"
+                 placeholder="(555) 123-4567" maxlength="14" (input)="formatPhoneInput()"
+                 [class.error]="showError('phone')" />
+          <span *ngIf="showError('phone')" class="error-message">Please enter a valid phone number</span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Address</legend>
+        <div class="form-group">
+          <label class="form-label" for="addressLine1">Street address</label>
+          <input id="addressLine1" class="form-input" formControlName="addressLine1" autocomplete="address-line1"
+                 [class.error]="showError('addressLine1')" />
+          <span *ngIf="showError('addressLine1')" class="error-message">Please enter your street address</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="addressLine2">Apartment, suite, etc. (optional)</label>
+          <input id="addressLine2" class="form-input" formControlName="addressLine2" autocomplete="address-line2" />
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label class="form-label" for="city">City</label>
+            <input id="city" class="form-input" formControlName="city" autocomplete="address-level2"
+                   [class.error]="showError('city')" />
+            <span *ngIf="showError('city')" class="error-message">Please enter your city</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="stateRegion">State / Region</label>
+            <input id="stateRegion" class="form-input" formControlName="stateRegion" autocomplete="address-level1"
+                   [class.error]="showError('stateRegion')" />
+            <span *ngIf="showError('stateRegion')" class="error-message">Please enter your state or region</span>
+          </div>
+        </div>
+        <div class="row">
+          <div class="form-group">
+            <label class="form-label" for="postalCode">Postal code</label>
+            <input id="postalCode" class="form-input" formControlName="postalCode" autocomplete="postal-code"
+                   [class.error]="showError('postalCode')" />
+            <span *ngIf="showError('postalCode')" class="error-message">Please enter your postal code</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="countryCode">Country</label>
+            <select id="countryCode" class="form-input" formControlName="countryCode" autocomplete="country"
+                    [class.error]="showError('countryCode')">
+              <option *ngFor="let country of countries" [value]="country.code">{{ country.name }}</option>
+            </select>
+            <span *ngIf="showError('countryCode')" class="error-message">Please select your country</span>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Password</legend>
+        <div class="form-group">
+          <label class="form-label" for="currentPassword">Current password</label>
+          <div class="password-input-wrapper">
+            <input id="currentPassword" class="form-input" [type]="showCurrentPassword() ? 'text' : 'password'"
+                   formControlName="currentPassword" autocomplete="current-password"
+                   placeholder="Required to change your email or password"
+                   [class.error]="showError('currentPassword', 'currentPasswordRequired')" />
+            <button type="button" class="password-toggle" (click)="showCurrentPassword.set(!showCurrentPassword())"
+                    [attr.aria-label]="showCurrentPassword() ? 'Hide current password' : 'Show current password'">
+              <ng-container *ngTemplateOutlet="eyeIcon" />
+            </button>
+          </div>
+          <span *ngIf="showError('currentPassword', 'currentPasswordRequired')" class="error-message">
+            Enter your current password to change your email or password
+          </span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="password">New password</label>
+          <div class="password-input-wrapper">
+            <input id="password" class="form-input" [type]="showNewPassword() ? 'text' : 'password'"
+                   formControlName="password" autocomplete="new-password"
+                   placeholder="Leave blank to keep your current password" [class.error]="showError('password')" />
+            <button type="button" class="password-toggle" (click)="showNewPassword.set(!showNewPassword())"
+                    [attr.aria-label]="showNewPassword() ? 'Hide new password' : 'Show new password'">
+              <ng-container *ngTemplateOutlet="eyeIcon" />
+            </button>
+          </div>
+          <span *ngIf="showError('password')" class="error-message">Password must be at least 8 characters</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="confirmPassword">Confirm new password</label>
+          <input id="confirmPassword" class="form-input" [type]="showNewPassword() ? 'text' : 'password'"
+                 formControlName="confirmPassword" autocomplete="new-password"
+                 [class.error]="showError('confirmPassword', 'passwordsMismatch')" />
+          <span *ngIf="showError('confirmPassword', 'passwordsMismatch')" class="error-message">Passwords do not match</span>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Notifications</legend>
+        <label class="checkbox-label">
+          <input type="checkbox" formControlName="notifyOrderFills" /> Email me when my orders are filled
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" formControlName="notifyPriceAlerts" /> Email me price alerts
+        </label>
+      </fieldset>
+
+      <p *ngIf="error()" class="error-alert" role="alert">{{ error() }}</p>
+      <p *ngIf="saved()" class="success-alert" role="status">Your changes have been saved.</p>
+      <button type="submit" class="btn-primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
+    </form>
+  </section>
+
+  <ng-template #eyeIcon>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  </ng-template>
+
+  <ng-template #loading>
+    <p *ngIf="shell.profileError(); else spinner" class="error-message">Couldn't load your profile. Please refresh the page.</p>
+    <ng-template #spinner><p class="loading">Loading profile...</p></ng-template>
+  </ng-template>
+</div></div>

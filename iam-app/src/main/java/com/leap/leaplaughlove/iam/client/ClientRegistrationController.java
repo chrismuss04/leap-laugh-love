@@ -110,7 +110,7 @@ public class ClientRegistrationController {
      * @param phone the raw phone number as submitted
      * @return the normalized phone number, or null if none was provided
      */
-    private static String normalizePhone(String phone) {
+    static String normalizePhone(String phone) {
         if (phone == null) {
             return null;
         }
