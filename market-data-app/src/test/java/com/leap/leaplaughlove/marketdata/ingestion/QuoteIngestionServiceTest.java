@@ -30,6 +30,44 @@ import static org.mockito.Mockito.when;
 @DisplayName("QuoteIngestionService Unit Tests")
 class QuoteIngestionServiceTest {
 
+    // Verify quotes beyond the clock-skew allowance cannot be stored or published.
+    @Test
+    void rejectsFutureQuote() {
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now().plusHours(1)));
+        verify(quoteRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
+        assertTrue(service.latestAll().isEmpty());
+    }
+
+    // Verify malformed feed data is discarded without interrupting ingestion.
+    @Test
+    void rejectsMalformedQuote() {
+        service.ingest("invalid|message");
+        verify(quoteRepository, never()).save(any());
+        verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
+        assertTrue(service.latestAll().isEmpty());
+    }
+
+    // Verify an older sequence cannot replace the last accepted market price.
+    @Test
+    void preservesLatestQuote() {
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
+        service.ingest(line("AAPL", "160.20", "160.30", "160.25", 4, OffsetDateTime.now()));
+        assertEquals(0, new BigDecimal("150.25").compareTo(service.latest("AAPL").orElseThrow().lastPrice()));
+        verify(quoteRepository, times(1)).save(any(Quote.class));
+        verify(eventPublisher, times(1)).publishEvent(any(QuoteIngestedEvent.class));
+    }
+
+    // Verify rejecting an invalid quote does not consume its sequence number.
+    @Test
+    void acceptsCorrectedQuote() {
+        service.ingest(line("AAPL", "151.00", "150.00", "150.25", 5, OffsetDateTime.now()));
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
+        assertTrue(service.latest("AAPL").isPresent());
+        verify(quoteRepository, times(1)).save(any(Quote.class));
+        verify(eventPublisher, times(1)).publishEvent(any(QuoteIngestedEvent.class));
+    }
+
     @Mock
     private SimulatedInstrumentRepository instrumentRepository;
 

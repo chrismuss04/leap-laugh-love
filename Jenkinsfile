@@ -307,6 +307,8 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            // Preserve Java coverage alongside the test results before workspace cleanup.
+                            archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
                             sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
                         }
                     }
