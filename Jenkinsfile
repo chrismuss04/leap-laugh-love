@@ -148,7 +148,7 @@ pipeline {
                     #
                     # The pulls run side by side: on a warm agent each one is a registry round trip
                     # that finds nothing to download, and there is no reason to make them queue.
-                    images="postgres:16-alpine node:24-alpine $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    images="postgres:16-alpine node:24-alpine apache/kafka:3.9.0 $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
                     pull() {
                         for attempt in 1 2 3; do
                             if docker pull -q "$1" >/dev/null; then
@@ -353,7 +353,7 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -368,7 +368,8 @@ pipeline {
                                         if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
-                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order-events >/dev/null; then
                                             echo "All services are healthy"
                                             exit 0
                                         fi
@@ -461,7 +462,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db iam-app account-app order-app market-data-app frontend; do
+                    for service in db kafka kafka-init iam-app account-app order-app market-data-app frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
