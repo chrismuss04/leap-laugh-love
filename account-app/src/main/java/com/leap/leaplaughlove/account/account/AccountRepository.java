@@ -56,6 +56,9 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByAccountIdAndClientIdForUpdate(
             @Param("accountId") UUID accountId, @Param("clientId") UUID clientId);
 
+    /** @return the accounts the inactivity job has flagged */
+    List<Account> findByInactiveSinceIsNotNull();
+
     /** An account with nothing in it, and when it became empty. */
     interface EmptyAccount {
         UUID getAccountId();
