@@ -783,6 +783,16 @@ Services will be exposed on:
 
 The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
 
+**Kafka** (`kafka`, single-node KRaft) is reachable only on the compose network, at
+`kafka:9092`; no host port is published. The one-shot `kafka-init` service creates the
+`order-events` topic (3 partitions) on startup - add further topics to its command in
+`docker-compose.yml`. To inspect it from the host:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
+```
+
 To run the frontend on its own against an already-running backend:
 
 ```bash
