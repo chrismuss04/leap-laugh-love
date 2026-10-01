@@ -282,8 +282,15 @@ pipeline {
                             #
                             # The same Maven image the service Dockerfiles build with, so a fresh agent
                             # pulls one Maven image rather than two. -T 1C builds the modules side by
-                            # side once common-security is done; only order-app's tests use the
-                            # database, so they can't trip over each other in it.
+                            # side once common-security is done. The tests that reach the database
+                            # (iam-app and order-app booting their real applications, and order-app's
+                            # retention test) each work in their own app's tables, so running the
+                            # modules at once doesn't have them tripping over each other.
+                            #
+                            # TieredStopAtLevel=1 keeps the JIT to its quick first tier. The suite is
+                            # dominated by Spring contexts starting in fresh JVMs, which finish before
+                            # the optimising tier would pay for itself; measured ~30% off the run.
+                            # Set through the environment so Maven's forked test JVMs inherit it too.
                             docker run --rm \
                                 --network "container:${PG_CONTAINER}" \
                                 --user "$(id -u):$(id -g)" \
@@ -292,6 +299,7 @@ pipeline {
                                 -w /app \
                                 -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
                                 -e MAVEN_CONFIG=/tmp/.m2 \
+                                -e JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1 \
                                 maven:3.9.9-eclipse-temurin-21-alpine \
                                 mvn -B -T 1C -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
                         '''
