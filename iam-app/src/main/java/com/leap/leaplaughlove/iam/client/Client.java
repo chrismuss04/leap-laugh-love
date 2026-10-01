@@ -64,6 +64,13 @@ public class Client {
     @Column(table = "client_profile", name = "initial_deposit_amount", nullable = false, precision = 15, scale = 2)
     private BigDecimal initialDepositAmount;
 
+    // Boxed: null when there is no client_profile row, which reads as on.
+    @Column(table = "client_profile", name = "notify_order_fills", nullable = false)
+    private Boolean notifyOrderFills = true;
+
+    @Column(table = "client_profile", name = "notify_price_alerts", nullable = false)
+    private Boolean notifyPriceAlerts = true;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -198,4 +205,29 @@ public class Client {
      * @return the initial deposit amount of the client
      */
     public BigDecimal getInitialDepositAmount() { return initialDepositAmount; }
+    /** @return whether the client wants order fill emails */
+    public boolean isNotifyOrderFills() { return !Boolean.FALSE.equals(notifyOrderFills); }
+    /** @return whether the client wants price alert emails */
+    public boolean isNotifyPriceAlerts() { return !Boolean.FALSE.equals(notifyPriceAlerts); }
+
+    /** Updates the contact details and notification preferences the client can change. */
+    public void updateSettings(String fullName, String email, String phone,
+                               boolean notifyOrderFills, boolean notifyPriceAlerts) {
+        this.fullName = fullName;
+        this.email = email;
+        this.phone = phone;
+        this.notifyOrderFills = notifyOrderFills;
+        this.notifyPriceAlerts = notifyPriceAlerts;
+    }
+
+    /** Updates the client's address. */
+    public void updateAddress(String addressLine1, String addressLine2, String city, String stateRegion,
+                              String postalCode, String countryCode) {
+        this.addressLine1 = addressLine1;
+        this.addressLine2 = addressLine2;
+        this.city = city;
+        this.stateRegion = stateRegion;
+        this.postalCode = postalCode;
+        this.countryCode = countryCode;
+    }
 }

@@ -107,6 +107,14 @@ if ($LightHistory) {
     $env:MARKETDATA_HISTORY_BACKFILL_TIERS = '86400:30,3600:7,300:2,60:1'
 }
 
+# Maven 3.9.9's own jansi and Guava use JDK internals that JDK 24+ warns about on every build.
+# These flags don't exist on JDK 21, so they're set here for newer JDKs only, not in
+# .mvn/jvm.config, which the JDK 21 builds in Docker and Jenkins would read too and fail on.
+$javaVersion = cmd /c 'java -version 2>&1' | Select-Object -First 1
+if ($javaVersion -match 'version "(\d+)' -and [int]$Matches[1] -ge 24) {
+    $env:MAVEN_OPTS = "$env:MAVEN_OPTS --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow".Trim()
+}
+
 # ---- Build -----------------------------------------------------------------------------------
 
 if (-not $SkipBuild) {

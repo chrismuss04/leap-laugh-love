@@ -21,6 +21,8 @@ export interface TradeAccount {
   buyingPower: number;
   /** Shares held per symbol in this account. */
   shares: Record<string, number>;
+  /** The account's saved price protection in percent, or null when off. */
+  maxSlippagePercent: number | null;
 }
 
 export interface MarketIndex {

@@ -44,3 +44,11 @@ export function percentChange(current: number | null | undefined, baseline: numb
   }
   return ((current - baseline) / Math.abs(baseline)) * 100;
 }
+
+/** Formats a phone number as it's typed: 5551234567 -> (555) 123-4567, dropping a leading US "1". */
+export function formatPhone(value: string): string {
+  const digits = value.replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '').slice(0, 10);
+  if (digits.length > 6) return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  if (digits.length > 3) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
+  return digits.length ? `(${digits}` : '';
+}

@@ -2,26 +2,38 @@ import { Component, ElementRef, EventEmitter, OnChanges, OnInit, Output, SimpleC
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
+import { Subscription } from 'rxjs';
 import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionResponse } from '../../services/order';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { formatMoney } from '../../shared/format';
+import { MarketDataService } from '../../services/market-data';
+import { ProtectionPickerComponent } from '../../shared/protection-picker';
+import { formatProtection, protectionBand } from '../../shared/price-protection';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
 
 type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
+
+/** How order-app starts the reason for rejecting an order the price moved too far on. */
+const PRICE_MOVED_REASON = 'Price moved';
 
 /**
  * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side, enter whole shares, see
  * the live estimate against buying power (or shares held), review, then submit. Orders are market
  * orders - order-app fills them immediately at the live ask (buy) or bid (sell).
  *
+ * Price protection: reviewing captures the price the order is quoted at (the ask for a buy, the bid
+ * for a sell), and order-app rejects the order if it would fill further than the account's saved
+ * protection - or the one picked on the ticket - from that price.
+ *
  * The app is zoneless, so all template state lives in signals: an HTTP callback or a parent's
  * timer that sets a plain field wouldn't schedule a refresh.
  */
 @Component({
     selector: 'app-trade-panel',
-    imports: [CommonModule, FormsModule, RollingNumberComponent],
+    imports: [CommonModule, FormsModule, RouterLink, RollingNumberComponent, ProtectionPickerComponent],
     templateUrl: './trade-panel.html',
     styleUrl: './trade-panel.css'
 })
@@ -66,6 +78,47 @@ export class TradePanelComponent implements OnChanges, OnInit {
   money = formatMoney;
 
   private readonly orders = inject(OrderService);
+  private readonly marketData = inject(MarketDataService);
+
+  // ---- Price protection ----
+  /** Protection picked on the ticket for this order only, kept with the account it was picked for. */
+  private readonly protectionOverride = signal<{ accountId: string; value: number | null } | null>(null);
+  readonly protectionOpen = signal(false);
+  /** The price the order was reviewed at; order-app measures the fill's move from it. */
+  readonly quotedPrice = signal<number | null>(null);
+  private quoteRequest?: Subscription;
+
+  readonly savedProtection = computed(() => this.account()?.maxSlippagePercent ?? null);
+
+  /** The protection this order is placed with: the ticket's pick, else the account's saved one. */
+  readonly protection = computed(() => {
+    const override = this.protectionOverride();
+    return override && override.accountId === this.accountId() ? override.value : this.savedProtection();
+  });
+
+  /** "±0.5%" or "Off". */
+  readonly protectionLabel = computed(() => {
+    const protection = this.protection();
+    return protection == null ? 'Off' : `±${formatProtection(protection)}`;
+  });
+
+  /** "±0.5% · $99.50–$100.50": the prices the order may fill between. */
+  readonly protectionSummary = computed(() => {
+    const protection = this.protection();
+    const quoted = this.quotedPrice() ?? this.price();
+    if (protection == null || quoted == null) {
+      return this.protectionLabel();
+    }
+    const { low, high } = protectionBand(quoted, protection);
+    return `${this.protectionLabel()} · ${formatMoney(low)}–${formatMoney(high)}`;
+  });
+
+  setProtection(value: number | null): void {
+    const accountId = this.accountId();
+    if (accountId) {
+      this.protectionOverride.set({ accountId, value });
+    }
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     const accounts = this.accounts();
@@ -166,7 +219,46 @@ export class TradePanelComponent implements OnChanges, OnInit {
   review(): void {
     if (this.canReview()) {
       this.step.set('review');
+      this.quoteForReview();
     }
+  }
+
+  /**
+   * Captures the price the order is reviewed at. The streamed price stands in at once, so Submit
+   * never waits; the quote's ask (buy) or bid (sell) - what the order actually fills at - replaces
+   * it when it arrives.
+   */
+  private quoteForReview(): void {
+    const symbol = this.symbol();
+    const side = this.side();
+    this.quotedPrice.set(this.price());
+    this.quoteRequest?.unsubscribe();
+    if (!symbol) {
+      return;
+    }
+    this.quoteRequest = this.marketData.getQuote(symbol).subscribe({
+      next: quote => {
+        const price = Number(side === 'BUY' ? quote.askPrice : quote.bidPrice);
+        if (this.step() === 'review' && this.symbol() === symbol && price > 0) {
+          this.quotedPrice.set(price);
+        }
+      },
+      // The streamed price is within the spread of the quote, so it serves.
+      error: () => {}
+    });
+  }
+
+  /** Whether the order was rejected because the price moved beyond its protection. */
+  readonly priceMoved = computed(() => {
+    const result = this.result();
+    return result?.status === 'REJECTED' && !!result.rejectionReason?.startsWith(PRICE_MOVED_REASON);
+  });
+
+  /** After a price-move rejection: the same order, reviewed again at the new price. */
+  reviewAtNewPrice(): void {
+    this.result.set(null);
+    this.step.set('edit');
+    this.review();
   }
 
   edit(): void {
@@ -215,11 +307,15 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     this.step.set('submitting');
     this.submitError.set(null);
+    const quotedPrice = this.quotedPrice();
+    const protection = this.protection();
     this.orders.submitOrder({
       accountId,
       symbol,
       side: this.side(),
-      quantity: this.quantity()!
+      quantity: this.quantity()!,
+      ...(quotedPrice != null ? { quotedPrice } : {}),
+      ...(protection != null ? { maxSlippagePercent: protection } : {})
     }).subscribe({
       next: response => {
         this.result.set(response);
@@ -256,6 +352,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.quantity.set(null);
     this.result.set(null);
     this.submitError.set(null);
+    this.protectionOverride.set(null);
+    this.protectionOpen.set(false);
+    this.quoteRequest?.unsubscribe();
+    this.quotedPrice.set(null);
   }
 
   readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
