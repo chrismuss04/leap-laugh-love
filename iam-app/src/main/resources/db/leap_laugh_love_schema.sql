@@ -90,7 +90,11 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
         CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED')),
     base_currency CHAR(3) NOT NULL DEFAULT 'USD',
     trading_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Inactive Accounts: set by the nightly job to when the balance went to 0, once it has
+    -- stayed there past the threshold; NULL while the account is funded. Kept apart from
+    -- status so a flagged account can still be viewed and deposited into.
+    inactive_since TIMESTAMPTZ
 );
 
 -- Backs the account lookup by client_id used by the order history query.

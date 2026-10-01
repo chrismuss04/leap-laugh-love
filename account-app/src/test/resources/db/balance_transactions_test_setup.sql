@@ -19,6 +19,7 @@ CREATE TABLE trading.accounts (
     base_currency CHAR(3) NOT NULL,
     trading_enabled BOOLEAN NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    inactive_since TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 
