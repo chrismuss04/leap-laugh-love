@@ -14,12 +14,7 @@ const SAVE_ERRORS: Record<number, string> = {
   409: 'That email is already registered to another account.'
 };
 
-/**
- * Lets the signed-in client change their name, email, phone, address, password and notification preferences.
- * These sit in a collapsible "Account information" section so further settings sections can sit alongside it.
- * Starts from the profile the shell already loaded, and hands the saved one back to it so the
- * header and profile page update too.
- */
+/** Edits the signed-in client's settings, starting from and saving back to the shell's profile. */
 @Component({
     selector: 'app-settings',
     imports: [CommonModule, ReactiveFormsModule],
@@ -40,12 +35,7 @@ const SAVE_ERRORS: Record<number, string> = {
       cursor: pointer; }
     .chevron { transition: transform 0.2s ease; }
     .chevron.open { transform: rotate(180deg); }
-    .settings-section form { padding: 4px 20px 20px; }
-    .password-input-wrapper { position: relative; display: flex; align-items: center; }
-    .password-input-wrapper .form-input { padding-right: 40px; }
-    .password-toggle { position: absolute; right: 10px; display: flex; padding: 0; background: none; border: 0;
-      color: var(--muted-foreground); cursor: pointer; }
-    .password-toggle:hover { color: var(--foreground); }`
+    .settings-section form { padding: 4px 20px 20px; }`
 })
 export class SettingsComponent {
   readonly shell = inject(ShellComponent);
@@ -87,7 +77,7 @@ export class SettingsComponent {
   }, { validators: this.credentialsValidator });
 
   constructor() {
-    // Load the profile once it arrives, and again after each save to clear the password fields.
+    // Reloads after each save too, which clears the password fields.
     effect(() => {
       const profile = this.shell.profile();
       if (profile) {

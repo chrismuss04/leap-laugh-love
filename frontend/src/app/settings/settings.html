@@ -91,10 +91,7 @@
                    [class.error]="showError('currentPassword', 'currentPasswordRequired')" />
             <button type="button" class="password-toggle" (click)="showCurrentPassword.set(!showCurrentPassword())"
                     [attr.aria-label]="showCurrentPassword() ? 'Hide current password' : 'Show current password'">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
-                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
-              </svg>
+              <ng-container *ngTemplateOutlet="eyeIcon" />
             </button>
           </div>
           <span *ngIf="showError('currentPassword', 'currentPasswordRequired')" class="error-message">
@@ -109,10 +106,7 @@
                    placeholder="Leave blank to keep your current password" [class.error]="showError('password')" />
             <button type="button" class="password-toggle" (click)="showNewPassword.set(!showNewPassword())"
                     [attr.aria-label]="showNewPassword() ? 'Hide new password' : 'Show new password'">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
-                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
-              </svg>
+              <ng-container *ngTemplateOutlet="eyeIcon" />
             </button>
           </div>
           <span *ngIf="showError('password')" class="error-message">Password must be at least 8 characters</span>
@@ -141,6 +135,12 @@
       <button type="submit" class="btn-primary" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
     </form>
   </section>
+
+  <ng-template #eyeIcon>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" /><circle cx="12" cy="12" r="3" />
+    </svg>
+  </ng-template>
 
   <ng-template #loading>
     <p *ngIf="shell.profileError(); else spinner" class="error-message">Couldn't load your profile. Please refresh the page.</p>

@@ -20,9 +20,8 @@ import java.util.UUID;
 
 /**
  * Controller exposing the authenticated client's own profile, so the UI can show who is signed
- * in without the login response or the JWT having to carry profile fields, and letting the
- * client update their own account settings.
- * Maps to the /api/iam/v1/clients/me endpoint.
+ * in without the login response or the JWT having to carry profile fields, and letting the client
+ * update it. Maps to the /api/iam/v1/clients/me endpoint.
  */
 @RestController
 @RequestMapping("/api/iam/v1/clients")
@@ -32,12 +31,7 @@ public class ClientProfileController {
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
 
-    /**
-     * Constructs a new ClientProfileController with the specified dependencies.
-     * @param clientRepository the client repository used to look up the authenticated client
-     * @param credentialsRepository the repository used to verify and change the client's password
-     * @param passwordEncoder the encoder used to check the current password and hash a new one
-     */
+    /** Constructs a new ClientProfileController with the specified dependencies. */
     public ClientProfileController(ClientRepository clientRepository,
                                    ClientCredentialsRepository credentialsRepository,
                                    PasswordEncoder passwordEncoder) {
@@ -59,12 +53,8 @@ public class ClientProfileController {
     }
 
     /**
-     * Updates the authenticated client's account settings. Changing the email or password
-     * requires the current password, so a session left open can't be used to take over the account.
-     * @param request the new settings
-     * @return the updated display profile
-     * @throws ResponseStatusException with 403 FORBIDDEN if the current password is missing or wrong,
-     *                                  or 409 CONFLICT if the new email is already registered
+     * Updates the authenticated client's settings. Changing the email or password needs the current
+     * password (403 if wrong); a new email already in use is a 409.
      */
     @PutMapping("/me")
     @Transactional
@@ -105,24 +95,7 @@ public class ClientProfileController {
                 client.isNotifyOrderFills(), client.isNotifyPriceAlerts());
     }
 
-    /**
-     * Represents the display profile of the authenticated client.
-     * @param clientId the unique identifier of the client
-     * @param email the client's email address
-     * @param fullName the client's full name
-     * @param experienceLevel the client's investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
-     * @param status the client's account status
-     * @param createdAt the timestamp when the client's account was created
-     * @param phone the client's phone number
-     * @param addressLine1 the first line of the client's address
-     * @param addressLine2 the second line of the client's address (optional)
-     * @param city the city of the client's address
-     * @param stateRegion the state or region of the client's address
-     * @param postalCode the postal code of the client's address
-     * @param countryCode the two-letter ISO country code of the client's address
-     * @param notifyOrderFills whether the client wants order fill notifications
-     * @param notifyPriceAlerts whether the client wants price alert notifications
-     */
+    /** The client's display profile; leaves out SSN and date of birth. */
     public record ClientProfileResponse(UUID clientId, String email, String fullName,
                                         String experienceLevel, String status, OffsetDateTime createdAt,
                                         String phone, String addressLine1, String addressLine2, String city,
@@ -130,22 +103,7 @@ public class ClientProfileController {
                                         boolean notifyOrderFills, boolean notifyPriceAlerts) {
     }
 
-    /**
-     * Represents the account settings a client can change.
-     * @param fullName the client's full name
-     * @param email the client's email address, which is also their sign-in username
-     * @param phone the client's phone number (optional)
-     * @param addressLine1 the first line of the client's address
-     * @param addressLine2 the second line of the client's address (optional)
-     * @param city the city of the client's address
-     * @param stateRegion the state or region of the client's address (optional)
-     * @param postalCode the postal code of the client's address
-     * @param countryCode the two-letter ISO country code of the client's address
-     * @param notifyOrderFills whether the client wants order fill notifications
-     * @param notifyPriceAlerts whether the client wants price alert notifications
-     * @param currentPassword the client's current password, required to change the email or password
-     * @param newPassword the new password, or null to keep the current one
-     */
+    /** The settings a client can change; currentPassword is needed to change email or password. */
     public record UpdateSettingsRequest(
             @NotBlank String fullName,
             @NotBlank @Email String email,

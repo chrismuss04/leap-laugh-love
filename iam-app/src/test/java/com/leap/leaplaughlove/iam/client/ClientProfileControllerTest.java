@@ -41,6 +41,8 @@ class ClientProfileControllerTest {
 
     // Session Timeout & Revocation: authenticate against a real stored session.
     @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbc;
+    @Autowired private PasswordEncoder passwordEncoder;
+    @Autowired private ObjectMapper objectMapper;
 
     private String activeToken() {
         UUID sid = UUID.randomUUID();
@@ -105,14 +107,14 @@ class ClientProfileControllerTest {
                 .andExpect(status().isUnauthorized());
     }
 
-    @Autowired private PasswordEncoder passwordEncoder;
-
     private void givenPassword(String password) {
         jdbc.update("INSERT INTO iam.client_credentials (client_id, password_hash, failed_attempts) VALUES (?, ?, 0)",
                 CLIENT_ID, passwordEncoder.encode(password));
     }
 
-    @Autowired private ObjectMapper objectMapper;
+    private ResultActions getMe() throws Exception {
+        return mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + activeToken()));
+    }
 
     /** Sends Alice's current settings with the given fields changed. */
     private ResultActions updateSettings(Map<String, Object> changes) throws Exception {
@@ -138,7 +140,7 @@ class ClientProfileControllerTest {
                 .andExpect(jsonPath("$.notifyOrderFills", is(false)))
                 .andExpect(jsonPath("$.notifyPriceAlerts", is(true)));
 
-        mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + activeToken()))
+        getMe()
                 .andExpect(jsonPath("$.fullName", is("Alice Updated")))
                 .andExpect(jsonPath("$.addressLine1", is("2 Oak Ave")))
                 .andExpect(jsonPath("$.city", is("New York")))
@@ -189,7 +191,7 @@ class ClientProfileControllerTest {
                 "currentPassword", "OldPassword1!", "newPassword", "short"))
                 .andExpect(status().isBadRequest());
 
-        mockMvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + activeToken()))
+        getMe()
                 .andExpect(jsonPath("$.fullName", is("Alice Example")))
                 .andExpect(jsonPath("$.addressLine1", is("1 Main St")));
     }
