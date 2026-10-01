@@ -15,6 +15,79 @@ import static org.junit.jupiter.api.Assertions.*;
 @DisplayName("TradeValidationService Tests")
 class TradeValidationServiceTest {
 
+    // Verify missing account data rejects a trade instead of allowing execution.
+    @Test
+    void rejectsMissingAccount() {
+        var result = tradeValidationService.validateTrade(null, tradableInstrument, Order.Side.BUY, 1, BigDecimal.ONE);
+        assertFalse(result.isValid());
+        assertEquals("Account is not active", result.reason());
+    }
+
+    // Verify a missing instrument cannot be traded.
+    @Test
+    void rejectsMissingInstrument() {
+        var result = tradeValidationService.validateTrade(activeAccount, null, Order.Side.BUY, 1, BigDecimal.ONE);
+        assertFalse(result.isValid());
+        assertEquals("Instrument is not tradable", result.reason());
+    }
+
+    // Verify null, zero, and negative prices reject both buy and sell orders.
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.NullSource
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"0", "-0.01"})
+    void rejectsInvalidPrices(String value) {
+        var price = value == null ? null : new BigDecimal(value);
+        for (var side : new Order.Side[]{Order.Side.BUY, Order.Side.SELL}) {
+            var result = tradeValidationService.validateTrade(activeAccount, tradableInstrument, side, 1, price);
+            assertFalse(result.isValid());
+            assertEquals("Price must be greater than zero", result.reason());
+        }
+    }
+
+    // Verify a buy can use the exact available balance after rounding its cost to cents.
+    @Test
+    void acceptsExactCash() {
+        var account = new AccountValidationDto(true, true, new BigDecimal("10.01"), 0, "USD", "ACC-01");
+        var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, new BigDecimal("10.005"));
+        assertTrue(result.isValid());
+        assertNull(result.reason());
+    }
+
+    // Verify rounding up cannot allow a buy that exceeds cash by one cent.
+    @Test
+    void rejectsRoundedOverdraft() {
+        var account = new AccountValidationDto(true, true, new BigDecimal("10.00"), 0, "USD", "ACC-01");
+        var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, new BigDecimal("10.005"));
+        assertFalse(result.isValid());
+        assertEquals("Insufficient funds - order rejected", result.reason());
+    }
+
+    // Verify unavailable cash data cannot authorize a buy.
+    @Test
+    void rejectsMissingCash() {
+        var account = new AccountValidationDto(true, true, null, 20, "USD", "ACC-01");
+        var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.BUY, 1, BigDecimal.ONE);
+        assertFalse(result.isValid());
+        assertEquals("Insufficient funds - order rejected", result.reason());
+    }
+
+    // Verify selling exactly the owned shares is permitted even with no available cash.
+    @Test
+    void acceptsAllShares() {
+        var account = new AccountValidationDto(true, true, BigDecimal.ZERO, 20, "USD", "ACC-01");
+        var result = tradeValidationService.validateTrade(account, tradableInstrument, Order.Side.SELL, 20, BigDecimal.ONE);
+        assertTrue(result.isValid());
+        assertNull(result.reason());
+    }
+
+    // Verify an unspecified order side is rejected rather than treated as a buy or sell.
+    @Test
+    void rejectsMissingSide() {
+        var result = tradeValidationService.validateTrade(activeAccount, tradableInstrument, null, 1, BigDecimal.ONE);
+        assertFalse(result.isValid());
+        assertEquals("Unsupported order side: null", result.reason());
+    }
+
     private TradeValidationService tradeValidationService;
 
     private AccountValidationDto activeAccount;
