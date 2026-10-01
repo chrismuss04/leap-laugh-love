@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Output, inject } from '@angular/core';
+import { Component, EventEmitter, Output, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -21,6 +21,9 @@ type DepositOutcome = 'none' | 'done' | 'failed' | 'unknown';
  * Opens another brokerage account under the signed-in profile. Nothing about the client is asked
  * again - identity is shared - only an optional starting cash amount, deposited as soon as the
  * account exists. Opening and depositing are two requests, so the confirmation reports each.
+ *
+ * The app is zoneless, so all template state lives in signals: an HTTP callback that sets a plain
+ * field wouldn't schedule a refresh.
  */
 @Component({
     selector: 'app-open-account-panel',
@@ -38,14 +41,14 @@ export class OpenAccountPanelComponent {
 
   readonly baseCurrency = 'USD';
 
-  step: Step = 'form';
+  readonly step = signal<Step>('form');
   /** Starting cash to deposit; empty for none. */
-  amount: number | null = null;
-  account: AccountSummary | null = null;
-  deposit: DepositOutcome = 'none';
-  depositError: string | null = null;
-  cash = 0;
-  submitError: string | null = null;
+  readonly amount = signal<number | null>(null);
+  readonly account = signal<AccountSummary | null>(null);
+  readonly deposit = signal<DepositOutcome>('none');
+  readonly depositError = signal<string | null>(null);
+  readonly cash = signal(0);
+  readonly submitError = signal<string | null>(null);
 
   money = formatMoney;
   accountName = accountName;
@@ -53,77 +56,77 @@ export class OpenAccountPanelComponent {
   private readonly accountsService = inject(AccountsService);
   private readonly balanceService = inject(BalanceService);
 
-  get wantsDeposit(): boolean {
-    return this.amount != null && this.amount !== 0;
-  }
+  readonly wantsDeposit = computed(() => {
+    const amount = this.amount();
+    return amount != null && amount !== 0;
+  });
 
   /** Why the form can't be submitted, or null if it can. */
-  get amountError(): string | null {
-    return this.wantsDeposit && !isCashAmount(this.amount) ? 'Enter an amount of at least $0.01, to the cent' : null;
-  }
+  readonly amountError = computed(() =>
+    this.wantsDeposit() && !isCashAmount(this.amount()) ? 'Enter an amount of at least $0.01, to the cent' : null);
 
-  get busy(): boolean {
-    return this.step === 'opening' || this.step === 'depositing';
-  }
+  readonly busy = computed(() => this.step() === 'opening' || this.step() === 'depositing');
 
   submit(): void {
-    if (this.step !== 'form' || this.amountError) {
+    if (this.step() !== 'form' || this.amountError()) {
       return;
     }
-    this.step = 'opening';
-    this.submitError = null;
+    this.step.set('opening');
+    this.submitError.set(null);
     this.accountsService.openAccount({ baseCurrency: this.baseCurrency }).subscribe({
       next: account => {
-        this.account = account;
+        this.account.set(account);
         this.opened.emit(account);
-        if (this.wantsDeposit) {
+        if (this.wantsDeposit()) {
           this.makeDeposit();
         } else {
-          this.step = 'result';
+          this.step.set('result');
         }
       },
       error: (err: HttpErrorResponse) => {
-        this.submitError = err.error?.message || err.error?.error || 'We couldn’t open your account. Please try again.';
-        this.step = 'form';
+        this.submitError.set(err.error?.message || err.error?.error || 'We couldn’t open your account. Please try again.');
+        this.step.set('form');
       }
     });
   }
 
   /** Deposits the starting cash into the opened account; also the retry after a refused deposit. */
   makeDeposit(): void {
-    if (!this.account || !isCashAmount(this.amount)) {
+    const account = this.account();
+    const amount = this.amount();
+    if (!account || !isCashAmount(amount)) {
       return;
     }
-    this.step = 'depositing';
-    this.depositError = null;
-    this.balanceService.deposit(this.account.accountId, { amount: this.amount!, description: 'Starting cash' }).subscribe({
+    this.step.set('depositing');
+    this.depositError.set(null);
+    this.balanceService.deposit(account.accountId, { amount: amount!, description: 'Starting cash' }).subscribe({
       next: response => {
-        this.cash = response.balanceAfter;
-        this.deposit = 'done';
-        this.step = 'result';
+        this.cash.set(response.balanceAfter);
+        this.deposit.set('done');
+        this.step.set('result');
         this.deposited.emit();
       },
       error: (err: HttpErrorResponse) => {
         if (err.status === 0 || err.status >= 500) {
           // It may have been booked before the failure, so don't invite a second deposit.
-          this.deposit = 'unknown';
+          this.deposit.set('unknown');
           this.deposited.emit();
         } else {
-          this.deposit = 'failed';
-          this.depositError = err.error?.message || err.error?.error || null;
+          this.deposit.set('failed');
+          this.depositError.set(err.error?.message || err.error?.error || null);
         }
-        this.step = 'result';
+        this.step.set('result');
       }
     });
   }
 
   reset(): void {
-    this.step = 'form';
-    this.amount = null;
-    this.account = null;
-    this.deposit = 'none';
-    this.depositError = null;
-    this.cash = 0;
-    this.submitError = null;
+    this.step.set('form');
+    this.amount.set(null);
+    this.account.set(null);
+    this.deposit.set('none');
+    this.depositError.set(null);
+    this.cash.set(0);
+    this.submitError.set(null);
   }
 }

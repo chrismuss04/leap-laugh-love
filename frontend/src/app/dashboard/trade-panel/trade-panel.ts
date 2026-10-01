@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnChanges, OnInit, Output, SimpleChanges, ViewChild, inject } from '@angular/core';
+import { Component, ElementRef, EventEmitter, OnChanges, OnInit, Output, SimpleChanges, ViewChild, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
@@ -15,6 +15,9 @@ type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
  * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side, enter whole shares, see
  * the live estimate against buying power (or shares held), review, then submit. Orders are market
  * orders - order-app fills them immediately at the live ask (buy) or bid (sell).
+ *
+ * The app is zoneless, so all template state lives in signals: an HTTP callback or a parent's
+ * timer that sets a plain field wouldn't schedule a refresh.
  */
 @Component({
     selector: 'app-trade-panel',
@@ -23,12 +26,12 @@ type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
     styleUrl: './trade-panel.css'
 })
 export class TradePanelComponent implements OnChanges, OnInit {
-  @Input() symbol: string | null = null;
-  @Input() name: string | null = null;
-  @Input() price: number | null = null;
-  @Input() accounts: TradeAccount[] = [];
+  readonly symbol = input<string | null>(null);
+  readonly name = input<string | null>(null);
+  readonly price = input<number | null>(null);
+  readonly accounts = input<TradeAccount[]>([]);
   /** Account to trade in by default, e.g. the one the dashboard is scoped to. */
-  @Input() preferredAccountId: string | null = null;
+  readonly preferredAccountId = input<string | null>(null);
   @Output() placed = new EventEmitter<OrderSubmissionResponse>();
   /** The order may or may not have gone through; the account and activity should be reloaded. */
   @Output() unconfirmed = new EventEmitter<void>();
@@ -36,150 +39,151 @@ export class TradePanelComponent implements OnChanges, OnInit {
   @ViewChild('quantityInput') quantityInput?: ElementRef<HTMLInputElement>;
   // Order placement confirmation: the native dialog provides modal keyboard focus handling.
   @ViewChild('confirmationDialog') confirmationDialog?: ElementRef<HTMLDialogElement>;
-  confirmationOpen = false;
-  private experienceLevel: ClientProfile['experienceLevel'] | null = null;
+  readonly confirmationOpen = signal(false);
+  private readonly experienceLevel = signal<ClientProfile['experienceLevel'] | null>(null);
   private readonly profileService = inject(ProfileService);
 
   ngOnInit(): void {
     this.profileService.getMe().subscribe({
-      next: profile => this.experienceLevel = profile.experienceLevel,
-      error: () => this.experienceLevel = null
+      next: profile => this.experienceLevel.set(profile.experienceLevel),
+      error: () => this.experienceLevel.set(null)
     });
   }
 
   // Order placement confirmation: unknown experience requires confirmation too.
-  get requiresConfirmation(): boolean {
-    return this.experienceLevel == null || this.experienceLevel === 'NOVICE'
-      || (this.estimate ?? 0) >= 25_000;
-  }
+  readonly requiresConfirmation = computed(() => {
+    const level = this.experienceLevel();
+    return level == null || level === 'NOVICE' || (this.estimate() ?? 0) >= 25_000;
+  });
 
-  side: OrderSide = 'BUY';
-  accountId: string | null = null;
-  quantity: number | null = null;
-  step: Step = 'edit';
-  result: OrderSubmissionResponse | null = null;
-  submitError: string | null = null;
+  readonly side = signal<OrderSide>('BUY');
+  readonly accountId = signal<string | null>(null);
+  readonly quantity = signal<number | null>(null);
+  readonly step = signal<Step>('edit');
+  readonly result = signal<OrderSubmissionResponse | null>(null);
+  readonly submitError = signal<string | null>(null);
 
   money = formatMoney;
 
   private readonly orders = inject(OrderService);
-  // Notify Angular when a parent opens the ticket from an asynchronous callback.
-  private readonly changeDetector = inject(ChangeDetectorRef);
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['accounts'] && (!this.accountId || !this.accounts.some(a => a.accountId === this.accountId))) {
+    const accounts = this.accounts();
+    if (changes['accounts'] && (!this.accountId() || !accounts.some(a => a.accountId === this.accountId()))) {
       // Order placement confirmation: don't confirm a different account than the one reviewed.
       this.cancelConfirmation();
-      this.accountId = this.accounts[0]?.accountId ?? null;
+      this.accountId.set(accounts[0]?.accountId ?? null);
     }
     // Applied when the preference changes or accounts first arrive, not on every refresh, so a
     // manual pick in the ticket sticks.
     const accountsArrived = changes['accounts'] && !changes['accounts'].previousValue?.length;
-    if ((changes['preferredAccountId'] || accountsArrived) && this.step !== 'submitting'
-        && this.preferredAccountId && this.preferredAccountId !== this.accountId
-        && this.accounts.some(a => a.accountId === this.preferredAccountId)) {
+    const preferred = this.preferredAccountId();
+    if ((changes['preferredAccountId'] || accountsArrived) && this.step() !== 'submitting'
+        && preferred && preferred !== this.accountId()
+        && accounts.some(a => a.accountId === preferred)) {
       this.cancelConfirmation();
-      this.accountId = this.preferredAccountId;
+      this.accountId.set(preferred);
     }
-    if (changes['symbol'] && !changes['symbol'].firstChange && this.step !== 'submitting') {
+    if (changes['symbol'] && !changes['symbol'].firstChange && this.step() !== 'submitting') {
       this.reset();
     }
   }
 
   /** Opens the ticket on a side, e.g. from a position row's Buy/Sell button. */
   open(side: OrderSide): void {
-    if (this.step === 'submitting') {
+    if (this.step() === 'submitting') {
       return;
     }
-    this.side = side;
+    this.side.set(side);
     this.reset();
-    this.changeDetector.markForCheck();
     setTimeout(() => this.quantityInput?.nativeElement.focus());
   }
 
   setSide(side: OrderSide): void {
-    if (this.step === 'edit') {
-      this.side = side;
+    if (this.step() === 'edit') {
+      this.side.set(side);
     }
   }
 
-  get account(): TradeAccount | undefined {
-    return this.accounts.find(a => a.accountId === this.accountId);
-  }
+  readonly account = computed(() => this.accounts().find(a => a.accountId === this.accountId()));
 
-  get sharesHeld(): number {
-    return this.symbol ? this.account?.shares[this.symbol] ?? 0 : 0;
-  }
+  readonly sharesHeld = computed(() => {
+    const symbol = this.symbol();
+    return symbol ? this.account()?.shares[symbol] ?? 0 : 0;
+  });
 
-  get estimate(): number | null {
-    return this.price != null && this.validQuantity ? this.price * this.quantity! : null;
-  }
+  readonly validQuantity = computed(() => {
+    const quantity = this.quantity();
+    return quantity != null && Number.isInteger(quantity) && quantity >= 1;
+  });
 
-  get validQuantity(): boolean {
-    return this.quantity != null && Number.isInteger(this.quantity) && this.quantity >= 1;
-  }
+  readonly estimate = computed(() => {
+    const price = this.price();
+    return price != null && this.validQuantity() ? price * this.quantity()! : null;
+  });
 
   /** Why the order can't be reviewed yet, or null if it can. */
-  get blocker(): string | null {
-    if (!this.symbol) {
+  readonly blocker = computed(() => {
+    const account = this.account();
+    const quantity = this.quantity();
+    const sharesHeld = this.sharesHeld();
+    if (!this.symbol()) {
       return 'Choose a symbol to trade';
     }
-    if (!this.account) {
+    if (!account) {
       return 'No active account to trade from';
     }
-    if (this.price == null) {
+    if (this.price() == null) {
       return 'Waiting for a live price…';
     }
-    if (this.quantity == null) {
+    if (quantity == null) {
       return null;
     }
-    if (!this.validQuantity) {
+    if (!this.validQuantity()) {
       return 'Enter a whole number of shares';
     }
-    if (this.side === 'BUY' && this.estimate! > this.account.buyingPower) {
-      return `Not enough buying power (${formatMoney(this.account.buyingPower)} available)`;
+    if (this.side() === 'BUY' && this.estimate()! > account.buyingPower) {
+      return `Not enough buying power (${formatMoney(account.buyingPower)} available)`;
     }
-    if (this.side === 'SELL' && this.quantity! > this.sharesHeld) {
-      return this.sharesHeld === 0
-        ? `You don't own any ${this.symbol} in this account`
-        : `You only have ${this.sharesHeld} ${this.sharesHeld === 1 ? 'share' : 'shares'} to sell`;
+    if (this.side() === 'SELL' && quantity > sharesHeld) {
+      return sharesHeld === 0
+        ? `You don't own any ${this.symbol()} in this account`
+        : `You only have ${sharesHeld} ${sharesHeld === 1 ? 'share' : 'shares'} to sell`;
     }
     return null;
-  }
+  });
 
-  get canReview(): boolean {
-    return this.validQuantity && this.blocker === null;
-  }
+  readonly canReview = computed(() => this.validQuantity() && this.blocker() === null);
 
   sellAll(): void {
-    this.quantity = this.sharesHeld || null;
+    this.quantity.set(this.sharesHeld() || null);
   }
 
   adjust(delta: number): void {
-    this.quantity = Math.max(1, (this.validQuantity ? this.quantity! : 0) + delta);
+    this.quantity.set(Math.max(1, (this.validQuantity() ? this.quantity()! : 0) + delta));
   }
 
   review(): void {
-    if (this.canReview) {
-      this.step = 'review';
+    if (this.canReview()) {
+      this.step.set('review');
     }
   }
 
   edit(): void {
     // Order placement confirmation: editing invalidates the previous prompt.
     this.cancelConfirmation();
-    this.step = 'edit';
+    this.step.set('edit');
     setTimeout(() => this.quantityInput?.nativeElement.focus());
   }
 
   submit(): void {
     // Order placement confirmation: clicking Submit opens the prompt before any API call.
-    if (this.step !== 'review' || this.confirmationOpen || !this.canReview) {
+    if (this.step() !== 'review' || this.confirmationOpen() || !this.canReview()) {
       return;
     }
-    if (this.requiresConfirmation) {
-      this.submitError = null;
-      this.confirmationOpen = true;
+    if (this.requiresConfirmation()) {
+      this.submitError.set(null);
+      this.confirmationOpen.set(true);
       this.confirmationDialog?.nativeElement.showModal();
       return;
     }
@@ -188,7 +192,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   // Order placement confirmation: only the dialog's affirmative action reaches submission.
   confirmOrder(): void {
-    if (!this.confirmationOpen || this.step !== 'review') {
+    if (!this.confirmationOpen() || this.step() !== 'review') {
       return;
     }
     this.cancelConfirmation();
@@ -197,39 +201,41 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   // Order placement confirmation: Go back and Escape close the prompt without an API call.
   cancelConfirmation(): void {
-    this.confirmationOpen = false;
+    this.confirmationOpen.set(false);
     this.confirmationDialog?.nativeElement.close();
   }
 
   // Order placement confirmation: revalidate live buying power and prevent repeat submissions.
   private placeOrder(): void {
-    if (this.step !== 'review' || !this.canReview || !this.symbol || !this.accountId) {
-      this.submitError = this.blocker;
+    const symbol = this.symbol();
+    const accountId = this.accountId();
+    if (this.step() !== 'review' || !this.canReview() || !symbol || !accountId) {
+      this.submitError.set(this.blocker());
       return;
     }
-    this.step = 'submitting';
-    this.submitError = null;
+    this.step.set('submitting');
+    this.submitError.set(null);
     this.orders.submitOrder({
-      accountId: this.accountId,
-      symbol: this.symbol,
-      side: this.side,
-      quantity: this.quantity!
+      accountId,
+      symbol,
+      side: this.side(),
+      quantity: this.quantity()!
     }).subscribe({
       next: response => {
-        this.result = response;
-        this.step = 'result';
+        this.result.set(response);
+        this.step.set('result');
         this.placed.emit(response);
       },
       error: (err: HttpErrorResponse) => {
         if (this.outcomeUnknown(err)) {
           // It may still complete (order-app finishes interrupted trades), so don't invite a
           // second submission that would buy or sell twice.
-          this.step = 'unconfirmed';
+          this.step.set('unconfirmed');
           this.unconfirmed.emit();
           return;
         }
-        this.submitError = err.error?.message || err.error?.error || 'Your order could not be placed. Please try again.';
-        this.step = 'review';
+        this.submitError.set(err.error?.message || err.error?.error || 'Your order could not be placed. Please try again.');
+        this.step.set('review');
       }
     });
   }
@@ -246,13 +252,11 @@ export class TradePanelComponent implements OnChanges, OnInit {
   reset(): void {
     // Order placement confirmation: a new ticket needs a new confirmation.
     this.cancelConfirmation();
-    this.step = 'edit';
-    this.quantity = null;
-    this.result = null;
-    this.submitError = null;
+    this.step.set('edit');
+    this.quantity.set(null);
+    this.result.set(null);
+    this.submitError.set(null);
   }
 
-  get fillPrice(): number | null {
-    return this.result?.execution?.fillPrice ?? null;
-  }
+  readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
 }
