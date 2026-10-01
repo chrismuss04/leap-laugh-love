@@ -2,21 +2,21 @@
   <header class="panel-header">
     <div>
       <h2 id="cash-title">Move money</h2>
-      <p class="name">{{ mode === 'deposit' ? 'Add cash to any of your accounts' : 'Between your own accounts, instantly' }}</p>
+      <p class="name">{{ mode() === 'deposit' ? 'Add cash to any of your accounts' : 'Between your own accounts, instantly' }}</p>
     </div>
   </header>
 
   <!-- Result -->
-  <div *ngIf="step === 'result'" class="result" role="status">
+  <div *ngIf="step() === 'result'" class="result" role="status">
     <div class="result-icon ok" aria-hidden="true">✓</div>
-    <ng-container *ngIf="depositResult">
+    <ng-container *ngIf="depositResult() as depositResult">
       <p class="result-title">Added {{ money(depositResult.amount) }}</p>
       <dl class="summary">
         <div><dt>{{ accountName(depositResult.accountId) }}</dt>
           <dd class="num">{{ money(depositResult.balanceAfter) }}</dd></div>
       </dl>
     </ng-container>
-    <ng-container *ngIf="transferResult">
+    <ng-container *ngIf="transferResult() as transferResult">
       <p class="result-title">Moved {{ money(transferResult.amount) }}</p>
       <dl class="summary">
         <div><dt>From {{ accountName(transferResult.fromAccountId) }}</dt>
@@ -29,87 +29,87 @@
   </div>
 
   <!-- Unconfirmed: it may still have gone through -->
-  <div *ngIf="step === 'unconfirmed'" class="result" role="alert">
+  <div *ngIf="step() === 'unconfirmed'" class="result" role="alert">
     <div class="result-icon pending" aria-hidden="true">?</div>
-    <ng-container *ngIf="mode === 'deposit'; else transferUnconfirmed">
+    <ng-container *ngIf="mode() === 'deposit'; else transferUnconfirmed">
       <p class="result-title">We couldn't confirm your deposit</p>
-      <p class="result-text">Adding {{ money(amount) }} to {{ depositAccount?.name }} may still have gone through.
+      <p class="result-text">Adding {{ money(amount()) }} to {{ depositAccount()?.name }} may still have gone through.
         Check its cash before trying again, so you don't add it twice.</p>
     </ng-container>
     <ng-template #transferUnconfirmed>
       <p class="result-title">We couldn't confirm your transfer</p>
-      <p class="result-text">Your transfer of {{ money(amount) }} from {{ from?.name }} to
-        {{ to?.name }} may still have gone through. Check both balances before trying again,
+      <p class="result-text">Your transfer of {{ money(amount()) }} from {{ from()?.name }} to
+        {{ to()?.name }} may still have gone through. Check both balances before trying again,
         so you don't move it twice.</p>
     </ng-template>
     <button type="button" class="cta" (click)="reset()">Done</button>
   </div>
 
   <!-- Review -->
-  <div *ngIf="step === 'review' || step === 'submitting'" class="review">
-    <ng-container *ngIf="mode === 'deposit'; else transferReview">
+  <div *ngIf="step() === 'review' || step() === 'submitting'" class="review">
+    <ng-container *ngIf="mode() === 'deposit'; else transferReview">
       <p class="review-text">
-        You're adding <strong class="num">{{ money(amount) }}</strong> of cash to
-        <strong>{{ depositAccount?.name }}</strong>. It's available to trade as soon as it's done.
+        You're adding <strong class="num">{{ money(amount()) }}</strong> of cash to
+        <strong>{{ depositAccount()?.name }}</strong>. It's available to trade as soon as it's done.
       </p>
       <dl class="summary">
-        <div><dt>{{ depositAccount?.name }} after</dt>
-          <dd class="num">{{ money(depositAccount ? depositAccount.cash + amount! : null) }}</dd></div>
-        <div *ngIf="note.trim()"><dt>Note</dt><dd>{{ note.trim() }}</dd></div>
-        <div class="total"><dt>Amount</dt><dd class="num">{{ money(amount) }}</dd></div>
+        <div><dt>{{ depositAccount()?.name }} after</dt>
+          <dd class="num">{{ money(depositAccount() ? depositAccount()!.cash + amount()! : null) }}</dd></div>
+        <div *ngIf="note().trim()"><dt>Note</dt><dd>{{ note().trim() }}</dd></div>
+        <div class="total"><dt>Amount</dt><dd class="num">{{ money(amount()) }}</dd></div>
       </dl>
     </ng-container>
     <ng-template #transferReview>
       <p class="review-text">
-        You're moving <strong class="num">{{ money(amount) }}</strong> of cash from
-        <strong>{{ from?.name }}</strong> to <strong>{{ to?.name }}</strong>.
-        It's available to trade in {{ to?.name }} as soon as it's done.
+        You're moving <strong class="num">{{ money(amount()) }}</strong> of cash from
+        <strong>{{ from()?.name }}</strong> to <strong>{{ to()?.name }}</strong>.
+        It's available to trade in {{ to()?.name }} as soon as it's done.
       </p>
       <dl class="summary">
-        <div><dt>{{ from?.name }} after</dt>
-          <dd class="num">{{ money(from ? from.cash - amount! : null) }}</dd></div>
-        <div><dt>{{ to?.name }} after</dt>
-          <dd class="num">{{ money(to ? to.cash + amount! : null) }}</dd></div>
-        <div *ngIf="note.trim()"><dt>Note</dt><dd>{{ note.trim() }}</dd></div>
-        <div class="total"><dt>Amount</dt><dd class="num">{{ money(amount) }}</dd></div>
+        <div><dt>{{ from()?.name }} after</dt>
+          <dd class="num">{{ money(from() ? from()!.cash - amount()! : null) }}</dd></div>
+        <div><dt>{{ to()?.name }} after</dt>
+          <dd class="num">{{ money(to() ? to()!.cash + amount()! : null) }}</dd></div>
+        <div *ngIf="note().trim()"><dt>Note</dt><dd>{{ note().trim() }}</dd></div>
+        <div class="total"><dt>Amount</dt><dd class="num">{{ money(amount()) }}</dd></div>
       </dl>
     </ng-template>
-    <p *ngIf="submitError" class="error" role="alert">{{ submitError }}</p>
-    <button type="button" class="cta" (click)="submit()" [disabled]="step === 'submitting'">
-      <span *ngIf="step !== 'submitting'">{{ mode === 'deposit' ? 'Add' : 'Transfer' }} {{ money(amount) }}</span>
-      <span *ngIf="step === 'submitting'" class="spinner" [attr.aria-label]="mode === 'deposit' ? 'Adding cash' : 'Transferring'"></span>
+    <p *ngIf="submitError()" class="error" role="alert">{{ submitError() }}</p>
+    <button type="button" class="cta" (click)="submit()" [disabled]="step() === 'submitting'">
+      <span *ngIf="step() !== 'submitting'">{{ mode() === 'deposit' ? 'Add' : 'Transfer' }} {{ money(amount()) }}</span>
+      <span *ngIf="step() === 'submitting'" class="spinner" [attr.aria-label]="mode() === 'deposit' ? 'Adding cash' : 'Transferring'"></span>
     </button>
-    <button type="button" class="ghost" (click)="edit()" [disabled]="step === 'submitting'">Edit</button>
+    <button type="button" class="ghost" (click)="edit()" [disabled]="step() === 'submitting'">Edit</button>
   </div>
 
   <!-- Edit -->
-  <form *ngIf="step === 'edit'" class="ticket" (ngSubmit)="review()">
+  <form *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
     <div class="modes" role="radiogroup" aria-label="Move money">
-      <button type="button" role="radio" class="mode" [class.on]="mode === 'deposit'"
-              [attr.aria-checked]="mode === 'deposit'" (click)="setMode('deposit')">Add cash</button>
-      <button type="button" role="radio" class="mode" [class.on]="mode === 'transfer'"
-              [attr.aria-checked]="mode === 'transfer'" (click)="setMode('transfer')">Transfer</button>
+      <button type="button" role="radio" class="mode" [class.on]="mode() === 'deposit'"
+              [attr.aria-checked]="mode() === 'deposit'" (click)="setMode('deposit')">Add cash</button>
+      <button type="button" role="radio" class="mode" [class.on]="mode() === 'transfer'"
+              [attr.aria-checked]="mode() === 'transfer'" (click)="setMode('transfer')">Transfer</button>
     </div>
 
     <!-- Add cash: one account -->
-    <label *ngIf="mode === 'deposit'" class="field">
+    <label *ngIf="mode() === 'deposit'" class="field">
       <span class="field-label">To</span>
       <select class="field-input" name="deposit" [(ngModel)]="depositId">
-        <option *ngFor="let a of accounts" [ngValue]="a.accountId">{{ a.name }} · {{ money(a.cash) }}</option>
+        <option *ngFor="let a of accounts()" [ngValue]="a.accountId">{{ a.name }} · {{ money(a.cash) }}</option>
       </select>
     </label>
 
     <!-- Transfer: needs a second account -->
-    <div *ngIf="mode === 'transfer' && accounts.length < 2" class="placeholder">
+    <div *ngIf="mode() === 'transfer' && accounts().length < 2" class="placeholder">
       <p>Open a second account to move cash between accounts. Each account keeps its own cash and positions.</p>
       <button type="button" class="cta" (click)="openAccount.emit()">Open an account</button>
     </div>
 
-    <div *ngIf="mode === 'transfer' && accounts.length >= 2" class="ends">
+    <div *ngIf="mode() === 'transfer' && accounts().length >= 2" class="ends">
       <label class="field">
         <span class="field-label">From</span>
         <select class="field-input" name="from" [(ngModel)]="fromId" (ngModelChange)="onFromChange()">
-          <option *ngFor="let a of accounts" [ngValue]="a.accountId">{{ a.name }} · {{ money(a.cash) }}</option>
+          <option *ngFor="let a of accounts()" [ngValue]="a.accountId">{{ a.name }} · {{ money(a.cash) }}</option>
         </select>
       </label>
 
@@ -123,13 +123,13 @@
       <label class="field">
         <span class="field-label">To</span>
         <select class="field-input" name="to" [(ngModel)]="toId">
-          <option *ngFor="let a of accounts" [ngValue]="a.accountId" [disabled]="a.accountId === fromId">
+          <option *ngFor="let a of accounts()" [ngValue]="a.accountId" [disabled]="a.accountId === fromId()">
             {{ a.name }} · {{ money(a.cash) }}</option>
         </select>
       </label>
     </div>
 
-    <ng-container *ngIf="mode === 'deposit' || accounts.length >= 2">
+    <ng-container *ngIf="mode() === 'deposit' || accounts().length >= 2">
       <div class="field-row">
         <label class="field-label" for="cash-amount">Amount</label>
         <span class="amount">
@@ -142,22 +142,22 @@
       <div class="field-row">
         <label class="field-label" for="cash-note">Note <span class="optional">(optional)</span></label>
         <input id="cash-note" name="note" class="note" type="text" maxlength="120"
-               [placeholder]="mode === 'deposit' ? 'e.g. Monthly savings' : 'e.g. Fund IRA'" [(ngModel)]="note" />
+               [placeholder]="mode() === 'deposit' ? 'e.g. Monthly savings' : 'e.g. Fund IRA'" [(ngModel)]="note" />
       </div>
 
-      <p class="hint" [class.error]="blocker && amount !== null" aria-live="polite">
-        <ng-container *ngIf="blocker && amount !== null; else guide">{{ blocker }}</ng-container>
+      <p class="hint" [class.error]="blocker() && amount() !== null" aria-live="polite">
+        <ng-container *ngIf="blocker() && amount() !== null; else guide">{{ blocker() }}</ng-container>
         <ng-template #guide>
-          <ng-container *ngIf="mode === 'deposit'">{{ money(depositAccount?.cash) }} in {{ depositAccount?.name }} now</ng-container>
-          <ng-container *ngIf="mode === 'transfer'">
-            {{ money(from?.cash) }} available in {{ from?.name }}
-            <button *ngIf="from && from.cash > 0" type="button" class="link-btn" (click)="transferAll()">Move all</button>
+          <ng-container *ngIf="mode() === 'deposit'">{{ money(depositAccount()?.cash) }} in {{ depositAccount()?.name }} now</ng-container>
+          <ng-container *ngIf="mode() === 'transfer'">
+            {{ money(from()?.cash) }} available in {{ from()?.name }}
+            <button *ngIf="(from()?.cash ?? 0) > 0" type="button" class="link-btn" (click)="transferAll()">Move all</button>
           </ng-container>
         </ng-template>
       </p>
 
-      <button type="submit" class="cta" [disabled]="!canReview">
-        {{ mode === 'deposit' ? 'Review deposit' : 'Review transfer' }}
+      <button type="submit" class="cta" [disabled]="!canReview()">
+        {{ mode() === 'deposit' ? 'Review deposit' : 'Review transfer' }}
       </button>
     </ng-container>
   </form>
