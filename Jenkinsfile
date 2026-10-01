@@ -89,6 +89,13 @@ pipeline {
                         script: "sha256sum e2e/package-lock.json | cut -c1-12",
                         returnStdout: true).trim()
 
+                    // Feature-branch pushes stop at the smoke check; main and pull requests get
+                    // the full E2E suite. Decided here rather than only on the E2E stage because
+                    // the parallel stage starts the frontend and builds the runner image for it.
+                    // A plain Pipeline job (no BRANCH_NAME) always runs E2E rather than skipping
+                    // it on every build.
+                    env.RUN_E2E = (!env.BRANCH_NAME || env.BRANCH_NAME == 'main' || env.CHANGE_ID) ? 'true' : 'false'
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -128,22 +135,6 @@ pipeline {
             }
         }
 
-        stage('Build Frontend') {
-            steps {
-                dir('frontend') {
-                    // Its own npm cache rather than the agent user's ~/.npm: a single "sudo npm"
-                    // ever run on the agent leaves root-owned files there, and every later
-                    // install fails with EACCES. It lives in the agent user's home rather than
-                    // beside the workspace so every branch shares it and cleanWs can't delete it.
-                    sh '''
-                        node --version
-                        npm ci --cache "$HOME/.npm-ci" --no-audit --no-fund
-                        npm run build
-                    '''
-                }
-            }
-        }
-
         stage('Pull Images') {
             steps {
                 sh '''
@@ -152,197 +143,270 @@ pipeline {
                     # containerd store occasionally fails to unpack a layer mid-pull ("failed to
                     # extract layer ... no such file or directory") and a second attempt goes
                     # through. The later stages then use these local copies without pulling.
-                    # Base images are read from the Dockerfiles so this list can't drift from them.
-                    images="postgres:16-alpine maven:3.9-eclipse-temurin-21 node:24-alpine $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
-                    for image in $images; do
+                    # Base images are read from the Dockerfiles so this list can't drift from them;
+                    # the unit tests run on the same Maven image the service Dockerfiles build with.
+                    #
+                    # The pulls run side by side: on a warm agent each one is a registry round trip
+                    # that finds nothing to download, and there is no reason to make them queue.
+                    images="postgres:16-alpine node:24-alpine $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    pull() {
                         for attempt in 1 2 3; do
-                            if docker pull -q "$image"; then
-                                break
+                            if docker pull -q "$1" >/dev/null; then
+                                return 0
                             fi
-                            if [ "$attempt" = "3" ]; then
-                                echo "Could not pull $image after 3 attempts"
-                                exit 1
-                            fi
-                            echo "Pulling $image failed (attempt $attempt/3), retrying..."
+                            echo "Pulling $1 failed (attempt $attempt/3), retrying..."
                             sleep 5
                         done
+                        echo "Could not pull $1 after 3 attempts"
+                        return 1
+                    }
+                    pids=""
+                    for image in $images; do
+                        pull "$image" &
+                        pids="$pids $!"
                     done
-                '''
-            }
-        }
-
-        stage('Test') {
-            environment {
-                // Throwaway CI database credentials; the container is destroyed after the stage.
-                TEST_DB_PASSWORD = "ci-test-password"
-                // Named after the compose project, which carries the branch: BUILD_NUMBER plus
-                // EXECUTOR_NUMBER is not unique across jobs, so two branches that happened to
-                // land on the same build number and executor shared this name - and the
-                // "docker rm -f" below would then destroy the other build's test database
-                // mid-run. Same defect the fixed host ports had.
-                PG_CONTAINER = "pg-test-${COMPOSE_PROJECT}"
-            }
-            steps {
-                sh '''
-                    set -eu
-                    docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
-
-                    docker run -d --name "${PG_CONTAINER}" \
-                        -e POSTGRES_DB=paysprint \
-                        -e POSTGRES_USER=paysprint \
-                        -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
-                        -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
-                        postgres:16-alpine
-
-                    # Poll for a schema table rather than pg_isready: the server answers on its
-                    # unix socket while the init scripts are still running, so pg_isready can
-                    # report ready before the schema exists.
-                    echo "waiting for postgres schema to load..."
-                    for i in $(seq 1 45); do
-                        if docker exec "${PG_CONTAINER}" psql -U paysprint -d paysprint \
-                                -c "SELECT 1 FROM trading.orders LIMIT 1;" >/dev/null 2>&1; then
-                            echo "postgres ready"
-                            break
-                        fi
-                        if [ "$i" = "45" ]; then
-                            echo "postgres never became ready"
-                            docker logs "${PG_CONTAINER}"
-                            exit 1
-                        fi
-                        sleep 2
+                    failed=0
+                    for pid in $pids; do
+                        wait "$pid" || failed=1
                     done
-
-                    # --user keeps target/ and surefire-reports/ owned by the agent account.
-                    # Without it Maven writes them as root and the next build's "git clean"
-                    # can't delete them, wedging this workspace permanently.
-                    # Maven needs a writable HOME to run as a non-root uid, hence user.home.
-                    #
-                    # Sharing the postgres container's network namespace makes the database
-                    # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
-                    #
-                    # The Maven repository is mounted from the agent so dependencies are
-                    # downloaded once, not on every build. The directory is created in Configure
-                    # Pipeline as the agent user; if Docker had to create it, it would be root's.
-                    docker run --rm \
-                        --network "container:${PG_CONTAINER}" \
-                        --user "$(id -u):$(id -g)" \
-                        -v "$WORKSPACE":/app \
-                        -v "$HOME/.m2-ci":/tmp/.m2 \
-                        -w /app \
-                        -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
-                        -e MAVEN_CONFIG=/tmp/.m2 \
-                        maven:3.9-eclipse-temurin-21 \
-                        mvn -B -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
+                    exit "$failed"
                 '''
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                    sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
-                }
             }
         }
 
         stage('Start Database') {
             steps {
-                sh '''
-                    set -eu
-
-                    # No port reclaiming here any more. It used to free this executor's
-                    # fixed ports before claiming them, which could not distinguish a crashed
-                    # build's leftovers from another branch's containers running right now, and
-                    # checked minutes before "Start Services" actually bound anything anyway.
-                    # Ephemeral ports remove the contention the sweep existed to resolve; the
-                    # post block's "docker-compose down -v" still cleans up this build's own
-                    # containers.
-
-                    $COMPOSE -p "$COMPOSE_PROJECT" up -d db
-                    echo "Waiting for PostgreSQL and schema initialization..."
-                    for i in $(seq 1 60); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T db pg_isready -U paysprint -d paysprint; then
-                            echo "PostgreSQL is ready"
-                            exit 0
-                        fi
-                        sleep 2
-                    done
-                    echo "PostgreSQL did not become ready"
-                    exit 1
-                '''
+                // Detached and without waiting: Postgres loads the schema and the S&P 500 seeds
+                // while everything below builds, instead of the build standing idle for it.
+                // "Validate Database" is where the stack waits for it to finish. Started here,
+                // before the parallel branches, so it is the one "up" that creates the compose
+                // network - the frontend branch's "up" then joins it rather than racing to
+                // create the same network.
+                sh '$COMPOSE -p "$COMPOSE_PROJECT" up -d db'
             }
         }
 
-        stage('Validate Database') {
-            steps {
-                sh '''
-                    set -eu
-                    echo "Checking initialized database schemas..."
-                    for i in $(seq 1 30); do
-                        ready=$($COMPOSE -p "$COMPOSE_PROJECT" exec -T db psql -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
-                        if [ "$ready" = "t" ]; then
-                            echo "IAM, trading, and market-data schemas are initialized"
-                            exit 0
-                        fi
-                        sleep 2
-                    done
-                    echo "Required database tables were not initialized"
-                    exit 1
-                '''
-            }
-        }
+        stage('Build and Test') {
+            // These branches share this build's executor and workspace - parallel inside a
+            // node needs no second executor. They touch disjoint parts of the workspace and
+            // run in disjoint containers, and most of each is waiting on I/O (npm, Docker,
+            // Postgres, Spring startup) rather than competing for CPU.
+            failFast true
+            parallel {
+                stage('Frontend') {
+                    steps {
+                        dir('frontend') {
+                            // Its own npm cache rather than the agent user's ~/.npm: a single "sudo
+                            // npm" ever run on the agent leaves root-owned files there, and every
+                            // later install fails with EACCES. It lives in the agent user's home
+                            // rather than beside the workspace so every branch shares it and
+                            // cleanWs can't delete it.
+                            sh '''
+                                node --version
+                                npm ci --cache "$HOME/.npm-ci" --no-audit --no-fund
+                            '''
+                        }
+                        script {
+                            // The E2E dev server has its own install and its first compile ahead
+                            // of it, which was a stretch of the E2E stage spent waiting. Start it
+                            // now so that happens alongside the backend build.
+                            //
+                            // Only after the npm ci above, never before or during: the container
+                            // mounts a volume over frontend/node_modules, and if Docker got there
+                            // first it would create that directory root-owned and the host install
+                            // would fail on it. The container's install goes into that volume, and
+                            // its build cache into another, so from here on the host build below
+                            // and the container never write to the same files.
+                            if (env.RUN_E2E == 'true') {
+                                sh '$COMPOSE -p "$COMPOSE_PROJECT" up -d frontend'
+                            }
+                        }
+                        dir('frontend') {
+                            sh 'npm run build'
+                        }
+                    }
+                }
 
-        stage('Build Docker Images') {
-            steps {
-                sh '''
-                    set -eu
-                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
-                    echo "Built service images tagged $IMAGE_TAG"
-                '''
-            }
-        }
+                stage('Unit Tests') {
+                    environment {
+                        // Throwaway CI database credentials; the container is destroyed after the stage.
+                        TEST_DB_PASSWORD = "ci-test-password"
+                        // Named after the compose project, which carries the branch: BUILD_NUMBER plus
+                        // EXECUTOR_NUMBER is not unique across jobs, so two branches that happened to
+                        // land on the same build number and executor shared this name - and the
+                        // "docker rm -f" below would then destroy the other build's test database
+                        // mid-run. Same defect the fixed host ports had.
+                        PG_CONTAINER = "pg-test-${COMPOSE_PROJECT}"
+                    }
+                    steps {
+                        sh '''
+                            set -eu
+                            docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
 
-        stage('Start Services') {
-            steps {
-                sh '''
-                    set -eu
-                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
-                    $COMPOSE -p "$COMPOSE_PROJECT" ps
-                '''
-            }
-        }
+                            docker run -d --name "${PG_CONTAINER}" \
+                                -e POSTGRES_DB=paysprint \
+                                -e POSTGRES_USER=paysprint \
+                                -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
+                                -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
+                                postgres:16-alpine
 
-        stage('Verify Services') {
-            steps {
-                sh '''
-                    set -eu
-                    echo "Waiting for service health endpoints..."
-                    for i in $(seq 1 60); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
-                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
-                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
-                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
-                            echo "All services are healthy"
-                            exit 0
-                        fi
-                        echo "Services not ready yet (attempt $i/60)"
-                        sleep 3
-                    done
-                    echo "Services did not become healthy in time"
-                    exit 1
-                '''
+                            # Poll for a schema table rather than pg_isready: the server answers on its
+                            # unix socket while the init scripts are still running, so pg_isready can
+                            # report ready before the schema exists.
+                            echo "waiting for postgres schema to load..."
+                            for i in $(seq 1 45); do
+                                if docker exec "${PG_CONTAINER}" psql -U paysprint -d paysprint \
+                                        -c "SELECT 1 FROM trading.orders LIMIT 1;" >/dev/null 2>&1; then
+                                    echo "postgres ready"
+                                    break
+                                fi
+                                if [ "$i" = "45" ]; then
+                                    echo "postgres never became ready"
+                                    docker logs "${PG_CONTAINER}"
+                                    exit 1
+                                fi
+                                sleep 2
+                            done
+
+                            # --user keeps target/ and surefire-reports/ owned by the agent account.
+                            # Without it Maven writes them as root and the next build's "git clean"
+                            # can't delete them, wedging this workspace permanently.
+                            # Maven needs a writable HOME to run as a non-root uid, hence user.home.
+                            #
+                            # Sharing the postgres container's network namespace makes the database
+                            # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
+                            #
+                            # The Maven repository is mounted from the agent so dependencies are
+                            # downloaded once, not on every build. The directory is created in Configure
+                            # Pipeline as the agent user; if Docker had to create it, it would be root's.
+                            #
+                            # The same Maven image the service Dockerfiles build with, so a fresh agent
+                            # pulls one Maven image rather than two. -T 1C builds the modules side by
+                            # side once common-security is done. The tests that reach the database
+                            # (iam-app and order-app booting their real applications, and order-app's
+                            # retention test) each work in their own app's tables, so running the
+                            # modules at once doesn't have them tripping over each other.
+                            #
+                            # TieredStopAtLevel=1 keeps the JIT to its quick first tier. The suite is
+                            # dominated by Spring contexts starting in fresh JVMs, which finish before
+                            # the optimising tier would pay for itself; measured ~30% off the run.
+                            # Set through the environment so Maven's forked test JVMs inherit it too.
+                            docker run --rm \
+                                --network "container:${PG_CONTAINER}" \
+                                --user "$(id -u):$(id -g)" \
+                                -v "$WORKSPACE":/app \
+                                -v "$HOME/.m2-ci":/tmp/.m2 \
+                                -w /app \
+                                -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
+                                -e MAVEN_CONFIG=/tmp/.m2 \
+                                -e JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1 \
+                                maven:3.9.9-eclipse-temurin-21-alpine \
+                                mvn -B -T 1C -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
+                        '''
+                    }
+                    post {
+                        always {
+                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
+                        }
+                    }
+                }
+
+                stage('Service Stack') {
+                    stages {
+                        stage('Build Docker Images') {
+                            steps {
+                                sh '''
+                                    set -eu
+                                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
+                                    echo "Built service images tagged $IMAGE_TAG"
+                                '''
+                            }
+                        }
+
+                        stage('Validate Database') {
+                            steps {
+                                sh '''
+                                    set -eu
+                                    # Over TCP to 127.0.0.1 rather than the unix socket: while the init
+                                    # scripts run, Postgres listens on its socket only, so a socket check
+                                    # passes with the seeds half loaded. TCP answers once they are done
+                                    # and the real server is up. Normally already true by now - the
+                                    # image build above takes longer than the seeds.
+                                    echo "Waiting for PostgreSQL to finish initializing..."
+                                    for i in $(seq 1 90); do
+                                        ready=$($COMPOSE -p "$COMPOSE_PROJECT" exec -T -e PGPASSWORD="${DB_PASSWORD:-changeme}" db \
+                                            psql -h 127.0.0.1 -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
+                                        if [ "$ready" = "t" ]; then
+                                            echo "IAM, trading, and market-data schemas are initialized"
+                                            exit 0
+                                        fi
+                                        sleep 2
+                                    done
+                                    echo "PostgreSQL did not finish initializing the required schemas"
+                                    exit 1
+                                '''
+                            }
+                        }
+
+                        stage('Start Services') {
+                            steps {
+                                sh '''
+                                    set -eu
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
+                                    $COMPOSE -p "$COMPOSE_PROJECT" ps
+                                '''
+                            }
+                        }
+
+                        stage('Verify Services') {
+                            steps {
+                                sh '''
+                                    set -eu
+                                    echo "Waiting for service health endpoints..."
+                                    for i in $(seq 1 60); do
+                                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
+                                            echo "All services are healthy"
+                                            exit 0
+                                        fi
+                                        echo "Services not ready yet (attempt $i/60)"
+                                        sleep 3
+                                    done
+                                    echo "Services did not become healthy in time"
+                                    exit 1
+                                '''
+                            }
+                        }
+                    }
+                }
+
+                stage('E2E Runner Image') {
+                    when {
+                        environment name: 'RUN_E2E', value: 'true'
+                    }
+                    steps {
+                        // Node, the suite's dependencies and Chromium's headless shell only (see
+                        // e2e/Dockerfile). Built on the first build after a dependency change,
+                        // reused otherwise - and on the builds that do rebuild it, it no longer
+                        // holds up the E2E stage.
+                        sh '''
+                            set -eu
+                            if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
+                                docker build -t "$E2E_IMAGE" e2e
+                            fi
+                        '''
+                    }
+                }
             }
         }
 
         stage('E2E') {
-            // Feature-branch pushes stop at the smoke check above; main and pull requests get
-            // the full suite. "branch" and "changeRequest" only mean anything in a multibranch
-            // job, so a plain Pipeline job (no BRANCH_NAME) always runs E2E rather than
-            // skipping it on every build.
+            // RUN_E2E is set in Configure Pipeline.
             when {
-                anyOf {
-                    branch 'main'
-                    changeRequest()
-                    expression { !env.BRANCH_NAME }
-                }
+                environment name: 'RUN_E2E', value: 'true'
             }
             options {
                 timeout(time: 20, unit: 'MINUTES')
@@ -351,8 +415,8 @@ pipeline {
                 sh '''
                     set -eu
                     # The Angular dev server: its proxy is what routes /api/** to the services, the
-                    # same way a developer's browser reaches them.
-                    $COMPOSE -p "$COMPOSE_PROJECT" up -d frontend
+                    # same way a developer's browser reaches them. Started by the Frontend branch
+                    # of "Build and Test", so its install and first compile are usually done by now.
                     echo "Waiting for the frontend (installs dependencies on first start)..."
                     for i in $(seq 1 120); do
                         if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
@@ -366,12 +430,7 @@ pipeline {
                         sleep 5
                     done
 
-                    # The runner: Node, the suite's dependencies and Chromium's headless shell only.
-                    # Built on the first build after a dependency change, reused otherwise.
-                    if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
-                        docker build -t "$E2E_IMAGE" e2e
-                    fi
-
+                    # The runner image was built (or found) by the "E2E Runner Image" branch.
                     # Attached to the compose network so it reaches the frontend by service name.
                     # --user keeps the reports owned by the agent account, for the same reason as
                     # the Maven step. The image already holds node_modules, so nothing installs.
