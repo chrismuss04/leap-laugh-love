@@ -101,11 +101,11 @@ class TradeValidationServiceTest {
         tradeValidationService = new TradeValidationService();
 
         activeAccount = new AccountValidationDto(
-                true, true, new BigDecimal("10000.00"), 20, "USD", "ACC-01");
+                true, true, new BigDecimal("10000.00"), 20, "USD", "ACC-01", null);
         lockedAccount = new AccountValidationDto(
-                true, false, new BigDecimal("10000.00"), 20, "USD", "ACC-LOCKED");
+                true, false, new BigDecimal("10000.00"), 20, "USD", "ACC-LOCKED", null);
         inactiveAccount = new AccountValidationDto(
-                false, true, new BigDecimal("10000.00"), 20, "USD", "ACC-INACTIVE");
+                false, true, new BigDecimal("10000.00"), 20, "USD", "ACC-INACTIVE", null);
 
         tradableInstrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         untradableInstrument = new Instrument(UUID.randomUUID(), "DELIST", "Delisted Inc.", "EQUITY", "NASDAQ", "USD", false);
@@ -125,7 +125,7 @@ class TradeValidationServiceTest {
     @DisplayName("BUY with insufficient cash is REJECTED")
     void testBuyWithInsufficientCash_Rejected() {
         AccountValidationDto lowCashAccount = new AccountValidationDto(
-                true, true, new BigDecimal("500.00"), 20, "USD", "ACC-01");
+                true, true, new BigDecimal("500.00"), 20, "USD", "ACC-01", null);
 
         TradeValidationResult result = tradeValidationService.validateTrade(
                 lowCashAccount, tradableInstrument, Order.Side.BUY, 10, new BigDecimal("150.00"));
@@ -158,7 +158,7 @@ class TradeValidationServiceTest {
     @DisplayName("SELL without existing position is REJECTED")
     void testSellWithNoPosition_Rejected() {
         AccountValidationDto noHoldingsAccount = new AccountValidationDto(
-                true, true, new BigDecimal("10000.00"), 0, "USD", "ACC-01");
+                true, true, new BigDecimal("10000.00"), 0, "USD", "ACC-01", null);
 
         TradeValidationResult result = tradeValidationService.validateTrade(
                 noHoldingsAccount, tradableInstrument, Order.Side.SELL, 10, new BigDecimal("150.00"));
@@ -206,5 +206,49 @@ class TradeValidationServiceTest {
         assertFalse(result.isValid());
         assertTrue(result.reason().contains("Quantity must be greater than zero"));
     }
-}
 
+    private TradeValidationResult tolerance(String quoted, String execution, String maxPercent) {
+        return tradeValidationService.checkPriceTolerance(
+                new BigDecimal(quoted), new BigDecimal(execution), new BigDecimal(maxPercent));
+    }
+
+    @Test
+    @DisplayName("Price tolerance: a move within the tolerance is ACCEPTED, up or down")
+    void testPriceTolerance_MoveWithinTolerance_Accepted() {
+        assertTrue(tolerance("100.00", "100.9900", "1.00").isValid());
+        assertTrue(tolerance("100.00", "99.0100", "1.00").isValid());
+    }
+
+    @Test
+    @DisplayName("Price tolerance: a move of exactly the tolerance is ACCEPTED, up or down")
+    void testPriceTolerance_MoveEqualToTolerance_Accepted() {
+        assertTrue(tolerance("100.00", "101.0000", "1.00").isValid());
+        assertTrue(tolerance("100.00", "99.0000", "1.00").isValid());
+    }
+
+    @Test
+    @DisplayName("Price tolerance: a rise beyond the tolerance is REJECTED with the size of the move")
+    void testPriceTolerance_RiseBeyondTolerance_Rejected() {
+        TradeValidationResult result = tolerance("150.00", "151.8500", "1.00");
+
+        assertFalse(result.isValid());
+        assertEquals("Price moved 1.23% from your quoted $150.00 to $151.85, beyond your 1.00% tolerance"
+                + " - order rejected", result.reason());
+    }
+
+    @Test
+    @DisplayName("Price tolerance: a fall beyond the tolerance is REJECTED too, even though it favours a buyer")
+    void testPriceTolerance_FallBeyondTolerance_Rejected() {
+        TradeValidationResult result = tolerance("150.00", "148.0000", "1.00");
+
+        assertFalse(result.isValid());
+        assertTrue(result.reason().startsWith("Price moved 1.33% from your quoted $150.00 to $148.00"));
+    }
+
+    @Test
+    @DisplayName("Price tolerance: a zero tolerance accepts only an unchanged price")
+    void testPriceTolerance_ZeroTolerance() {
+        assertTrue(tolerance("150.00", "150.0000", "0").isValid());
+        assertFalse(tolerance("150.00", "150.0100", "0").isValid());
+    }
+}

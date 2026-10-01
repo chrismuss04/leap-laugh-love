@@ -126,12 +126,12 @@ class OrderSubmissionIntegrationTest {
     @DisplayName("End-to-End BUY order: fills, creates audit execution, records position movement, and settles via account-app")
     void testEndToEndBuyOrder_Success() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
         when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
                 .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 35L, new BigDecimal("150.00")));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -181,12 +181,12 @@ class OrderSubmissionIntegrationTest {
     @DisplayName("End-to-End SELL order: fills, records position movement, and settles via account-app")
     void testEndToEndSellOrder_Success() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
         when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
                 .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("11000.00"), 20L, new BigDecimal("183.50")));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("200.00"));
+                accountOwnerId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("149.50"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -213,11 +213,11 @@ class OrderSubmissionIntegrationTest {
     @DisplayName("End-to-End Rejected BUY order (insufficient funds): stores REJECTED order & execution, skips settlement")
     void testEndToEndBuyOrder_RejectedInsufficientFunds() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
 
         // Order costing $1,500,000 exceeding available $10,000
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.BUY, 10000, new BigDecimal("150.00"));
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10000, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -236,11 +236,11 @@ class OrderSubmissionIntegrationTest {
     @DisplayName("End-to-End Rejected SELL order (insufficient holdings): stores REJECTED order & execution, skips settlement")
     void testEndToEndSellOrder_RejectedInsufficientPosition() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
 
         // Client only holds 25 AAPL, attempts to sell 100
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.SELL, 100, new BigDecimal("150.00"));
+                accountOwnerId, "AAPL", null, Order.Side.SELL, 100, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -262,7 +262,7 @@ class OrderSubmissionIntegrationTest {
                 .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                otherAccountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                otherAccountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -275,12 +275,12 @@ class OrderSubmissionIntegrationTest {
     @DisplayName("End-to-End market BUY order without explicit price: uses askPrice from CurrentQuoteService")
     void testEndToEndMarketOrder_NullPrice_UsesCurrentQuoteServiceAskPrice() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
         when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
                 .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 35L, new BigDecimal("150.00")));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, null);
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, null, null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)
@@ -294,16 +294,94 @@ class OrderSubmissionIntegrationTest {
     }
 
     @Test
+    @DisplayName("End-to-End BUY rejected when the ask moved beyond the order's tolerance: quote and tolerance stored for audit")
+    void testEndToEndBuyOrder_RejectedPriceMovedBeyondTolerance() throws Exception {
+        when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
+
+        // Quoted $148.00, the ask is now $150.00: a 1.35% move against a 1% tolerance.
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("148.00"), new BigDecimal("1.00"));
+
+        mockMvc.perform(post("/api/order/orders")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason").value(
+                        "Price moved 1.35% from your quoted $148.00 to $150.00, beyond your 1.00% tolerance - order rejected"))
+                .andExpect(jsonPath("$.execution.status").value("REJECTED"));
+
+        Order rejected = orderRepository.findAll().stream()
+                .filter(o -> o.getAccountId().equals(accountOwnerId))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(Order.Status.REJECTED, rejected.getStatus());
+        assertEquals(0, new BigDecimal("148.00").compareTo(rejected.getQuotedPrice()));
+        assertEquals(0, new BigDecimal("1.00").compareTo(rejected.getMaxSlippagePercent()));
+        verify(accountClient, never()).settleOrder(any(), any());
+    }
+
+    @Test
+    @DisplayName("End-to-End SELL within the account's saved tolerance fills at the bid")
+    void testEndToEndSellOrder_WithinSavedTolerance_Fills() throws Exception {
+        when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD",
+                        new BigDecimal("0.50")));
+        when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("10747.50"), 20L, new BigDecimal("140.00")));
+
+        // Quoted $149.75, the bid is $149.50: a 0.17% move, inside the saved 0.5%.
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountOwnerId, "AAPL", null, Order.Side.SELL, 5, new BigDecimal("149.75"), null);
+
+        mockMvc.perform(post("/api/order/orders")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("FILLED"))
+                .andExpect(jsonPath("$.execution.fillPrice").value(149.50));
+
+        Order filled = orderRepository.findAll().stream()
+                .filter(o -> o.getAccountId().equals(accountOwnerId))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0, new BigDecimal("0.50").compareTo(filled.getMaxSlippagePercent()));
+    }
+
+    @Test
+    @DisplayName("Account with a saved tolerance can't place an order without a quoted price: 400, nothing stored")
+    void testSubmitOrder_SavedToleranceWithoutQuotedPrice_Returns400() throws Exception {
+        when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD",
+                        new BigDecimal("1.00")));
+
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, null, null);
+
+        mockMvc.perform(post("/api/order/orders")
+                        .header("Authorization", "Bearer " + ownerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("quotedPrice is required: this account has a saved price tolerance"));
+
+        assertTrue(orderRepository.findAll().stream().noneMatch(o -> o.getAccountId().equals(accountOwnerId)));
+    }
+
+    @Test
     @DisplayName("Settlement times out: order is kept ACCEPTED (202), then recovery settles it and records it FILLED")
     void testSettlementTimeout_RecoveredToFilled() throws Exception {
         when(accountClient.getValidationData(eq(accountOwnerId), eq(instrumentAaplId)))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD"));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L, "USD", "ACC-OWNER-USD", null));
         // account-app booked the trade, but its answer never arrived.
         when(accountClient.settleOrder(eq(accountOwnerId), any(SettlementRequest.class)))
                 .thenThrow(new ResourceAccessException("Read timed out"));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                accountOwnerId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .header("Authorization", "Bearer " + ownerToken)

@@ -17,7 +17,7 @@ import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 // Every signed-in page renders inside the shell, which owns the header and navigation.
-const routes: Routes = [
+export const routes: Routes = [
   {
     path: '',
     component: ShellComponent,
@@ -28,6 +28,9 @@ const routes: Routes = [
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
+      // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
+      { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
+      { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'profile', component: ProfileComponent },
       { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }

@@ -28,6 +28,8 @@ export interface AccountSummary {
   status: string;
   baseCurrency: string;
   tradingEnabled: boolean;
+  /** Saved price protection in percent; orders without their own use it. Null when off. */
+  maxSlippagePercent: number | null;
   createdAt: string;
 }
 
