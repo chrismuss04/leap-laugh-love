@@ -1,11 +1,13 @@
 package com.leap.leaplaughlove.iam.client;
 
+import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import jakarta.validation.Payload;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -34,24 +36,29 @@ public class ClientRegistrationController {
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Constructs a new ClientRegistrationController with the specified
      * dependencies.
-     * 
+     *
      * @param clientRepository      the client repository used for persisting and
      *                              retrieving client data
      * @param credentialsRepository the repository used for persisting the client's
      *                              login credentials
      * @param passwordEncoder       the encoder used to hash the client's password
      *                              before it is stored
+     * @param eventPublisher        publishes the registration so the client's first
+     *                              account is opened once it has committed
      */
     public ClientRegistrationController(ClientRepository clientRepository,
             ClientCredentialsRepository credentialsRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder,
+            ApplicationEventPublisher eventPublisher) {
         this.clientRepository = clientRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -74,7 +81,7 @@ public class ClientRegistrationController {
 
         OffsetDateTime now = OffsetDateTime.now();
         Client client = new Client(
-                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), "PENDING", now,
+                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), "ACTIVE", now,
                 request.fullName(), request.dateOfBirth(), request.ssn(),
                 request.addressLine1(), request.addressLine2(), request.city(),
                 request.stateRegion(), request.postalCode(), request.countryCode(),
@@ -84,6 +91,9 @@ public class ClientRegistrationController {
         ClientCredentials credentials = new ClientCredentials(
                 client.getClientId(), passwordEncoder.encode(request.password()), 0, null);
         credentialsRepository.save(credentials);
+
+        eventPublisher.publishEvent(new ClientRegisteredEvent(
+                client.getClientId(), client.getEmail(), request.initialDepositAmount()));
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));

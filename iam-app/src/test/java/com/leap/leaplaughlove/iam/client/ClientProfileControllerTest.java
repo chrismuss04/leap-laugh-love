@@ -12,6 +12,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.is;
+import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -54,6 +55,7 @@ class ClientProfileControllerTest {
                 .andExpect(jsonPath("$.email", is("alice@example.com")))
                 .andExpect(jsonPath("$.fullName", is("Alice Example")))
                 .andExpect(jsonPath("$.experienceLevel", is("INTERMEDIATE")))
+                .andExpect(jsonPath("$.createdAt", startsWith("2024-01-15")))
                 .andExpect(jsonPath("$.ssn").doesNotExist())
                 .andExpect(jsonPath("$.dateOfBirth").doesNotExist());
     }

@@ -1,21 +1,42 @@
 package com.leap.leaplaughlove.iam.client;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.iam.account.AccountClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 // LLL-117: Client Registration - Validation user story.
@@ -31,6 +52,21 @@ class ClientRegistrationControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private ClientRepository clientRepository;
+
+    @Autowired
+    private JwtService jwtService;
+
+    @Autowired
+    private ClientSessionValidator sessionValidator;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    @MockBean
+    private AccountClient accountClient;
 
     // Builds a registration payload that passes every rule, so each test only has to
     // break the one field it's actually checking.
@@ -60,6 +96,86 @@ class ClientRegistrationControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(validPayload("jordan.rivera@example.com"))))
                 .andExpect(status().isCreated());
+    }
+
+    // Registers and returns the new client's id.
+    private UUID register(Map<String, Object> payload) throws Exception {
+        String body = mockMvc.perform(post("/api/iam/v1/clients/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(objectMapper.readTree(body).get("clientId").asText());
+    }
+
+    @Test
+    void registersClientAsActive() throws Exception {
+        UUID clientId = register(validPayload("active.client@example.com"));
+
+        assertEquals("ACTIVE", clientRepository.findById(clientId).orElseThrow().getStatus());
+    }
+
+    @Test
+    void opensFirstAccountAndDepositsInitialAmountAsTheNewClient() throws Exception {
+        UUID accountId = UUID.randomUUID();
+        AtomicReference<String> tokenSeen = new AtomicReference<>();
+        AtomicReference<String> committedStatusSeen = new AtomicReference<>();
+        AtomicReference<Boolean> sessionActiveDuringCall = new AtomicReference<>();
+        Map<String, Object> payload = validPayload("funded.client@example.com");
+        payload.put("initialDepositAmount", new BigDecimal("7500.00"));
+
+        when(accountClient.createAccount(anyString(), eq("USD"))).thenAnswer(invocation -> {
+            tokenSeen.set(invocation.getArgument(0));
+            // account-app's JwtAuthenticationFilter applies exactly this check to every client token.
+            JwtService.TokenIdentity identity = jwtService.parseIdentity(tokenSeen.get());
+            sessionActiveDuringCall.set(sessionValidator.isActive(
+                    identity.sessionId(), identity.clientId(), identity.expiresAt()));
+            // A second thread has its own connection, so it only sees the client if it has committed.
+            committedStatusSeen.set(CompletableFuture.supplyAsync(() -> jdbcTemplate.query(
+                    "SELECT status FROM iam.clients WHERE email = ?",
+                    (rs, rowNum) -> rs.getString(1), "funded.client@example.com")
+                    .stream().findFirst().orElse("NOT VISIBLE")).get(5, TimeUnit.SECONDS));
+            return accountId;
+        });
+
+        UUID clientId = register(payload);
+
+        assertEquals("ACTIVE", committedStatusSeen.get(),
+                "the account must be opened only after the registration has committed");
+        assertEquals(clientId, jwtService.parseAndValidate(tokenSeen.get()));
+        assertEquals(Boolean.TRUE, sessionActiveDuringCall.get(),
+                "account-app rejects tokens that are not backed by an active session");
+        verify(accountClient).deposit(eq(tokenSeen.get()), eq(accountId),
+                argThat(amount -> amount.compareTo(new BigDecimal("7500.00")) == 0), eq("Initial deposit"));
+
+        JwtService.TokenIdentity identity = jwtService.parseIdentity(tokenSeen.get());
+        assertFalse(sessionValidator.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt()),
+                "the provisioning session must be revoked once the account is opened and funded");
+    }
+
+    @Test
+    void registrationStillSucceedsWhenAccountAppIsUnavailable() throws Exception {
+        when(accountClient.createAccount(anyString(), anyString()))
+                .thenThrow(new ResourceAccessException("account-app unreachable"));
+
+        UUID clientId = register(validPayload("unlucky.client@example.com"));
+
+        assertEquals("ACTIVE", clientRepository.findById(clientId).orElseThrow().getStatus());
+        verify(accountClient, never()).deposit(any(), any(), any(), any());
+    }
+
+    @Test
+    void rejectedRegistrationOpensNoAccount() throws Exception {
+        Map<String, Object> payload = validPayload("no.ssn.account@example.com");
+        payload.put("ssn", "");
+
+        mockMvc.perform(post("/api/iam/v1/clients/register")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(payload)))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(accountClient);
     }
 
     @Test

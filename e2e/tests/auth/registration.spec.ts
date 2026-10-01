@@ -1,5 +1,7 @@
 import { test, expect } from '../../fixtures/test';
 import { uniqueRegistration } from '../../data/factories';
+import { Api } from '../../fixtures/api';
+import { money } from '../../pages/format';
 import { RegistrationPage } from '../../pages/registration.page';
 import { SignInPage } from '../../pages/sign-in.page';
 import { DashboardPage } from '../../pages/dashboard.page';
@@ -14,18 +16,59 @@ test.describe('Create account', () => {
     await form.goto();
   });
 
-  test('a complete application registers and the new client can sign in @smoke', async ({ page }) => {
-    const user = uniqueRegistration();
+  test('a complete application registers and the new client can sign in @smoke', async ({ page, tokenFor }) => {
+    // Registration blocks while iam-app opens and funds the account in account-app, and the CI VM
+    // runs the whole stack on shared CPUs, so this test gets more room than the suite default.
+    test.setTimeout(120_000);
+    const slow = { timeout: 30_000 };
+
+    // Not a round number, so a hardcoded amount or a rounded one can't satisfy the assertions below.
+    const initialDeposit = 12_500.75;
+    const user = uniqueRegistration({ initialDeposit });
     await form.fill(user);
     await form.submit.click();
 
-    await expect(form.success).toHaveText('Application submitted! Redirecting to sign in...');
-    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+    await expect(form.success).toHaveText('Application submitted! Redirecting to sign in...', slow);
+    await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible(slow);
+
+    // Registration opens the first account and books the initial deposit into it before it responds,
+    // so the backend is checked first: a failure here names the step that broke (no account, or an
+    // account with no deposit) instead of surfacing later as a bare "$0.00" on the dashboard.
+    // Polled, because a deposit that outlasted iam-app's call timeout can still commit just after.
+    const api = new Api(page.request).as(await tokenFor(user.email));
+    await expect
+      .poll(async () => (await api.accounts()).length, {
+        ...slow,
+        message:
+          'Registration succeeded but no account was opened. iam-app could not create it in account-app; ' +
+          'see its "could not open their first account" log line.',
+      })
+      .toBe(1);
+    const accounts = await api.accounts();
+    expect(accounts[0].accountNumber).toMatch(/^ACC-[A-Z0-9]{8}$/);
+    expect(accounts[0].status).toBe('ACTIVE');
+    expect(accounts[0].tradingEnabled).toBe(true);
+
+    await expect
+      .poll(async () => (await api.balance()).accounts.find(a => a.accountId === accounts[0].accountId)?.balance, {
+        ...slow,
+        message:
+          `The account ${accounts[0].accountNumber} was opened but the ${money(initialDeposit)} initial deposit ` +
+          'was not booked; see the iam-app "initial deposit ... unconfirmed" log line.',
+      })
+      .toBe(initialDeposit);
+    const { accounts: balances } = await api.balance();
+    expect(balances, 'The balance API should list the new account').toHaveLength(1);
+    expect(balances[0].accountId).toBe(accounts[0].accountId);
+    expect(balances[0].currency).toBe('USD');
 
     await new SignInPage(page).signIn(user.email, user.password);
-    await expect(page).toHaveURL(/\/dashboard$/);
-    // Registration creates the client only; the dashboard should say there's nothing yet, not error.
-    await expect(new DashboardPage(page).positions).toContainText("You don't own any investments yet");
+    await expect(page).toHaveURL(/\/dashboard$/, slow);
+
+    // The same cash shows as buying power on the dashboard, with no holdings yet.
+    const dashboard = new DashboardPage(page);
+    await expect(dashboard.buyingPower).toContainText(money(initialDeposit), slow);
+    await expect(dashboard.positions).toContainText("You don't own any investments yet", slow);
   });
 
   test('an email that is already registered is refused', async ({ api }) => {

@@ -1,9 +1,12 @@
 package com.leap.leaplaughlove.account.account;
 
 import com.leap.leaplaughlove.common.security.SecurityUtils;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -21,19 +24,35 @@ public class AccountController {
 
     private final AccountRepository accountRepository;
     private final AccountAuthorizationService accountAuthorizationService;
+    private final AccountService accountService;
 
     /**
-     * Constructs an AccountController with the injected account repository and
-     * account authorization service.
-     * 
+     * Constructs an AccountController with the injected account repository,
+     * account authorization service and account service.
+     *
      * @param accountRepository           the repository used to access account data
      * @param accountAuthorizationService the service used to perform authorization
      *                                    checks on accounts
+     * @param accountService              the service used to open new accounts
      */
     public AccountController(AccountRepository accountRepository,
-            AccountAuthorizationService accountAuthorizationService) {
+            AccountAuthorizationService accountAuthorizationService,
+            AccountService accountService) {
         this.accountRepository = accountRepository;
         this.accountAuthorizationService = accountAuthorizationService;
+        this.accountService = accountService;
+    }
+
+    /**
+     * Opens a new account for the authenticated client.
+     *
+     * @param request the creation request; the body may be omitted to default to USD
+     * @return the summary of the newly created account
+     */
+    @PostMapping
+    public ResponseEntity<AccountSummary> createAccount(@RequestBody(required = false) CreateAccountRequest request) {
+        Account account = accountService.createAccount(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(toSummary(account));
     }
 
     /**

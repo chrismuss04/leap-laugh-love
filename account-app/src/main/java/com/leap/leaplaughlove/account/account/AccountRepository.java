@@ -39,6 +39,13 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByAccountIdAndClientId(UUID accountId, UUID clientId);
 
     /**
+     * Checks whether an account with the given account number already exists.
+     * @param accountNumber the account number to look for
+     * @return true if an account already uses the number
+     */
+    boolean existsByAccountNumber(String accountNumber);
+
+    /**
      * Locks an account owned by the specified client until the calling transaction ends.
      * Call within a write transaction before reading cash or holdings for validation.
      * Competing trades and withdrawals must acquire this same lock before validation.

@@ -1,31 +1,5 @@
 @import '../shared/page-shell.css';
 
-.holdings-page {
-  min-height: 100vh;
-  background-color: var(--background);
-  background-image:
-    radial-gradient(circle at 0% 0%, color-mix(in srgb, var(--primary) 10%, transparent), transparent 35%),
-    linear-gradient(color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--foreground) 3%, transparent) 1px, transparent 1px);
-  background-size: auto, 32px 32px, 32px 32px;
-}
-
-.holdings-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 40px 48px;
-}
-
-.holdings-header {
-  margin-bottom: 32px;
-}
-
-.no-holdings {
-  text-align: center;
-  color: var(--muted-foreground);
-  padding: 40px;
-}
-
 .accounts-list {
   display: flex;
   flex-direction: column;
@@ -90,10 +64,4 @@
 
 .holdings-table tbody tr:last-child td {
   border-bottom: none;
-}
-
-@media (max-width: 640px) {
-  .holdings-container {
-    padding: 32px 24px;
-  }
 }
