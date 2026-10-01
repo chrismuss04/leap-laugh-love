@@ -214,11 +214,6 @@
   color: var(--loss);
 }
 
-a.menu-item {
-  display: block;
-  text-decoration: none;
-}
-
 .narrow-only {
   display: none;
 }
@@ -239,8 +234,8 @@ a.menu-item {
     display: none;
   }
 
-  a.narrow-only {
-    display: block;
+  .menu-item.narrow-only {
+    display: flex;
   }
 
   .main-nav {

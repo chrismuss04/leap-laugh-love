@@ -70,7 +70,8 @@ public class AccountSettlementService {
                 cashBalance != null ? cashBalance : BigDecimal.ZERO,
                 holdingQuantity,
                 account.getBaseCurrency(),
-                account.getAccountNumber()
+                account.getAccountNumber(),
+                account.getMaxSlippagePercent()
         );
     }
 

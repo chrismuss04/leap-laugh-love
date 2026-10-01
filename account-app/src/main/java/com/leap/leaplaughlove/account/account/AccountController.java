@@ -1,11 +1,13 @@
 package com.leap.leaplaughlove.account.account;
 
 import com.leap.leaplaughlove.common.security.SecurityUtils;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -86,6 +88,21 @@ public class AccountController {
     }
 
     /**
+     * Saves the trading settings of one of the authenticated client's accounts, such as the
+     * price tolerance order-app applies to orders that don't carry their own.
+     *
+     * @param accountId the unique identifier of the account to update
+     * @param request   the settings to save
+     * @return the updated account summary
+     */
+    @PutMapping("/{accountId}/trade-settings")
+    public ResponseEntity<AccountSummary> updateTradeSettings(@PathVariable UUID accountId,
+            @Valid @RequestBody TradeSettingsRequest request) {
+        Account account = accountService.updateTradeSettings(accountId, request);
+        return ResponseEntity.ok(toSummary(account));
+    }
+
+    /**
      * Helper method to convert an Account entity to an AccountSummary DTO.
      * 
      * @param account the account entity to be converted
@@ -100,5 +117,7 @@ public class AccountController {
                 account.isTradingEnabled(),
                 account.getCreatedAt(),
                 account.getInactiveSince());
+                account.getMaxSlippagePercent(),
+                account.getCreatedAt());
     }
 }

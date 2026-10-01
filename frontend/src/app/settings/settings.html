@@ -136,6 +136,55 @@
     </form>
   </section>
 
+  <section class="settings-section">
+    <button type="button" class="section-toggle" (click)="tradingOpen.set(!tradingOpen())"
+            [attr.aria-expanded]="tradingOpen()" aria-controls="trading-settings">
+      <span>Trading</span>
+      <svg class="chevron" [class.open]="tradingOpen()" width="16" height="16" viewBox="0 0 24 24" fill="none"
+           xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <div id="trading-settings" class="section-body" [hidden]="!tradingOpen()">
+      <div>
+        <h2 class="setting-title">Price protection</h2>
+        <p class="setting-help">Cancels a market order if the price moves more than your limit between when you
+          review it and when it fills. It applies to every order from the account, and you can still change it for a
+          single order on the trade ticket.</p>
+      </div>
+
+      <ng-container *ngIf="tradeAccounts() as accounts; else tradingLoading">
+        <p *ngIf="!accounts.length" class="empty">You don't have an active account yet.</p>
+
+        <div *ngFor="let account of accounts" class="protection-row" data-testid="protection-row">
+          <div *ngIf="accounts.length > 1" class="protection-head">
+            <span class="account-number num">{{ account.accountNumber }}</span>
+            <span *ngIf="isChanged(account)" class="unsaved">Unsaved</span>
+          </div>
+          <app-protection-picker [value]="protectionFor(account)" [allowCustom]="true"
+                                 [label]="'Price protection for ' + account.accountNumber"
+                                 (valueChange)="setProtection(account.accountId, $event)" />
+          <p class="protection-example" aria-live="polite">{{ protectionExample(protectionFor(account)) }}</p>
+        </div>
+
+        <ng-container *ngIf="accounts.length">
+          <p *ngIf="tradingError()" class="error-alert" role="alert">{{ tradingError() }}</p>
+          <p *ngIf="tradingSaved()" class="success-alert" role="status">Your trading settings have been saved.</p>
+          <button type="button" class="btn-primary" (click)="saveTrading()"
+                  [disabled]="!changedAccounts().length || tradingInvalid() || tradingSaving()">
+            {{ tradingSaving() ? 'Saving…' : 'Save trading settings' }}
+          </button>
+        </ng-container>
+      </ng-container>
+
+      <ng-template #tradingLoading>
+        <p *ngIf="tradeAccountsError(); else tradingSpinner" class="error-message">
+          Couldn't load your accounts. Please refresh the page.</p>
+        <ng-template #tradingSpinner><p class="loading">Loading accounts...</p></ng-template>
+      </ng-template>
+    </div>
+  </section>
+
   <ng-template #eyeIcon>
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
       <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" /><circle cx="12" cy="12" r="3" />

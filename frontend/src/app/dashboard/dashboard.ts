@@ -221,13 +221,15 @@ export class DashboardComponent implements OnInit {
     if (!balance) {
       return [];
     }
+    const summaries = this.valuation.accountSummaries();
     return balance.accounts.map(account => {
       const positions = holdings?.accounts.find(a => a.accountId === account.accountId)?.positions ?? [];
       return {
         accountId: account.accountId,
         accountNumber: account.accountNumber,
         buyingPower: account.balance,
-        shares: Object.fromEntries(positions.map(p => [p.symbol, p.quantity]))
+        shares: Object.fromEntries(positions.map(p => [p.symbol, p.quantity])),
+        maxSlippagePercent: summaries.find(s => s.accountId === account.accountId)?.maxSlippagePercent ?? null
       };
     });
   });

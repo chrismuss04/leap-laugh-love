@@ -5,6 +5,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { SettingsComponent } from './settings';
 import { ShellComponent } from '../shell/shell';
 import { ClientProfile } from '../services/profile';
+import { AccountSummary } from '../services/holdings';
 
 const PROFILE: ClientProfile = {
   clientId: 'c1', email: 'alice@example.com', fullName: 'Alice Example', experienceLevel: 'NOVICE',
@@ -12,6 +13,14 @@ const PROFILE: ClientProfile = {
   addressLine2: null, city: 'Springfield', stateRegion: 'IL', postalCode: '62704', countryCode: 'US',
   notifyOrderFills: true, notifyPriceAlerts: false
 };
+
+const ACCOUNTS: AccountSummary[] = [
+  { accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
+    maxSlippagePercent: null, createdAt: '2024-01-15T12:00:00Z' },
+  { accountId: 'a2', accountNumber: 'ACC-0002', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
+    maxSlippagePercent: 1, createdAt: '2024-02-15T12:00:00Z' }
+];
+const ACCOUNTS_URL = '/api/account/accounts';
 
 describe('SettingsComponent', () => {
   let fixture: ComponentFixture<SettingsComponent>;
@@ -28,6 +37,8 @@ describe('SettingsComponent', () => {
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(SettingsComponent);
     component = fixture.componentInstance;
+    fixture.detectChanges();
+    http.expectOne(ACCOUNTS_URL).flush(ACCOUNTS);
     fixture.detectChanges();
   });
 
@@ -90,7 +101,7 @@ describe('SettingsComponent', () => {
 
   it('keeps the account settings collapsed until the section is opened', () => {
     const element = fixture.nativeElement as HTMLElement;
-    const toggle = element.querySelector<HTMLButtonElement>('.section-toggle')!;
+    const toggle = element.querySelector<HTMLButtonElement>('[aria-controls="account-settings"]')!;
     const form = element.querySelector<HTMLFormElement>('#account-settings')!;
     expect(getComputedStyle(form).display).toBe('none');
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -130,5 +141,109 @@ describe('SettingsComponent', () => {
 
     expect(text()).toContain('Your current password is incorrect.');
     expect(shell.profile()).toEqual(PROFILE);
+  });
+
+  describe('trading', () => {
+    const element = () => fixture.nativeElement as HTMLElement;
+    const rows = () => Array.from(element().querySelectorAll<HTMLElement>('[data-testid="protection-row"]'));
+    const saveButton = () => Array.from(element().querySelectorAll<HTMLButtonElement>('#trading-settings button.btn-primary'))[0];
+
+    function chip(row: HTMLElement, label: string): HTMLButtonElement {
+      const found = Array.from(row.querySelectorAll<HTMLButtonElement>('.chip')).find(c => c.textContent?.trim() === label);
+      if (!found) throw new Error(`Missing chip: ${label}`);
+      return found;
+    }
+
+    function click(row: HTMLElement, label: string): void {
+      chip(row, label).click();
+      fixture.detectChanges();
+    }
+
+    function typeCustom(row: HTMLElement, value: string): void {
+      const input = row.querySelector<HTMLInputElement>('.custom-input')!;
+      input.value = value;
+      input.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+    }
+
+    it('keeps the section collapsed until opened', () => {
+      const toggle = element().querySelector<HTMLButtonElement>('[aria-controls="trading-settings"]')!;
+      const body = element().querySelector<HTMLElement>('#trading-settings')!;
+      expect(getComputedStyle(body).display).toBe('none');
+      toggle.click();
+      fixture.detectChanges();
+      expect(getComputedStyle(body).display).toBe('flex');
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it("shows each account's saved protection and what it means for a $100 order", () => {
+      const [first, second] = rows();
+      expect(first.textContent).toContain('ACC-0001');
+      expect(chip(first, 'Off').getAttribute('aria-checked')).toBe('true');
+      expect(first.textContent).toContain('Orders fill at the market price, however far it moves.');
+      expect(chip(second, '1%').getAttribute('aria-checked')).toBe('true');
+      expect(second.textContent).toContain('At $100.00, your order fills only between $99.00 and $101.00.');
+      expect(saveButton().disabled).toBe(true);
+    });
+
+    it('saves only the accounts that changed, then confirms', () => {
+      const [first] = rows();
+      click(first, '0.5%');
+      expect(first.textContent).toContain('Unsaved');
+      expect(first.textContent).toContain('between $99.50 and $100.50');
+      saveButton().click();
+
+      const request = http.expectOne(`${ACCOUNTS_URL}/a1/trade-settings`);
+      expect(request.request.method).toBe('PUT');
+      expect(request.request.body).toEqual({ maxSlippagePercent: 0.5 });
+      request.flush({ ...ACCOUNTS[0], maxSlippagePercent: 0.5 });
+      fixture.detectChanges();
+
+      expect(text()).toContain('Your trading settings have been saved.');
+      expect(rows()[0].textContent).not.toContain('Unsaved');
+      expect(saveButton().disabled).toBe(true);
+    });
+
+    it('turns a saved protection off', () => {
+      click(rows()[1], 'Off');
+      saveButton().click();
+      const request = http.expectOne(`${ACCOUNTS_URL}/a2/trade-settings`);
+      expect(request.request.body).toEqual({ maxSlippagePercent: null });
+      request.flush({ ...ACCOUNTS[1], maxSlippagePercent: null });
+    });
+
+    it('takes a custom percent, and blocks saving until it is valid', () => {
+      const [first] = rows();
+      click(first, 'Custom');
+      expect(saveButton().disabled).toBe(true);
+      typeCustom(first, '12');
+      expect(first.textContent).toContain('Enter a percent from 0 to 10, up to two decimals');
+      expect(saveButton().disabled).toBe(true);
+
+      typeCustom(first, '0.75');
+      expect(first.textContent).not.toContain('Enter a percent from 0 to 10');
+      expect(first.textContent).toContain('between $99.25 and $100.75');
+      saveButton().click();
+      const request = http.expectOne(`${ACCOUNTS_URL}/a1/trade-settings`);
+      expect(request.request.body).toEqual({ maxSlippagePercent: 0.75 });
+      request.flush({ ...ACCOUNTS[0], maxSlippagePercent: 0.75 });
+    });
+
+    it('says so when saving fails', () => {
+      click(rows()[0], '2%');
+      saveButton().click();
+      http.expectOne(`${ACCOUNTS_URL}/a1/trade-settings`).flush(null, { status: 500, statusText: 'Server Error' });
+      fixture.detectChanges();
+      expect(text()).toContain("Couldn't save your trading settings. Please try again.");
+      expect(rows()[0].textContent).toContain('Unsaved');
+    });
+  });
+
+  it('says so when the accounts fail to load', () => {
+    const failing = TestBed.createComponent(SettingsComponent);
+    failing.detectChanges();
+    http.expectOne(ACCOUNTS_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    failing.detectChanges();
+    expect((failing.nativeElement as HTMLElement).textContent).toContain("Couldn't load your accounts.");
   });
 });

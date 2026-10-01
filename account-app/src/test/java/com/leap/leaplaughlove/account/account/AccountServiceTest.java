@@ -14,6 +14,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -40,13 +42,14 @@ class AccountServiceTest {
 
     @Mock private AccountRepository accountRepository;
     @Mock private ClientStatusRepository clientStatusRepository;
+    @Mock private AccountAuthorizationService accountAuthorizationService;
 
     private AccountService accountService;
     private UUID clientId;
 
     @BeforeEach
     void setUp() {
-        accountService = new AccountService(accountRepository, clientStatusRepository);
+        accountService = new AccountService(accountRepository, clientStatusRepository, accountAuthorizationService);
         clientId = UUID.randomUUID();
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(clientId, null, List.of()));
@@ -205,5 +208,33 @@ class AccountServiceTest {
         assertEquals(first.getClientId(), second.getClientId());
         assertNotEquals(first.getAccountNumber(), second.getAccountNumber());
         verify(accountRepository, times(2)).save(any(Account.class));
+    }
+
+    @Test
+    @DisplayName("updateTradeSettings — saves the price tolerance on the caller's locked account")
+    void updateTradeSettings_savesTolerance() {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account(accountId, clientId, "ACC-00000001", "ACTIVE", "USD", true, OffsetDateTime.now());
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(accountId)).thenReturn(account);
+        givenSaveReturnsArgument();
+
+        Account updated = accountService.updateTradeSettings(accountId, new TradeSettingsRequest(new BigDecimal("1.50")));
+
+        assertEquals(new BigDecimal("1.50"), updated.getMaxSlippagePercent());
+        verify(accountRepository).save(account);
+    }
+
+    @Test
+    @DisplayName("updateTradeSettings — a null tolerance clears the saved one")
+    void updateTradeSettings_nullClearsTolerance() {
+        UUID accountId = UUID.randomUUID();
+        Account account = new Account(accountId, clientId, "ACC-00000001", "ACTIVE", "USD", true, OffsetDateTime.now());
+        account.setMaxSlippagePercent(new BigDecimal("2.00"));
+        when(accountAuthorizationService.getAuthorizedAccountForUpdate(accountId)).thenReturn(account);
+        givenSaveReturnsArgument();
+
+        Account updated = accountService.updateTradeSettings(accountId, new TradeSettingsRequest(null));
+
+        assertNull(updated.getMaxSlippagePercent());
     }
 }

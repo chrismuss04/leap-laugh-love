@@ -53,6 +53,10 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
         CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED')),
     base_currency CHAR(3) NOT NULL DEFAULT 'USD',
     trading_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    -- Saved price tolerance: an order is rejected if the price moves more than this percent
+    -- (either way) between the client's quote and execution. NULL means no saved tolerance.
+    max_slippage_pct NUMERIC(5,2)
+        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -87,7 +91,12 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     accepted_at TIMESTAMPTZ,
     rejected_at TIMESTAMPTZ,
     filled_at TIMESTAMPTZ,
-    rejection_reason TEXT
+    rejection_reason TEXT,
+    -- The price the client was quoted and the tolerance applied to it, kept so a price-move
+    -- rejection can be explained later. NULL when the order carried no quote.
+    quoted_price NUMERIC(18,6) CHECK (quoted_price IS NULL OR quoted_price > 0),
+    max_slippage_pct NUMERIC(5,2)
+        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100))
 );
 
 -- Backs OrderRepository's chronological (newest-first) paginated history lookup by account.

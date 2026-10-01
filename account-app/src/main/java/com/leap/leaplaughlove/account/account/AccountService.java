@@ -26,16 +26,20 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final ClientStatusRepository clientStatusRepository;
+    private final AccountAuthorizationService accountAuthorizationService;
     private final SecureRandom random = new SecureRandom();
 
     /**
      * Constructs an AccountService.
      * @param accountRepository the repository used to persist accounts
      * @param clientStatusRepository the read-only lookup of the client's status
+     * @param accountAuthorizationService checks the authenticated client owns an account
      */
-    public AccountService(AccountRepository accountRepository, ClientStatusRepository clientStatusRepository) {
+    public AccountService(AccountRepository accountRepository, ClientStatusRepository clientStatusRepository,
+                          AccountAuthorizationService accountAuthorizationService) {
         this.accountRepository = accountRepository;
         this.clientStatusRepository = clientStatusRepository;
+        this.accountAuthorizationService = accountAuthorizationService;
     }
 
     /**
@@ -76,6 +80,19 @@ public class AccountService {
         // A null id lets Hibernate generate the UUID; a preset id would make save() merge.
         Account account = new Account(null, clientId, generateAccountNumber(), accountStatus, currency,
                 tradingEnabled, OffsetDateTime.now());
+        return accountRepository.save(account);
+    }
+
+    /**
+     * Saves the trading settings of one of the authenticated client's active accounts.
+     * @param accountId the account to update
+     * @param request the settings to save; a null tolerance clears the saved one
+     * @return the updated account
+     */
+    @Transactional
+    public Account updateTradeSettings(UUID accountId, TradeSettingsRequest request) {
+        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);
+        account.setMaxSlippagePercent(request.maxSlippagePercent());
         return accountRepository.save(account);
     }
 

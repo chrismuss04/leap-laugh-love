@@ -26,6 +26,103 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class AuthServiceTest {
 
+    // Verify missing credentials prevent password checks, session creation, and token issuance.
+    @Test
+    void rejectsMissingCredentials() {
+        when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
+        when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.empty());
+
+        assertThrows(InvalidCredentialsException.class,
+                () -> authService.authenticate("alice@example.com", "password"));
+
+        verifyNoInteractions(passwordEncoder, jwtService, sessionRepository);
+        verify(credentialsRepository, never()).save(any());
+        verify(clientRepository, never()).save(any());
+    }
+
+    // Verify successful login clears failed attempts and refreshes the last-login timestamp.
+    @Test
+    void resetsLoginFailures() {
+        var previousLogin = OffsetDateTime.now().minusDays(1);
+        testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 2, previousLogin);
+        stubValidPassword();
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+
+        authService.authenticate("alice@example.com", "rawPassword");
+
+        assertEquals(0, testCredentials.getFailedAttempts());
+        assertTrue(testCredentials.getLastLoginAt().isAfter(previousLogin));
+        assertEquals("ACTIVE", testClient.getStatus());
+        verify(clientRepository, never()).save(any());
+    }
+
+    // Verify each successful login receives its own session ID.
+    @Test
+    void createsDistinctSessions() {
+        stubValidPassword();
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+
+        authService.authenticate("alice@example.com", "rawPassword");
+        authService.authenticate("alice@example.com", "rawPassword");
+
+        var ids = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        verify(sessionRepository, times(2)).create(ids.capture(), eq(clientId), any(), any());
+        assertNotEquals(ids.getAllValues().get(0), ids.getAllValues().get(1));
+    }
+
+    // Verify a session-storage failure prevents token issuance.
+    @Test
+    void sessionFailureBlocksToken() {
+        stubValidPassword();
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
+        doThrow(failure).when(sessionRepository).create(any(), eq(clientId), any(), any());
+
+        assertSame(failure, assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> authService.authenticate("alice@example.com", "rawPassword")));
+
+        verify(jwtService, never()).generateToken(any(), any(), any(), any(), any());
+        // Transaction rollback is an integration concern; this unit test checks no token escapes.
+    }
+
+    // Verify a credential-save failure prevents session creation and token issuance.
+    @Test
+    void credentialFailureBlocksLogin() {
+        stubValidPassword();
+        var failure = new org.springframework.dao.DataAccessResourceFailureException("database unavailable");
+        doThrow(failure).when(credentialsRepository).save(testCredentials);
+
+        assertSame(failure, assertThrows(org.springframework.dao.DataAccessResourceFailureException.class,
+                () -> authService.authenticate("alice@example.com", "rawPassword")));
+        verifyNoInteractions(sessionRepository, jwtService);
+    }
+
+    // Verify the second failed attempt preserves the last login and leaves the account unlocked.
+    @Test
+    void secondFailureDoesNotLock() {
+        var previousLogin = OffsetDateTime.now().minusDays(1);
+        testCredentials = new ClientCredentials(clientId, "$2a$10$hashedpassword", 1, previousLogin);
+        when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
+        when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.of(testCredentials));
+        when(passwordEncoder.matches("wrong", testCredentials.getPasswordHash())).thenReturn(false);
+
+        assertThrows(InvalidCredentialsException.class,
+                () -> authService.authenticate("alice@example.com", "wrong"));
+
+        assertEquals(2, testCredentials.getFailedAttempts());
+        assertEquals(previousLogin, testCredentials.getLastLoginAt());
+        assertEquals("ACTIVE", testClient.getStatus());
+        verify(credentialsRepository).save(testCredentials);
+        verify(clientRepository, never()).save(any());
+        verifyNoInteractions(sessionRepository, jwtService);
+    }
+
+    private void stubValidPassword() {
+        when(clientRepository.findByEmail("alice@example.com")).thenReturn(Optional.of(testClient));
+        when(credentialsRepository.findByClientId(clientId)).thenReturn(Optional.of(testCredentials));
+        when(passwordEncoder.matches("rawPassword", testCredentials.getPasswordHash())).thenReturn(true);
+    }
+
     @Mock private ClientRepository clientRepository;
     @Mock private ClientCredentialsRepository credentialsRepository;
     @Mock private PasswordEncoder passwordEncoder;
