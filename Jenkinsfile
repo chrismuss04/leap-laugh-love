@@ -171,6 +171,32 @@ pipeline {
             }
         }
 
+        // Increase Test Coverage: run Angular specs on every branch using the existing browser image.
+        stage('Test Frontend') {
+            options {
+                timeout(time: 10, unit: 'MINUTES')
+            }
+            steps {
+                sh '''
+                    set -eu
+                    if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
+                        docker build -t "$E2E_IMAGE" e2e
+                    fi
+                    docker run --rm --ipc=host \
+                        --user "$(id -u):$(id -g)" \
+                        -e HOME=/tmp -e CI=1 \
+                        -v "$WORKSPACE/frontend":/app/frontend \
+                        -w /app/frontend "$E2E_IMAGE" \
+                        sh -c 'export CHROME_BIN=$(find /ms-playwright -type f -name chrome-headless-shell | head -n 1); test -n "$CHROME_BIN" && npm test -- --watch=false --code-coverage --karma-config=karma.conf.cjs'
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
+                }
+            }
+        }
+
         stage('Test') {
             environment {
                 // Throwaway CI database credentials; the container is destroyed after the stage.
@@ -238,6 +264,8 @@ pipeline {
             post {
                 always {
                     junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                    // Preserve Java coverage alongside the test results before workspace cleanup.
+                    archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
                     sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
                 }
             }
