@@ -12,6 +12,7 @@
       <span>{{ accountError() }}</span>
       <button type="button" (click)="loadAccounts()">Try again</button>
     </div>
+    <app-inactive-notice [accounts]="accounts()"></app-inactive-notice>
 
     <!-- Headline value + chart, for all accounts or the scoped one -->
     <section class="hero" aria-labelledby="portfolio-title">

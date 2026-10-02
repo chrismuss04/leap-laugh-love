@@ -16,6 +16,7 @@ import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
 import { AccountSwitcherComponent } from './account-switcher/account-switcher';
 import { AccountsOverviewComponent } from './accounts-overview/accounts-overview';
+import { InactiveNoticeComponent } from './inactive-notice/inactive-notice';
 import { AccountDetailsComponent } from './account-details/account-details';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
@@ -32,7 +33,7 @@ const INTRADAY_INTERVAL_MS = 300_000;
     imports: [
         CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
         PositionsListComponent, RecentActivityComponent, TradePanelComponent, RollingNumberComponent,
-        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent
+        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent, InactiveNoticeComponent
     ],
     templateUrl: './dashboard.html',
     styleUrl: './dashboard.css',

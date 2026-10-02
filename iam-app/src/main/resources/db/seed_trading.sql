@@ -69,8 +69,14 @@ SELECT
     a.account_id, 'DEPOSIT', cp.initial_deposit_amount, 'USD', a.created_at, 'Initial account funding'
 FROM trading.accounts a
 INNER JOIN iam.client_profile cp ON a.client_id = cp.client_id
-WHERE a.account_number LIKE 'ACC-0%'
+WHERE a.account_number LIKE 'ACC-0%' AND a.account_number <> 'ACC-008-02'
 ON CONFLICT (cash_ledger_id) DO NOTHING;
+
+-- Henry's second account has never been funded, so it starts flagged inactive as the nightly job would flag it.
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, inactive_since)
+SELECT client_id, 'ACC-008-02', 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '60 days', NOW() - INTERVAL '60 days'
+FROM iam.clients WHERE email = 'henry.taylor@leap.com'
+ON CONFLICT (account_number) DO NOTHING;
 
 -- Insert orders. Re-runs leave existing orders alone (DO NOTHING): once a fill has been booked
 -- against an order, moving its filled_at would put the order and its ledgers out of step.

@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
     -- (either way) between the client's quote and execution. NULL means no saved tolerance.
     max_slippage_pct NUMERIC(5,2)
         CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
+    inactive_since TIMESTAMPTZ
 );
 
 -- Backs the account lookup by client_id used by the order history query.

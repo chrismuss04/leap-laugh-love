@@ -42,6 +42,9 @@ public class Account {
     @Column(name = "created_at", nullable = false)
     private OffsetDateTime createdAt;
 
+    @Column(name = "inactive_since")
+    private OffsetDateTime inactiveSince;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -123,5 +126,11 @@ public class Account {
      * @return the timestamp when the account was created
      */
     public OffsetDateTime getCreatedAt() { return createdAt; }
+
+    /** @return when the account became empty, if the inactivity job has flagged it; otherwise null */
+    public OffsetDateTime getInactiveSince() { return inactiveSince; }
+
+    /** Flags the account inactive since the given time, or clears the flag with null. */
+    public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }
 }
 

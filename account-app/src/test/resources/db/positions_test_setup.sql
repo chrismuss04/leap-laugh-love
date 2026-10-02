@@ -25,6 +25,7 @@ CREATE TABLE trading.accounts (
     trading_enabled BOOLEAN NOT NULL,
     max_slippage_pct NUMERIC(5,2),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    inactive_since TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 

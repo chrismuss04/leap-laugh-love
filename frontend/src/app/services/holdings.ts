@@ -31,6 +31,7 @@ export interface AccountSummary {
   /** Saved price protection in percent; orders without their own use it. Null when off. */
   maxSlippagePercent: number | null;
   createdAt: string;
+  inactiveSince: string | null;
 }
 
 @Injectable({

@@ -13,6 +13,7 @@ import java.util.UUID;
  * @param tradingEnabled indicates if trading is enabled for the account
  * @param maxSlippagePercent the saved price tolerance in percent, or null when none is saved
  * @param createdAt the timestamp when the account was created
+ * @param inactiveSince when the account became empty, if flagged inactive; otherwise null
  */
 public record AccountSummary(
         UUID accountId,
@@ -21,6 +22,7 @@ public record AccountSummary(
         String baseCurrency,
         boolean tradingEnabled,
         BigDecimal maxSlippagePercent,
-        OffsetDateTime createdAt
+        OffsetDateTime createdAt,
+        OffsetDateTime inactiveSince
 ) {}
 

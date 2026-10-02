@@ -21,4 +21,3 @@ marketdata:
     base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}
     connect-timeout-ms: 2000
     read-timeout-ms: 2000
-
