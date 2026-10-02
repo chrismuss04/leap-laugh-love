@@ -241,14 +241,21 @@ pipeline {
                     steps {
                         sh '''
                             set -eu
-                            docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
+                            docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
 
+                            # The data directory is a tmpfs: the postgres image declares it a VOLUME,
+                            # so without this every build left an anonymous volume behind (a few
+                            # hundred MB each, one per build) until the agent's disk filled. A
+                            # throwaway test database also has no use for durability, so it runs
+                            # entirely in memory with fsync off - faster schema load and tests.
                             docker run -d --name "${PG_CONTAINER}" \
+                                --tmpfs /var/lib/postgresql/data \
                                 -e POSTGRES_DB=paysprint \
                                 -e POSTGRES_USER=paysprint \
                                 -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
                                 -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
-                                postgres:16-alpine
+                                postgres:16-alpine \
+                                -c fsync=off -c synchronous_commit=off -c full_page_writes=off
 
                             # Poll for a schema table rather than pg_isready: the server answers on its
                             # unix socket while the init scripts are still running, so pg_isready can
@@ -309,7 +316,7 @@ pipeline {
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
                             // Preserve Java coverage alongside the test results before workspace cleanup.
                             archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
-                            sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
+                            sh 'docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true'
                         }
                     }
                 }
@@ -421,8 +428,11 @@ pipeline {
                     # same way a developer's browser reaches them. Started by the Frontend branch
                     # of "Build and Test", so its install and first compile are usually done by now.
                     echo "Waiting for the frontend (installs dependencies on first start)..."
+                    # 127.0.0.1, not localhost: ng serve --host 0.0.0.0 listens on IPv4 only, and
+                    # where the container has IPv6 (Docker Desktop) busybox wget resolves localhost
+                    # to ::1 first and gets "connection refused" from a server that is up.
                     for i in $(seq 1 120); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://127.0.0.1:4200/; then
                             echo "Frontend is serving"
                             break
                         fi
@@ -494,6 +504,16 @@ pipeline {
                         | grep -vx "$E2E_IMAGE" \
                         | xargs -r docker image rm >/dev/null 2>&1 || true
                 fi
+                # Safety net for anything the teardown above missed, including builds of
+                # branches still on an older Jenkinsfile. All three only touch what nothing is
+                # using: on Docker 23+ "volume prune" removes anonymous volumes only (never the
+                # named sonarqube or npm cache volumes, nor another running build's), "image
+                # prune" without -a removes only untagged layers left behind by re-pulled base
+                # images, and the build cache is trimmed oldest-first down to a cap that still
+                # holds the shared Maven repository.
+                docker volume prune -f >/dev/null 2>&1 || true
+                docker image prune -f >/dev/null 2>&1 || true
+                docker builder prune -f --reserved-space 3GB >/dev/null 2>&1 || true
             '''
             // Must run after the teardown above, never before: "docker-compose down" reads
             // docker-compose.yml out of the workspace, so emptying it first would strand
