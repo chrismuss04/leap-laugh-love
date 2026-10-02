@@ -21,9 +21,8 @@ public record AccountSummary(
         String status,
         String baseCurrency,
         boolean tradingEnabled,
+        BigDecimal maxSlippagePercent,
         OffsetDateTime createdAt,
         OffsetDateTime inactiveSince
-        BigDecimal maxSlippagePercent,
-        OffsetDateTime createdAt
 ) {}
 

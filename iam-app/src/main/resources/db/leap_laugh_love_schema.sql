@@ -90,14 +90,13 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
         CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED')),
     base_currency CHAR(3) NOT NULL DEFAULT 'USD',
     trading_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
-    inactive_since TIMESTAMPTZ
     -- Saved price tolerance: an order is rejected if the price moves more than this percent
     -- (either way) between the client's quote and execution. NULL means no saved tolerance.
     max_slippage_pct NUMERIC(5,2)
         CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
+    inactive_since TIMESTAMPTZ
 );
 
 -- Backs the account lookup by client_id used by the order history query.

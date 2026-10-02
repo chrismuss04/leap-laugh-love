@@ -115,9 +115,8 @@ public class AccountController {
                 account.getStatus(),
                 account.getBaseCurrency(),
                 account.isTradingEnabled(),
+                account.getMaxSlippagePercent(),
                 account.getCreatedAt(),
                 account.getInactiveSince());
-                account.getMaxSlippagePercent(),
-                account.getCreatedAt());
     }
 }
