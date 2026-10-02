@@ -428,8 +428,11 @@ pipeline {
                     # same way a developer's browser reaches them. Started by the Frontend branch
                     # of "Build and Test", so its install and first compile are usually done by now.
                     echo "Waiting for the frontend (installs dependencies on first start)..."
+                    # 127.0.0.1, not localhost: ng serve --host 0.0.0.0 listens on IPv4 only, and
+                    # where the container has IPv6 (Docker Desktop) busybox wget resolves localhost
+                    # to ::1 first and gets "connection refused" from a server that is up.
                     for i in $(seq 1 120); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://127.0.0.1:4200/; then
                             echo "Frontend is serving"
                             break
                         fi

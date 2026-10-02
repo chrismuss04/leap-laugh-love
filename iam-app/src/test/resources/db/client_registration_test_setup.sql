@@ -2,7 +2,7 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 
 -- Session Timeout & Revocation: reset sessions before their parent clients.
-DROP TABLE IF EXISTS iam.client_sessions;
+DROP TABLE IF EXISTS iam.client_sessions CASCADE;
 
 DROP TABLE IF EXISTS iam.client_profile CASCADE;
 -- CASCADE defensively, in case another iam-app test suite sharing this in-memory DB already

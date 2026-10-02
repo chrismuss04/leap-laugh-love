@@ -1,9 +1,9 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
-DROP TABLE IF EXISTS trading.cash_ledger;
-DROP TABLE IF EXISTS trading.accounts;
-DROP TABLE IF EXISTS iam.clients;
+DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
+DROP TABLE IF EXISTS trading.accounts CASCADE;
+DROP TABLE IF EXISTS iam.clients CASCADE;
 
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
