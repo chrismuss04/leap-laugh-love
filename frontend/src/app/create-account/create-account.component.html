@@ -3,7 +3,7 @@
   <p>Complete the form below to begin your application.</p>
 </div>
 
-<form [formGroup]="registrationForm" (ngSubmit)="onSubmit()" class="registration-form">
+<form method="post" [formGroup]="registrationForm" (ngSubmit)="onSubmit()" class="registration-form">
   <!-- Personal Info -->
   <div class="section-divider"><span>Personal Info</span></div>
 
