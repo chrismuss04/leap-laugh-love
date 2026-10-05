@@ -576,14 +576,11 @@ pipeline {
                         | grep -vx "$E2E_IMAGE" \
                         | xargs -r docker image rm >/dev/null 2>&1 || true
                 fi
-                # Safety net for anything the teardown above missed, including builds of
-                # branches still on an older Jenkinsfile. All three only touch what nothing is
-                # using: on Docker 23+ "volume prune" removes anonymous volumes only (never the
-                # named sonarqube or npm cache volumes, nor another running build's), "image
-                # prune" without -a removes only untagged layers left behind by re-pulled base
+                # Database volumes are removed only by this build's scoped Compose teardown.
+                # Do not globally prune volumes: persistent deployments may be stopped.
+                # "image prune" without -a removes only untagged layers left behind by re-pulled base
                 # images, and the build cache is trimmed oldest-first down to a cap that still
                 # holds the shared Maven repository.
-                docker volume prune -f >/dev/null 2>&1 || true
                 docker image prune -f >/dev/null 2>&1 || true
                 docker builder prune -f --reserved-space 3GB >/dev/null 2>&1 || true
             '''

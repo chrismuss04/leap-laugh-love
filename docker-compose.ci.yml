@@ -17,6 +17,10 @@ services:
       - npm_cache:/tmp/.npm
 
 volumes:
+  # Never inherit a deployment's database volume, even if its .env is present.
+  db_data:
+    name: "${COMPOSE_PROJECT:?COMPOSE_PROJECT must identify this isolated CI build}_db_data"
+    external: false
   npm_cache:
     external: true
     name: leap-ci-npm-cache

@@ -188,5 +188,9 @@ services:
 
 volumes:
   db_data:
+    # Preserve the usual Compose name by default. For a persistent deployment, set
+    # DB_VOLUME_NAME to the existing volume and DB_VOLUME_EXTERNAL=true in .env.
+    name: "${DB_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_db_data}"
+    external: ${DB_VOLUME_EXTERNAL:-false}
   kafka_data:
   frontend_node_modules:
