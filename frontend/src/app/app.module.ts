@@ -1,13 +1,15 @@
-import { NgModule } from '@angular/core';
+import { NgModule, inject } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Routes } from '@angular/router';
+import { CanActivateFn, Router, RouterModule, Routes } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
 import { CreateAccountComponent } from './create-account/create-account.component';
+import { ForgotPasswordComponent } from './forgot-password/forgot-password.component';
+import { ResetPasswordComponent } from './reset-password/reset-password.component';
 import { OrderHistoryComponent } from './order-history/order-history';
 import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
@@ -16,8 +18,18 @@ import { SettingsComponent } from './settings/settings';
 import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
+// A signed-in user has no use for password recovery, and no sign-in screen to show it on.
+const signedOutOnly: CanActivateFn = () =>
+  !inject(AuthService).isAuthenticated() || inject(Router).parseUrl('/dashboard');
+
 // Every signed-in page renders inside the shell, which owns the header and navigation.
 export const routes: Routes = [
+  // Password recovery. Signed-out visitors get the sign-in screen rather than the router outlet
+  // (see app.component.html), and that screen picks its view from the URL - so these render
+  // nothing themselves. They exist so the catch-all below doesn't redirect the emailed reset
+  // link to the dashboard.
+  { path: 'forgot-password', canActivate: [signedOutOnly], children: [] },
+  { path: 'reset-password', canActivate: [signedOutOnly], children: [] },
   {
     path: '',
     component: ShellComponent,
@@ -50,7 +62,9 @@ export const routes: Routes = [
         CommonModule,
         RouterModule.forRoot(routes),
         OrderHistoryComponent,
-        HoldingsComponent], providers: [
+        HoldingsComponent,
+        ForgotPasswordComponent,
+        ResetPasswordComponent], providers: [
         AuthService,
         {
             provide: HTTP_INTERCEPTORS,

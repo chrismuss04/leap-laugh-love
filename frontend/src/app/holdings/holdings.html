@@ -11,7 +11,7 @@
 
     <div *ngIf="error()" class="error-message">{{ error() }}</div>
 
-    <div *ngIf="!loading() && accounts().length === 0 && !error()" class="empty">
+    <div *ngIf="!loading() && accounts().length === 0 && !error()" class="empty" data-testid="no-holdings">
       No accounts found
     </div>
 

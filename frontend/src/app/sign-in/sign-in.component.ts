@@ -1,7 +1,19 @@
 import { Component, OnInit, signal, inject } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { NavigationEnd, Router } from '@angular/router';
+import { filter, map } from 'rxjs/operators';
 import { AuthService } from '../services/auth.service';
+
+type RecoveryView = 'forgot-password' | 'reset-password';
+
+/** The password recovery screen a URL asks for, if it asks for one. */
+function recoveryViewFor(url: string): RecoveryView | null {
+  const path = url.split(/[?#]/)[0];
+  if (path === '/forgot-password') return 'forgot-password';
+  if (path === '/reset-password') return 'reset-password';
+  return null;
+}
 
 @Component({
     selector: 'app-sign-in',
@@ -21,6 +33,15 @@ export class SignInComponent implements OnInit {
   readonly successMessage = signal('');
   showPassword: boolean = false;
   activeTab: 'signin' | 'create-account' = 'signin';
+  // Password recovery follows the URL rather than a tab, because the emailed reset link has to
+  // open straight onto its screen.
+  readonly recoveryView = toSignal(
+    inject(Router).events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      map(event => recoveryViewFor(event.urlAfterRedirects))
+    ),
+    { initialValue: recoveryViewFor(inject(Router).url) }
+  );
 
   constructor(
     private formBuilder: FormBuilder,
