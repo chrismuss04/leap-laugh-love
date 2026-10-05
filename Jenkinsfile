@@ -96,6 +96,11 @@ pipeline {
                     // it on every build.
                     env.RUN_E2E = (!env.BRANCH_NAME || env.BRANCH_NAME == 'main' || env.CHANGE_ID) ? 'true' : 'false'
 
+                    // SonarQube follows the same rule. Community Build keeps one analysis per
+                    // project with no branch or PR support, so a feature-branch scan would replace
+                    // main's results; only main and pull requests are analysed.
+                    env.RUN_SONAR = env.RUN_E2E
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -409,6 +414,70 @@ pipeline {
                             fi
                         '''
                     }
+                }
+            }
+        }
+
+        stage('Frontend Unit Tests') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // Karma needs a Chrome, which the agent doesn't have; the E2E runner image (built
+                // in "Build and Test" under the same condition) carries Playwright's headless
+                // Chromium. The frontend's own node_modules come from the host "npm ci" above.
+                // --user keeps coverage/ and .angular/ owned by the agent account, as with Maven.
+                sh '''
+                    set -eu
+                    docker run --rm \
+                        --user "$(id -u):$(id -g)" \
+                        -e HOME=/tmp \
+                        -e CI=1 \
+                        -v "$WORKSPACE/frontend":/app \
+                        -w /app \
+                        "$E2E_IMAGE" \
+                        sh -c 'export CHROME_BIN="$(find /ms-playwright -type f \\( -name headless_shell -o -name chrome-headless-shell \\) | head -n 1)" \
+                            && echo "Using $CHROME_BIN" \
+                            && npx ng test --watch=false --code-coverage'
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // "SonarScanner" is the scanner installation under Manage Jenkins > Tools and
+                // "SonarQube" the server under Manage Jenkins > System; withSonarQubeEnv supplies
+                // its URL and the sonarqube-token credential. Project settings, including the
+                // coverage report paths from the stages above, are in sonar-project.properties.
+                script {
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner --version
+                            ${scannerHome}/bin/sonar-scanner
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // Waits for SonarQube's webhook to report the gate result and fails the build
+                // on a failed gate, before E2E spends time on it.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }

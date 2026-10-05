@@ -710,6 +710,45 @@ npm test            # or: npm run test:smoke, npm run test:ui
 See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay isolated, and
 conventions for writing new ones.
 
+### Frontend unit tests
+
+```bash
+cd frontend
+npx ng test --watch=false --code-coverage
+```
+
+Coverage is written to `frontend/coverage/` (an HTML report plus `lcov.info` for SonarQube).
+
+### SonarQube
+
+Jenkins analyses `main` and pull requests into the SonarQube project `leap-laugh-love-app` and
+stops the build if the classroom Quality Gate fails. Feature-branch pushes skip it: Community
+Build keeps a single analysis per project, so a branch scan would overwrite `main`'s. The
+analysis settings live in [sonar-project.properties](sonar-project.properties); the token is the
+Jenkins credential `sonarqube-token` and is never committed.
+
+One-time setup:
+
+- **SonarQube**: create the project `leap-laugh-love-app`. Under *Quality Profiles → Restore*,
+  import the classroom profiles for Java, TypeScript (`texoma-typescript-profile.xml`),
+  JavaScript, HTML, CSS and Docker and assign them to the project, along with the classroom
+  Quality Gate. Add a webhook named `Jenkins` pointing at
+  `http://host.docker.internal:8080/sonarqube-webhook/`, otherwise the Quality Gate stage
+  waits until it times out.
+- **Jenkins**: install the *SonarQube Scanner* plugin; add the project token as a *Secret text*
+  credential with ID `sonarqube-token`; under *Manage Jenkins → System* add a SonarQube server
+  named `SonarQube` using that credential; under *Manage Jenkins → Tools* add a SonarQube
+  Scanner installation named `SonarScanner`.
+
+To analyse a local checkout, run the tests first so the coverage reports exist, then the scanner
+(it needs Node on the PATH for the TypeScript analysis):
+
+```bash
+mvn test
+(cd frontend && npx ng test --watch=false --code-coverage)
+sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<your token>
+```
+
 ### 2. Documentation and Code Coverage Generation
 
 The live documentation site is hosted on GitHub Pages from the [`gh-pages`](https://github.com/chrismuss04/leap-laugh-love/tree/gh-pages) branch at [https://chrismuss04.github.io/leap-laugh-love/](https://chrismuss04.github.io/leap-laugh-love/).

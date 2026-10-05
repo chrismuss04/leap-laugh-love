@@ -41,7 +41,7 @@ describe('OrderHistoryComponent', () => {
     expect(fixture.nativeElement.querySelector('.loading')).not.toBeNull();
     finishLoad();
     expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.no-orders').textContent).toContain('No orders found');
+    expect(fixture.nativeElement.querySelector('.empty').textContent).toContain('No orders found');
   });
 
   // Verify API failures display a useful message and stop the loading indicator.
@@ -51,7 +51,7 @@ describe('OrderHistoryComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('.error-message').textContent).toContain('Orders unavailable');
     expect(fixture.nativeElement.querySelector('.loading')).toBeNull();
-    expect(fixture.nativeElement.querySelector('.no-orders')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.empty')).toBeNull();
   });
 
   // Verify clearing date filters removes their dependencies and returns to the first page.

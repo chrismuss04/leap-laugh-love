@@ -18,7 +18,12 @@ module.exports = function (config) {
     coverageReporter: {
       dir: require('path').join(__dirname, 'coverage'),
       subdir: '.',
-      reporters: [{ type: 'html' }, { type: 'lcovonly' }, { type: 'text-summary' }]
+      // lcov paths are written relative to the repo root, where SonarQube resolves them.
+      reporters: [
+        { type: 'html' },
+        { type: 'lcovonly', projectRoot: require('path').join(__dirname, '..') },
+        { type: 'text-summary' }
+      ]
     },
     singleRun: true
   });

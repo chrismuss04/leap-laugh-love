@@ -16,9 +16,9 @@ const PROFILE: ClientProfile = {
 
 const ACCOUNTS: AccountSummary[] = [
   { accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
-    maxSlippagePercent: null, createdAt: '2024-01-15T12:00:00Z' },
+    maxSlippagePercent: null, createdAt: '2024-01-15T12:00:00Z', inactiveSince: null },
   { accountId: 'a2', accountNumber: 'ACC-0002', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
-    maxSlippagePercent: 1, createdAt: '2024-02-15T12:00:00Z' }
+    maxSlippagePercent: 1, createdAt: '2024-02-15T12:00:00Z', inactiveSince: null }
 ];
 const ACCOUNTS_URL = '/api/account/accounts';
 
