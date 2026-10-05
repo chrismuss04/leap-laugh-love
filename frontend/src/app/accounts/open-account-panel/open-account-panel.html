@@ -36,7 +36,7 @@
     </dl>
 
     <!-- A refusal may be about the amount itself (e.g. a limit), so it can be changed before retrying. -->
-    <form *ngIf="deposit() === 'failed'" class="retry" (ngSubmit)="makeDeposit()">
+    <form method="post" *ngIf="deposit() === 'failed'" class="retry" (ngSubmit)="makeDeposit()">
       <div class="field-row">
         <label class="field-label" for="retry-cash">Deposit</label>
         <span class="amount">
@@ -56,7 +56,7 @@
   </div>
 
   <!-- Form -->
-  <form *ngIf="step() !== 'result'" (ngSubmit)="submit()">
+  <form method="post" *ngIf="step() !== 'result'" (ngSubmit)="submit()">
     <ul class="facts">
       <li>
         <span class="fact-icon shared" aria-hidden="true">
