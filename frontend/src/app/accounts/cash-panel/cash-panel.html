@@ -83,7 +83,7 @@
   </div>
 
   <!-- Edit -->
-  <form *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
+  <form method="post" *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
     <div class="modes" role="radiogroup" aria-label="Move money">
       <button type="button" role="radio" class="mode" [class.on]="mode() === 'deposit'"
               [attr.aria-checked]="mode() === 'deposit'" (click)="setMode('deposit')">Add cash</button>
