@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.instrument.Instrument;
@@ -41,6 +42,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -54,6 +56,7 @@ class PendingFillRecoveryTest {
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private AccountClient accountClient;
     @Mock private JwtService jwtService;
+    @Mock private OrderEventPublisher orderEventPublisher;
 
     private PendingFillRecovery recovery;
     private Order order;
@@ -64,7 +67,7 @@ class PendingFillRecoveryTest {
     void setUp() {
         FillRecorder fillRecorder = new FillRecorder(executionRepository, positionMovementRepository, accountClient);
         recovery = new PendingFillRecovery(orderRepository, executionRepository, accountRepository, fillRecorder, jwtService,
-                new TransactionTemplate(mock(PlatformTransactionManager.class)), 30);
+                new TransactionTemplate(mock(PlatformTransactionManager.class)), orderEventPublisher, 30);
 
         account = new Account(UUID.randomUUID(), UUID.randomUUID(), "ACC-TEST-01", "ACTIVE", "USD", true,
                 OffsetDateTime.now().minusDays(30));
@@ -148,5 +151,65 @@ class PendingFillRecoveryTest {
         assertEquals(0, recovery.recoverPendingFills());
 
         verify(positionMovementRepository, never()).save(any());
+    }
+
+    // Order Reporting: whoever makes the order final publishes it, once.
+
+    @Test
+    @DisplayName("publishes a recovered fill as FILLED")
+    void publishesRecoveredFill() {
+        when(accountClient.settleOrderAs(any(), any(), any()))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+
+        recovery.recoverPendingFills();
+
+        verify(orderEventPublisher).publishFilled(order, execution);
+        verify(orderEventPublisher, never()).publishRejected(any());
+    }
+
+    @Test
+    @DisplayName("publishes an order account-app refused on recovery as REJECTED")
+    void publishesRefusedOrderAsRejected() {
+        when(accountClient.settleOrderAs(any(), any(), any())).thenThrow(
+                HttpClientErrorException.create(HttpStatus.BAD_REQUEST, "Bad Request", null, null, null));
+
+        recovery.recoverPendingFills();
+
+        verify(orderEventPublisher).publishRejected(order);
+        verify(orderEventPublisher, never()).publishFilled(any(), any());
+    }
+
+    @Test
+    @DisplayName("publishes nothing while the fill is still pending")
+    void publishesNothingWhilePending() {
+        when(accountClient.settleOrderAs(any(), any(), any())).thenThrow(new ResourceAccessException("Connection refused"));
+
+        recovery.recoverPendingFills();
+
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("publishes nothing for a fill live submission finished meanwhile; it published it")
+    void publishesNothingForFillFinishedMeanwhile() {
+        when(accountClient.settleOrderAs(any(), any(), any()))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), BigDecimal.ZERO, 10L, BigDecimal.ONE));
+        when(positionMovementRepository.existsByOrderId(order.getOrderId())).thenReturn(true);
+
+        recovery.recoverPendingFills();
+
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("publishes nothing for an order no longer ACCEPTED when refused; it was already final")
+    void publishesNothingForRefusalOfFinishedOrder() {
+        order.markFilled(OffsetDateTime.now());
+        when(accountClient.settleOrderAs(any(), any(), any())).thenThrow(
+                HttpClientErrorException.create(HttpStatus.BAD_REQUEST, "Bad Request", null, null, null));
+
+        recovery.recoverPendingFills();
+
+        verifyNoInteractions(orderEventPublisher);
     }
 }

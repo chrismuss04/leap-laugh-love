@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
@@ -65,6 +66,7 @@ class MultiAccountOrderSubmissionTest {
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private CurrentQuoteService currentQuoteService;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private OrderEventPublisher orderEventPublisher;
 
     private OrderSubmissionService service;
 
@@ -78,7 +80,7 @@ class MultiAccountOrderSubmissionTest {
         FillRecorder fillRecorder = new FillRecorder(executionRepository, positionMovementRepository, accountClient);
         service = new OrderSubmissionService(accountClient, instrumentRepository, orderRepository,
                 executionRepository, fillRecorder, new TradeValidationService(), currentQuoteService,
-                new TransactionTemplate(transactionManager));
+                new TransactionTemplate(transactionManager), orderEventPublisher);
 
         instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         when(instrumentRepository.findBySymbol("AAPL")).thenReturn(Optional.of(instrument));

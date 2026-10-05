@@ -9,6 +9,7 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.history.PendingFillRecovery;
 import com.leap.leaplaughlove.order.order.Order;
@@ -70,6 +71,7 @@ class OrderSubmissionIntegrationTest {
     @Autowired private FillRecorder fillRecorder;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
+    @Autowired private OrderEventPublisher orderEventPublisher;
 
     @MockBean private AccountClient accountClient;
     @MockBean private CurrentQuoteService currentQuoteService;
@@ -406,7 +408,8 @@ class OrderSubmissionIntegrationTest {
         entityManager.clear();
         // A negative grace period puts the cutoff in the future, so the just-submitted order counts as stuck.
         PendingFillRecovery recovery = new PendingFillRecovery(
-                orderRepository, executionRepository, accountRepository, fillRecorder, jwtService, transactionTemplate, -60);
+                orderRepository, executionRepository, accountRepository, fillRecorder, jwtService, transactionTemplate,
+                orderEventPublisher, -60);
 
         recovery.run();
 

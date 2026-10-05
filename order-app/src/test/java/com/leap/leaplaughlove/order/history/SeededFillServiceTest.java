@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.order.history;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.instrument.Instrument;
@@ -38,6 +39,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -61,6 +63,8 @@ class SeededFillServiceTest {
         private PriceHistoryClient priceHistoryClient;
         @Mock
         private JwtService jwtService;
+        @Mock
+        private OrderEventPublisher orderEventPublisher;
 
         private SeededFillService service;
         private Account account;
@@ -71,7 +75,8 @@ class SeededFillServiceTest {
         void setUp() {
                 service = new SeededFillService(orderRepository, accountRepository, executionRepository,
                                 positionMovementRepository, fillRecorder, priceHistoryClient,
-                                jwtService, new TransactionTemplate(mock(PlatformTransactionManager.class)), 0, 1);
+                                jwtService, new TransactionTemplate(mock(PlatformTransactionManager.class)),
+                                orderEventPublisher, 0, 1);
                 account = new Account(UUID.randomUUID(), UUID.randomUUID(), "ACC-TEST-01", "ACTIVE", "USD", true,
                                 FILLED_AT.minusDays(30));
                 aapl = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
@@ -245,5 +250,55 @@ class SeededFillServiceTest {
                 verify(fillRecorder, never()).recordExecution(any(), any(), any());
                 verify(fillRecorder).settle(eq(order), eq(earlier), anyString());
                 verify(fillRecorder).recordPositionMovement(order, earlier);
+        }
+
+        // Order Reporting: seeded history reaches reporting through Kafka like live fills.
+
+        @Test
+        @DisplayName("publishes a booked seeded fill as FILLED, with the execution it was booked at")
+        void publishesBookedFill() {
+                Order order = filledOrder(aapl, Order.Side.BUY, FILLED_AT);
+                Execution earlier = filledExecution(order, new BigDecimal("461.0000"), FILLED_AT);
+                when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
+                                .thenReturn(List.of(order));
+                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(60), anyString())).thenReturn(List.of(
+                                new CandleClose(FILLED_AT.minusSeconds(60), new BigDecimal("461"))));
+                when(executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED))
+                                .thenReturn(Optional.of(earlier));
+
+                service.bookPendingFills();
+
+                verify(orderEventPublisher).publishFilled(order, earlier);
+        }
+
+        @Test
+        @DisplayName("publishes nothing for a seeded fill booked by another instance meanwhile")
+        void publishesNothingForFillBookedConcurrently() {
+                Order order = filledOrder(aapl, Order.Side.BUY, FILLED_AT);
+                when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
+                                .thenReturn(List.of(order));
+                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(60), anyString())).thenReturn(List.of(
+                                new CandleClose(FILLED_AT.minusSeconds(60), new BigDecimal("461"))));
+                when(positionMovementRepository.existsByOrderId(order.getOrderId())).thenReturn(true);
+
+                service.bookPendingFills();
+
+                verifyNoInteractions(orderEventPublisher);
+        }
+
+        @Test
+        @DisplayName("publishes nothing for a seeded fill that couldn't be settled")
+        void publishesNothingForUnsettledFill() {
+                Order order = filledOrder(aapl, Order.Side.SELL, FILLED_AT);
+                when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
+                                .thenReturn(List.of(order));
+                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(60), anyString())).thenReturn(List.of(
+                                new CandleClose(FILLED_AT.minusSeconds(60), new BigDecimal("461"))));
+                when(fillRecorder.settle(eq(order), any(), anyString()))
+                                .thenThrow(new IllegalStateException("Cannot settle sell: position does not exist"));
+
+                service.bookPendingFills();
+
+                verifyNoInteractions(orderEventPublisher);
         }
 }
