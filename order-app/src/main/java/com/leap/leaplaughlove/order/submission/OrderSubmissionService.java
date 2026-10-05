@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
@@ -45,6 +46,7 @@ public class OrderSubmissionService {
     private final TradeValidationService tradeValidationService;
     private final CurrentQuoteService currentQuoteService;
     private final TransactionTemplate transactionTemplate;
+    private final OrderEventPublisher orderEventPublisher;
 
     /**
      * What the first step of a submission decided: either a finished rejection, or an accepted
@@ -62,6 +64,7 @@ public class OrderSubmissionService {
      * @param tradeValidationService the service used for validating trades
      * @param currentQuoteService the service used for obtaining current market quotes
      * @param transactionTemplate runs each step of a submission in its own transaction
+     * @param orderEventPublisher reports each order to Kafka once it is final
      */
     public OrderSubmissionService(AccountClient accountClient,
                                   InstrumentRepository instrumentRepository,
@@ -70,7 +73,8 @@ public class OrderSubmissionService {
                                   FillRecorder fillRecorder,
                                   TradeValidationService tradeValidationService,
                                   CurrentQuoteService currentQuoteService,
-                                  TransactionTemplate transactionTemplate) {
+                                  TransactionTemplate transactionTemplate,
+                                  OrderEventPublisher orderEventPublisher) {
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -79,6 +83,7 @@ public class OrderSubmissionService {
         this.tradeValidationService = tradeValidationService;
         this.currentQuoteService = currentQuoteService;
         this.transactionTemplate = transactionTemplate;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     /**
@@ -130,13 +135,17 @@ public class OrderSubmissionService {
                 order.markRejected(reason, rejectedAt);
                 lockedCopy(order).markRejected(reason, rejectedAt);
             });
+            // It executed and is now final, so reporting gets it; validation rejections above don't.
+            orderEventPublisher.publishRejected(order);
             // A 4xx, so the customer is told it definitely didn't go through, and why.
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, reason, ex);
         }
 
         BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;
+        boolean finishedHere;
         try {
-            transactionTemplate.executeWithoutResult(status -> fillRecorder.completeFill(lockedCopy(order), execution));
+            finishedHere = Boolean.TRUE.equals(
+                    transactionTemplate.execute(status -> fillRecorder.completeFill(lockedCopy(order), execution)));
         } catch (RuntimeException ex) {
             // Cash and holdings have moved; only this app's record of it is missing, and
             // PendingFillRecovery writes it once this app's database is back.
@@ -145,6 +154,10 @@ public class OrderSubmissionService {
             return toResponse(order, execution, balanceAfter);
         }
         order.markFilled(execution.getExecutedAt());
+        // If recovery finished it first, recovery published it.
+        if (finishedHere) {
+            orderEventPublisher.publishFilled(order, execution);
+        }
         return toResponse(order, execution, balanceAfter);
     }
 
