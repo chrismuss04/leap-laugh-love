@@ -166,6 +166,9 @@ services:
 
   db:
     image: postgres:16-alpine
+    # Persistent runs and recovery tests require durable commits. The disposable
+    # CI overlay replaces this command with its existing performance settings.
+    command: ["postgres", "-c", "fsync=on", "-c", "synchronous_commit=on", "-c", "full_page_writes=on"]
     environment:
       POSTGRES_DB: paysprint
       POSTGRES_USER: paysprint

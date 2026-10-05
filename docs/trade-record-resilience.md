@@ -90,3 +90,44 @@ deployment's `DB_VOLUME_NAME` to a CI build's volume name.
 These settings do not constitute recovery-test evidence. The later recovery suite
 must enable PostgreSQL durability, interrupt the services, and compare records
 before and after the failure.
+
+## Step 2: isolated durable recovery environment
+
+On the Linux Docker host, with Docker Compose v2, Python 3 and Bash available:
+
+```bash
+bash scripts/test-trade-recovery.sh
+```
+
+This builds and starts PostgreSQL plus the four backend services, verifies all
+four health endpoints, then tears down only that run. It uses the existing base
+Compose file and E2E seed overlay, not the CI overlay. PostgreSQL explicitly uses
+`fsync=on`, `synchronous_commit=on` and `full_page_writes=on`; the script checks
+their effective values and the trade tables. Storage is a disk-backed named
+volume, not tmpfs. Each run generates unique project, volume and image names and
+uses dynamically assigned host ports. Deployment `.env` settings are ignored.
+
+This step is an environment smoke check, not proof of trade recovery. Frontend
+and Kafka are not started by this backend-only harness. The later test steps will
+extend it where their scenarios need additional services or failure controls.
+Run it on the Docker host (not against a remote Docker context) because host-side
+test URLs use loopback. Image builds require network access for dependencies.
+
+The script can wrap a future test command, for example:
+
+```bash
+bash scripts/test-trade-recovery.sh bash -c 'your-recovery-test-command'
+```
+
+The command inherits `RECOVERY_PROJECT`, `RECOVERY_REPO_ROOT`,
+`RECOVERY_RESULTS_DIR`, and `RECOVERY_IAM_URL`, `RECOVERY_ACCOUNT_URL`,
+`RECOVERY_ORDER_URL`, `RECOVERY_MARKETDATA_URL`. Future failure controls must use
+that project and the same two explicitly selected Compose files. Any database
+restart/recreation during the command must retain its volume. Cleanup runs only
+after the command finishes (including failure), saving diagnostics under
+`.recovery-results/<run-id>/` before removing that run's containers and volumes.
+SIGKILL or host failure can bypass cleanup; inspect the printed project name to
+remove leftovers manually. Do not use global volume pruning.
+
+Ordinary Jenkins CI still uses its existing durability-disabled command. No
+recovery stage has been added to Jenkins yet.
