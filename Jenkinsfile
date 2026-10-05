@@ -427,17 +427,17 @@ pipeline {
                 // in "Build and Test" under the same condition) carries Playwright's headless
                 // Chromium. The frontend's own node_modules come from the host "npm ci" above.
                 // --user keeps coverage/ and .angular/ owned by the agent account, as with Maven.
-                // Mounted under a directory named "frontend", not at the container's root:
-                // karma.conf.cjs writes lcov paths relative to the parent directory, and SonarQube
-                // only matches them to sources if they read frontend/src/... as in the repo.
+                // Mounted at /repo/frontend, mirroring the checkout: karma.conf.cjs writes lcov
+                // paths relative to the frontend's parent, and SonarQube resolves them from the
+                // repo root, so they must come out as frontend/src/...
                 sh '''
                     set -eu
                     docker run --rm \
                         --user "$(id -u):$(id -g)" \
                         -e HOME=/tmp \
                         -e CI=1 \
-                        -v "$WORKSPACE/frontend":/workspace/frontend \
-                        -w /workspace/frontend \
+                        -v "$WORKSPACE/frontend":/repo/frontend \
+                        -w /repo/frontend \
                         "$E2E_IMAGE" \
                         sh -c 'export CHROME_BIN="$(find /ms-playwright -type f \\( -name headless_shell -o -name chrome-headless-shell \\) | head -n 1)" \
                             && echo "Using $CHROME_BIN" \

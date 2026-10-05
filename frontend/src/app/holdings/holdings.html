@@ -28,6 +28,7 @@
 
         <div *ngIf="account.positions.length > 0" class="holdings-table-wrapper">
           <table class="holdings-table">
+            <caption class="sr-only">Holdings for account {{ account.accountNumber }}</caption>
             <thead>
               <tr>
                 <th>Symbol</th>

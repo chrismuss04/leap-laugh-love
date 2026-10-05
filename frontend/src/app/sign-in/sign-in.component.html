@@ -59,7 +59,7 @@
           <p>Sign in to access your client portal.</p>
         </div>
 
-        <form [formGroup]="signinForm" (ngSubmit)="onSignIn()" class="signin-form">
+        <form [formGroup]="signinForm" method="post" (ngSubmit)="onSignIn()" class="signin-form">
           <!-- Email Field -->
           <div class="form-group">
             <label for="email" class="form-label">Email Address</label>
