@@ -305,6 +305,46 @@ describe('AuthService', () => {
     });
   });
 
+  // ==================== Password Reset ====================
+  describe('Password Reset', () => {
+    it('should send the email to the forgot-password endpoint', () => {
+      service.requestPasswordReset('test@example.com').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/forgot-password`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ email: 'test@example.com' });
+      req.flush(null);
+    });
+
+    it('should send the token and new password to the reset-password endpoint', () => {
+      service.resetPassword('reset-token', 'NewPassword123').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/reset-password`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'reset-token', newPassword: 'NewPassword123' });
+      req.flush(null);
+    });
+
+    it('should not sign the user in after a reset', () => {
+      service.resetPassword('reset-token', 'NewPassword123').subscribe();
+      httpMock.expectOne(`${apiUrl}/reset-password`).flush(null);
+
+      expect(service.isAuthenticated()).toBeFalse();
+    });
+
+    it('should handle an expired reset token', () => {
+      service.resetPassword('expired-token', 'NewPassword123').subscribe(
+        () => fail('should have failed with 400 error'),
+        (error) => {
+          expect(error.status).toBe(400);
+        }
+      );
+
+      const req = httpMock.expectOne(`${apiUrl}/reset-password`);
+      req.flush('Token expired', { status: 400, statusText: 'Bad Request' });
+    });
+  });
+
   // ==================== Helper Methods ====================
   describe('Helper Methods', () => {
     it('should correctly identify when token exists (hasToken)', () => {
