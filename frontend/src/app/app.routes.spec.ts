@@ -36,6 +36,15 @@ describe('App routes', () => {
     });
   }
 
+  // Without a route of its own, the emailed reset link falls through to the catch-all and lands on the dashboard.
+  for (const path of ['forgot-password', 'reset-password']) {
+    it(`/${path} is not swallowed by the catch-all`, () => {
+      const index = routes.findIndex(route => route.path === path);
+      expect(index).withContext(`no route for /${path}`).toBeGreaterThanOrEqual(0);
+      expect(index).toBeLessThan(routes.findIndex(route => route.path === '**'));
+    });
+  }
+
   it('every link in the header and profile menu reaches a real page', () => {
     TestBed.configureTestingModule({
       imports: [ShellComponent],
