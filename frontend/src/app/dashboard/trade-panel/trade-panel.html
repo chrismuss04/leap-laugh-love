@@ -102,7 +102,7 @@
     </div>
 
     <!-- Edit -->
-    <form *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
+    <form method="post" *ngIf="step() === 'edit'" class="ticket" (ngSubmit)="review()">
       <div class="sides" role="radiogroup" aria-label="Order side">
         <button type="button" role="radio" class="side buy" [class.on]="side() === 'BUY'"
                 [attr.aria-checked]="side() === 'BUY'" (click)="setSide('BUY')">Buy</button>
