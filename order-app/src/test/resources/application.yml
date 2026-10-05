@@ -12,6 +12,11 @@ spring:
       ddl-auto: none
     open-in-view: false
 
+reporting:
+  events:
+    # Tests have no Kafka broker; publishing is covered by OrderEventPublisherTest.
+    enabled: false
+
 app:
   jwt:
     secret: verylongsecretkeyforjwttokengenerationspecifiedhere12345
