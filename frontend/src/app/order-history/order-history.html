@@ -39,7 +39,7 @@
 
     <div *ngIf="error()" class="error-message">{{ error() }}</div>
 
-    <div *ngIf="!loading() && orders().length === 0 && !error()" class="empty">
+    <div *ngIf="!loading() && orders().length === 0 && !error()" class="empty" data-testid="no-orders">
       {{ year() !== null ? 'No orders match this filter' : 'No orders found' }}
     </div>
 
