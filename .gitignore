@@ -47,3 +47,10 @@ out/
 
 # scripts/start-local.ps1 run state
 .local-run/
+
+# Generated Javadoc and JaCoCo reports (mvn javadoc/verify)
+docs/javadoc/
+docs/jacoco/
+
+# SonarScanner working directory
+.scannerwork/
