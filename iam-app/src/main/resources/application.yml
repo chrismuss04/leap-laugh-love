@@ -21,3 +21,7 @@ app:
   jwt:
     secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
     expiration-minutes: 60
+  password-reset:
+    # The frontend page the emailed link opens; the token is appended as ?token=...
+    link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:4200/reset-password}
+    token-ttl-minutes: 30
