@@ -28,14 +28,32 @@ export class ResetPasswordComponent {
     confirmPassword: ['', Validators.required]
   }, { validators: passwordsMatch });
 
+  /**
+   * Whether the link can still be used: it stops working once it has reset the password, a newer
+   * link has replaced it, or it has expired. Checked on arrival so a dead link is turned away
+   * before the visitor types a new password.
+   */
+  readonly linkState = signal<'checking' | 'usable' | 'rejected'>('checking');
   readonly isLoading = signal(false);
   readonly errorMessage = signal('');
   readonly done = signal(false);
   readonly showPassword = signal(false);
   readonly showConfirmPassword = signal(false);
 
-  onSubmit(): void {
+  constructor() {
     if (!this.token) {
+      return;
+    }
+    this.authService.checkResetToken(this.token).subscribe({
+      next: () => this.linkState.set('usable'),
+      // Only a 400 means the link itself is dead. If the check couldn't be made, show the form:
+      // submitting it validates the link again.
+      error: (error) => this.linkState.set(error.status === 400 ? 'rejected' : 'usable')
+    });
+  }
+
+  onSubmit(): void {
+    if (!this.token || this.linkState() !== 'usable') {
       return;
     }
     if (this.form.invalid) {

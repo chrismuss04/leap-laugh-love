@@ -2,7 +2,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { Router, RouterModule } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { AuthService, LoginResponse } from '../services/auth.service';
@@ -152,6 +152,11 @@ describe('SignInComponent password recovery', () => {
 
   it('opens the reset screen for the emailed link, keeping its token', async () => {
     await router.navigateByUrl('/reset-password?token=abc123');
+    await settle();
+    // The reset screen holds its form back until the server has accepted the link's token.
+    const check = TestBed.inject(HttpTestingController).expectOne('/api/iam/auth/reset-password/validate');
+    expect(check.request.body).toEqual({ token: 'abc123' });
+    check.flush(null);
     await settle();
 
     expect(element().querySelector('app-reset-password')).not.toBeNull();

@@ -5,14 +5,24 @@ import { Router, provideRouter } from '@angular/router';
 import { ResetPasswordComponent } from './reset-password.component';
 
 const URL = '/api/iam/auth/reset-password';
+const CHECK_URL = '/api/iam/auth/reset-password/validate';
 
 describe('ResetPasswordComponent', () => {
   let fixture: ComponentFixture<ResetPasswordComponent>;
   let component: ResetPasswordComponent;
   let http: HttpTestingController;
 
-  /** Opens the page the way the emailed link does. */
+  /** Opens the page the way the emailed link does, with the server accepting the link's token. */
   async function open(url: string): Promise<void> {
+    await arrive(url);
+    if (component.token) {
+      http.expectOne(CHECK_URL).flush(null);
+      fixture.detectChanges();
+    }
+  }
+
+  /** Opens the page and leaves the link check unanswered. */
+  async function arrive(url: string): Promise<void> {
     TestBed.configureTestingModule({
       imports: [ResetPasswordComponent],
       providers: [
@@ -38,6 +48,51 @@ describe('ResetPasswordComponent', () => {
     expect(fixture.nativeElement.querySelector('form')).toBeNull();
     expect(text()).toContain('This password reset link is invalid or incomplete.');
     expect(text()).toContain('Request a new link');
+  });
+
+  it('does not check a link that has no token', async () => {
+    await open('/reset-password');
+
+    http.expectNone(CHECK_URL);
+  });
+
+  it('checks the link\'s token on arrival and holds the form back until it is accepted', async () => {
+    await arrive('/reset-password?token=abc123');
+
+    const check = http.expectOne(CHECK_URL);
+    expect(check.request.method).toBe('POST');
+    expect(check.request.body).toEqual({ token: 'abc123' });
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+
+    check.flush(null);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
+  });
+
+  it('turns away a used, replaced or expired link instead of showing the form', async () => {
+    await arrive('/reset-password?token=abc123');
+    http.expectOne(CHECK_URL).flush(
+      { error: 'INVALID_RESET_TOKEN', message: 'This password reset link is invalid or has expired.' },
+      { status: 400, statusText: 'Bad Request' });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('form')).toBeNull();
+    expect(text()).toContain('This password reset link has expired or has already been used.');
+    expect(text()).toContain('Request a new link');
+
+    component.form.setValue({ password: 'NewPassword123', confirmPassword: 'NewPassword123' });
+    component.onSubmit();
+    http.expectNone(URL);
+  });
+
+  it('still shows the form when the link could not be checked', async () => {
+    await arrive('/reset-password?token=abc123');
+    http.expectOne(CHECK_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
+    expect(text()).not.toContain('has already been used');
   });
 
   it('does not submit a short password or one that does not match its confirmation', async () => {
