@@ -37,9 +37,13 @@ export function createProxy(upstream) {
       const chunks = [];
       for await (const chunk of req) chunks.push(chunk);
       const headers = { ...req.headers };
-      delete headers.host;
-      delete headers.connection;
-      delete headers['content-length'];
+      // The body is buffered: fetch must generate its own framing, not reuse chunked transport headers.
+      const connectionHeaders = String(req.headers.connection ?? '').toLowerCase().split(',').map(name => name.trim());
+      for (const name of ['host', 'connection', 'content-length', 'transfer-encoding',
+        'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer', 'upgrade',
+        ...connectionHeaders]) {
+        delete headers[name];
+      }
       const body = Buffer.concat(chunks);
       const response = await fetch(new URL(req.url, upstream), {
         method: req.method, headers, body: body.length ? body : undefined,
