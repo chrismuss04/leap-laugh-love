@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
+import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
@@ -91,6 +92,8 @@ public class ClientRegistrationController {
         ClientCredentials credentials = new ClientCredentials(
                 client.getClientId(), passwordEncoder.encode(request.password()), 0, null);
         credentialsRepository.save(credentials);
+
+        eventPublisher.publishEvent(new ClientRegistrationEvent(client.getClientId(), client.getCreatedAt()));
 
         eventPublisher.publishEvent(new ClientRegisteredEvent(
                 client.getClientId(), client.getEmail(), request.initialDepositAmount()));
