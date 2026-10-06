@@ -316,6 +316,15 @@ describe('AuthService', () => {
       req.flush(null);
     });
 
+    it('should send the token to the reset-password validate endpoint', () => {
+      service.checkResetToken('reset-token').subscribe();
+
+      const req = httpMock.expectOne(`${apiUrl}/reset-password/validate`);
+      expect(req.request.method).toBe('POST');
+      expect(req.request.body).toEqual({ token: 'reset-token' });
+      req.flush(null);
+    });
+
     it('should send the token and new password to the reset-password endpoint', () => {
       service.resetPassword('reset-token', 'NewPassword123').subscribe();
 

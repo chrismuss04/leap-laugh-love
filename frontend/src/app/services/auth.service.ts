@@ -188,6 +188,13 @@ export class AuthService implements OnDestroy {
   }
 
   /**
+   * Check that the token from an emailed reset link can still be used
+   */
+  checkResetToken(token: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/reset-password/validate`, { token });
+  }
+
+  /**
    * Set a new password, using the token from the emailed reset link
    */
   resetPassword(token: string, newPassword: string): Observable<void> {

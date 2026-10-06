@@ -23,8 +23,8 @@ import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
 @Service
 public class AuthService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 3;
-    private static final String LOCKED_STATUS = "LOCKED";
+    static final int MAX_FAILED_ATTEMPTS = 3;
+    static final String LOCKED_STATUS = "LOCKED";
 
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;

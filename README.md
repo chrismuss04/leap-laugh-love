@@ -620,6 +620,9 @@ classDiagram
 |---|---|---|---|
 | **IAM** | `POST /api/iam/auth/login` | Client login, returns JWT token | Permitted |
 | **IAM** | `POST /api/iam/v1/clients/register` | Client registration | Permitted |
+| **IAM** | `POST /api/iam/auth/forgot-password` | Request a password reset link; always `204`, whether or not the email is registered | Permitted |
+| **IAM** | `POST /api/iam/auth/reset-password/validate` | Check that a reset link's token is still usable, without spending it; `400 INVALID_RESET_TOKEN` if not | Permitted |
+| **IAM** | `POST /api/iam/auth/reset-password` | Set a new password with the token from the reset link; `400 INVALID_RESET_TOKEN` if it is unknown, expired or used | Permitted |
 | **IAM** | `GET /actuator/health` | IAM service health check | Permitted |
 | **Account** | `GET /api/account/accounts` | Get client trading accounts | Bearer JWT required |
 | **Account** | `GET /api/account/accounts/{id}` | Get specific trading account | Bearer JWT required |

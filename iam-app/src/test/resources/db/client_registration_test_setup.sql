@@ -3,6 +3,8 @@ CREATE SCHEMA IF NOT EXISTS iam;
 
 -- Session Timeout & Revocation: reset sessions before their parent clients.
 DROP TABLE IF EXISTS iam.client_sessions CASCADE;
+-- Password Recovery: reset tokens before their parent clients.
+DROP TABLE IF EXISTS iam.password_reset_tokens CASCADE;
 
 DROP TABLE IF EXISTS iam.client_profile CASCADE;
 -- CASCADE defensively, in case another iam-app test suite sharing this in-memory DB already
@@ -59,4 +61,14 @@ CREATE TABLE iam.client_sessions (
     last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     revoked_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Password Recovery: support reset-link storage in integration tests.
+CREATE TABLE iam.password_reset_tokens (
+    token_id UUID PRIMARY KEY,
+    client_id UUID NOT NULL REFERENCES iam.clients (client_id),
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    used_at TIMESTAMP WITH TIME ZONE
 );
