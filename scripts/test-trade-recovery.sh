@@ -10,7 +10,17 @@ docker compose version >/dev/null
 docker info >/dev/null
 
 # Ignore deployment .env settings and never reuse a caller-selected project/volume.
-run_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
+active_run="$repo_root/.recovery-results/active-run"
+cleanup_only=false
+if [[ "${1:-}" == '--cleanup' ]]; then
+    [[ -f "$active_run" ]] || exit 0
+    run_id=$(cat "$active_run")
+    [[ "$run_id" =~ ^[a-f0-9]{32}$ ]] || { echo "Invalid recovery run marker; refusing cleanup."; exit 1; }
+    cleanup_only=true
+else
+    [[ ! -f "$active_run" ]] || { echo "An earlier run needs cleanup: bash scripts/test-trade-recovery.sh --cleanup"; exit 1; }
+    run_id=$(python3 -c 'import uuid; print(uuid.uuid4().hex)')
+fi
 export COMPOSE_PROJECT="leap-recovery-$run_id"
 export COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT"
 export DB_VOLUME_NAME="${COMPOSE_PROJECT}_db_data"
@@ -43,13 +53,15 @@ assert c["services"]["db"]["command"] == ["postgres", "-c", "fsync=on", "-c", "s
 cleanup() {
     result=$?
     trap - EXIT INT TERM
-    "${compose[@]}" ps -a > "$RECOVERY_RESULTS_DIR/containers.txt" 2>&1 || true
-    "${compose[@]}" logs --no-color --tail=300 > "$RECOVERY_RESULTS_DIR/stack.log" 2>&1 || true
-    docker logs "${COMPOSE_PROJECT}-fault-proxy" > "$RECOVERY_RESULTS_DIR/fault-proxy.log" 2>&1 || true
+    "${compose[@]}" ps -a >> "$RECOVERY_RESULTS_DIR/containers.txt" 2>&1 || true
+    "${compose[@]}" logs --no-color --tail=300 >> "$RECOVERY_RESULTS_DIR/stack.log" 2>&1 || true
+    docker logs "${COMPOSE_PROJECT}-fault-proxy" >> "$RECOVERY_RESULTS_DIR/fault-proxy.log" 2>&1 || true
     docker rm -f "${COMPOSE_PROJECT}-fault-proxy" >/dev/null 2>&1 || true
     if ! "${compose[@]}" down -v --remove-orphans; then
         echo "Cleanup failed for $COMPOSE_PROJECT; inspect its resources."
         result=1
+    else
+        rm -f -- "$active_run"
     fi
     for service in iam-app account-app order-app market-data-app; do
         docker image rm "$service:$IMAGE_TAG" >/dev/null 2>&1 || true
@@ -61,6 +73,10 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+if [[ "$cleanup_only" == true ]]; then
+    exit 0 # EXIT trap performs the same scoped cleanup after a Jenkins interruption.
+fi
+printf '%s\n' "$run_id" > "$active_run"
 echo "Starting isolated recovery environment: $COMPOSE_PROJECT"
 "${compose[@]}" up -d --wait --wait-timeout 180 db
 
@@ -108,5 +124,5 @@ echo "Durable backend environment is ready."
 if (( $# )); then
     "$@"
 else
-    echo "Environment smoke check passed; trade failure scenarios are not implemented yet."
+    echo "Environment smoke check passed; pass the test:recovery command to run failure scenarios."
 fi

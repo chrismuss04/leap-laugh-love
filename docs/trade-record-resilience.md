@@ -129,8 +129,7 @@ after the command finishes (including failure), saving diagnostics under
 SIGKILL or host failure can bypass cleanup; inspect the printed project name to
 remove leftovers manually. Do not use global volume pruning.
 
-Ordinary Jenkins CI still uses its existing durability-disabled command. No
-recovery stage has been added to Jenkins yet.
+Ordinary Jenkins CI still uses its existing durability-disabled command. The Jenkins integration below runs recovery separately from that disposable CI stack.
 
 ## Step 4: committed-trade persistence checks
 
@@ -210,3 +209,32 @@ npm --prefix e2e run test:recovery:proxy
 
 This local proxy test uses an in-memory HTTP server. It does not establish that
 the eight Docker recovery scenarios pass; those still require execution on Linux.
+
+
+## Step 6: Jenkins integration
+
+`Trade Recovery Tests` follows E2E on main, PRs and plain Pipeline jobs (the same
+RUN_E2E policy). It stops this build's ordinary stack before starting recovery,
+installs the E2E dependencies using the agent npm cache, checks the proxy and runs
+all recovery scenarios. Feature branch jobs still use their existing smoke checks.
+The stage has a 30-minute timeout; the overall pipeline limit is now 90 minutes.
+The agent needs Bash, Python 3, the configured NodeJS tool and Docker Compose v2,
+with the Docker daemon on the agent host. No additional Jenkins plugin is required
+beyond the existing JUnit and artifact publishing steps.
+
+A nonzero setup/test exit fails the stage. JUnit results and diagnostic artifacts
+under `.recovery-results/` are published even on failure. The ordinary stack stays
+stopped for diagnostics until the existing final cleanup removes it.
+
+Before creating containers, the harness writes `.recovery-results/active-run`.
+Jenkins always calls `bash scripts/test-trade-recovery.sh --cleanup` with a
+five-minute timeout after the stage. That command validates the saved run ID,
+reconstructs only that run's Compose project and retries scoped cleanup. Successful
+cleanup removes the marker; repeated cleanup is a no-op. An invalid marker fails
+closed. Normal harness exit uses the same cleanup and preserves its test exit code.
+
+Agent/host loss can prevent both cleanup paths. Archived diagnostics include the
+marker if cleanup failed; inspect that exact project's resources when the agent
+returns. No host-wide pruning is performed. A successful Linux Jenkins run is
+still required to verify the Docker crash/restart scenarios; local syntax and
+mocked cleanup checks do not replace it.
