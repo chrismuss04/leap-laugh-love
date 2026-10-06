@@ -11,7 +11,8 @@ pipeline {
         disableConcurrentBuilds()
         // A hung build holds this executor's ports and containers until someone notices;
         // failing it releases them via the cleanup block below.
-        timeout(time: 60, unit: 'MINUTES')
+        // Includes the sequential, isolated trade recovery suite (up to 30 minutes).
+        timeout(time: 90, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
 
@@ -537,6 +538,49 @@ pipeline {
                 }
             }
         }
+        stage('Trade Recovery Tests') {
+            when {
+                environment name: 'RUN_E2E', value: 'true'
+            }
+            options {
+                timeout(time: 30, unit: 'MINUTES')
+            }
+            environment {
+                CI = 'true'
+            }
+            steps {
+                sh '''
+                    set -eu
+                    # Recovery needs the local Docker daemon, Compose v2 and Python 3.
+                    docker compose version
+                    python3 --version
+                    # Release this build's ordinary stack before starting another four JVMs.
+                    # Keep its containers for diagnostics; final pipeline cleanup removes them.
+                    $COMPOSE -p "$COMPOSE_PROJECT" stop
+                    npm ci --prefix e2e --cache "$HOME/.npm-ci" --no-audit --no-fund
+                    npm --prefix e2e run test:recovery:proxy
+                    bash scripts/test-trade-recovery.sh npm --prefix e2e run test:recovery
+                    # A successful stage must produce a test report, not just a healthy stack.
+                    python3 -c 'import glob; assert glob.glob(".recovery-results/*/junit.xml"), "Recovery test report missing"'
+                '''
+            }
+            post {
+                always {
+                    script {
+                        try {
+                            // The marker survives termination of the shell/test process.
+                            timeout(time: 5, unit: 'MINUTES') {
+                                sh 'bash scripts/test-trade-recovery.sh --cleanup'
+                            }
+                        } finally {
+                            // Keep diagnostics even when tests or fallback cleanup fail.
+                            archiveArtifacts allowEmptyArchive: true, artifacts: '.recovery-results/**'
+                            junit allowEmptyResults: true, testResults: '.recovery-results/*/junit.xml'
+                        }
+                    }
+                }
+            }
+        }
     }
 
     post {
@@ -576,14 +620,11 @@ pipeline {
                         | grep -vx "$E2E_IMAGE" \
                         | xargs -r docker image rm >/dev/null 2>&1 || true
                 fi
-                # Safety net for anything the teardown above missed, including builds of
-                # branches still on an older Jenkinsfile. All three only touch what nothing is
-                # using: on Docker 23+ "volume prune" removes anonymous volumes only (never the
-                # named sonarqube or npm cache volumes, nor another running build's), "image
-                # prune" without -a removes only untagged layers left behind by re-pulled base
+                # Database volumes are removed only by this build's scoped Compose teardown.
+                # Do not globally prune volumes: persistent deployments may be stopped.
+                # "image prune" without -a removes only untagged layers left behind by re-pulled base
                 # images, and the build cache is trimmed oldest-first down to a cap that still
                 # holds the shared Maven repository.
-                docker volume prune -f >/dev/null 2>&1 || true
                 docker image prune -f >/dev/null 2>&1 || true
                 docker builder prune -f --reserved-space 3GB >/dev/null 2>&1 || true
             '''

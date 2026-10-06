@@ -99,8 +99,14 @@ public class PendingFillRecovery {
                 OffsetDateTime.now().minusSeconds(graceSeconds));
         int unresolved = 0;
         for (Order order : pending) {
-            if (!recover(order)) {
+            try {
+                if (!recover(order)) {
+                    unresolved++;
+                }
+            } catch (RuntimeException ex) {
+                // A failed lookup or final transaction must not starve later orders.
                 unresolved++;
+                log.warn("Order {} recovery failed; will retry: {}", order.getOrderId(), ex.getMessage());
             }
         }
         if (!pending.isEmpty()) {
@@ -119,7 +125,8 @@ public class PendingFillRecovery {
         Optional<Execution> filled = executionRepository.findFirstByOrder_OrderIdAndStatus(
                 order.getOrderId(), Execution.Status.FILLED);
         if (filled.isEmpty()) {
-            return true;
+            log.warn("Order {} has no filled execution; requires reconciliation", order.getOrderId());
+            return false;
         }
         Execution execution = filled.get();
 
