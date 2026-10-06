@@ -899,6 +899,23 @@ A new consumer group reads retained events from the beginning. This does not rec
 that were never published or have expired from Kafka. Active/inactive classification and
 inactivity emails are outside this registration pipeline.
 
+Run the registration pipeline check on a **development/test Docker stack** from the repository root:
+
+```bash
+# Existing databases only: add reporting storage without deleting any volumes.
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/migrate-reporting-clients.sql
+bash scripts/test-client-events.sh
+```
+
+The script builds and starts IAM, account-app, Kafka and user-etl. It registers a unique test
+client through HTTP, checks the Kafka key and two-field payload, compares the registration
+timestamp to IAM and the actual reporting row, and checks duplicate registration rejection.
+It then republishes the event, waits for the running user-etl group's offset to advance past
+that replay, and verifies the reporting row and both timestamps remain unchanged. An independent
+observer reads Kafka without taking partitions from user-etl. Failed checks exit nonzero and
+print service logs. No volumes are deleted; the generated client and funded account remain
+for inspection. This check is not yet wired into Jenkins.
+
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
 completed order into `reporting.orders`, the read model the analyst dashboard queries. It runs
 as the `reporting-etl` compose service (no port).
