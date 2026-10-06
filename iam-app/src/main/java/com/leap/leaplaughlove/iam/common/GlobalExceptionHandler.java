@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.iam.common;
 
 import com.leap.leaplaughlove.iam.auth.AccountLockedException;
 import com.leap.leaplaughlove.iam.auth.InvalidCredentialsException;
+import com.leap.leaplaughlove.iam.auth.InvalidResetTokenException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -44,6 +45,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleAccountLocked(AccountLockedException ex) {
         return ResponseEntity.status(HttpStatus.LOCKED).body(Map.of(
                 "error", "ACCOUNT_LOCKED",
+                "message", ex.getMessage()));
+    }
+
+    /**
+     * Handles the InvalidResetTokenException
+     * @param  ex the exception indicating the password reset token cannot be used
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(InvalidResetTokenException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidResetToken(InvalidResetTokenException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "INVALID_RESET_TOKEN",
                 "message", ex.getMessage()));
     }
 
