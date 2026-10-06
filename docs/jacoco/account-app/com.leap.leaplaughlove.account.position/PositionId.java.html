@@ -33,7 +33,7 @@ public class PositionId implements Serializable {
      * @return the account identifier
      */
     public UUID getAccountId() {
-<span class="nc" id="L36">        return accountId;</span>
+<span class="fc" id="L36">        return accountId;</span>
     }
 
     /**
@@ -41,7 +41,7 @@ public class PositionId implements Serializable {
      * @return the instrument identifier
      */
     public UUID getInstrumentId() {
-<span class="nc" id="L44">        return instrumentId;</span>
+<span class="fc" id="L44">        return instrumentId;</span>
     }
 
     /**    
@@ -52,14 +52,14 @@ public class PositionId implements Serializable {
      */
     @Override
     public boolean equals(Object o) {
-<span class="pc bpc" id="L55" title="1 of 2 branches missed.">        if (this == o) {</span>
-<span class="nc" id="L56">            return true;</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (this == o) {</span>
+<span class="fc" id="L56">            return true;</span>
         }
-<span class="pc bpc" id="L58" title="1 of 2 branches missed.">        if (!(o instanceof PositionId that)) {</span>
-<span class="nc" id="L59">            return false;</span>
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        if (!(o instanceof PositionId that)) {</span>
+<span class="fc" id="L59">            return false;</span>
         }
-<span class="pc bpc" id="L61" title="1 of 2 branches missed.">        return Objects.equals(accountId, that.accountId)</span>
-<span class="pc bpc" id="L62" title="1 of 2 branches missed.">                &amp;&amp; Objects.equals(instrumentId, that.instrumentId);</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        return Objects.equals(accountId, that.accountId)</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">                &amp;&amp; Objects.equals(instrumentId, that.instrumentId);</span>
     }
 
     /**
@@ -69,7 +69,7 @@ public class PositionId implements Serializable {
      */
     @Override
     public int hashCode() {
-<span class="nc" id="L72">        return Objects.hash(accountId, instrumentId);</span>
+<span class="fc" id="L72">        return Objects.hash(accountId, instrumentId);</span>
     }
 }
 

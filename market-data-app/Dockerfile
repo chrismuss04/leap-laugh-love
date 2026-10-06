@@ -17,9 +17,10 @@ COPY market-data-app/src market-data-app/src
 #
 # The root POM binds an aggregate Javadoc run (which forks a compile of every module) and
 # JaCoCo to the build. Neither ends up in the image, and the Javadoc alone was most of the
-# build time - paid four times over, once per service.
+# build time - paid four times over, once per service. maven.test.skip rather than skipTests
+# so the test sources are not compiled either: the Unit Tests stage compiles and runs them.
 RUN --mount=type=cache,id=leap-maven-repo,target=/root/.m2,sharing=shared \
-    mvn -B clean package -DskipTests -Dmaven.javadoc.skip=true -Djacoco.skip=true \
+    mvn -B clean package -Dmaven.test.skip=true -Dmaven.javadoc.skip=true -Djacoco.skip=true \
         -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav \
         -pl market-data-app -am
 

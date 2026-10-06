@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -54,5 +55,30 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     @Query("SELECT a FROM Account a WHERE a.accountId = :accountId AND a.clientId = :clientId")
     Optional<Account> findByAccountIdAndClientIdForUpdate(
             @Param("accountId") UUID accountId, @Param("clientId") UUID clientId);
+
+    /** @return the accounts the inactivity job has flagged */
+    List<Account> findByInactiveSinceIsNotNull();
+
+    /** An account with nothing in it, and when it became empty. */
+    interface EmptyAccount {
+        UUID getAccountId();
+        OffsetDateTime getEmptySince();
+    }
+
+    /**
+     * Finds active accounts with no cash in any currency and no shares that have been empty since
+     * before the cutoff. Cash only changes with a ledger entry, so an empty account has been empty
+     * since its last entry, or since it was opened if it has none.
+     */
+    @Query("""
+            SELECT a.accountId AS accountId, COALESCE(MAX(c.createdAt), a.createdAt) AS emptySince
+            FROM Account a LEFT JOIN CashLedgerEntry c ON c.accountId = a.accountId
+            WHERE a.status = 'ACTIVE'
+              AND NOT EXISTS (SELECT 1 FROM Position p WHERE p.accountId = a.accountId AND p.quantity <> 0)
+              AND NOT EXISTS (SELECT 1 FROM CashLedgerEntry b WHERE b.accountId = a.accountId
+                              GROUP BY b.currency HAVING SUM(b.amount) <> 0)
+            GROUP BY a.accountId, a.createdAt
+            HAVING COALESCE(MAX(c.createdAt), a.createdAt) < :cutoff""")
+    List<EmptyAccount> findEmptySince(@Param("cutoff") OffsetDateTime cutoff);
 }
 

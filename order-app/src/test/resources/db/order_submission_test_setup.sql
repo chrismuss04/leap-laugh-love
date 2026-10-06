@@ -1,14 +1,14 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
-DROP TABLE IF EXISTS trading.position_movements;
-DROP TABLE IF EXISTS trading.positions;
-DROP TABLE IF EXISTS trading.cash_ledger;
-DROP TABLE IF EXISTS trading.executions;
-DROP TABLE IF EXISTS trading.orders;
-DROP TABLE IF EXISTS trading.instruments;
-DROP TABLE IF EXISTS trading.accounts;
-DROP TABLE IF EXISTS iam.clients;
+DROP TABLE IF EXISTS trading.position_movements CASCADE;
+DROP TABLE IF EXISTS trading.positions CASCADE;
+DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
+DROP TABLE IF EXISTS trading.executions CASCADE;
+DROP TABLE IF EXISTS trading.orders CASCADE;
+DROP TABLE IF EXISTS trading.instruments CASCADE;
+DROP TABLE IF EXISTS trading.accounts CASCADE;
+DROP TABLE IF EXISTS iam.clients CASCADE;
 
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
@@ -23,6 +23,7 @@ CREATE TABLE trading.accounts (
     status VARCHAR(20) NOT NULL,
     base_currency CHAR(3) NOT NULL,
     trading_enabled BOOLEAN NOT NULL,
+    max_slippage_pct NUMERIC(5,2),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
@@ -50,6 +51,8 @@ CREATE TABLE trading.orders (
     rejected_at TIMESTAMP WITH TIME ZONE,
     filled_at TIMESTAMP WITH TIME ZONE,
     rejection_reason VARCHAR(500),
+    quoted_price NUMERIC(18,6),
+    max_slippage_pct NUMERIC(5,2),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );

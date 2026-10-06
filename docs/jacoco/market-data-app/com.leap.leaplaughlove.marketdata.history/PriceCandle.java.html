@@ -103,7 +103,7 @@ public class PriceCandle implements Persistable&lt;PriceCandle.Key&gt; {
      */
     @Override
     public Key getId() {
-<span class="nc" id="L106">        return new Key(instrumentId, bucketSeconds, bucketStart);</span>
+<span class="fc" id="L106">        return new Key(instrumentId, bucketSeconds, bucketStart);</span>
     }
 
     /**
@@ -215,11 +215,11 @@ public class PriceCandle implements Persistable&lt;PriceCandle.Key&gt; {
          * @param bucketSeconds the width, in seconds, of the candle's time bucket
          * @param bucketStart   the start of the candle's time bucket
          */
-<span class="nc" id="L218">        public Key(UUID instrumentId, int bucketSeconds, OffsetDateTime bucketStart) {</span>
-<span class="nc" id="L219">            this.instrumentId = instrumentId;</span>
-<span class="nc" id="L220">            this.bucketSeconds = bucketSeconds;</span>
-<span class="nc" id="L221">            this.bucketStart = bucketStart;</span>
-<span class="nc" id="L222">        }</span>
+<span class="fc" id="L218">        public Key(UUID instrumentId, int bucketSeconds, OffsetDateTime bucketStart) {</span>
+<span class="fc" id="L219">            this.instrumentId = instrumentId;</span>
+<span class="fc" id="L220">            this.bucketSeconds = bucketSeconds;</span>
+<span class="fc" id="L221">            this.bucketStart = bucketStart;</span>
+<span class="fc" id="L222">        }</span>
 
         /**
          * Overrides the default equals method to compare candles by their natural
@@ -232,18 +232,18 @@ public class PriceCandle implements Persistable&lt;PriceCandle.Key&gt; {
          */
         @Override
         public boolean equals(Object other) {
-<span class="nc bnc" id="L235" title="All 2 branches missed.">            if (this == other) {</span>
-<span class="nc" id="L236">                return true;</span>
+<span class="fc bfc" id="L235" title="All 2 branches covered.">            if (this == other) {</span>
+<span class="fc" id="L236">                return true;</span>
             }
-<span class="nc bnc" id="L238" title="All 2 branches missed.">            if (!(other instanceof Key key)) {</span>
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">            if (!(other instanceof Key key)) {</span>
 <span class="nc" id="L239">                return false;</span>
             }
             // Compared as instants: the same bucket can come back from the database at a
             // different offset than it was built with.
-<span class="nc bnc" id="L243" title="All 2 branches missed.">            return bucketSeconds == key.bucketSeconds</span>
-<span class="nc bnc" id="L244" title="All 8 branches missed.">                    &amp;&amp; Objects.equals(instrumentId, key.instrumentId)</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">            return bucketSeconds == key.bucketSeconds</span>
+<span class="fc bfc" id="L244" title="All 8 branches covered.">                    &amp;&amp; Objects.equals(instrumentId, key.instrumentId)</span>
                     &amp;&amp; (bucketStart == null ? key.bucketStart == null
-<span class="nc bnc" id="L246" title="All 2 branches missed.">                            : key.bucketStart != null &amp;&amp; bucketStart.isEqual(key.bucketStart));</span>
+<span class="fc bfc" id="L246" title="All 2 branches covered.">                            : key.bucketStart != null &amp;&amp; bucketStart.isEqual(key.bucketStart));</span>
         }
 
         /**
@@ -255,7 +255,7 @@ public class PriceCandle implements Persistable&lt;PriceCandle.Key&gt; {
          */
         @Override
         public int hashCode() {
-<span class="nc bnc" id="L258" title="All 2 branches missed.">            return Objects.hash(instrumentId, bucketSeconds, bucketStart == null ? null : bucketStart.toInstant());</span>
+<span class="fc bfc" id="L258" title="All 2 branches covered.">            return Objects.hash(instrumentId, bucketSeconds, bucketStart == null ? null : bucketStart.toInstant());</span>
         }
     }
 }

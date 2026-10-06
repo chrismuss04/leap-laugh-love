@@ -48,36 +48,36 @@ flowchart TB
         subgraph IAM["iam-app (Port 8081)"]
             IamApp["IamApplication @Import(JwtService)"]
             IamSec["IamSecurityConfig"]
-            AuthC["AuthController\n/api/iam/auth"]
-            RegC["ClientRegistrationController\n/api/iam/v1/clients"]
+            AuthC["AuthController<br/>/api/iam/auth"]
+            RegC["ClientRegistrationController<br/>/api/iam/v1/clients"]
         end
 
         subgraph ACCOUNT["account-app (Port 8082)"]
             AccountApp["AccountApplication @Import(JwtService)"]
             AccountSec["AccountSecurityConfig (CORS Enabled)"]
-            BalC["BalanceController\n/api/account/balance"]
-            AcctC["AccountController\n/api/account/accounts"]
-            PosC["PositionController\n/api/account/accounts/{id}/positions"]
-            SettleC["AccountSettlementController\n/api/account/internal/accounts/{id}/settlement"]
+            BalC["BalanceController<br/>/api/account/balance"]
+            AcctC["AccountController<br/>/api/account/accounts"]
+            PosC["PositionController<br/>/api/account/accounts/{id}/positions"]
+            SettleC["AccountSettlementController<br/>/api/account/internal/accounts/{id}/settlement"]
         end
 
         subgraph ORDER["order-app (Port 8084)"]
             OrderApp["OrderApplication @Import(JwtService)"]
             OrderSec["OrderSecurityConfig (CORS Enabled)"]
-            OrderSubC["OrderSubmissionController\n/api/order/orders"]
-            OrderHistC["OrderHistoryController\n/api/order/orders/history"]
-            QuoteSvc["CurrentQuoteService\n(non-stale quote at execution)"]
-            AcctClient["AccountClient\n(REST to account-app)"]
+            OrderSubC["OrderSubmissionController<br/>/api/order/orders"]
+            OrderHistC["OrderHistoryController<br/>/api/order/orders/history"]
+            QuoteSvc["CurrentQuoteService<br/>(non-stale quote at execution)"]
+            AcctClient["AccountClient<br/>(REST to account-app)"]
         end
 
         subgraph MARKETDATA["market-data-app (Port 8083)"]
             MdApp["MarketDataApplication @Import(JwtService) @EnableScheduling"]
             MdSec["MarketDataSecurityConfig (CORS Enabled)"]
-            SimEngine["MarketSimulationEngine\n(GBM @Scheduled tick)"]
-            CandleAcc["PriceCandleAccumulator\n(ticks -> OHLC candles)"]
-            PriceC["PriceController\n/api/marketdata/prices"]
-            StreamC["PriceStreamController\n/api/marketdata/stream (SSE)"]
-            QuoteC["QuoteController\n/api/marketdata/quotes"]
+            SimEngine["MarketSimulationEngine<br/>(GBM @Scheduled tick)"]
+            CandleAcc["PriceCandleAccumulator<br/>(ticks -> OHLC candles)"]
+            PriceC["PriceController<br/>/api/marketdata/prices"]
+            StreamC["PriceStreamController<br/>/api/marketdata/stream (SSE)"]
+            QuoteC["QuoteController<br/>/api/marketdata/quotes"]
         end
     end
 
@@ -101,9 +101,9 @@ flowchart TB
     OrderSec --> OrderSubC
     OrderSec --> OrderHistC
     OrderSubC --> AcctClient
-    AcctClient -->|"HTTP / JSON (8082)\npre-trade & settlement"| SettleC
+    AcctClient -->|"HTTP / JSON (8082)<br/>pre-trade & settlement"| SettleC
     OrderSubC --> QuoteSvc
-    QuoteSvc -->|"HTTP / JSON (8083)\ncaller's JWT forwarded"| QuoteC
+    QuoteSvc -->|"HTTP / JSON (8083)<br/>caller's JWT forwarded"| QuoteC
     MdSec --> PriceC
     MdSec --> StreamC
     MdSec --> QuoteC
@@ -111,10 +111,10 @@ flowchart TB
     SimEngine --> StreamC
     SimEngine --> CandleAcc
 
-    IAM -- "Library Dependency" --> SEC
-    ACCOUNT -- "Library Dependency" --> SEC
-    ORDER -- "Library Dependency" --> SEC
-    MARKETDATA -- "Library Dependency" --> SEC
+    IamApp -. "Library Dependency" .-> JwtS
+    AccountApp -. "Library Dependency" .-> JwtS
+    OrderApp -. "Library Dependency" .-> JwtS
+    MdApp -. "Library Dependency" .-> JwtS
 
     AuthC --> IAM_DB
     RegC --> IAM_DB
@@ -678,6 +678,13 @@ mvn clean verify
 
 To build or test individual modules:
 
+> **Run every command below from the repository root** (the folder containing the parent
+> `pom.xml`), never from inside a service folder such as `order-app/`. The services depend on
+> `common-security`, which is not published to Maven Central. A root-level build with `-am`
+> (also-make) compiles `common-security` first and puts it on the service's classpath. Running
+> `mvn` inside `order-app/` fails with *"Could not resolve dependencies ...
+> common-security:jar:0.1.0"*.
+
 ```bash
 # Test Common Security module
 mvn -pl common-security test
@@ -709,6 +716,45 @@ npm test            # or: npm run test:smoke, npm run test:ui
 
 See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay isolated, and
 conventions for writing new ones.
+
+### Frontend unit tests
+
+```bash
+cd frontend
+npx ng test --watch=false --code-coverage
+```
+
+Coverage is written to `frontend/coverage/` (an HTML report plus `lcov.info` for SonarQube).
+
+### SonarQube
+
+Jenkins analyses `main` and pull requests into the SonarQube project `leap-laugh-love-app` and
+stops the build if the classroom Quality Gate fails. Feature-branch pushes skip it: Community
+Build keeps a single analysis per project, so a branch scan would overwrite `main`'s. The
+analysis settings live in [sonar-project.properties](sonar-project.properties); the token is the
+Jenkins credential `sonarqube-token` and is never committed.
+
+One-time setup:
+
+- **SonarQube**: create the project `leap-laugh-love-app`. Under *Quality Profiles → Restore*,
+  import the classroom profiles for Java, TypeScript (`texoma-typescript-profile.xml`),
+  JavaScript, HTML, CSS and Docker and assign them to the project, along with the classroom
+  Quality Gate. Add a webhook named `Jenkins` pointing at
+  `http://host.docker.internal:8080/sonarqube-webhook/`, otherwise the Quality Gate stage
+  waits until it times out.
+- **Jenkins**: install the *SonarQube Scanner* plugin; add the project token as a *Secret text*
+  credential with ID `sonarqube-token`; under *Manage Jenkins → System* add a SonarQube server
+  named `SonarQube` using that credential; under *Manage Jenkins → Tools* add a SonarQube
+  Scanner installation named `SonarScanner`.
+
+To analyse a local checkout, run the tests first so the coverage reports exist, then the scanner
+(it needs Node on the PATH for the TypeScript analysis):
+
+```bash
+mvn test
+(cd frontend && npx ng test --watch=false --code-coverage)
+sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<your token>
+```
 
 ### 2. Documentation and Code Coverage Generation
 
@@ -782,6 +828,16 @@ Services will be exposed on:
 - **PostgreSQL Database**: `localhost:5432`
 
 The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
+
+**Kafka** (`kafka`, single-node KRaft) is reachable only on the compose network, at
+`kafka:9092`; no host port is published. The one-shot `kafka-init` service creates the
+`order-events` topic (3 partitions) on startup - add further topics to its command in
+`docker-compose.yml`. To inspect it from the host:
+
+```bash
+docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
+```
 
 To run the frontend on its own against an already-running backend:
 
@@ -858,6 +914,18 @@ of a year on the first start, which is much quicker.
 ### 4. Launch Services Locally (Spring Boot)
 
 Ensure PostgreSQL is running locally on port `5432` with the database `paysprint` (or use active Spring profiles).
+
+> **Important: run these from the repository root, not from inside the service folder.**
+> Every service depends on the `common-security` module, so it must be in scope. Install it
+> (and the parent POM) once, then start any service by name:
+>
+> ```bash
+> mvn -pl common-security -am install -DskipTests
+> ```
+>
+> Re-run that install whenever `common-security` changes. Starting a service from inside its own
+> folder, or before this install, fails with *"Could not resolve dependencies ...
+> common-security:jar:0.1.0"*.
 
 Run IAM App:
 ```bash

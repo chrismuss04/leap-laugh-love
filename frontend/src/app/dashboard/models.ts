@@ -21,6 +21,8 @@ export interface TradeAccount {
   buyingPower: number;
   /** Shares held per symbol in this account. */
   shares: Record<string, number>;
+  /** The account's saved price protection in percent, or null when off. */
+  maxSlippagePercent: number | null;
 }
 
 export interface MarketIndex {
@@ -53,6 +55,8 @@ export interface AccountView {
   status: string | null;
   tradingEnabled: boolean | null;
   openedAt: string | null;
+  /** When the account became empty, if the nightly job flagged it inactive. */
+  inactiveSince: string | null;
   cash: number;
   marketValue: number;
   value: number;

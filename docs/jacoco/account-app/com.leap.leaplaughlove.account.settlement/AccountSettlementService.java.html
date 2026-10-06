@@ -58,7 +58,7 @@ public class AccountSettlementService {
 <span class="fc" id="L58">        BigDecimal cashBalance = balanceService.getCurrentBalance(account);</span>
 
 <span class="fc" id="L60">        long holdingQuantity = 0L;</span>
-<span class="pc bpc" id="L61" title="1 of 2 branches missed.">        if (instrumentId != null) {</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        if (instrumentId != null) {</span>
 <span class="fc" id="L62">            holdingQuantity = positionRepository.findById(new PositionId(accountId, instrumentId))</span>
 <span class="fc" id="L63">                    .map(Position::getQuantity)</span>
 <span class="fc" id="L64">                    .orElse(0L);</span>
@@ -67,10 +67,11 @@ public class AccountSettlementService {
 <span class="fc" id="L67">        return new AccountValidationDto(</span>
 <span class="fc" id="L68">                AccountAuthorizationService.ACTIVE_STATUS.equals(account.getStatus()),</span>
 <span class="fc" id="L69">                account.isTradingEnabled(),</span>
-<span class="pc bpc" id="L70" title="1 of 2 branches missed.">                cashBalance != null ? cashBalance : BigDecimal.ZERO,</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">                cashBalance != null ? cashBalance : BigDecimal.ZERO,</span>
                 holdingQuantity,
 <span class="fc" id="L72">                account.getBaseCurrency(),</span>
-<span class="fc" id="L73">                account.getAccountNumber()</span>
+<span class="fc" id="L73">                account.getAccountNumber(),</span>
+<span class="fc" id="L74">                account.getMaxSlippagePercent()</span>
         );
     }
 
@@ -86,101 +87,101 @@ public class AccountSettlementService {
      */
     @Transactional(rollbackFor = Exception.class)
     public SettlementResponse settleOrder(UUID accountId, SettlementRequest request) {
-<span class="fc" id="L89">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
+<span class="fc" id="L90">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
         // Checked under the account lock taken above, so two copies of one settlement serialize.
         // Checked before trading is, so a retry of a trade that was booked before trading was
         // turned off is answered with that booking rather than refused - order-app would record
         // the refusal as a rejection of a trade whose cash and shares already moved.
-<span class="fc" id="L94">        Optional&lt;CashLedgerEntry&gt; alreadySettled = cashLedgerRepository.findFirstByExecutionId(request.executionId());</span>
-<span class="fc bfc" id="L95" title="All 4 branches covered.">        if (alreadySettled.isEmpty() &amp;&amp; !account.isTradingEnabled()) {</span>
-<span class="fc" id="L96">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Trading is disabled for this account&quot;);</span>
+<span class="fc" id="L95">        Optional&lt;CashLedgerEntry&gt; alreadySettled = cashLedgerRepository.findFirstByExecutionId(request.executionId());</span>
+<span class="fc bfc" id="L96" title="All 4 branches covered.">        if (alreadySettled.isEmpty() &amp;&amp; !account.isTradingEnabled()) {</span>
+<span class="fc" id="L97">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Trading is disabled for this account&quot;);</span>
         }
-<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (alreadySettled.isPresent()) {</span>
-<span class="fc" id="L99">            Optional&lt;Position&gt; position = positionRepository.findById(</span>
-<span class="fc" id="L100">                    new PositionId(account.getAccountId(), request.instrumentId()));</span>
-<span class="fc" id="L101">            return new SettlementResponse(</span>
-<span class="fc" id="L102">                    alreadySettled.get().getCashLedgerId(),</span>
-<span class="fc" id="L103">                    balanceService.getCurrentBalance(account),</span>
-<span class="fc" id="L104">                    position.map(Position::getQuantity).orElse(0L),</span>
-<span class="fc" id="L105">                    position.map(Position::getAvgCost).orElse(BigDecimal.ZERO));</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (alreadySettled.isPresent()) {</span>
+<span class="fc" id="L100">            Optional&lt;Position&gt; position = positionRepository.findById(</span>
+<span class="fc" id="L101">                    new PositionId(account.getAccountId(), request.instrumentId()));</span>
+<span class="fc" id="L102">            return new SettlementResponse(</span>
+<span class="fc" id="L103">                    alreadySettled.get().getCashLedgerId(),</span>
+<span class="fc" id="L104">                    balanceService.getCurrentBalance(account),</span>
+<span class="fc" id="L105">                    position.map(Position::getQuantity).orElse(0L),</span>
+<span class="fc" id="L106">                    position.map(Position::getAvgCost).orElse(BigDecimal.ZERO));</span>
         }
 
-<span class="fc" id="L108">        BigDecimal tradeAmount = request.price().multiply(BigDecimal.valueOf(request.quantity()))</span>
-<span class="fc" id="L109">                .setScale(2, RoundingMode.HALF_UP);</span>
-<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        OffsetDateTime time = request.executedAt() != null ? request.executedAt() : OffsetDateTime.now();</span>
+<span class="fc" id="L109">        BigDecimal tradeAmount = request.price().multiply(BigDecimal.valueOf(request.quantity()))</span>
+<span class="fc" id="L110">                .setScale(2, RoundingMode.HALF_UP);</span>
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">        OffsetDateTime time = request.executedAt() != null ? request.executedAt() : OffsetDateTime.now();</span>
 
         // 1. Post to Cash Ledger
         BigDecimal ledgerAmount;
         String entryType;
         String description;
 
-<span class="fc" id="L117">        boolean isBuy = &quot;BUY&quot;.equalsIgnoreCase(request.side());</span>
-<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (isBuy) {</span>
-<span class="fc" id="L119">            ledgerAmount = tradeAmount.negate();</span>
-<span class="fc" id="L120">            entryType = &quot;BUY_SETTLEMENT&quot;;</span>
-<span class="fc" id="L121">            description = &quot;Buy settlement: &quot; + request.symbol() + &quot; &quot; + request.quantity() + &quot; @ $&quot; + request.price();</span>
+<span class="fc" id="L118">        boolean isBuy = &quot;BUY&quot;.equalsIgnoreCase(request.side());</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (isBuy) {</span>
+<span class="fc" id="L120">            ledgerAmount = tradeAmount.negate();</span>
+<span class="fc" id="L121">            entryType = &quot;BUY_SETTLEMENT&quot;;</span>
+<span class="fc" id="L122">            description = &quot;Buy settlement: &quot; + request.symbol() + &quot; &quot; + request.quantity() + &quot; @ $&quot; + request.price();</span>
         } else {
-<span class="fc" id="L123">            ledgerAmount = tradeAmount;</span>
-<span class="fc" id="L124">            entryType = &quot;SELL_SETTLEMENT&quot;;</span>
-<span class="fc" id="L125">            description = &quot;Sell settlement: &quot; + request.symbol() + &quot; &quot; + request.quantity() + &quot; @ $&quot; + request.price();</span>
+<span class="fc" id="L124">            ledgerAmount = tradeAmount;</span>
+<span class="fc" id="L125">            entryType = &quot;SELL_SETTLEMENT&quot;;</span>
+<span class="fc" id="L126">            description = &quot;Sell settlement: &quot; + request.symbol() + &quot; &quot; + request.quantity() + &quot; @ $&quot; + request.price();</span>
         }
 
-<span class="fc" id="L128">        CashLedgerEntry ledgerEntry = new CashLedgerEntry(</span>
-<span class="fc" id="L129">                account.getAccountId(),</span>
-<span class="fc" id="L130">                request.orderId(),</span>
-<span class="fc" id="L131">                request.executionId(),</span>
+<span class="fc" id="L129">        CashLedgerEntry ledgerEntry = new CashLedgerEntry(</span>
+<span class="fc" id="L130">                account.getAccountId(),</span>
+<span class="fc" id="L131">                request.orderId(),</span>
+<span class="fc" id="L132">                request.executionId(),</span>
                 entryType,
                 ledgerAmount,
-<span class="fc" id="L134">                account.getBaseCurrency(),</span>
+<span class="fc" id="L135">                account.getBaseCurrency(),</span>
                 time,
                 description);
-<span class="fc" id="L137">        ledgerEntry = cashLedgerRepository.save(ledgerEntry);</span>
+<span class="fc" id="L138">        ledgerEntry = cashLedgerRepository.save(ledgerEntry);</span>
 
         // 2. Update Position (Holdings) with pessimistic write lock
-<span class="fc" id="L140">        Optional&lt;Position&gt; existingOpt = positionRepository.findByIdForUpdate(account.getAccountId(), request.instrumentId());</span>
+<span class="fc" id="L141">        Optional&lt;Position&gt; existingOpt = positionRepository.findByIdForUpdate(account.getAccountId(), request.instrumentId());</span>
 
         long newQty;
         BigDecimal newAvgCost;
 
-<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (isBuy) {</span>
-<span class="fc bfc" id="L146" title="All 2 branches covered.">            if (existingOpt.isEmpty()) {</span>
-<span class="fc" id="L147">                newQty = request.quantity();</span>
-<span class="fc" id="L148">                newAvgCost = request.price();</span>
-<span class="fc" id="L149">                Position newPosition = new Position(</span>
-<span class="fc" id="L150">                        account.getAccountId(), request.instrumentId(), newQty, newAvgCost, time);</span>
-<span class="fc" id="L151">                positionRepository.save(newPosition);</span>
-<span class="fc" id="L152">            } else {</span>
-<span class="fc" id="L153">                Position p = existingOpt.get();</span>
-<span class="fc" id="L154">                long oldQty = p.getQuantity();</span>
-<span class="fc" id="L155">                BigDecimal oldAvg = p.getAvgCost();</span>
-<span class="fc" id="L156">                newQty = oldQty + request.quantity();</span>
-<span class="fc" id="L157">                BigDecimal totalCost = oldAvg.multiply(BigDecimal.valueOf(oldQty)).add(tradeAmount);</span>
-<span class="fc" id="L158">                newAvgCost = totalCost.divide(BigDecimal.valueOf(newQty), 6, RoundingMode.HALF_UP);</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (isBuy) {</span>
+<span class="fc bfc" id="L147" title="All 2 branches covered.">            if (existingOpt.isEmpty()) {</span>
+<span class="fc" id="L148">                newQty = request.quantity();</span>
+<span class="fc" id="L149">                newAvgCost = request.price();</span>
+<span class="fc" id="L150">                Position newPosition = new Position(</span>
+<span class="fc" id="L151">                        account.getAccountId(), request.instrumentId(), newQty, newAvgCost, time);</span>
+<span class="fc" id="L152">                positionRepository.save(newPosition);</span>
+<span class="fc" id="L153">            } else {</span>
+<span class="fc" id="L154">                Position p = existingOpt.get();</span>
+<span class="fc" id="L155">                long oldQty = p.getQuantity();</span>
+<span class="fc" id="L156">                BigDecimal oldAvg = p.getAvgCost();</span>
+<span class="fc" id="L157">                newQty = oldQty + request.quantity();</span>
+<span class="fc" id="L158">                BigDecimal totalCost = oldAvg.multiply(BigDecimal.valueOf(oldQty)).add(tradeAmount);</span>
+<span class="fc" id="L159">                newAvgCost = totalCost.divide(BigDecimal.valueOf(newQty), 6, RoundingMode.HALF_UP);</span>
 
-<span class="fc" id="L160">                p.setQuantity(newQty);</span>
-<span class="fc" id="L161">                p.setAvgCost(newAvgCost);</span>
-<span class="fc" id="L162">                p.setUpdatedAt(time);</span>
-<span class="fc" id="L163">                positionRepository.save(p);</span>
-<span class="fc" id="L164">            }</span>
+<span class="fc" id="L161">                p.setQuantity(newQty);</span>
+<span class="fc" id="L162">                p.setAvgCost(newAvgCost);</span>
+<span class="fc" id="L163">                p.setUpdatedAt(time);</span>
+<span class="fc" id="L164">                positionRepository.save(p);</span>
+<span class="fc" id="L165">            }</span>
         } else {
-<span class="fc" id="L166">            Position p = existingOpt.orElseThrow(() -&gt;</span>
-<span class="fc" id="L167">                    new IllegalStateException(&quot;Cannot settle sell: position does not exist&quot;));</span>
-<span class="fc bfc" id="L168" title="All 2 branches covered.">            if (p.getQuantity() &lt; request.quantity()) {</span>
-<span class="fc" id="L169">                throw new IllegalStateException(&quot;Cannot settle sell: insufficient position quantity&quot;);</span>
+<span class="fc" id="L167">            Position p = existingOpt.orElseThrow(() -&gt;</span>
+<span class="fc" id="L168">                    new IllegalStateException(&quot;Cannot settle sell: position does not exist&quot;));</span>
+<span class="fc bfc" id="L169" title="All 2 branches covered.">            if (p.getQuantity() &lt; request.quantity()) {</span>
+<span class="fc" id="L170">                throw new IllegalStateException(&quot;Cannot settle sell: insufficient position quantity&quot;);</span>
             }
-<span class="fc" id="L171">            newQty = p.getQuantity() - request.quantity();</span>
-<span class="pc bpc" id="L172" title="1 of 2 branches missed.">            newAvgCost = newQty == 0 ? BigDecimal.ZERO : p.getAvgCost();</span>
-<span class="fc" id="L173">            p.setQuantity(newQty);</span>
-<span class="fc" id="L174">            p.setAvgCost(newAvgCost);</span>
-<span class="fc" id="L175">            p.setUpdatedAt(time);</span>
-<span class="fc" id="L176">            positionRepository.save(p);</span>
+<span class="fc" id="L172">            newQty = p.getQuantity() - request.quantity();</span>
+<span class="fc bfc" id="L173" title="All 2 branches covered.">            newAvgCost = newQty == 0 ? BigDecimal.ZERO : p.getAvgCost();</span>
+<span class="fc" id="L174">            p.setQuantity(newQty);</span>
+<span class="fc" id="L175">            p.setAvgCost(newAvgCost);</span>
+<span class="fc" id="L176">            p.setUpdatedAt(time);</span>
+<span class="fc" id="L177">            positionRepository.save(p);</span>
         }
 
         // 3. Balance after settlement
-<span class="fc" id="L180">        BigDecimal balanceAfter = balanceService.getCurrentBalance(account);</span>
+<span class="fc" id="L181">        BigDecimal balanceAfter = balanceService.getCurrentBalance(account);</span>
 
-<span class="fc" id="L182">        return new SettlementResponse(</span>
-<span class="fc" id="L183">                ledgerEntry.getCashLedgerId(),</span>
+<span class="fc" id="L183">        return new SettlementResponse(</span>
+<span class="fc" id="L184">                ledgerEntry.getCashLedgerId(),</span>
                 balanceAfter,
                 newQty,
                 newAvgCost);

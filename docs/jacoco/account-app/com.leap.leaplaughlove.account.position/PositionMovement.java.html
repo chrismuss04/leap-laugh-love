@@ -67,20 +67,20 @@ public class PositionMovement {
 <span class="fc" id="L67">        this.executionId = executionId;</span>
 <span class="fc" id="L68">        this.movementType = movementType;</span>
 <span class="fc" id="L69">        this.quantityDelta = quantityDelta;</span>
-<span class="pc bpc" id="L70" title="1 of 2 branches missed.">        this.costDelta = costDelta != null ? costDelta : BigDecimal.ZERO;</span>
-<span class="pc bpc" id="L71" title="1 of 2 branches missed.">        this.createdAt = createdAt != null ? createdAt : OffsetDateTime.now();</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        this.costDelta = costDelta != null ? costDelta : BigDecimal.ZERO;</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        this.createdAt = createdAt != null ? createdAt : OffsetDateTime.now();</span>
 <span class="fc" id="L72">    }</span>
 
     /**
      * Returns the id of the position movement.
      * @return the UUID of the position movement
      */
-<span class="nc" id="L78">    public UUID getMovementId() { return movementId; }</span>
+<span class="fc" id="L78">    public UUID getMovementId() { return movementId; }</span>
     /**
      * Returns the account id associated with this position movement.
      * @return the UUID of the account associated with this position movement
      */
-<span class="nc" id="L83">    public UUID getAccountId() { return accountId; }</span>
+<span class="fc" id="L83">    public UUID getAccountId() { return accountId; }</span>
     /**
      * Returns the instrument id associated with this position movement.
      * @return the UUID of the instrument associated with this position movement
@@ -91,19 +91,19 @@ public class PositionMovement {
      * Returns the order id associated with this position movement.
      * @return the UUID of the order associated with this position movement
      */
-<span class="nc" id="L94">    public UUID getOrderId() { return orderId; }</span>
+<span class="fc" id="L94">    public UUID getOrderId() { return orderId; }</span>
 
     /**
      * Returns the execution id associated with this position movement.
      * @return the UUID of the execution associated with this position movement
      */
-<span class="nc" id="L100">    public UUID getExecutionId() { return executionId; }</span>
+<span class="fc" id="L100">    public UUID getExecutionId() { return executionId; }</span>
 
     /**
      * Returns the type of movement for this position movement.
      * @return the movement type (e.g., &quot;BUY&quot;, &quot;SELL&quot;)
      */
-<span class="nc" id="L106">    public String getMovementType() { return movementType; }</span>
+<span class="fc" id="L106">    public String getMovementType() { return movementType; }</span>
 
     /**
      * Returns the change in quantity for this position movement.
@@ -115,7 +115,7 @@ public class PositionMovement {
      * Returns the change in cost for this position movement.
      * @return the cost delta
      */
-<span class="nc" id="L118">    public BigDecimal getCostDelta() { return costDelta; }</span>
+<span class="fc" id="L118">    public BigDecimal getCostDelta() { return costDelta; }</span>
 
     /**
      * Returns the timestamp when this position movement was created.

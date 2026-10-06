@@ -38,18 +38,18 @@ public class PriceStreamController {
      */
     @GetMapping(&quot;/api/marketdata/stream&quot;)
     public SseEmitter stream(@RequestParam(required = false) String symbols) {
-<span class="nc bnc" id="L41" title="All 4 branches missed.">        Set&lt;String&gt; symbolFilter = symbols == null || symbols.isBlank()</span>
-<span class="nc" id="L42">                ? Set.of()</span>
-<span class="nc" id="L43">                : Arrays.stream(symbols.split(&quot;,&quot;))</span>
-<span class="nc" id="L44">                        .map(String::trim)</span>
-<span class="nc" id="L45">                        .map(String::toUpperCase)</span>
-<span class="nc bnc" id="L46" title="All 2 branches missed.">                        .filter(s -&gt; !s.isEmpty())</span>
-<span class="nc" id="L47">                        .collect(Collectors.toSet());</span>
+<span class="fc bfc" id="L41" title="All 4 branches covered.">        Set&lt;String&gt; symbolFilter = symbols == null || symbols.isBlank()</span>
+<span class="fc" id="L42">                ? Set.of()</span>
+<span class="fc" id="L43">                : Arrays.stream(symbols.split(&quot;,&quot;))</span>
+<span class="fc" id="L44">                        .map(String::trim)</span>
+<span class="fc" id="L45">                        .map(String::toUpperCase)</span>
+<span class="fc bfc" id="L46" title="All 2 branches covered.">                        .filter(s -&gt; !s.isEmpty())</span>
+<span class="fc" id="L47">                        .collect(Collectors.toSet());</span>
         // Capture the verified identity before leaving the request thread.
-<span class="nc" id="L49">        var identity = (JwtService.TokenIdentity) SecurityContextHolder.getContext()</span>
-<span class="nc" id="L50">                .getAuthentication().getDetails();</span>
-<span class="nc" id="L51">        return broadcaster.subscribe(symbolFilter, () -&gt; sessions.isActive(</span>
-<span class="nc" id="L52">                identity.sessionId(), identity.clientId(), identity.expiresAt()));</span>
+<span class="fc" id="L49">        var identity = (JwtService.TokenIdentity) SecurityContextHolder.getContext()</span>
+<span class="fc" id="L50">                .getAuthentication().getDetails();</span>
+<span class="fc" id="L51">        return broadcaster.subscribe(symbolFilter, () -&gt; sessions.isActive(</span>
+<span class="fc" id="L52">                identity.sessionId(), identity.clientId(), identity.expiresAt()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

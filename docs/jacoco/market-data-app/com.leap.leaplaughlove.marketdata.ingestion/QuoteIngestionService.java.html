@@ -97,9 +97,9 @@ public class QuoteIngestionService {
         QuoteFeedMessage message;
         try {
 <span class="fc" id="L99">            message = QuoteFeedMessageParser.parse(rawLine);</span>
-<span class="nc" id="L100">        } catch (QuoteParseException ex) {</span>
-<span class="nc" id="L101">            log.warn(&quot;Rejected unparseable quote message [{}]: {}&quot;, rawLine, ex.getMessage());</span>
-<span class="nc" id="L102">            return;</span>
+<span class="fc" id="L100">        } catch (QuoteParseException ex) {</span>
+<span class="fc" id="L101">            log.warn(&quot;Rejected unparseable quote message [{}]: {}&quot;, rawLine, ex.getMessage());</span>
+<span class="fc" id="L102">            return;</span>
 <span class="fc" id="L103">        }</span>
 
 <span class="fc" id="L105">        String rejectionReason = validate(message);</span>
@@ -140,8 +140,8 @@ public class QuoteIngestionService {
         }
 
 <span class="fc" id="L142">        OffsetDateTime now = OffsetDateTime.now();</span>
-<span class="pc bpc" id="L143" title="1 of 2 branches missed.">        if (message.quoteTimestamp().isAfter(now.plusSeconds(maxClockSkewSeconds))) {</span>
-<span class="nc" id="L144">            return &quot;quoteTimestamp is too far in the future: &quot; + message.quoteTimestamp();</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        if (message.quoteTimestamp().isAfter(now.plusSeconds(maxClockSkewSeconds))) {</span>
+<span class="fc" id="L144">            return &quot;quoteTimestamp is too far in the future: &quot; + message.quoteTimestamp();</span>
         }
 <span class="fc bfc" id="L146" title="All 2 branches covered.">        if (message.quoteTimestamp().isBefore(now.minusSeconds(staleAfterSeconds))) {</span>
 <span class="fc" id="L147">            return &quot;quoteTimestamp is stale: &quot; + message.quoteTimestamp();</span>
@@ -170,7 +170,7 @@ public class QuoteIngestionService {
      * @return the latest quote state for each symbol
      */
     public List&lt;QuoteState&gt; latestAll() {
-<span class="nc" id="L173">        return List.copyOf(latestBySymbol.values());</span>
+<span class="fc" id="L173">        return List.copyOf(latestBySymbol.values());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

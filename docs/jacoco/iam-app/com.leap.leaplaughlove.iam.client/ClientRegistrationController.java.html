@@ -72,11 +72,11 @@ public class ClientRegistrationController {
     @PostMapping(&quot;/register&quot;)
     @Transactional
     public ResponseEntity&lt;RegistrationResponse&gt; register(@Valid @RequestBody RegistrationRequest request) {
-<span class="pc bpc" id="L75" title="1 of 2 branches missed.">        if (clientRepository.existsByEmail(request.email())) {</span>
-<span class="nc" id="L76">            throw new DuplicateClientException(&quot;email already registered&quot;);</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (clientRepository.existsByEmail(request.email())) {</span>
+<span class="fc" id="L76">            throw new DuplicateClientException(&quot;email already registered&quot;);</span>
         }
-<span class="pc bpc" id="L78" title="1 of 2 branches missed.">        if (clientRepository.existsBySsn(request.ssn())) {</span>
-<span class="nc" id="L79">            throw new DuplicateClientException(&quot;ssn already registered&quot;);</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (clientRepository.existsBySsn(request.ssn())) {</span>
+<span class="fc" id="L79">            throw new DuplicateClientException(&quot;ssn already registered&quot;);</span>
         }
 
 <span class="fc" id="L82">        OffsetDateTime now = OffsetDateTime.now();</span>
@@ -110,13 +110,13 @@ public class ClientRegistrationController {
      * @param phone the raw phone number as submitted
      * @return the normalized phone number, or null if none was provided
      */
-    private static String normalizePhone(String phone) {
-<span class="pc bpc" id="L114" title="1 of 2 branches missed.">        if (phone == null) {</span>
-<span class="nc" id="L115">            return null;</span>
+    static String normalizePhone(String phone) {
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        if (phone == null) {</span>
+<span class="fc" id="L115">            return null;</span>
         }
 <span class="fc" id="L117">        String digits = phone.replaceAll(&quot;\\D&quot;, &quot;&quot;);</span>
-<span class="pc bpc" id="L118" title="1 of 2 branches missed.">        if (digits.length() == 10) {</span>
-<span class="nc" id="L119">            return &quot;(%s) %s-%s&quot;.formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (digits.length() == 10) {</span>
+<span class="fc" id="L119">            return &quot;(%s) %s-%s&quot;.formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));</span>
         }
 <span class="fc" id="L121">        return digits;</span>
     }
@@ -129,7 +129,7 @@ public class ClientRegistrationController {
      */
     @ExceptionHandler(DuplicateClientException.class)
     public ResponseEntity&lt;String&gt; handleDuplicate(DuplicateClientException ex) {
-<span class="nc" id="L132">        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());</span>
+<span class="fc" id="L132">        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());</span>
     }
 
     /**
@@ -141,7 +141,7 @@ public class ClientRegistrationController {
      */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity&lt;String&gt; handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
-<span class="nc" id="L144">        return ResponseEntity.status(HttpStatus.CONFLICT).body(&quot;email or ssn already registered&quot;);</span>
+<span class="fc" id="L144">        return ResponseEntity.status(HttpStatus.CONFLICT).body(&quot;email or ssn already registered&quot;);</span>
     }
 
     /**
@@ -207,8 +207,8 @@ public class ClientRegistrationController {
          * @param message the error message
          */
         DuplicateClientException(String message) {
-<span class="nc" id="L210">            super(message);</span>
-<span class="nc" id="L211">        }</span>
+<span class="fc" id="L210">            super(message);</span>
+<span class="fc" id="L211">        }</span>
     }
 
     /**

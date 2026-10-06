@@ -36,7 +36,7 @@ public final class QuoteFeedMessageParser {
      *                             validation
      */
     public static QuoteFeedMessage parse(String rawLine) {
-<span class="pc bpc" id="L39" title="1 of 4 branches missed.">        if (rawLine == null || rawLine.isBlank()) {</span>
+<span class="fc bfc" id="L39" title="All 4 branches covered.">        if (rawLine == null || rawLine.isBlank()) {</span>
 <span class="fc" id="L40">            throw new QuoteParseException(rawLine, &quot;line is blank&quot;);</span>
         }
 <span class="fc" id="L42">        String[] fields = rawLine.split(DELIMITER);</span>
@@ -70,8 +70,8 @@ public final class QuoteFeedMessageParser {
      * @throws QuoteParseException if the value is null or blank
      */
     private static String requireNonBlank(String rawLine, String value, String fieldName) {
-<span class="pc bpc" id="L73" title="2 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
-<span class="nc" id="L74">            throw new QuoteParseException(rawLine, fieldName + &quot; must not be blank&quot;);</span>
+<span class="pc bpc" id="L73" title="1 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L74">            throw new QuoteParseException(rawLine, fieldName + &quot; must not be blank&quot;);</span>
         }
 <span class="fc" id="L76">        return value.trim();</span>
     }
@@ -111,8 +111,8 @@ public final class QuoteFeedMessageParser {
         long size;
         try {
 <span class="fc" id="L113">            size = Long.parseLong(value.trim());</span>
-<span class="nc" id="L114">        } catch (NumberFormatException ex) {</span>
-<span class="nc" id="L115">            throw new QuoteParseException(rawLine, fieldName + &quot; is not a valid integer: &quot; + value);</span>
+<span class="fc" id="L114">        } catch (NumberFormatException ex) {</span>
+<span class="fc" id="L115">            throw new QuoteParseException(rawLine, fieldName + &quot; is not a valid integer: &quot; + value);</span>
 <span class="fc" id="L116">        }</span>
 <span class="fc bfc" id="L117" title="All 2 branches covered.">        if (size &lt; 0) {</span>
 <span class="fc" id="L118">            throw new QuoteParseException(rawLine, fieldName + &quot; must not be negative: &quot; + value);</span>
@@ -131,8 +131,8 @@ public final class QuoteFeedMessageParser {
     private static long parseSequenceNumber(String rawLine, String value) {
         try {
 <span class="fc" id="L133">            return Long.parseLong(value.trim());</span>
-<span class="nc" id="L134">        } catch (NumberFormatException ex) {</span>
-<span class="nc" id="L135">            throw new QuoteParseException(rawLine, &quot;sequenceNumber is not a valid integer: &quot; + value);</span>
+<span class="fc" id="L134">        } catch (NumberFormatException ex) {</span>
+<span class="fc" id="L135">            throw new QuoteParseException(rawLine, &quot;sequenceNumber is not a valid integer: &quot; + value);</span>
         }
     }
 

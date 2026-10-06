@@ -2,6 +2,7 @@
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -20,13 +21,13 @@ public class Order {
     /**
      * Represents the side of the order, either BUY or SELL.
      */
-<span class="fc" id="L23">    public enum Side { BUY, SELL }</span>
+<span class="fc" id="L24">    public enum Side { BUY, SELL }</span>
 
     /**
      * The status of the order matching the database check constraint:
      * SUBMITTED, ACCEPTED, REJECTED, FILLED.
      */
-<span class="fc" id="L29">    public enum Status { SUBMITTED, ACCEPTED, REJECTED, FILLED }</span>
+<span class="fc" id="L30">    public enum Status { SUBMITTED, ACCEPTED, REJECTED, FILLED }</span>
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -69,11 +70,17 @@ public class Order {
     @Column(name = &quot;rejection_reason&quot;)
     private String rejectionReason;
 
+    @Column(name = &quot;quoted_price&quot;, precision = 18, scale = 6)
+    private BigDecimal quotedPrice;
+
+    @Column(name = &quot;max_slippage_pct&quot;, precision = 5, scale = 2)
+    private BigDecimal maxSlippagePercent;
+
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L75">    protected Order() {</span>
-<span class="fc" id="L76">    }</span>
+<span class="fc" id="L82">    protected Order() {</span>
+<span class="fc" id="L83">    }</span>
 
     /**
      * Constructor for creating a new order at submission time.
@@ -83,14 +90,14 @@ public class Order {
      * @param quantity the quantity of the instrument to trade
      * @param submittedAt the timestamp when the order was submitted
      */
-<span class="fc" id="L86">    public Order(UUID accountId, Instrument instrument, Side side, Long quantity, OffsetDateTime submittedAt) {</span>
-<span class="fc" id="L87">        this.accountId = accountId;</span>
-<span class="fc" id="L88">        this.instrument = instrument;</span>
-<span class="fc" id="L89">        this.side = side;</span>
-<span class="fc" id="L90">        this.quantity = quantity;</span>
-<span class="fc" id="L91">        this.status = Status.SUBMITTED;</span>
-<span class="pc bpc" id="L92" title="1 of 2 branches missed.">        this.submittedAt = submittedAt != null ? submittedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L93">    }</span>
+<span class="fc" id="L93">    public Order(UUID accountId, Instrument instrument, Side side, Long quantity, OffsetDateTime submittedAt) {</span>
+<span class="fc" id="L94">        this.accountId = accountId;</span>
+<span class="fc" id="L95">        this.instrument = instrument;</span>
+<span class="fc" id="L96">        this.side = side;</span>
+<span class="fc" id="L97">        this.quantity = quantity;</span>
+<span class="fc" id="L98">        this.status = Status.SUBMITTED;</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        this.submittedAt = submittedAt != null ? submittedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L100">    }</span>
 
     /**
      * Full constructor for Order entity with all audit fields, updated post execution attempt
@@ -109,19 +116,19 @@ public class Order {
     public Order(UUID orderId, UUID accountId, Instrument instrument, Side side,
                  Long quantity, Status status, OffsetDateTime submittedAt,
                  OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
-<span class="fc" id="L112">                 OffsetDateTime filledAt, String rejectionReason) {</span>
-<span class="fc" id="L113">        this.orderId = orderId;</span>
-<span class="fc" id="L114">        this.accountId = accountId;</span>
-<span class="fc" id="L115">        this.instrument = instrument;</span>
-<span class="fc" id="L116">        this.side = side;</span>
-<span class="fc" id="L117">        this.quantity = quantity;</span>
-<span class="fc" id="L118">        this.status = status;</span>
-<span class="fc" id="L119">        this.submittedAt = submittedAt;</span>
-<span class="fc" id="L120">        this.acceptedAt = acceptedAt;</span>
-<span class="fc" id="L121">        this.rejectedAt = rejectedAt;</span>
-<span class="fc" id="L122">        this.filledAt = filledAt;</span>
-<span class="fc" id="L123">        this.rejectionReason = rejectionReason;</span>
-<span class="fc" id="L124">    }</span>
+<span class="fc" id="L119">                 OffsetDateTime filledAt, String rejectionReason) {</span>
+<span class="fc" id="L120">        this.orderId = orderId;</span>
+<span class="fc" id="L121">        this.accountId = accountId;</span>
+<span class="fc" id="L122">        this.instrument = instrument;</span>
+<span class="fc" id="L123">        this.side = side;</span>
+<span class="fc" id="L124">        this.quantity = quantity;</span>
+<span class="fc" id="L125">        this.status = status;</span>
+<span class="fc" id="L126">        this.submittedAt = submittedAt;</span>
+<span class="fc" id="L127">        this.acceptedAt = acceptedAt;</span>
+<span class="fc" id="L128">        this.rejectedAt = rejectedAt;</span>
+<span class="fc" id="L129">        this.filledAt = filledAt;</span>
+<span class="fc" id="L130">        this.rejectionReason = rejectionReason;</span>
+<span class="fc" id="L131">    }</span>
 
     /**
      * Constructor for Order entity with Account object reference.
@@ -130,18 +137,18 @@ public class Order {
                  Long quantity, Status status, OffsetDateTime submittedAt,
                  OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
                  OffsetDateTime filledAt, String rejectionReason) {
-<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        this(orderId, account != null ? account.getAccountId() : null, instrument, side,</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">        this(orderId, account != null ? account.getAccountId() : null, instrument, side,</span>
              quantity, status, submittedAt, acceptedAt, rejectedAt, filledAt, rejectionReason);
-<span class="fc" id="L135">    }</span>
+<span class="fc" id="L142">    }</span>
 
     /**
      * Transitions order state to ACCEPTED.
      * @param acceptedAt the timestamp when the order was accepted
      */
     public void markAccepted(OffsetDateTime acceptedAt) {
-<span class="fc" id="L142">        this.status = Status.ACCEPTED;</span>
-<span class="pc bpc" id="L143" title="1 of 2 branches missed.">        this.acceptedAt = acceptedAt != null ? acceptedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L144">    }</span>
+<span class="fc" id="L149">        this.status = Status.ACCEPTED;</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        this.acceptedAt = acceptedAt != null ? acceptedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L151">    }</span>
 
     /**
      * Transitions order state to REJECTED with a given reason.
@@ -149,107 +156,126 @@ public class Order {
      * @param rejectedAt the timestamp when the order was rejected
      */
     public void markRejected(String reason, OffsetDateTime rejectedAt) {
-<span class="fc" id="L152">        this.status = Status.REJECTED;</span>
-<span class="fc" id="L153">        this.rejectionReason = reason;</span>
-<span class="pc bpc" id="L154" title="1 of 2 branches missed.">        this.rejectedAt = rejectedAt != null ? rejectedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L155">    }</span>
+<span class="fc" id="L159">        this.status = Status.REJECTED;</span>
+<span class="fc" id="L160">        this.rejectionReason = reason;</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">        this.rejectedAt = rejectedAt != null ? rejectedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L162">    }</span>
 
     /**
      * Transitions order state to FILLED upon successful execution.
      * @param filledAt the timestamp when the order was filled
      */
     public void markFilled(OffsetDateTime filledAt) {
-<span class="fc" id="L162">        this.status = Status.FILLED;</span>
-<span class="pc bpc" id="L163" title="1 of 2 branches missed.">        this.filledAt = filledAt != null ? filledAt : OffsetDateTime.now();</span>
-<span class="fc" id="L164">    }</span>
+<span class="fc" id="L169">        this.status = Status.FILLED;</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">        this.filledAt = filledAt != null ? filledAt : OffsetDateTime.now();</span>
+<span class="fc" id="L171">    }</span>
 
     /**
      * Returns the orderID of this order.
      * @return the orderID
      */
-<span class="fc" id="L170">    public UUID getOrderId() { return orderId; }</span>
+<span class="fc" id="L177">    public UUID getOrderId() { return orderId; }</span>
     /**
      * Returns the accountId associated with this order.
      * @return the accountId
      */
     public UUID getAccountId() {
-<span class="fc" id="L176">        return accountId;</span>
+<span class="fc" id="L183">        return accountId;</span>
     }
     /**
      * Returns the account number associated with this order.
      * @return the account number
      */
-<span class="fc" id="L182">    public String getAccountNumber() { return accountNumber; }</span>
+<span class="fc" id="L189">    public String getAccountNumber() { return accountNumber; }</span>
     /**
      * Sets the account number for this order.
      * @param accountNumber the account number to set
      */
-<span class="fc" id="L187">    public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }</span>
+<span class="fc" id="L194">    public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }</span>
     /**
      * Returns the instrument associated with this order.
      * @return the instrument
      */
-<span class="fc" id="L192">    public Instrument getInstrument() { return instrument; }</span>
+<span class="fc" id="L199">    public Instrument getInstrument() { return instrument; }</span>
     /**
      * Returns the side (BUY/SELL) of this order.
      * @return the side
      */
-<span class="fc" id="L197">    public Side getSide() { return side; }</span>
+<span class="fc" id="L204">    public Side getSide() { return side; }</span>
     /**
      * Returns the quantity of this order.
      * @return the quantity
      */
-<span class="fc" id="L202">    public Long getQuantity() { return quantity; }</span>
+<span class="fc" id="L209">    public Long getQuantity() { return quantity; }</span>
     /**
      * Returns the status of this order.
      * @return the status
      */
-<span class="fc" id="L207">    public Status getStatus() { return status; }</span>
+<span class="fc" id="L214">    public Status getStatus() { return status; }</span>
     /**
      * Returns the timestamp when the order was submitted.
      * @return the submitted timestamp
      */
-<span class="fc" id="L212">    public OffsetDateTime getSubmittedAt() { return submittedAt; }</span>
+<span class="fc" id="L219">    public OffsetDateTime getSubmittedAt() { return submittedAt; }</span>
     /**
      * Returns the timestamp when the order was accepted.
      * @return the accepted timestamp
      */
-<span class="fc" id="L217">    public OffsetDateTime getAcceptedAt() { return acceptedAt; }</span>
+<span class="fc" id="L224">    public OffsetDateTime getAcceptedAt() { return acceptedAt; }</span>
     /**
      * Returns the timestamp when the order was rejected.
      * @return the rejected timestamp
      */
-<span class="fc" id="L222">    public OffsetDateTime getRejectedAt() { return rejectedAt; }</span>
+<span class="fc" id="L229">    public OffsetDateTime getRejectedAt() { return rejectedAt; }</span>
     /**
      * Returns the timestamp when the order was filled.
      * @return the filled timestamp
      */
-<span class="fc" id="L227">    public OffsetDateTime getFilledAt() { return filledAt; }</span>
+<span class="fc" id="L234">    public OffsetDateTime getFilledAt() { return filledAt; }</span>
     /**
      * Returns the reason for order rejection, if any.
      * @return the rejection reason
      */
-<span class="fc" id="L232">    public String getRejectionReason() { return rejectionReason; }</span>
+<span class="fc" id="L239">    public String getRejectionReason() { return rejectionReason; }</span>
     /**
      * Sets the timestamp when the order was accepted.
      * @param acceptedAt the accepted timestamp to set
      */
-<span class="nc" id="L237">    public void setAcceptedAt(OffsetDateTime acceptedAt) { this.acceptedAt = acceptedAt; }</span>
+<span class="fc" id="L244">    public void setAcceptedAt(OffsetDateTime acceptedAt) { this.acceptedAt = acceptedAt; }</span>
     /**
      * Sets the timestamp when the order was rejected.
      * @param rejectedAt the rejected timestamp to set
      */
-<span class="nc" id="L242">    public void setRejectedAt(OffsetDateTime rejectedAt) { this.rejectedAt = rejectedAt; }</span>
+<span class="fc" id="L249">    public void setRejectedAt(OffsetDateTime rejectedAt) { this.rejectedAt = rejectedAt; }</span>
     /**
      * Sets the timestamp when the order was filled.
      * @param filledAt the filled timestamp to set
      */
-<span class="nc" id="L247">    public void setFilledAt(OffsetDateTime filledAt) { this.filledAt = filledAt; }</span>
+<span class="fc" id="L254">    public void setFilledAt(OffsetDateTime filledAt) { this.filledAt = filledAt; }</span>
     /**
      * Sets the reason for order rejection.
      * @param rejectionReason the rejection reason to set
      */
-<span class="nc" id="L252">    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }</span>
+<span class="fc" id="L259">    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }</span>
+    /**
+     * Returns the price the client was quoted when placing the order, if it carried one.
+     * @return the quoted price
+     */
+<span class="fc" id="L264">    public BigDecimal getQuotedPrice() { return quotedPrice; }</span>
+    /**
+     * Returns the price tolerance, in percent, the order was checked against, if any.
+     * @return the price tolerance in percent
+     */
+<span class="fc" id="L269">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
+    /**
+     * Records the quote the client placed the order at and the tolerance applied to it.
+     * @param quotedPrice the price the client was quoted, or null
+     * @param maxSlippagePercent the price tolerance in percent, or null when none applied
+     */
+    public void setPriceTolerance(BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
+<span class="fc" id="L276">        this.quotedPrice = quotedPrice;</span>
+<span class="fc" id="L277">        this.maxSlippagePercent = maxSlippagePercent;</span>
+<span class="fc" id="L278">    }</span>
 }
 
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

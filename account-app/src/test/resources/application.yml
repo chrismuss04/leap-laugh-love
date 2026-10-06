@@ -16,3 +16,7 @@ app:
   jwt:
     secret: verylongsecretkeyforjwttokengenerationspecifiedhere12345
     expiration-minutes: 60
+
+account:
+  inactivity:
+    enabled: false

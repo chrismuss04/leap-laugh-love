@@ -83,7 +83,7 @@ public class PriceHistoryClient {
      */
     public List&lt;CandleClose&gt; fetchCloses(String symbol, OffsetDateTime from, OffsetDateTime to,
             int intervalSeconds, String bearerToken) {
-<span class="nc" id="L86">        return fetchCloses(symbol, from, to, intervalSeconds, headers -&gt; headers.setBearerAuth(bearerToken));</span>
+<span class="fc" id="L86">        return fetchCloses(symbol, from, to, intervalSeconds, headers -&gt; headers.setBearerAuth(bearerToken));</span>
     }
 
     /**
@@ -101,7 +101,7 @@ public class PriceHistoryClient {
             int intervalSeconds, Consumer&lt;HttpHeaders&gt; authentication) {
 <span class="fc" id="L102">        List&lt;CandleClose&gt; closes = new ArrayList&lt;&gt;();</span>
         try {
-<span class="pc bpc" id="L104" title="1 of 2 branches missed.">            for (int page = 0; page &lt; MAX_PAGES; page++) {</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            for (int page = 0; page &lt; MAX_PAGES; page++) {</span>
 <span class="fc" id="L105">                int pageNumber = page;</span>
 <span class="fc" id="L106">                CandlePage body = restClient.get()</span>
 <span class="fc" id="L107">                        .uri(uri -&gt; uri.path(&quot;/api/marketdata/prices/{symbol}/history&quot;)</span>
@@ -114,16 +114,16 @@ public class PriceHistoryClient {
 <span class="fc" id="L114">                        .headers(authentication)</span>
 <span class="fc" id="L115">                        .retrieve()</span>
 <span class="fc" id="L116">                        .body(CandlePage.class);</span>
-<span class="pc bpc" id="L117" title="2 of 4 branches missed.">                if (body == null || body.content() == null) {</span>
-<span class="nc" id="L118">                    break;</span>
+<span class="fc bfc" id="L117" title="All 4 branches covered.">                if (body == null || body.content() == null) {</span>
+<span class="fc" id="L118">                    break;</span>
                 }
 <span class="fc" id="L120">                closes.addAll(body.content());</span>
-<span class="pc bpc" id="L121" title="1 of 4 branches missed.">                if (body.last() || body.content().isEmpty()) {</span>
-<span class="nc" id="L122">                    break;</span>
+<span class="fc bfc" id="L121" title="All 4 branches covered.">                if (body.last() || body.content().isEmpty()) {</span>
+<span class="fc" id="L122">                    break;</span>
                 }
             }
-<span class="nc" id="L125">        } catch (HttpClientErrorException.NotFound ex) {</span>
-<span class="nc" id="L126">            return List.of();</span>
+<span class="fc" id="L125">        } catch (HttpClientErrorException.NotFound ex) {</span>
+<span class="fc" id="L126">            return List.of();</span>
 <span class="fc" id="L127">        } catch (RestClientException ex) {</span>
 <span class="fc" id="L128">            throw new QuoteUnavailableException(&quot;Failed to fetch price history for symbol &quot; + symbol, ex);</span>
 <span class="fc" id="L129">        }</span>
@@ -152,8 +152,8 @@ public class PriceHistoryClient {
 <span class="fc" id="L152">            return Optional.ofNullable(latest).map(LatestPrice::price);</span>
 <span class="fc" id="L153">        } catch (HttpClientErrorException.NotFound ex) {</span>
 <span class="fc" id="L154">            return Optional.empty();</span>
-<span class="nc" id="L155">        } catch (RestClientException ex) {</span>
-<span class="nc" id="L156">            throw new QuoteUnavailableException(&quot;Failed to fetch latest price for symbol &quot; + symbol, ex);</span>
+<span class="fc" id="L155">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L156">            throw new QuoteUnavailableException(&quot;Failed to fetch latest price for symbol &quot; + symbol, ex);</span>
         }
     }
 
@@ -173,9 +173,9 @@ public class PriceHistoryClient {
      * @param headers The HTTP headers to add the authentication token to.
      */
     private void forwardCallerToken(HttpHeaders headers) {
-<span class="pc bpc" id="L176" title="1 of 2 branches missed.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
 <span class="fc" id="L177">            String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);</span>
-<span class="pc bpc" id="L178" title="1 of 2 branches missed.">            if (authorization != null) {</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">            if (authorization != null) {</span>
 <span class="fc" id="L179">                headers.set(HttpHeaders.AUTHORIZATION, authorization);</span>
             }
         }

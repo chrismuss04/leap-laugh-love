@@ -1,9 +1,12 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
-DROP TABLE IF EXISTS trading.cash_ledger;
-DROP TABLE IF EXISTS trading.accounts;
-DROP TABLE IF EXISTS iam.clients;
+-- Tables other setup scripts create that reference accounts, so accounts can be dropped.
+DROP TABLE IF EXISTS trading.positions CASCADE;
+DROP TABLE IF EXISTS trading.position_movements CASCADE;
+DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
+DROP TABLE IF EXISTS trading.accounts CASCADE;
+DROP TABLE IF EXISTS iam.clients CASCADE;
 
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
@@ -18,7 +21,9 @@ CREATE TABLE trading.accounts (
     status VARCHAR(20) NOT NULL,
     base_currency CHAR(3) NOT NULL,
     trading_enabled BOOLEAN NOT NULL,
+    max_slippage_pct NUMERIC(5,2),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    inactive_since TIMESTAMP WITH TIME ZONE,
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 

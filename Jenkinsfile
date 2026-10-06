@@ -96,6 +96,11 @@ pipeline {
                     // it on every build.
                     env.RUN_E2E = (!env.BRANCH_NAME || env.BRANCH_NAME == 'main' || env.CHANGE_ID) ? 'true' : 'false'
 
+                    // SonarQube follows the same rule. Community Build keeps one analysis per
+                    // project with no branch or PR support, so a feature-branch scan would replace
+                    // main's results; only main and pull requests are analysed.
+                    env.RUN_SONAR = env.RUN_E2E
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -148,7 +153,7 @@ pipeline {
                     #
                     # The pulls run side by side: on a warm agent each one is a registry round trip
                     # that finds nothing to download, and there is no reason to make them queue.
-                    images="postgres:16-alpine node:24-alpine $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
+                    images="postgres:16-alpine node:24-alpine apache/kafka:3.9.0 $(grep -h '^FROM' */Dockerfile | awk '{print $2}' | sort -u)"
                     pull() {
                         for attempt in 1 2 3; do
                             if docker pull -q "$1" >/dev/null; then
@@ -241,14 +246,21 @@ pipeline {
                     steps {
                         sh '''
                             set -eu
-                            docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true
+                            docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
 
+                            # The data directory is a tmpfs: the postgres image declares it a VOLUME,
+                            # so without this every build left an anonymous volume behind (a few
+                            # hundred MB each, one per build) until the agent's disk filled. A
+                            # throwaway test database also has no use for durability, so it runs
+                            # entirely in memory with fsync off - faster schema load and tests.
                             docker run -d --name "${PG_CONTAINER}" \
+                                --tmpfs /var/lib/postgresql/data \
                                 -e POSTGRES_DB=paysprint \
                                 -e POSTGRES_USER=paysprint \
                                 -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
                                 -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
-                                postgres:16-alpine
+                                postgres:16-alpine \
+                                -c fsync=off -c synchronous_commit=off -c full_page_writes=off
 
                             # Poll for a schema table rather than pg_isready: the server answers on its
                             # unix socket while the init scripts are still running, so pg_isready can
@@ -307,7 +319,9 @@ pipeline {
                     post {
                         always {
                             junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
-                            sh 'docker rm -f "${PG_CONTAINER}" >/dev/null 2>&1 || true'
+                            // Preserve Java coverage alongside the test results before workspace cleanup.
+                            archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
+                            sh 'docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true'
                         }
                     }
                 }
@@ -353,7 +367,7 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -368,7 +382,8 @@ pipeline {
                                         if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
-                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health; then
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order-events >/dev/null; then
                                             echo "All services are healthy"
                                             exit 0
                                         fi
@@ -403,6 +418,73 @@ pipeline {
             }
         }
 
+        stage('Frontend Unit Tests') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // Karma needs a Chrome, which the agent doesn't have; the E2E runner image (built
+                // in "Build and Test" under the same condition) carries Playwright's headless
+                // Chromium. The frontend's own node_modules come from the host "npm ci" above.
+                // --user keeps coverage/ and .angular/ owned by the agent account, as with Maven.
+                // Mounted at /repo/frontend, mirroring the checkout: karma.conf.cjs writes lcov
+                // paths relative to the frontend's parent, and SonarQube resolves them from the
+                // repo root, so they must come out as frontend/src/...
+                sh '''
+                    set -eu
+                    docker run --rm \
+                        --user "$(id -u):$(id -g)" \
+                        -e HOME=/tmp \
+                        -e CI=1 \
+                        -v "$WORKSPACE/frontend":/repo/frontend \
+                        -w /repo/frontend \
+                        "$E2E_IMAGE" \
+                        sh -c 'export CHROME_BIN="$(find /ms-playwright -type f \\( -name headless_shell -o -name chrome-headless-shell \\) | head -n 1)" \
+                            && echo "Using $CHROME_BIN" \
+                            && npx ng test --watch=false --code-coverage'
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // "SonarScanner" is the scanner installation under Manage Jenkins > Tools and
+                // "SonarQube" the server under Manage Jenkins > System; withSonarQubeEnv supplies
+                // its URL and the sonarqube-token credential. Project settings, including the
+                // coverage report paths from the stages above, are in sonar-project.properties.
+                script {
+                    def scannerHome = tool 'SonarScanner'
+                    withSonarQubeEnv('SonarQube') {
+                        sh """
+                            ${scannerHome}/bin/sonar-scanner --version
+                            ${scannerHome}/bin/sonar-scanner
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // Waits for SonarQube's webhook to report the gate result and fails the build
+                // on a failed gate, before E2E spends time on it.
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+
         stage('E2E') {
             // RUN_E2E is set in Configure Pipeline.
             when {
@@ -418,8 +500,11 @@ pipeline {
                     # same way a developer's browser reaches them. Started by the Frontend branch
                     # of "Build and Test", so its install and first compile are usually done by now.
                     echo "Waiting for the frontend (installs dependencies on first start)..."
+                    # 127.0.0.1, not localhost: ng serve --host 0.0.0.0 listens on IPv4 only, and
+                    # where the container has IPv6 (Docker Desktop) busybox wget resolves localhost
+                    # to ::1 first and gets "connection refused" from a server that is up.
                     for i in $(seq 1 120); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://localhost:4200/; then
+                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://127.0.0.1:4200/; then
                             echo "Frontend is serving"
                             break
                         fi
@@ -461,7 +546,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db iam-app account-app order-app market-data-app frontend; do
+                    for service in db kafka kafka-init iam-app account-app order-app market-data-app frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
@@ -491,6 +576,16 @@ pipeline {
                         | grep -vx "$E2E_IMAGE" \
                         | xargs -r docker image rm >/dev/null 2>&1 || true
                 fi
+                # Safety net for anything the teardown above missed, including builds of
+                # branches still on an older Jenkinsfile. All three only touch what nothing is
+                # using: on Docker 23+ "volume prune" removes anonymous volumes only (never the
+                # named sonarqube or npm cache volumes, nor another running build's), "image
+                # prune" without -a removes only untagged layers left behind by re-pulled base
+                # images, and the build cache is trimmed oldest-first down to a cap that still
+                # holds the shared Maven repository.
+                docker volume prune -f >/dev/null 2>&1 || true
+                docker image prune -f >/dev/null 2>&1 || true
+                docker builder prune -f --reserved-space 3GB >/dev/null 2>&1 || true
             '''
             // Must run after the teardown above, never before: "docker-compose down" reads
             // docker-compose.yml out of the workspace, so emptying it first would strand

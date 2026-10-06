@@ -11,6 +11,7 @@ import java.math.BigDecimal;
  * @param holdingQuantity the quantity of holdings in the account
  * @param baseCurrency the base currency of the account
  * @param accountNumber the account number
+ * @param maxSlippagePercent the account's saved price tolerance in percent, or null when none is saved
  */
 public record AccountValidationDto(
         boolean accountActive,
@@ -18,6 +19,7 @@ public record AccountValidationDto(
         BigDecimal cashBalance,
         long holdingQuantity,
         String baseCurrency,
-        String accountNumber
+        String accountNumber,
+        BigDecimal maxSlippagePercent
 ) {}
 

@@ -18,8 +18,8 @@ public class ClientSessionValidator {
 
     @Autowired
     public ClientSessionValidator(JdbcTemplate jdbc) {
-<span class="nc" id="L21">        this(jdbc, Clock.systemUTC());</span>
-<span class="nc" id="L22">    }</span>
+<span class="fc" id="L21">        this(jdbc, Clock.systemUTC());</span>
+<span class="fc" id="L22">    }</span>
 
 <span class="fc" id="L24">    ClientSessionValidator(JdbcTemplate jdbc, Clock clock) {</span>
 <span class="fc" id="L25">        this.jdbc = jdbc;</span>
@@ -29,7 +29,7 @@ public class ClientSessionValidator {
     // Never extend activity here: polling and market-data requests must not keep a login alive.
     public boolean isActive(UUID sessionId, UUID clientId, Instant tokenExpiry) {
 <span class="fc" id="L31">        Instant now = clock.instant();</span>
-<span class="pc bpc" id="L32" title="2 of 8 branches missed.">        if (sessionId == null || clientId == null || tokenExpiry == null || !tokenExpiry.isAfter(now)) {</span>
+<span class="fc bfc" id="L32" title="All 8 branches covered.">        if (sessionId == null || clientId == null || tokenExpiry == null || !tokenExpiry.isAfter(now)) {</span>
 <span class="fc" id="L33">            return false;</span>
         }
 <span class="fc" id="L35">        Integer count = jdbc.queryForObject(&quot;&quot;&quot;</span>
@@ -39,7 +39,7 @@ public class ClientSessionValidator {
                   AND last_activity_at &lt;= ?
 <span class="fc" id="L40">                &quot;&quot;&quot;, Integer.class, sessionId, clientId, now.atOffset(ZoneOffset.UTC),</span>
 <span class="fc" id="L41">                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));</span>
-<span class="pc bpc" id="L42" title="1 of 4 branches missed.">        return count != null &amp;&amp; count == 1;</span>
+<span class="fc bfc" id="L42" title="All 4 branches covered.">        return count != null &amp;&amp; count == 1;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

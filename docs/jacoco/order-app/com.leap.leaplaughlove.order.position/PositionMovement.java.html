@@ -67,15 +67,15 @@ public class PositionMovement {
 <span class="fc" id="L67">        this.executionId = executionId;</span>
 <span class="fc" id="L68">        this.movementType = movementType;</span>
 <span class="fc" id="L69">        this.quantityDelta = quantityDelta;</span>
-<span class="pc bpc" id="L70" title="1 of 2 branches missed.">        this.costDelta = costDelta != null ? costDelta : BigDecimal.ZERO;</span>
-<span class="pc bpc" id="L71" title="1 of 2 branches missed.">        this.createdAt = createdAt != null ? createdAt : OffsetDateTime.now();</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        this.costDelta = costDelta != null ? costDelta : BigDecimal.ZERO;</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        this.createdAt = createdAt != null ? createdAt : OffsetDateTime.now();</span>
 <span class="fc" id="L72">    }</span>
 
     /**
      * Returns the id of the position movement.
      * @return the UUID of the position movement
      */
-<span class="nc" id="L78">    public UUID getMovementId() { return movementId; }</span>
+<span class="fc" id="L78">    public UUID getMovementId() { return movementId; }</span>
     /**
      * Returns the account id associated with this position movement.
      * @return the UUID of the account associated with this position movement

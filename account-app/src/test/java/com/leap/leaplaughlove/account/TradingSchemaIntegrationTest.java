@@ -62,6 +62,8 @@ class TradingSchemaIntegrationTest {
             "accounts should have unique account_number");
         assertTrue(accountsSection.contains("CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED'))"),
             "accounts status should be constrained");
+        assertTrue(accountsSection.contains("inactive_since TIMESTAMPTZ"),
+            "accounts should record when they were flagged inactive");
     }
 
     @Test

@@ -69,15 +69,15 @@ public class PriceCandleBulkWriter {
             // The transaction's own connection, so the COPY commits or rolls back with it.
 <span class="fc" id="L70">            Connection connection = DataSourceUtils.getConnection(dataSource);</span>
             try {
-<span class="pc bpc" id="L72" title="1 of 2 branches missed.">                if (connection.isWrapperFor(PGConnection.class)) {</span>
-<span class="nc" id="L73">                    copy(connection, candles);</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">                if (connection.isWrapperFor(PGConnection.class)) {</span>
+<span class="fc" id="L73">                    copy(connection, candles);</span>
                 } else {
 <span class="fc" id="L75">                    candleRepository.saveAll(candles);</span>
                 }
-<span class="nc" id="L77">            } catch (SQLException ex) {</span>
-<span class="nc" id="L78">                throw new IllegalStateException(&quot;Failed to write &quot; + candles.size() + &quot; candles&quot;, ex);</span>
-<span class="nc" id="L79">            } catch (IOException ex) {</span>
-<span class="nc" id="L80">                throw new UncheckedIOException(ex);</span>
+<span class="fc" id="L77">            } catch (SQLException ex) {</span>
+<span class="fc" id="L78">                throw new IllegalStateException(&quot;Failed to write &quot; + candles.size() + &quot; candles&quot;, ex);</span>
+<span class="fc" id="L79">            } catch (IOException ex) {</span>
+<span class="fc" id="L80">                throw new UncheckedIOException(ex);</span>
 <span class="fc" id="L81">            }</span>
 <span class="fc" id="L82">        });</span>
 <span class="fc" id="L83">    }</span>
@@ -93,7 +93,7 @@ public class PriceCandleBulkWriter {
      * @throws IOException  if an I/O error occurs while writing the candles
      */
     private static void copy(Connection connection, List&lt;PriceCandle&gt; candles) throws SQLException, IOException {
-<span class="nc" id="L96">        try (Statement statement = connection.createStatement()) {</span>
+<span class="fc" id="L96">        try (Statement statement = connection.createStatement()) {</span>
             // Skips waiting for this transaction's commit to reach disk - on a slow VM disk
             // that
             // wait is a large share of a small transaction. Still atomic: a crash can only
@@ -101,10 +101,10 @@ public class PriceCandleBulkWriter {
             // the most recent commits whole, which leaves those instruments with no
             // candles, and
             // the backfill regenerates those on the next start.
-<span class="nc" id="L104">            statement.execute(&quot;SET LOCAL synchronous_commit TO OFF&quot;);</span>
+<span class="fc" id="L104">            statement.execute(&quot;SET LOCAL synchronous_commit TO OFF&quot;);</span>
         }
-<span class="nc" id="L106">        connection.unwrap(PGConnection.class).getCopyAPI().copyIn(COPY_SQL, new StringReader(toCopyText(candles)));</span>
-<span class="nc" id="L107">    }</span>
+<span class="fc" id="L106">        connection.unwrap(PGConnection.class).getCopyAPI().copyIn(COPY_SQL, new StringReader(toCopyText(candles)));</span>
+<span class="fc" id="L107">    }</span>
 
     /**
      * Renders candles in COPY's default text format: tab-separated columns, one row

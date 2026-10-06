@@ -73,6 +73,7 @@ export class AccountValuationService {
         status: summary?.status ?? null,
         tradingEnabled: summary?.tradingEnabled ?? null,
         openedAt: summary?.createdAt ?? null,
+        inactiveSince: summary?.inactiveSince ?? null,
         cash: account.balance,
         marketValue,
         value: account.balance + marketValue,
