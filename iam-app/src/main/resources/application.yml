@@ -20,7 +20,7 @@ spring:
 
 reporting:
   registrations:
-    # Enable in Compose once the client-register topic is provisioned.
+    # Compose enables publishing; native runs without Kafka default to disabled.
     enabled: ${CLIENT_REGISTRATION_EVENTS_ENABLED:false}
     topic: client-register
 

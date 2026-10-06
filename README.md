@@ -834,13 +834,33 @@ The dev server proxies API calls to backend services per `frontend/proxy.conf.js
 
 **Kafka** (`kafka`, single-node KRaft) is reachable only on the compose network, at
 `kafka:9092`; no host port is published. The one-shot `kafka-init` service creates the
-`order-events` topic (3 partitions) on startup - add further topics to its command in
+`order-events` and `client-register` topics (3 partitions each) on startup - add further topics to its command in
 `docker-compose.yml`. To inspect it from the host:
 
 ```bash
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
 ```
+
+IAM waits for topic initialization and publishes committed registrations to `client-register`,
+keyed by client ID. Each JSON value contains `clientId` and `registered_at` (an ISO-8601 timestamp
+from the saved client's creation time). Compose enables this publisher by default; set
+`CLIENT_REGISTRATION_EVENTS_ENABLED=false` to disable it. Native IAM runs default to disabled.
+Publishing follows the order publisher's best-effort behavior: delivery failures are logged
+and can lose an event, without failing an already-committed registration.
+
+For an existing stack, provision the new topic and rebuild IAM without deleting database volumes:
+
+```bash
+docker compose up -d kafka
+docker compose run --rm kafka-init
+docker compose up -d --build iam-app
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic client-register --from-beginning
+```
+
+Register a new client through the application to see an event. Existing clients are not
+automatically backfilled. This step supplies the topic and producer; the user ETL consumer
+and registration reporting storage are added in subsequent steps.
 
 #### Reporting ETL
 

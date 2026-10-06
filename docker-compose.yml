@@ -9,12 +9,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_REGISTRATION_EVENTS_ENABLED: "${CLIENT_REGISTRATION_EVENTS_ENABLED:-true}"
 
   account-app:
     image: "account-app:${IMAGE_TAG:-latest}"
@@ -166,8 +170,11 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        set -e
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --create --if-not-exists --topic order-events --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic client-register --partitions 3 --replication-factor 1
 
   # Order Reporting ETL: consumes order-events and loads each completed order into
   # reporting.orders (see reporting-etl/ and "Reporting ETL" in the README). No port: it only
