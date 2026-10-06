@@ -114,7 +114,10 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
         CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
-    inactive_since TIMESTAMPTZ
+    inactive_since TIMESTAMPTZ,
+    -- When the client was emailed about the current inactive period; NULL until that email is
+    -- sent, so a failed send is retried by the next nightly run. Cleared with inactive_since.
+    inactive_notified_at TIMESTAMPTZ
 );
 
 -- Backs the account lookup by client_id used by the order history query.

@@ -64,6 +64,8 @@ class TradingSchemaIntegrationTest {
             "accounts status should be constrained");
         assertTrue(accountsSection.contains("inactive_since TIMESTAMPTZ"),
             "accounts should record when they were flagged inactive");
+        assertTrue(accountsSection.contains("inactive_notified_at TIMESTAMPTZ"),
+            "accounts should record when the client was emailed about being inactive");
     }
 
     @Test

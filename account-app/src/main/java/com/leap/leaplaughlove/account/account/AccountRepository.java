@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.account.account;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -58,6 +59,20 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     /** @return the accounts the inactivity job has flagged */
     List<Account> findByInactiveSinceIsNotNull();
+
+    /** @return the flagged accounts whose client has not yet been emailed about it */
+    List<Account> findByInactiveSinceIsNotNullAndInactiveNotifiedAtIsNull();
+
+    /**
+     * Records that the client was emailed about the account's inactive period. Sets only this
+     * column, so it cannot overwrite a change made to the account since it was read, and does
+     * nothing if the account was reactivated in the meantime.
+     * @return the number of accounts updated, 0 or 1
+     */
+    @Modifying
+    @Query("UPDATE Account a SET a.inactiveNotifiedAt = :notifiedAt "
+            + "WHERE a.accountId = :accountId AND a.inactiveSince IS NOT NULL")
+    int markInactiveNotified(@Param("accountId") UUID accountId, @Param("notifiedAt") OffsetDateTime notifiedAt);
 
     /** An account with nothing in it, and when it became empty. */
     interface EmptyAccount {
