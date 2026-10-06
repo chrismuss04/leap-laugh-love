@@ -10,6 +10,25 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # SMTP server for client emails: Mailpit locally (see docker-compose.yml), a real provider in a
+  # deployment. Username and password are empty for Mailpit, which needs no login.
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    # JavaMail waits forever by default; an unreachable server must not hang the nightly job.
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+# Email is best-effort: a mail server being down must not report account-app as unhealthy,
+# which would fail CI's health wait (CI does not start Mailpit) and any probe built on it.
+management:
+  health:
+    mail:
+      enabled: false
 
 app:
   jwt:
@@ -21,3 +40,10 @@ marketdata:
     base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}
     connect-timeout-ms: 2000
     read-timeout-ms: 2000
+
+account:
+  inactivity:
+    email:
+      # Emails a client when their account is newly flagged inactive; false turns it off.
+      enabled: ${ACCOUNT_INACTIVITY_EMAIL_ENABLED:true}
+      from: ${ACCOUNT_INACTIVITY_EMAIL_FROM:no-reply@example.com}
