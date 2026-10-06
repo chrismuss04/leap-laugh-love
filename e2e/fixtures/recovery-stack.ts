@@ -13,6 +13,7 @@ const ports: Record<string, number> = {
 export class RecoveryStack {
   private args: string[] = [];
   private checked = false;
+  private accountRoute = 'http://account-app:8082';
 
   constructor(private readonly request: APIRequestContext) {}
 
@@ -41,7 +42,10 @@ export class RecoveryStack {
   }
 
   private async command(args: string[]): Promise<string> {
-    return (await execute('docker', [...this.args, ...args], { timeout: 180_000, maxBuffer: 4 * 1024 * 1024 })).stdout;
+    return (await execute('docker', [...this.args, ...args], {
+      timeout: 180_000, maxBuffer: 4 * 1024 * 1024,
+      env: { ...process.env, RECOVERY_ACCOUNT_SERVICE_BASE_URL: this.accountRoute }
+    })).stdout;
   }
 
   async compose(...args: string[]): Promise<string> {
@@ -110,5 +114,52 @@ export class RecoveryStack {
     const restoredId = (await this.compose('ps', '-q', 'order-app')).trim();
     expect(restoredId).not.toBe(oldId);
     expect((await execute('docker', ['inspect', '--format', '{{.Image}}', restoredId])).stdout.trim()).toBe(image);
+  }
+
+  async startProxy(): Promise<void> {
+    if (!this.checked) throw new Error('Isolation must be verified before injecting faults.');
+    const project = process.env.RECOVERY_PROJECT!;
+    const name = `${project}-fault-proxy`;
+    await execute('docker', ['run', '-d', '--name', name, '--network', `${project}_default`,
+      '--mount', `type=bind,source=${path.join(process.env.RECOVERY_REPO_ROOT!, 'e2e/fixtures/settlement-proxy.mjs')},target=/proxy.mjs,readonly`,
+      'node:24-alpine', 'node', '/proxy.mjs'], { timeout: 180_000 });
+    await expect.poll(async () => {
+      try { await this.proxyMode('pass'); return true; } catch { return false; }
+    }, { timeout: 30_000 }).toBe(true);
+    this.accountRoute = `http://${name}:8080`;
+    await this.compose('up', '-d', '--no-deps', '--no-build', '--force-recreate', 'order-app');
+    await this.healthy();
+  }
+
+  async proxyMode(mode?: 'pass' | 'block' | 'drop'): Promise<{ blocked: number; dropped: number }> {
+    if (!this.checked) throw new Error('Isolation must be verified before controlling faults.');
+    const script = `const r = await fetch('http://localhost:8080/__fault', ${JSON.stringify(mode ? { method: 'POST', body: mode } : {})}); if (!r.ok) process.exit(1); console.log(await r.text());`;
+    const result = await execute('docker', ['exec', `${process.env.RECOVERY_PROJECT}-fault-proxy`,
+      'node', '--input-type=module', '-e', script], { timeout: 15_000 });
+    return JSON.parse(result.stdout);
+  }
+
+  async stopProxy(): Promise<void> {
+    if (!this.checked) throw new Error('Isolation must be verified before cleanup.');
+    this.accountRoute = 'http://account-app:8082';
+    await this.compose('up', '-d', '--no-deps', '--no-build', '--force-recreate', 'order-app');
+    await execute('docker', ['rm', '-f', `${process.env.RECOVERY_PROJECT}-fault-proxy`]);
+  }
+
+  async blockCompletion(accountId: string): Promise<void> {
+    if (!/^[a-f0-9-]{36}$/i.test(accountId)) throw new Error('Invalid account ID');
+    await this.sql(`CREATE OR REPLACE FUNCTION trading.recovery_test_block() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN
+        IF NEW.account_id='${accountId}'::uuid AND NEW.status='FILLED' THEN
+          RAISE EXCEPTION 'Injected order completion failure';
+        END IF;
+        RETURN NEW;
+      END $$;
+      CREATE TRIGGER recovery_test_block BEFORE UPDATE ON trading.orders
+      FOR EACH ROW EXECUTE FUNCTION trading.recovery_test_block();`);
+  }
+
+  async allowCompletion(): Promise<void> {
+    await this.sql('DROP TRIGGER IF EXISTS recovery_test_block ON trading.orders; DROP FUNCTION IF EXISTS trading.recovery_test_block();');
   }
 }

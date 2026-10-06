@@ -5,6 +5,7 @@
   "description": "Playwright end-to-end tests for the whole Leapfolio stack (frontend + all four services).",
   "scripts": {
     "test:recovery": "playwright test --config=playwright.recovery.config.ts",
+    "test:recovery:proxy": "node --test fixtures/settlement-proxy.test.mjs",
     "test": "playwright test",
     "test:smoke": "playwright test --grep @smoke",
     "test:api": "playwright test --project=setup --project=api",

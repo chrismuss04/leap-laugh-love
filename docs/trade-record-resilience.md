@@ -166,3 +166,47 @@ directory. Container logs are saved on exit, including when a test fails.
 Passing these scenarios on Linux is required for runtime evidence; TypeScript
 checks and test discovery alone do not establish persistence. Interrupted trades
 and duplicate-settlement scenarios remain the next step.
+
+## Step 5: interrupted-trade recovery
+
+The same recovery command now discovers eight scenarios: the five persistence
+checks above and three interrupted-trade checks. Each new scenario uses a separate
+funded trader (08-10) and asserts that the response is ACCEPTED with exactly one
+committed execution before killing order-app:
+
+* Before settlement: a test-only HTTP proxy returns 503 without forwarding the
+  settlement. Cash and holdings have not changed.
+* Lost settlement response: the proxy forwards settlement, waits for account-app's
+  successful response, then closes the downstream connection. The cash and
+  holdings changes have committed but order-app did not receive confirmation.
+* Before order completion: settlement succeeds, but a temporary account-scoped
+  PostgreSQL trigger rejects the final FILLED update. The final transaction's
+  position movement must roll back as well.
+
+The completion trigger is installed in all three cases to keep the interrupted
+state stable until it is inspected. Faults remain active for retries until the
+test explicitly clears them. The proxy forwards validation calls normally and
+reports fault counts so the tests verify the intended boundary was reached.
+
+After inspecting that state, each test kills order-app, clears its faults and
+starts order-app again. It waits for scheduled recovery to mark the order FILLED,
+checks that the execution is unchanged and only one settlement and position
+movement exist, and verifies the cash debit and holding through the APIs. Two
+concurrent replays of the same settlement must leave the full database snapshot
+unchanged. These are real API/database tests, not mocked settlement-service tests.
+
+The proxy uses the existing `node:24-alpine` image on the isolated Compose network,
+has no published host port, and runs only from the recovery helper. Its source is
+mounted read-only. Only the E2E overlay accepts its optional account-service URL;
+normal E2E defaults to account-app directly. The harness clears any inherited
+override and removes its own proxy on exit. The temporary trigger is removed in
+test cleanup; the entire disposable database is also removed by harness cleanup.
+
+For a fast check of the proxy's block/drop/pass behavior without Docker:
+
+```bash
+npm --prefix e2e run test:recovery:proxy
+```
+
+This local proxy test uses an in-memory HTTP server. It does not establish that
+the eight Docker recovery scenarios pass; those still require execution on Linux.

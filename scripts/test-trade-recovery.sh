@@ -21,6 +21,7 @@ export JWT_SECRET="recovery-test-only-$run_id-$run_id"
 export DB_PORT=0 IAM_PORT=0 ACCOUNT_PORT=0 ORDER_PORT=0 MARKETDATA_PORT=0 FRONTEND_PORT=0
 export MARKETDATA_BACKFILL_ENABLED=false
 unset COMPOSE_FILE COMPOSE_PROFILES
+unset RECOVERY_ACCOUNT_SERVICE_BASE_URL
 compose=(docker compose --env-file /dev/null -p "$COMPOSE_PROJECT"
     -f "$repo_root/docker-compose.yml" -f "$repo_root/docker-compose.e2e.yml")
 export RECOVERY_PROJECT="$COMPOSE_PROJECT"
@@ -44,6 +45,8 @@ cleanup() {
     trap - EXIT INT TERM
     "${compose[@]}" ps -a > "$RECOVERY_RESULTS_DIR/containers.txt" 2>&1 || true
     "${compose[@]}" logs --no-color --tail=300 > "$RECOVERY_RESULTS_DIR/stack.log" 2>&1 || true
+    docker logs "${COMPOSE_PROJECT}-fault-proxy" > "$RECOVERY_RESULTS_DIR/fault-proxy.log" 2>&1 || true
+    docker rm -f "${COMPOSE_PROJECT}-fault-proxy" >/dev/null 2>&1 || true
     if ! "${compose[@]}" down -v --remove-orphans; then
         echo "Cleanup failed for $COMPOSE_PROJECT; inspect its resources."
         result=1
