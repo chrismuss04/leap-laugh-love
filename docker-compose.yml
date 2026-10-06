@@ -196,6 +196,24 @@ services:
       CONSUMER_GROUP: reporting-etl
       REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
 
+  # Same ETL image, independent topic and consumer group for registrations.
+  user-etl:
+    image: "reporting-etl:${IMAGE_TAG:-latest}"
+    build:
+      context: ./reporting-etl
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ETL_MODE: clients
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_EVENTS_TOPIC: client-register
+      CONSUMER_GROUP: user-etl
+      REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
+
   db:
     image: postgres:16-alpine
     # Persistent runs and recovery tests require durable commits. The disposable

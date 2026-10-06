@@ -877,8 +877,27 @@ the additive migration from the repository root in Linux (do not delete the data
 docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/migrate-reporting-clients.sql
 ```
 
-The migration can be rerun and preserves existing records. It creates storage only; it does
-not backfill clients or start a registration consumer. Those writes belong to the user ETL.
+The migration can be rerun and preserves existing records. It creates storage only and does
+not backfill clients.
+
+The `user-etl` Compose service uses the same image as `reporting-etl`, with `ETL_MODE=clients`,
+topic `client-register` and an independent `user-etl` consumer group. It validates `clientId`
+and an offset-aware `registered_at`, then inserts into `reporting.clients`. Duplicate client
+IDs leave the original timestamps unchanged. Database outages are retried before committing
+the Kafka offset. Like the order consumer, invalid events and permanently rejected rows are
+logged and skipped; they are not saved to a dead-letter topic.
+
+After applying the migration on an existing database:
+
+```bash
+docker compose up -d --build user-etl
+docker compose logs -f user-etl
+docker compose exec db psql -U paysprint -d paysprint -c "SELECT client_id, registered_at, loaded_at FROM reporting.clients ORDER BY registered_at DESC LIMIT 20;"
+```
+
+A new consumer group reads retained events from the beginning. This does not recover events
+that were never published or have expired from Kafka. Active/inactive classification and
+inactivity emails are outside this registration pipeline.
 
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
 completed order into `reporting.orders`, the read model the analyst dashboard queries. It runs
