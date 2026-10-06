@@ -842,6 +842,63 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server loca
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
 ```
 
+#### Reporting ETL
+
+`reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
+completed order into `reporting.orders`, the read model the analyst dashboard queries. It runs
+as the `reporting-etl` compose service (no port).
+
+- **Event contract**: one JSON message per order, keyed by `orderId`, published once the order
+  is final - FILLED, or REJECTED after account-app refused its settlement. Orders rejected by
+  validation never executed and publish nothing. Fields: `eventId`, `orderId`, `accountId`,
+  `clientId`, `instrumentId`, `symbol`, `side`, `quantity`, `status`, `fillPrice` (null when
+  rejected), `rejectionReason`, `submittedAt`, `completedAt` (ISO-8601 with offset).
+- **Delivery**: offsets are committed only after the row is stored, and the insert ignores an
+  order it already has, so a restart or a replay never loses or duplicates a row. A message
+  that breaks the contract is logged and skipped. While Postgres is down the ETL retries the
+  same message with backoff.
+- **Publishing**: order-app's `OrderEventPublisher` sends after the final transaction commits,
+  from live submission, `PendingFillRecovery` and `SeededFillService` (so the seed history is
+  reported too). A failed send is logged and never fails the trade; it waits at most 2s for the
+  broker. Known gap: an event is lost if order-app stops between the commit and the send - a
+  transactional outbox would close it. `REPORTING_EVENTS_ENABLED=false` turns publishing off,
+  as `scripts/start-local.ps1` does since no Kafka runs natively.
+- **New schema**: `reporting.orders` is created by the schema file, which only runs on an empty
+  database - run `docker compose down -v` once to pick it up.
+
+```bash
+docker compose logs -f reporting-etl
+docker compose exec db psql -U paysprint -d paysprint -c "SELECT symbol, side, quantity, status, fill_price, completed_at FROM reporting.orders ORDER BY completed_at DESC LIMIT 20;"
+# Replay the whole topic (rows already loaded are skipped):
+docker compose stop reporting-etl
+docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --group reporting-etl --reset-offsets --to-earliest --topic order-events --execute
+docker compose start reporting-etl
+```
+
+End-to-end check of the order-events pipeline (Linux or macOS with Docker): starts the stack
+without the frontend, places a BUY as alice and checks that one event keyed by its `orderId` is
+published, matches the order, and that the ETL's consumer turns it into the right
+`reporting.orders` row and commits it. Then it places a SELL that validation rejects, and checks
+that nothing is published. It runs the checks
+(`reporting-etl/integration/check_order_events.py`) in a one-off `reporting-etl` container,
+since Kafka has no host port. It doesn't look at the database.
+
+```bash
+bash scripts/test-order-events.sh            # reuses a running stack
+bash scripts/test-order-events.sh --fresh    # down -v first, with a week of price history
+bash scripts/test-order-events.sh --down     # tear the stack down afterwards
+```
+
+Tests (the loader's database tests run only when `REPORTING_TEST_DB_URL` points at a Postgres
+loaded with the schema file, as CI's Unit Tests stage does):
+
+```bash
+cd reporting-etl
+python -m venv .venv && . .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements-dev.txt
+pytest
+```
+
 To run the frontend on its own against an already-running backend:
 
 ```bash

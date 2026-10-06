@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.order.history;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.instrument.Instrument;
@@ -58,7 +59,8 @@ class SeededFillServiceLoopTest {
     private SeededFillService service(int maxAttempts) {
         return new SeededFillService(orderRepository, accountRepository, executionRepository, movements,
                 fillRecorder, priceHistoryClient, jwtService,
-                new TransactionTemplate(mock(PlatformTransactionManager.class)), 0, maxAttempts);
+                new TransactionTemplate(mock(PlatformTransactionManager.class)),
+                mock(OrderEventPublisher.class), 0, maxAttempts);
     }
 
     private Order filledOrder(OffsetDateTime filledAt) {

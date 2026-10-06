@@ -4,6 +4,7 @@ import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.AccountValidationDto;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.history.FillRecorder;
@@ -63,7 +64,8 @@ class OrderSubmissionServiceEdgeTest {
     void setUp() {
         service = new OrderSubmissionService(accountClient, instruments, orders, executions,
                 new FillRecorder(executions, movements, accountClient), validation, quotes,
-                new TransactionTemplate(mock(PlatformTransactionManager.class)));
+                new TransactionTemplate(mock(PlatformTransactionManager.class)),
+                mock(OrderEventPublisher.class));
         accountId = UUID.randomUUID();
         instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         account = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 0L, "USD", "ACC-1", null);

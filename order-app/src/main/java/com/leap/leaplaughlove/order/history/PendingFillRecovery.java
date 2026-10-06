@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.order.history;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -48,6 +49,7 @@ public class PendingFillRecovery {
     private final FillRecorder fillRecorder;
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
+    private final OrderEventPublisher orderEventPublisher;
     private final long graceSeconds;
 
     /**
@@ -59,6 +61,7 @@ public class PendingFillRecovery {
      * @param fillRecorder        the fill recorder for booking recovered executions
      * @param jwtService          the JWT service for generating system service tokens
      * @param transactionTemplate the transaction template for managing atomic recovery units
+     * @param orderEventPublisher reports each recovered order to Kafka once it is final
      * @param graceSeconds        the grace period in seconds before a pending order is considered orphaned
      */
     public PendingFillRecovery(OrderRepository orderRepository,
@@ -67,6 +70,7 @@ public class PendingFillRecovery {
                                FillRecorder fillRecorder,
                                JwtService jwtService,
                                TransactionTemplate transactionTemplate,
+                               OrderEventPublisher orderEventPublisher,
                                @Value("${trading.fill-recovery.grace-seconds:30}") long graceSeconds) {
         this.orderRepository = orderRepository;
         this.executionRepository = executionRepository;
@@ -74,6 +78,7 @@ public class PendingFillRecovery {
         this.fillRecorder = fillRecorder;
         this.jwtService = jwtService;
         this.transactionTemplate = transactionTemplate;
+        this.orderEventPublisher = orderEventPublisher;
         this.graceSeconds = graceSeconds;
     }
 
@@ -140,18 +145,33 @@ public class PendingFillRecovery {
                 return false;
             }
             String reason = "Settlement failed: " + FillRecorder.refusalReason(ex);
-            transactionTemplate.executeWithoutResult(status -> orderRepository.findByIdForUpdate(order.getOrderId())
+            OffsetDateTime rejectedAt = OffsetDateTime.now();
+            Boolean rejectedHere = transactionTemplate.execute(status -> orderRepository.findByIdForUpdate(order.getOrderId())
                     .filter(locked -> locked.getStatus() == Order.Status.ACCEPTED)
-                    .ifPresent(locked -> locked.markRejected(reason, OffsetDateTime.now())));
+                    .map(locked -> {
+                        locked.markRejected(reason, rejectedAt);
+                        return true;
+                    })
+                    .orElse(false));
             log.warn("Order {} was refused by account-app on recovery and is now REJECTED: {}",
                     order.getOrderId(), ex.getMessage());
+            // Only whoever made the order final reports it, so it is published once.
+            if (Boolean.TRUE.equals(rejectedHere)) {
+                order.markRejected(reason, rejectedAt);
+                orderEventPublisher.publishRejected(order);
+            }
             return true;
         }
 
-        transactionTemplate.executeWithoutResult(status -> orderRepository.findByIdForUpdate(order.getOrderId())
+        Boolean filledHere = transactionTemplate.execute(status -> orderRepository.findByIdForUpdate(order.getOrderId())
                 .filter(locked -> locked.getStatus() == Order.Status.ACCEPTED)
-                .ifPresent(locked -> fillRecorder.completeFill(locked, execution)));
+                .map(locked -> fillRecorder.completeFill(locked, execution))
+                .orElse(false));
         log.info("Order {} settled and recorded as FILLED on recovery", order.getOrderId());
+        if (Boolean.TRUE.equals(filledHere)) {
+            order.markFilled(execution.getExecutedAt());
+            orderEventPublisher.publishFilled(order, execution);
+        }
         return true;
     }
 

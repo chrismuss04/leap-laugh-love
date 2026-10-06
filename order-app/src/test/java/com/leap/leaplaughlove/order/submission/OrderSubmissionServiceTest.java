@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
@@ -56,6 +57,7 @@ class OrderSubmissionServiceTest {
     @Mock private TradeValidationService tradeValidationService;
     @Mock private CurrentQuoteService currentQuoteService;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private OrderEventPublisher orderEventPublisher;
 
     private OrderSubmissionService orderSubmissionService;
     private FillRecorder fillRecorder;
@@ -77,7 +79,8 @@ class OrderSubmissionServiceTest {
                 fillRecorder,
                 tradeValidationService,
                 currentQuoteService,
-                new TransactionTemplate(transactionManager)
+                new TransactionTemplate(transactionManager),
+                orderEventPublisher
         );
 
         accountId = UUID.randomUUID();
@@ -544,5 +547,101 @@ class OrderSubmissionServiceTest {
         verify(tradeValidationService).checkPriceTolerance(
                 new BigDecimal("150.00"), new BigDecimal("149.0000"), new BigDecimal("0.50"));
         assertEquals(new BigDecimal("0.50"), storedOrder.getMaxSlippagePercent());
+    }
+
+    // Order Reporting: one event per order, once it is final, only after it is committed.
+
+    @Test
+    @DisplayName("Filled order is published once, as FILLED, after the fill is committed")
+    void testFilledOrder_PublishedOnceAfterCommit() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+
+        orderSubmissionService.submitOrder(request);
+
+        ArgumentCaptor<Order> published = ArgumentCaptor.forClass(Order.class);
+        ArgumentCaptor<Execution> execution = ArgumentCaptor.forClass(Execution.class);
+        InOrder inOrder = inOrder(positionMovementRepository, transactionManager, orderEventPublisher);
+        inOrder.verify(positionMovementRepository).save(any(PositionMovement.class));
+        inOrder.verify(transactionManager).commit(any());
+        inOrder.verify(orderEventPublisher).publishFilled(published.capture(), execution.capture());
+        assertEquals(Order.Status.FILLED, published.getValue().getStatus());
+        assertNotNull(published.getValue().getFilledAt());
+        assertEquals(new BigDecimal("150.0000"), execution.getValue().getFillPrice());
+        verify(orderEventPublisher, never()).publishRejected(any());
+    }
+
+    @Test
+    @DisplayName("Order refused at settlement is published once, as REJECTED with the reason")
+    void testSettlementRefused_PublishedAsRejected() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(refusal("Cannot settle buy: insufficient cash"));
+
+        assertThrows(ResponseStatusException.class, () -> orderSubmissionService.submitOrder(request));
+
+        ArgumentCaptor<Order> published = ArgumentCaptor.forClass(Order.class);
+        verify(orderEventPublisher).publishRejected(published.capture());
+        assertEquals(Order.Status.REJECTED, published.getValue().getStatus());
+        assertEquals("Settlement failed: Cannot settle buy: insufficient cash", published.getValue().getRejectionReason());
+        assertNotNull(published.getValue().getRejectedAt());
+        verify(orderEventPublisher, never()).publishFilled(any(), any());
+    }
+
+    @Test
+    @DisplayName("Order rejected by validation never executed, so nothing is published")
+    void testValidationRejection_NotPublished() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 1000, new BigDecimal("150.00"), null);
+        quoteAt("150.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.rejected("Insufficient funds - order rejected"));
+
+        orderSubmissionService.submitOrder(request);
+
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("Order rejected for an unavailable quote is not published")
+    void testQuoteUnavailableRejection_NotPublished() {
+        OrderSubmissionRequest request = new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, null, null);
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(currentQuoteService.getCurrentQuote("AAPL"))
+                .thenThrow(new QuoteUnavailableException("Market data service offline"));
+
+        orderSubmissionService.submitOrder(request);
+
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("Order left ACCEPTED for recovery is not published yet; recovery publishes it")
+    void testSettlementOutcomeUnknown_NotPublishedYet() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenThrow(new ResourceAccessException("Read timed out"));
+
+        orderSubmissionService.submitOrder(request);
+
+        verifyNoInteractions(orderEventPublisher);
+    }
+
+    @Test
+    @DisplayName("Fill recovery already finished is not published again by live submission")
+    void testFillAlreadyFinished_NotPublishedAgain() {
+        OrderSubmissionRequest request = acceptedBuy();
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8500.00"), 10L, new BigDecimal("150.00")));
+        when(positionMovementRepository.existsByOrderId(any())).thenReturn(true);
+
+        orderSubmissionService.submitOrder(request);
+
+        verifyNoInteractions(orderEventPublisher);
     }
 }

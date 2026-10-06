@@ -103,6 +103,9 @@ if ($dotEnv.DB_PASSWORD) { $env:SPRING_DATASOURCE_PASSWORD = $dotEnv.DB_PASSWORD
 if ($dotEnv.JWT_SECRET) { $env:JWT_SECRET = $dotEnv.JWT_SECRET }
 $env:MARKET_DATA_BASE_URL = 'http://localhost:8083'
 $env:ACCOUNT_SERVICE_BASE_URL = 'http://localhost:8082'
+# No Kafka runs natively, so order-app doesn't publish order events (reporting-etl runs in Docker
+# only); otherwise every completed order would wait on a broker that isn't there.
+$env:REPORTING_EVENTS_ENABLED = 'false'
 if ($LightHistory) {
     $env:MARKETDATA_HISTORY_BACKFILL_TIERS = '86400:30,3600:7,300:2,60:1'
 }

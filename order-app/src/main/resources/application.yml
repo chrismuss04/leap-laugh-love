@@ -10,6 +10,25 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # Order Reporting: completed orders are published to Kafka (see OrderEventPublisher; the
+  # serializers are set in OrderEventsKafkaConfig).
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        # A send waits this long at most for the broker before failing, instead of the 60s
+        # default, so a Kafka outage can't hold up an order response.
+        max.block.ms: 2000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
+
+reporting:
+  events:
+    enabled: ${REPORTING_EVENTS_ENABLED:true}
+    topic: order-events
+    # How long startup keeps trying to connect the producer before the first order completes
+    # (see OrderEventsProducerWarmup).
+    warmup-seconds: 30
 
 app:
   jwt:
