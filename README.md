@@ -864,6 +864,22 @@ and registration reporting storage are added in subsequent steps.
 
 #### Reporting ETL
 
+Registration reporting storage is `reporting.clients`: `client_id` is the primary key,
+`registered_at` is the original registration timestamp, and `loaded_at` records when the ETL
+inserts the row. The primary key supports duplicate-safe loading; the consumer must explicitly
+handle repeated events. An index on `registered_at` supports registration counts by date.
+There is no foreign key into IAM, so reporting data and replay do not depend on live IAM rows.
+
+Fresh databases create this table through the main schema. For an existing database, apply
+the additive migration from the repository root in Linux (do not delete the database volume):
+
+```bash
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/migrate-reporting-clients.sql
+```
+
+The migration can be rerun and preserves existing records. It creates storage only; it does
+not backfill clients or start a registration consumer. Those writes belong to the user ETL.
+
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
 completed order into `reporting.orders`, the read model the analyst dashboard queries. It runs
 as the `reporting-etl` compose service (no port).

@@ -371,3 +371,16 @@ CREATE INDEX IF NOT EXISTS idx_reporting_orders_client_completed_at
 -- Backs reports over a time range across all clients.
 CREATE INDEX IF NOT EXISTS idx_reporting_orders_completed_at
     ON reporting.orders (completed_at);
+
+-- User Reporting: one row per registered client, loaded from client-register events.
+-- No IAM foreign key: reporting replay must not depend on operational client rows.
+CREATE TABLE IF NOT EXISTS reporting.clients (
+    client_id UUID PRIMARY KEY,
+    registered_at TIMESTAMPTZ NOT NULL,
+    -- ETL arrival time is separate from the original registration time.
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Supports registration counts over a reporting period.
+CREATE INDEX IF NOT EXISTS idx_reporting_clients_registered_at
+    ON reporting.clients (registered_at);
