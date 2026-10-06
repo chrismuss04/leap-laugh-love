@@ -37,7 +37,7 @@ HEALTH_TIMEOUT_SECONDS=600
 for tool in docker curl; do
     command -v "$tool" >/dev/null || { echo "'$tool' was not found on PATH." >&2; exit 2; }
 done
-docker compose version >/dev/null 2>&1 || { echo "The docker compose plugin is not installed." >&2; exit 2; }
+docker-compose version >/dev/null 2>&1 || { echo "The docker compose plugin is not installed." >&2; exit 2; }
 
 dump_logs() {
     echo
@@ -51,7 +51,7 @@ if $FRESH; then
 fi
 
 echo "==> Starting ${SERVICES[*]}"
-docker compose up -d --build "${SERVICES[@]}"
+docker-compose up -d --build "${SERVICES[@]}"
 
 echo "==> Waiting for the services to report healthy (a first start generates price history)"
 deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
@@ -62,7 +62,7 @@ for entry in iam-app:${IAM_PORT:-8081} account-app:${ACCOUNT_PORT:-8082} \
     until curl -fsS "http://localhost:${port}/actuator/health" >/dev/null 2>&1; do
         if ((SECONDS > deadline)); then
             echo "$name is not healthy on port $port after ${HEALTH_TIMEOUT_SECONDS}s." >&2
-            docker compose logs --no-color --tail 50 "$name" || true
+            docker-compose logs --no-color --tail 50 "$name" || true
             exit 1
         fi
         sleep 3
@@ -75,7 +75,7 @@ container_of() { docker compose ps -a -q "$1"; }
 kafka_init_exit=$(docker inspect -f '{{.State.ExitCode}}' "$(container_of kafka-init)")
 if [[ "$kafka_init_exit" != "0" ]]; then
     echo "kafka-init exited $kafka_init_exit, so order-events may not exist." >&2
-    docker compose logs --no-color kafka-init || true
+    docker-compose logs --no-color kafka-init || true
     exit 1
 fi
 echo "    kafka-init created the topics"
@@ -110,6 +110,6 @@ fi
 
 if $DOWN; then
     echo "==> Stopping the stack"
-    docker compose down
+    docker-compose down
 fi
 exit "$status"
