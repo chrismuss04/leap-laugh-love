@@ -2,6 +2,13 @@ server:
   port: 8081
 
 spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        max.block.ms: 2000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
     username: ${SPRING_DATASOURCE_USERNAME:paysprint}
@@ -10,6 +17,12 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+
+reporting:
+  registrations:
+    # Enable in Compose once the client-register topic is provisioned.
+    enabled: ${CLIENT_REGISTRATION_EVENTS_ENABLED:false}
+    topic: client-register
 
 account:
   client:
