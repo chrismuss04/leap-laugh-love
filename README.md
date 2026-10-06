@@ -882,7 +882,7 @@ since Kafka has no host port. It doesn't look at the database.
 
 ```bash
 bash scripts/test-order-events.sh            # reuses a running stack
-bash scripts/test-order-events.sh --fresh    # docker compose down -v first
+bash scripts/test-order-events.sh --fresh    # down -v first, with a week of price history
 bash scripts/test-order-events.sh --down     # tear the stack down afterwards
 ```
 

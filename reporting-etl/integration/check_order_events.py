@@ -39,6 +39,7 @@ EMAIL = os.environ.get("CHECK_EMAIL", "alice.johnson@leap.com")
 PASSWORD = os.environ.get("CHECK_PASSWORD", "Password123!")
 SYMBOL = os.environ.get("CHECK_SYMBOL", "AAPL")
 
+QUOTE_WAIT_SECONDS = float(os.environ.get("QUOTE_WAIT_SECONDS", "900"))
 EVENT_WAIT_SECONDS = 15
 NO_EVENT_WAIT_SECONDS = 10
 
@@ -91,15 +92,21 @@ def first_account(token: str) -> dict:
     return body[0]
 
 
-def ask_price(token: str) -> Decimal:
+def ask_price(token: str, wait_seconds: float = 60) -> Decimal:
     """The current ask, waiting for the quote feed if it hasn't produced one for the symbol yet."""
-    deadline = time.monotonic() + 60
+    started = time.monotonic()
+    reported = started
     while True:
         status, body = http("GET", f"{MARKETDATA_URL}/api/marketdata/quotes/{SYMBOL}", token)
-        if status == 200 and body.get("askPrice"):
+        if status == 200 and isinstance(body, dict) and body.get("askPrice"):
             return body["askPrice"]
-        if time.monotonic() > deadline:
-            raise CheckFailed(f"no quote for {SYMBOL} after 60s: {status} {body}")
+        now = time.monotonic()
+        if now - started > wait_seconds:
+            raise CheckFailed(f"no quote for {SYMBOL} after {wait_seconds:.0f}s: {status} {body}")
+        if now - reported >= 30:
+            reported = now
+            print(f"  still no {SYMBOL} quote after {now - started:.0f}s "
+                  f"(market-data is probably still backfilling price history)", flush=True)
         time.sleep(2)
 
 
@@ -256,6 +263,12 @@ def main() -> int:
     token, client_id = login()
     account = first_account(token)
     print(f"Signed in as {EMAIL}; using account {account['accountNumber']} ({account['accountId']})")
+
+    # market-data serves its health endpoint while it backfills price history, but only starts
+    # quoting once that is done, so wait for quotes here rather than fail both checks.
+    print(f"Waiting for a live {SYMBOL} quote (up to {QUOTE_WAIT_SECONDS:.0f}s)", flush=True)
+    ask_price(token, QUOTE_WAIT_SECONDS)
+    print(f"  market-data is quoting {SYMBOL}")
 
     consumer = consumer_at_end()
     failures = 0

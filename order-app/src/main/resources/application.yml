@@ -26,6 +26,9 @@ reporting:
   events:
     enabled: ${REPORTING_EVENTS_ENABLED:true}
     topic: order-events
+    # How long startup keeps trying to connect the producer before the first order completes
+    # (see OrderEventsProducerWarmup).
+    warmup-seconds: 30
 
 app:
   jwt:

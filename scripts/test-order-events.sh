@@ -10,10 +10,10 @@
 #
 # Usage, from anywhere in the repo:
 #   scripts/test-order-events.sh            # start (or reuse) the stack, then check
-#   scripts/test-order-events.sh --fresh    # docker compose down -v first: a clean database
+#   scripts/test-order-events.sh --fresh    # down -v first: a clean database, light history
 #   scripts/test-order-events.sh --down     # tear the stack down afterwards
 #
-# Needs docker with the compose plugin and curl. JWT_SECRET comes from .env, as for compose.
+# Needs docker and docker-compose. JWT_SECRET comes from .env, as for compose.
 
 set -euo pipefail
 
@@ -34,10 +34,8 @@ done
 SERVICES=(db kafka kafka-init iam-app account-app market-data-app order-app reporting-etl)
 HEALTH_TIMEOUT_SECONDS=600
 
-for tool in docker curl; do
-    command -v "$tool" >/dev/null || { echo "'$tool' was not found on PATH." >&2; exit 2; }
-done
-docker-compose version >/dev/null 2>&1 || { echo "The docker compose plugin is not installed." >&2; exit 2; }
+command -v docker >/dev/null || { echo "'docker' was not found on PATH." >&2; exit 2; }
+docker-compose version >/dev/null 2>&1 || { echo "docker-compose is not installed." >&2; exit 2; }
 
 dump_logs() {
     echo
@@ -45,32 +43,58 @@ dump_logs() {
     docker-compose logs --no-color --tail 50 order-app reporting-etl || true
 }
 
+container_of() { docker-compose ps -a -q "$1"; }
+
 if $FRESH; then
     echo "==> Removing the stack and its volumes"
     docker-compose down -v
+    # A fresh database makes market-data generate its price history before it quotes anything;
+    # the default is a year of it, which takes many minutes. The check only needs live quotes,
+    # so ask for CI's token amount unless a value is already set.
+    export MARKETDATA_BACKFILL_TIERS="${MARKETDATA_BACKFILL_TIERS:-86400:7,3600:1}"
+    echo "    price history backfill: $MARKETDATA_BACKFILL_TIERS"
 fi
 
 echo "==> Starting ${SERVICES[*]}"
 docker-compose up -d --build "${SERVICES[@]}"
 
-echo "==> Waiting for the services to report healthy (a first start generates price history)"
-deadline=$((SECONDS + HEALTH_TIMEOUT_SECONDS))
-for entry in iam-app:${IAM_PORT:-8081} account-app:${ACCOUNT_PORT:-8082} \
-             market-data-app:${MARKETDATA_PORT:-8083} order-app:${ORDER_PORT:-8084}; do
-    name=${entry%%:*}
-    port=${entry##*:}
-    until curl -fsS "http://localhost:${port}/actuator/health" >/dev/null 2>&1; do
-        if ((SECONDS > deadline)); then
-            echo "$name is not healthy on port $port after ${HEALTH_TIMEOUT_SECONDS}s." >&2
+# Probed from inside each container, as the Jenkinsfile does, so host port mappings, .env
+# overrides and proxies can't get in the way. A container that exits or keeps restarting fails
+# the wait straight away instead of running out the clock.
+echo "==> Waiting for the services to report healthy (up to ${HEALTH_TIMEOUT_SECONDS}s)"
+declare -A HEALTH_PORTS=([iam-app]=8081 [account-app]=8082 [market-data-app]=8083 [order-app]=8084)
+pending=(iam-app account-app market-data-app order-app)
+started=$SECONDS
+last_report=$SECONDS
+while ((${#pending[@]} > 0)); do
+    still=()
+    for name in "${pending[@]}"; do
+        container=$(container_of "$name")
+        state=$(docker inspect -f '{{.State.Status}} {{.State.Restarting}}' "$container" 2>/dev/null || echo "missing false")
+        if [[ "$state" != "running false" ]]; then
+            echo "$name is not running (state: $state)." >&2
             docker-compose logs --no-color --tail 50 "$name" || true
             exit 1
         fi
-        sleep 3
+        if docker-compose exec -T "$name" wget -q -O /dev/null "http://localhost:${HEALTH_PORTS[$name]}/actuator/health" >/dev/null 2>&1; then
+            echo "    $name is up"
+        else
+            still+=("$name")
+        fi
     done
-    echo "    $name is up"
+    pending=("${still[@]+"${still[@]}"}")
+    ((${#pending[@]} == 0)) && break
+    if ((SECONDS - started > HEALTH_TIMEOUT_SECONDS)); then
+        echo "Not healthy after ${HEALTH_TIMEOUT_SECONDS}s: ${pending[*]}" >&2
+        for name in "${pending[@]}"; do docker-compose logs --no-color --tail 50 "$name" || true; done
+        exit 1
+    fi
+    if ((SECONDS - last_report >= 30)); then
+        last_report=$SECONDS
+        echo "    still waiting on ${pending[*]} ($((SECONDS - started))s)"
+    fi
+    sleep 3
 done
-
-container_of() { docker-compose ps -a -q "$1"; }
 
 kafka_init_exit=$(docker inspect -f '{{.State.ExitCode}}' "$(container_of kafka-init)")
 if [[ "$kafka_init_exit" != "0" ]]; then
