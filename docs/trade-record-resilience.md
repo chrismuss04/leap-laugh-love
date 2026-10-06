@@ -131,3 +131,38 @@ remove leftovers manually. Do not use global volume pruning.
 
 Ordinary Jenkins CI still uses its existing durability-disabled command. No
 recovery stage has been added to Jenkins yet.
+
+## Step 4: committed-trade persistence checks
+
+Install the E2E dependencies on the Linux Docker host with `npm ci --prefix e2e`
+(use a Node version supported by the project's Playwright dependency), then run:
+
+```bash
+bash scripts/test-trade-recovery.sh npm --prefix e2e run test:recovery
+```
+
+This runs five API/database scenarios with one worker and no automatic retries:
+application restart, application container replacement, database restart,
+database SIGKILL/recovery, and failed application startup followed by restoring
+the previous image. Each scenario creates a real committed BUY through the API
+on its own funded account, captures all account trade/ledger/holdings records,
+and compares them after the disruption. It also logs in again and checks API
+history, cash balance, and holdings. No browser installation is required.
+
+The failed-deployment scenario stops order-app, attempts a replacement using the
+same image with an intentionally failing entrypoint, verifies its exit code, and
+recreates order-app with the original configuration and exact image. This proves
+storage survives application startup failure; it does not test rollback across
+different schema versions or different releases. SIGKILL tests process-crash
+recovery, not physical disk loss or a host power failure.
+
+`playwright.recovery.config.ts` is separate from normal E2E discovery, which
+explicitly ignores recovery specs. The helper checks the generated project name,
+resolved database volume and running container's volume mount before controlling
+containers. Tests should run only through the harness on the Docker host.
+JUnit results and before/after attachments are written into the harness results
+directory. Container logs are saved on exit, including when a test fails.
+
+Passing these scenarios on Linux is required for runtime evidence; TypeScript
+checks and test discovery alone do not establish persistence. Interrupted trades
+and duplicate-settlement scenarios remain the next step.

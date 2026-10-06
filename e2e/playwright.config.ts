@@ -15,12 +15,14 @@ const ALL_BROWSERS = !!process.env.E2E_ALL_BROWSERS;
 
 /** Browser projects share everything but the device; API specs run once, not per browser. */
 const browserProject = {
-  testIgnore: /tests[\\/]api[\\/]/,
+  testIgnore: /tests[\\/](api|recovery)[\\/]/,
   dependencies: ['setup']
 };
 
 export default defineConfig({
   testDir: './tests',
+  // Disruptive tests run only through playwright.recovery.config.ts and the isolated harness.
+  testIgnore: /tests[\\/]recovery[\\/]/,
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
