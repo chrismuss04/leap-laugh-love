@@ -226,6 +226,21 @@ class IamSchemaIntegrationTest {
             "Schema should enable pgcrypto extension for password hashing");
     }
 
+    @Test
+    @DisplayName("Schema should define iam.password_reset_tokens storing only a token hash")
+    void testPasswordResetTokensTableSchema() throws Exception {
+        String schema = readFile(SCHEMA_FILE);
+
+        assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS iam.password_reset_tokens"),
+            "Schema should define iam.password_reset_tokens table");
+        assertTrue(schema.contains("token_hash TEXT NOT NULL UNIQUE"),
+            "password_reset_tokens should store a unique token hash");
+        assertTrue(schema.contains("used_at TIMESTAMPTZ"),
+            "password_reset_tokens should record when a link was used");
+        assertTrue(schema.contains("CONSTRAINT chk_password_reset_tokens_expiry CHECK (expires_at > created_at)"),
+            "password_reset_tokens should expire after they are created");
+    }
+
     private int countOccurrences(String text, String pattern) {
         Pattern p = Pattern.compile(Pattern.quote(pattern));
         return (int) p.matcher(text).results().count();
