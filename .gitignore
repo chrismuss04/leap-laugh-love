@@ -54,3 +54,6 @@ docs/jacoco/
 
 # SonarScanner working directory
 .scannerwork/
+
+# Isolated recovery-run diagnostics
+.recovery-results/
