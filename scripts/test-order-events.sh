@@ -42,12 +42,12 @@ docker-compose version >/dev/null 2>&1 || { echo "The docker compose plugin is n
 dump_logs() {
     echo
     echo "---- last 50 lines of order-app and reporting-etl ----"
-    docker compose logs --no-color --tail 50 order-app reporting-etl || true
+    docker-compose logs --no-color --tail 50 order-app reporting-etl || true
 }
 
 if $FRESH; then
     echo "==> Removing the stack and its volumes"
-    docker compose down -v
+    docker-compose down -v
 fi
 
 echo "==> Starting ${SERVICES[*]}"
@@ -70,7 +70,7 @@ for entry in iam-app:${IAM_PORT:-8081} account-app:${ACCOUNT_PORT:-8082} \
     echo "    $name is up"
 done
 
-container_of() { docker compose ps -a -q "$1"; }
+container_of() { docker-compose ps -a -q "$1"; }
 
 kafka_init_exit=$(docker inspect -f '{{.State.ExitCode}}' "$(container_of kafka-init)")
 if [[ "$kafka_init_exit" != "0" ]]; then
@@ -89,7 +89,7 @@ echo "    reporting-etl is running"
 
 echo "==> Running the order-events checks"
 status=0
-docker compose run --rm --no-deps -T \
+docker-compose run --rm --no-deps -T \
     --entrypoint python \
     -e PYTHONPATH=/app \
     -v "$PWD/reporting-etl/integration:/integration:ro" \
