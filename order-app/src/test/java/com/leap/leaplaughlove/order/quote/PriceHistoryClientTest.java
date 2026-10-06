@@ -1,4 +1,4 @@
-package com.leap.leaplaughlove.account.quote;
+package com.leap.leaplaughlove.order.quote;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

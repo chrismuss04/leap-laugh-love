@@ -1,6 +1,7 @@
 import { test, expect } from '../../fixtures/test';
 import { OrderHistoryPage } from '../../pages/order-history.page';
 import { personas } from '../../data/users';
+import { uniqueRegistration } from '../../data/factories';
 
 test.describe('Order history', () => {
   test.describe('seeded demo client', () => {
@@ -35,6 +36,20 @@ test.describe('Order history', () => {
       await history.expectSettled();
       await expect(history.pageInfo).toHaveText('Page 2 of 2');
       await expect(history.rows).toHaveCount(5);
+    });
+  });
+
+  test.describe('new client', () => {
+    test('shows the empty state when there are no orders', async ({ page, api, tokenFor }) => {
+      const user = uniqueRegistration();
+      await api.register(user);
+      const token = await tokenFor(user.email);
+      await page.context().addInitScript(value => localStorage.setItem('auth_token', value), token);
+
+      const history = new OrderHistoryPage(page);
+      await history.goto();
+      await expect(history.rows).toHaveCount(0);
+      await expect(history.empty).toHaveText('No orders found');
     });
   });
 });

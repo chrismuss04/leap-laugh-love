@@ -23,7 +23,7 @@ export class OrderHistoryPage {
     this.previous = page.getByRole('button', { name: /Previous/ });
     this.next = page.getByRole('button', { name: /Next/ });
     this.pageInfo = page.locator('.page-info');
-    this.empty = page.locator('.no-orders');
+    this.empty = page.getByTestId('no-orders');
     this.error = page.locator('.error-message');
   }
 

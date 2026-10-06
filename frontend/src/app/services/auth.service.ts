@@ -181,6 +181,20 @@ export class AuthService implements OnDestroy {
   }
 
   /**
+   * Ask for a password reset link to be emailed to this address
+   */
+  requestPasswordReset(email: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/forgot-password`, { email });
+  }
+
+  /**
+   * Set a new password, using the token from the emailed reset link
+   */
+  resetPassword(token: string, newPassword: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/reset-password`, { token, newPassword });
+  }
+
+  /**
    * Private helper: Check if token exists
    */
   private hasToken(): boolean {
