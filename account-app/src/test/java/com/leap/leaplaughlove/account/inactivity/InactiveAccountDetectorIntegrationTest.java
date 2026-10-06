@@ -15,6 +15,8 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -32,6 +34,8 @@ class InactiveAccountDetectorIntegrationTest {
     @Autowired private AccountRepository accountRepository;
     @Autowired private JdbcTemplate jdbc;
     @Autowired private EntityManager entityManager;
+
+    private final List<Object> published = new ArrayList<>();
 
     private UUID account(String status, int openedDaysAgo) {
         UUID id = UUID.randomUUID();
@@ -53,7 +57,8 @@ class InactiveAccountDetectorIntegrationTest {
     }
 
     private void runJob() {
-        new InactiveAccountDetector(accountRepository, 30, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC)).detect();
+        new InactiveAccountDetector(accountRepository, published::add, 30, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC))
+                .detect();
         entityManager.flush();
         entityManager.clear();
     }
@@ -119,5 +124,29 @@ class InactiveAccountDetectorIntegrationTest {
 
         assertThat(inactiveSince(funded)).isNull();
         assertThat(inactiveSince(closed)).isNull();
+    }
+
+    @Test
+    @DisplayName("clears the notified time with the flag, so a later inactive period is emailed again")
+    void clearsNotifiedTimeWhenReactivated() {
+        UUID account = account("ACTIVE", 45);
+        runJob();
+        jdbc.update("UPDATE trading.accounts SET inactive_notified_at = ? WHERE account_id = ?", NOW, account);
+
+        ledger(account, "50.00", "USD", 0);
+        runJob();
+
+        assertThat(inactiveSince(account)).isNull();
+        assertThat(jdbc.queryForObject("SELECT inactive_notified_at FROM trading.accounts WHERE account_id = ?",
+                OffsetDateTime.class, account)).isNull();
+    }
+
+    @Test
+    @DisplayName("publishes an InactivityCheckedEvent on every run, so failed emails are retried")
+    void publishesEventEveryRun() {
+        runJob();
+        runJob();
+
+        assertThat(published).hasSize(2).allMatch(InactivityCheckedEvent.class::isInstance);
     }
 }
