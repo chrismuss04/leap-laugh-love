@@ -46,6 +46,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Completed orders are published to order-events, which has to exist first: the broker
+      # doesn't create topics on first use.
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
@@ -53,6 +57,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"
@@ -176,6 +181,25 @@ services:
     image: axllent/mailpit:v1.31
     ports:
       - "${MAILPIT_UI_PORT:-8025}:8025"
+  # Order Reporting ETL: consumes order-events and loads each completed order into
+  # reporting.orders (see reporting-etl/ and "Reporting ETL" in the README). No port: it only
+  # reads Kafka and writes Postgres. Restarts on a crash; an offset is committed only after its
+  # row is stored, so a restart re-reads rather than loses anything.
+  reporting-etl:
+    image: "reporting-etl:${IMAGE_TAG:-latest}"
+    build:
+      context: ./reporting-etl
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ORDER_EVENTS_TOPIC: order-events
+      CONSUMER_GROUP: reporting-etl
+      REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
 
   db:
     image: postgres:16-alpine

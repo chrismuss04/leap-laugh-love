@@ -1,0 +1,7 @@
+tests/
+test-results/
+coverage.xml
+.coverage
+.pytest_cache/
+.venv/
+**/__pycache__/

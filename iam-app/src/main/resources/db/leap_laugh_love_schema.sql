@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 CREATE SCHEMA IF NOT EXISTS marketdata;
+CREATE SCHEMA IF NOT EXISTS reporting;
 
 CREATE TABLE IF NOT EXISTS iam.clients (
     client_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -342,3 +343,34 @@ CREATE TABLE IF NOT EXISTS marketdata.quotes (
 -- Backs the "latest quote for a symbol" lookup used by QuoteIngestionService/QuoteController.
 CREATE INDEX IF NOT EXISTS idx_quotes_instrument_quote_timestamp
     ON marketdata.quotes (instrument_id, quote_timestamp DESC);
+
+-- Order Reporting: one row per completed order, loaded by reporting-etl from the order-events
+-- Kafka topic that order-app publishes to once an order is FILLED, or REJECTED after its
+-- execution was refused at settlement. A read model for the analyst dashboard, so it has no
+-- foreign keys into trading: it is only ever written by the ETL, and replaying the topic must
+-- not depend on the trading rows still being there.
+CREATE TABLE IF NOT EXISTS reporting.orders (
+    order_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL,
+    client_id UUID NOT NULL,
+    instrument_id UUID NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+    quantity BIGINT NOT NULL CHECK (quantity > 0),
+    status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
+    -- NULL when the order was rejected.
+    fill_price NUMERIC(18,6) CHECK (fill_price IS NULL OR fill_price > 0),
+    rejection_reason TEXT,
+    submitted_at TIMESTAMPTZ NOT NULL,
+    -- filled_at for a FILLED order, rejected_at for a REJECTED one.
+    completed_at TIMESTAMPTZ NOT NULL,
+    -- When the ETL loaded the row, kept apart from completed_at so pipeline lag is visible.
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Backs per-client activity (most recent fill) and per-client order reports.
+CREATE INDEX IF NOT EXISTS idx_reporting_orders_client_completed_at
+    ON reporting.orders (client_id, completed_at);
+-- Backs reports over a time range across all clients.
+CREATE INDEX IF NOT EXISTS idx_reporting_orders_completed_at
+    ON reporting.orders (completed_at);

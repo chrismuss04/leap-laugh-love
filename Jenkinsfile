@@ -133,7 +133,7 @@ pipeline {
                     // The npm volume is external in docker-compose.ci.yml so "down -v" keeps it;
                     // creating one that already exists is a no-op.
                     sh '''
-                        mkdir -p "$HOME/.m2-ci" "$HOME/.npm-ci"
+                        mkdir -p "$HOME/.m2-ci" "$HOME/.npm-ci" "$HOME/.pip-ci"
                         docker volume create leap-ci-npm-cache >/dev/null
                     '''
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
@@ -316,10 +316,36 @@ pipeline {
                                 maven:3.9.9-eclipse-temurin-21-alpine \
                                 mvn -B -T 1C -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
                         '''
+                        // Order Reporting ETL (Python). Same throwaway database, which the schema
+                        // file gave a reporting schema, so the loader's SQL runs for real; the
+                        // rest of the suite needs no database. Run from the repo root so
+                        // coverage.xml paths come out as reporting-etl/..., the way SonarQube
+                        // resolves them. The pip cache is the agent's, like the Maven repository.
+                        sh '''
+                            set -eu
+                            docker run --rm \
+                                --network "container:${PG_CONTAINER}" \
+                                --user "$(id -u):$(id -g)" \
+                                -v "$WORKSPACE":/app \
+                                -v "$HOME/.pip-ci":/tmp/.pip-cache \
+                                -w /app \
+                                -e HOME=/tmp \
+                                -e PIP_CACHE_DIR=/tmp/.pip-cache \
+                                -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+                                -e REPORTING_TEST_DB_URL="postgresql://paysprint:${TEST_DB_PASSWORD}@localhost:5432/paysprint" \
+                                python:3.12-slim \
+                                sh -c 'python -m venv /tmp/venv \
+                                    && /tmp/venv/bin/pip install -q -r reporting-etl/requirements-dev.txt \
+                                    && /tmp/venv/bin/python -m pytest -c reporting-etl/pyproject.toml --rootdir reporting-etl \
+                                        -p no:cacheprovider \
+                                        --junitxml=reporting-etl/test-results/junit.xml \
+                                        --cov=reporting-etl/reporting_etl --cov-config=reporting-etl/pyproject.toml \
+                                        --cov-report=xml:reporting-etl/coverage.xml'
+                        '''
                     }
                     post {
                         always {
-                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml'
+                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml, reporting-etl/test-results/*.xml'
                             // Preserve Java coverage alongside the test results before workspace cleanup.
                             archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
                             sh 'docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true'
@@ -333,7 +359,7 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app
+                                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app reporting-etl
                                     echo "Built service images tagged $IMAGE_TAG"
                                 '''
                             }
@@ -351,9 +377,9 @@ pipeline {
                                     echo "Waiting for PostgreSQL to finish initializing..."
                                     for i in $(seq 1 90); do
                                         ready=$($COMPOSE -p "$COMPOSE_PROJECT" exec -T -e PGPASSWORD="${DB_PASSWORD:-changeme}" db \
-                                            psql -h 127.0.0.1 -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL;" 2>/dev/null) || ready=
+                                            psql -h 127.0.0.1 -U paysprint -d paysprint -Atc "SELECT to_regclass('iam.clients') IS NOT NULL AND to_regclass('trading.accounts') IS NOT NULL AND to_regclass('marketdata.quotes') IS NOT NULL AND to_regclass('reporting.orders') IS NOT NULL;" 2>/dev/null) || ready=
                                         if [ "$ready" = "t" ]; then
-                                            echo "IAM, trading, and market-data schemas are initialized"
+                                            echo "IAM, trading, market-data, and reporting schemas are initialized"
                                             exit 0
                                         fi
                                         sleep 2
@@ -368,7 +394,7 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -378,13 +404,17 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
+                                    # reporting-etl has no health endpoint: it counts as up once it is a
+                                    # member of its consumer group (listed by its client.id), which means
+                                    # it started, reached Kafka and subscribed.
                                     echo "Waiting for service health endpoints..."
                                     for i in $(seq 1 60); do
                                         if $COMPOSE -p "$COMPOSE_PROJECT" exec -T iam-app wget -q -O /dev/null http://localhost:8081/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health && \
-                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order-events >/dev/null; then
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order-events >/dev/null && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group reporting-etl --members 2>/dev/null | grep -q reporting-etl-consumer; then
                                             echo "All services are healthy"
                                             exit 0
                                         fi
@@ -590,7 +620,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db kafka kafka-init iam-app account-app order-app market-data-app frontend; do
+                    for service in db kafka kafka-init iam-app account-app order-app market-data-app reporting-etl frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
@@ -609,7 +639,7 @@ pipeline {
                 # accumulates one set per build until the disk fills.
                 if [ -n "${IMAGE_TAG:-}" ]; then
                     docker image rm -f "iam-app:$IMAGE_TAG" "account-app:$IMAGE_TAG" "order-app:$IMAGE_TAG" \
-                        "market-data-app:$IMAGE_TAG" >/dev/null 2>&1 || true
+                        "market-data-app:$IMAGE_TAG" "reporting-etl:$IMAGE_TAG" >/dev/null 2>&1 || true
                 fi
                 # Keep only the current E2E runner; older tags are from superseded lockfiles. (An
                 # image another build is using right now refuses removal, hence "|| true".) Also
