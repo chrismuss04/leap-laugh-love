@@ -872,6 +872,20 @@ docker compose exec kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-se
 docker compose start reporting-etl
 ```
 
+End-to-end check of the order-events pipeline (Linux or macOS with Docker): starts the stack
+without the frontend, places a BUY as alice and checks that one event keyed by its `orderId` is
+published, matches the order, and that the ETL's consumer turns it into the right
+`reporting.orders` row and commits it. Then it places a SELL that validation rejects, and checks
+that nothing is published. It runs the checks
+(`reporting-etl/integration/check_order_events.py`) in a one-off `reporting-etl` container,
+since Kafka has no host port. It doesn't look at the database.
+
+```bash
+bash scripts/test-order-events.sh            # reuses a running stack
+bash scripts/test-order-events.sh --fresh    # docker compose down -v first
+bash scripts/test-order-events.sh --down     # tear the stack down afterwards
+```
+
 Tests (the loader's database tests run only when `REPORTING_TEST_DB_URL` points at a Postgres
 loaded with the schema file, as CI's Unit Tests stage does):
 
