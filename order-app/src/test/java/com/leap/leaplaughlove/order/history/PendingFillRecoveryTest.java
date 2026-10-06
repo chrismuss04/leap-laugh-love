@@ -17,6 +17,8 @@ import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -44,6 +46,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -75,7 +78,7 @@ class PendingFillRecoveryTest {
         OffsetDateTime acceptedAt = OffsetDateTime.now().minusMinutes(5);
         order = new Order(UUID.randomUUID(), account, aapl, Order.Side.BUY, 10L, Order.Status.ACCEPTED,
                 acceptedAt, acceptedAt, null, null, null);
-        execution = new Execution(order, 10L, new BigDecimal("150.0000"), Execution.Status.FILLED,
+        execution = new Execution(UUID.randomUUID(), order, 10L, new BigDecimal("150.0000"), Execution.Status.FILLED,
                 "Executed at market price", acceptedAt);
 
         when(jwtService.generateSettlementToken(any())).thenReturn("token");
@@ -153,6 +156,7 @@ class PendingFillRecoveryTest {
         verify(positionMovementRepository, never()).save(any());
     }
 
+
     // Order Reporting: whoever makes the order final publishes it, once.
 
     @Test
@@ -211,5 +215,73 @@ class PendingFillRecoveryTest {
         recovery.recoverPendingFills();
 
         verifyNoInteractions(orderEventPublisher);
+}
+    // A failed final write leaves its order pending without preventing the next order's recovery.
+    @Test
+    void continuesAfterWriteFailure() {
+        Order next = new Order(UUID.randomUUID(), account, order.getInstrument(), Order.Side.BUY, 10L,
+                Order.Status.ACCEPTED, order.getSubmittedAt(), order.getSubmittedAt(), null, null, null);
+        Execution nextExecution = new Execution(next, 10L, new BigDecimal("150.00"), Execution.Status.FILLED,
+                "Executed", execution.getExecutedAt());
+        when(orderRepository.findAcceptedWithFilledExecution(any())).thenReturn(List.of(order, next));
+        when(executionRepository.findFirstByOrder_OrderIdAndStatus(next.getOrderId(), Execution.Status.FILLED))
+                .thenReturn(Optional.of(nextExecution));
+        when(orderRepository.findByIdForUpdate(order.getOrderId()))
+                .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("database unavailable"));
+        when(orderRepository.findByIdForUpdate(next.getOrderId())).thenReturn(Optional.of(next));
+
+        assertEquals(1, recovery.recoverPendingFills());
+
+        assertEquals(Order.Status.ACCEPTED, order.getStatus());
+        assertEquals(Order.Status.FILLED, next.getStatus());
+        verify(positionMovementRepository, times(1)).save(any());
+        verify(executionRepository, never()).saveAndFlush(any());
+    }
+
+    // Retry after a lost response uses the same execution and books only one position movement.
+    @Test
+    void retriesLostResponse() {
+        when(accountClient.settleOrderAs(any(), any(), any()))
+                .thenThrow(new ResourceAccessException("Response lost after settlement"))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), BigDecimal.ZERO, 10L, BigDecimal.ONE));
+
+        assertEquals(1, recovery.recoverPendingFills());
+        assertEquals(Order.Status.ACCEPTED, order.getStatus());
+        assertEquals(0, recovery.recoverPendingFills());
+        assertEquals(0, recovery.recoverPendingFills());
+
+        assertEquals(Order.Status.FILLED, order.getStatus());
+        var requests = ArgumentCaptor.forClass(SettlementRequest.class);
+        verify(accountClient, times(3)).settleOrderAs(eq(order.getAccountId()), requests.capture(), eq("token"));
+        for (SettlementRequest request : requests.getAllValues()) {
+            assertEquals(execution.getExecutionId(), request.executionId());
+            assertEquals(order.getOrderId(), request.orderId());
+        }
+        verify(positionMovementRepository, times(1)).save(any());
+        verify(executionRepository, never()).saveAndFlush(any());
+    }
+
+    // Authentication, routing and throttling failures must not reject a potentially settled order.
+    @ParameterizedTest
+    @ValueSource(ints = {401, 403, 404, 408, 409, 429})
+    void keepsAmbiguousFill(int status) {
+        when(accountClient.settleOrderAs(any(), any(), any())).thenThrow(
+                HttpClientErrorException.create(HttpStatus.valueOf(status), "Temporary failure", null, null, null));
+
+        assertEquals(1, recovery.recoverPendingFills());
+        assertEquals(Order.Status.ACCEPTED, order.getStatus());
+        verify(positionMovementRepository, never()).save(any());
+    }
+
+    // Missing execution data is unresolved rather than falsely counted as successful recovery.
+    @Test
+    void reportsMissingExecution() {
+        when(executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED))
+                .thenReturn(Optional.empty());
+
+        assertEquals(1, recovery.recoverPendingFills());
+        assertEquals(Order.Status.ACCEPTED, order.getStatus());
+        verify(accountClient, never()).settleOrderAs(any(), any(), any());
+        verify(positionMovementRepository, never()).save(any());
     }
 }
