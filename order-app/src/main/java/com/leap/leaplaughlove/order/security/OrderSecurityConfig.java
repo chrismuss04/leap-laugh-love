@@ -41,7 +41,8 @@ public class OrderSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated())
+                        // Client-only: staff tokens are refused here (403).
+                        .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))

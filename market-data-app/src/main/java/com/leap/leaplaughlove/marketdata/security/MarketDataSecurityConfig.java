@@ -10,6 +10,7 @@ import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -49,7 +50,10 @@ public class MarketDataSecurityConfig {
                         // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
                         // the original REQUEST dispatch was already authenticated
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
-                        .anyRequest().authenticated())
+                        // order-app's seeded fills read history with a market-history service token.
+                        .requestMatchers(HttpMethod.GET, "/api/marketdata/prices/*/history").hasAnyRole("CLIENT", "SERVICE")
+                        // Client-only: staff tokens are refused here (403).
+                        .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))

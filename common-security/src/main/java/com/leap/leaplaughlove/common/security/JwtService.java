@@ -20,6 +20,8 @@ import java.util.UUID;
 @Service
 public class JwtService {
 
+    static final String ROLE_CLAIM = "role";
+
     private final SecretKey signingKey;
     private final long expirationMinutes;
 
@@ -60,12 +62,28 @@ public class JwtService {
     // Session Timeout & Revocation: use the same timestamps as the persisted login session.
     public String generateToken(UUID clientId, String email, UUID sessionId,
                                 Instant issuedAt, Instant expiresAt) {
-        if (sessionId == null || !expiresAt.isAfter(issuedAt)) {
-            throw new IllegalArgumentException("A session ID and valid expiration are required");
+        return generateToken(clientId, email, Role.CLIENT, sessionId, issuedAt, expiresAt);
+    }
+
+    /**
+     * Generates a session token for a client or a staff member.
+     * @param subjectId the client ID, or the staff member's service_id
+     * @param email the signed-in email
+     * @param role the role the token grants; its session must be in the matching session table
+     * @param sessionId the persisted login session
+     * @param issuedAt when the session started
+     * @param expiresAt when the session ends
+     * @return serialized JWT token as a String
+     */
+    public String generateToken(UUID subjectId, String email, Role role, UUID sessionId,
+                                Instant issuedAt, Instant expiresAt) {
+        if (role == null || sessionId == null || !expiresAt.isAfter(issuedAt)) {
+            throw new IllegalArgumentException("A role, a session ID and valid expiration are required");
         }
         return Jwts.builder()
-                .subject(clientId.toString())
+                .subject(subjectId.toString())
                 .claim("email", email)
+                .claim(ROLE_CLAIM, role.name())
                 .claim("sid", sessionId.toString())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
@@ -92,7 +110,13 @@ public class JwtService {
     }
 
     // Session Timeout & Revocation: parse verified claims once, preserving the session identity.
-    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {}
+    // clientId is the token's subject: a client ID, or a staff member's service_id when role is a staff role.
+    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose, Role role) {
+        /** A client's identity: tokens issued before roles existed, and every client token. */
+        public TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {
+            this(clientId, sessionId, expiresAt, purpose, Role.CLIENT);
+        }
+    }
 
     public TokenIdentity parseIdentity(String token) {
         Claims claims = Jwts.parser().verifyWith(signingKey).build()
@@ -101,9 +125,13 @@ public class JwtService {
             throw new IllegalArgumentException("Token expiration is required");
         }
         String sessionId = claims.get("sid", String.class);
+        // Tokens issued before roles existed have no role claim; they were all client logins.
+        // An unknown role throws IllegalArgumentException, so the request is not authenticated.
+        String role = claims.get(ROLE_CLAIM, String.class);
         return new TokenIdentity(UUID.fromString(claims.getSubject()),
                 sessionId == null ? null : UUID.fromString(sessionId),
-                claims.getExpiration().toInstant(), claims.get("purpose", String.class));
+                claims.getExpiration().toInstant(), claims.get("purpose", String.class),
+                role == null ? Role.CLIENT : Role.valueOf(role));
     }
 
     /**

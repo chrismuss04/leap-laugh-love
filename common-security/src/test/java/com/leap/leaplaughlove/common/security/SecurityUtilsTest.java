@@ -43,6 +43,31 @@ class SecurityUtilsTest {
         assertEquals(clientId, result);
     }
 
+    // Staff roles: a staff token's subject is a service_id, never a client ID.
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(value = Role.class, names = {"TRADING_OPERATIONS", "COMMERCIAL_ANALYST"})
+    @DisplayName("Throws 403 for staff, even with a UUID principal")
+    void testGetAuthenticatedClientId_StaffForbidden(Role role) {
+        var auth = new UsernamePasswordAuthenticationToken(UUID.randomUUID(), null,
+                java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(role.authority())));
+        SecurityContextHolder.getContext().setAuthentication(auth);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                SecurityUtils::getAuthenticatedClientId);
+        assertEquals(HttpStatus.FORBIDDEN, ex.getStatusCode());
+    }
+
+    @Test
+    @DisplayName("Returns the client ID for client and service tokens")
+    void testGetAuthenticatedClientId_ClientAndService() {
+        UUID clientId = UUID.randomUUID();
+        for (String authority : new String[]{"ROLE_CLIENT", JwtAuthenticationFilter.SERVICE_AUTHORITY}) {
+            SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(clientId, null,
+                    java.util.List.of(new org.springframework.security.core.authority.SimpleGrantedAuthority(authority))));
+            assertEquals(clientId, SecurityUtils.getAuthenticatedClientId());
+        }
+    }
+
     @Test
     @DisplayName("Throws 401 when authentication is null")
     void testGetAuthenticatedClientId_NullAuthentication() {
