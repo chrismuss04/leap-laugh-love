@@ -1,6 +1,8 @@
 package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
+import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
+import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -72,6 +74,7 @@ class ClientRegistrationControllerUnitTest {
         verify(clients, never()).save(any());
     }
 
+    // Verify registration preserves provisioning and reports the saved client's ID and timestamp.
     @Test
     @DisplayName("registers an active client with hashed credentials and announces it")
     void registersClient() {
@@ -85,6 +88,10 @@ class ClientRegistrationControllerUnitTest {
         verify(clients).save(any(Client.class));
         verify(credentials).save(any(ClientCredentials.class));
         verify(events).publishEvent(any(ClientRegisteredEvent.class));
+        var saved = ArgumentCaptor.forClass(Client.class);
+        verify(clients).save(saved.capture());
+        verify(events).publishEvent(new ClientRegistrationEvent(saved.getValue().getClientId(),
+                saved.getValue().getCreatedAt()));
     }
 
     @Test

@@ -9,6 +9,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
@@ -20,6 +22,8 @@ services:
       SPRING_MAIL_PORT: 1025
       # Where the emailed reset link points; has to be the address the browser reaches the frontend on.
       PASSWORD_RESET_LINK_BASE_URL: "${PASSWORD_RESET_LINK_BASE_URL:-http://localhost:${FRONTEND_PORT:-4200}/reset-password}"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_REGISTRATION_EVENTS_ENABLED: "${CLIENT_REGISTRATION_EVENTS_ENABLED:-true}"
 
   account-app:
     image: "account-app:${IMAGE_TAG:-latest}"
@@ -178,8 +182,11 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        set -e
         /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
           --create --if-not-exists --topic order-events --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic client-register --partitions 3 --replication-factor 1
 
   # Local mail catcher: services send email here over SMTP and it keeps every message instead
   # of delivering it, so no real inbox is ever reached. SMTP is reachable only on the compose
@@ -215,6 +222,24 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       ORDER_EVENTS_TOPIC: order-events
       CONSUMER_GROUP: reporting-etl
+      REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
+
+  # Same ETL image, independent topic and consumer group for registrations.
+  user-etl:
+    image: "reporting-etl:${IMAGE_TAG:-latest}"
+    build:
+      context: ./reporting-etl
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ETL_MODE: clients
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_EVENTS_TOPIC: client-register
+      CONSUMER_GROUP: user-etl
       REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
 
   db:

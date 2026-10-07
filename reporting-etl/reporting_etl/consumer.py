@@ -1,5 +1,5 @@
 """
-The poll loop: read an order event, load it, then commit its offset.
+The shared poll loop: read an event, load it, then commit its offset.
 
 Offsets are committed by hand and only after the row is in the database, so a crash at any
 point re-reads the message instead of losing it; the load ignores an order it already has.
@@ -8,23 +8,28 @@ point re-reads the message instead of losing it; the load ignores an order it al
 import logging
 import threading
 import time
-from typing import Callable, Protocol
+from typing import Callable, Protocol, TYPE_CHECKING
 
 from .load import DatabaseUnavailable, RowRejected
 from .transform import InvalidEvent, OrderRow, to_order_row
+
+if TYPE_CHECKING:
+    from .clients import ClientRow
 
 log = logging.getLogger(__name__)
 
 
 class Loader(Protocol):
-    def load(self, row: OrderRow) -> bool: ...
+    def load(self, row: "OrderRow | ClientRow") -> bool: ...
 
 
-class OrderEventsConsumer:
+class EventsConsumer:
     """
     Runs the ETL over a subscribed confluent_kafka Consumer (or anything with its poll/commit
     shape, which is how the tests drive it).
     """
+
+    transform = staticmethod(to_order_row)
 
     def __init__(self, consumer, loader: Loader, *, poll_timeout_seconds: float = 1.0,
                  max_retry_backoff_seconds: float = 30.0,
@@ -55,9 +60,9 @@ class OrderEventsConsumer:
         """
         where = f"{message.topic()}[{message.partition()}]@{message.offset()}"
         try:
-            row = to_order_row(message.value())
+            row = self.transform(message.value())
         except InvalidEvent as ex:
-            log.warning("Skipping invalid order event at %s: %s", where, ex)
+            log.warning("Skipping invalid event at %s: %s", where, ex)
             self._commit(message)
             return
 
@@ -67,23 +72,22 @@ class OrderEventsConsumer:
                 inserted = self._loader.load(row)
                 break
             except RowRejected as ex:
-                log.error("Database refused order %s from %s; skipping: %s", row.order_id, where, ex)
+                log.error("Database refused event from %s; skipping: %s", where, ex)
                 self._commit(message)
                 return
             except DatabaseUnavailable as ex:
                 if stop.is_set():
                     # Left uncommitted: whoever reads this partition next loads it.
                     return
-                log.warning("Database unavailable loading order %s; retrying in %.0fs: %s",
-                            row.order_id, backoff, ex)
+                log.warning("Database unavailable loading %s; retrying in %.0fs: %s",
+                            where, backoff, ex)
                 self._sleep(backoff)
                 backoff = min(backoff * 2, self._max_backoff)
 
         if inserted:
-            log.info("Loaded %s order %s (%s %s x%d)", row.status, row.order_id, row.side,
-                     row.symbol, row.quantity)
+            log.info("Loaded event from %s", where)
         else:
-            log.info("Order %s was already loaded; skipped duplicate at %s", row.order_id, where)
+            log.info("Skipped duplicate at %s", where)
         self._commit(message)
 
     def _commit(self, message) -> None:
@@ -92,3 +96,7 @@ class OrderEventsConsumer:
         except Exception as ex:  # confluent_kafka.KafkaException, e.g. after a rebalance
             # The row is loaded; if this offset is read again, the load skips it as a duplicate.
             log.warning("Could not commit offset %s: %s", message.offset(), ex)
+
+
+class OrderEventsConsumer(EventsConsumer):
+    """Existing order consumer using the shared poll, retry and commit loop."""

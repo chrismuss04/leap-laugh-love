@@ -834,13 +834,33 @@ The dev server proxies API calls to backend services per `frontend/proxy.conf.js
 
 **Kafka** (`kafka`, single-node KRaft) is reachable only on the compose network, at
 `kafka:9092`; no host port is published. The one-shot `kafka-init` service creates the
-`order-events` topic (3 partitions) on startup - add further topics to its command in
+`order-events` and `client-register` topics (3 partitions each) on startup - add further topics to its command in
 `docker-compose.yml`. To inspect it from the host:
 
 ```bash
 docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
 ```
+
+IAM waits for topic initialization and publishes committed registrations to `client-register`,
+keyed by client ID. Each JSON value contains `clientId` and `registered_at` (an ISO-8601 timestamp
+from the saved client's creation time). Compose enables this publisher by default; set
+`CLIENT_REGISTRATION_EVENTS_ENABLED=false` to disable it. Native IAM runs default to disabled.
+Publishing follows the order publisher's best-effort behavior: delivery failures are logged
+and can lose an event, without failing an already-committed registration.
+
+For an existing stack, provision the new topic and rebuild IAM without deleting database volumes:
+
+```bash
+docker compose up -d kafka
+docker compose run --rm kafka-init
+docker compose up -d --build iam-app
+docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic client-register --from-beginning
+```
+
+Register a new client through the application to see an event. Existing clients are not
+automatically backfilled. This step supplies the topic and producer; the user ETL consumer
+and registration reporting storage are added in subsequent steps.
 
 **Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
 and any address works, seeded ones included. iam-app and account-app send to it over SMTP at
@@ -870,6 +890,58 @@ ACCOUNT_INACTIVITY_CRON=0 */2 * * * *
 Each account is emailed once per inactive period, so a frequent schedule does not send repeats.
 
 #### Reporting ETL
+
+Registration reporting storage is `reporting.clients`: `client_id` is the primary key,
+`registered_at` is the original registration timestamp, and `loaded_at` records when the ETL
+inserts the row. The primary key supports duplicate-safe loading; the consumer must explicitly
+handle repeated events. An index on `registered_at` supports registration counts by date.
+There is no foreign key into IAM, so reporting data and replay do not depend on live IAM rows.
+
+Fresh databases create this table through the main schema. For an existing database, apply
+the additive migration from the repository root in Linux (do not delete the database volume):
+
+```bash
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/migrate-reporting-clients.sql
+```
+
+The migration can be rerun and preserves existing records. It creates storage only and does
+not backfill clients.
+
+The `user-etl` Compose service uses the same image as `reporting-etl`, with `ETL_MODE=clients`,
+topic `client-register` and an independent `user-etl` consumer group. It validates `clientId`
+and an offset-aware `registered_at`, then inserts into `reporting.clients`. Duplicate client
+IDs leave the original timestamps unchanged. Database outages are retried before committing
+the Kafka offset. Like the order consumer, invalid events and permanently rejected rows are
+logged and skipped; they are not saved to a dead-letter topic.
+
+After applying the migration on an existing database:
+
+```bash
+docker compose up -d --build user-etl
+docker compose logs -f user-etl
+docker compose exec db psql -U paysprint -d paysprint -c "SELECT client_id, registered_at, loaded_at FROM reporting.clients ORDER BY registered_at DESC LIMIT 20;"
+```
+
+A new consumer group reads retained events from the beginning. This does not recover events
+that were never published or have expired from Kafka. Active/inactive classification and
+inactivity emails are outside this registration pipeline.
+
+Run the registration pipeline check on a **development/test Docker stack** from the repository root:
+
+```bash
+# Existing databases only: add reporting storage without deleting any volumes.
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/migrate-reporting-clients.sql
+bash scripts/test-client-events.sh
+```
+
+The script builds and starts IAM, account-app, Kafka and user-etl. It registers a unique test
+client through HTTP, checks the Kafka key and two-field payload, compares the registration
+timestamp to IAM and the actual reporting row, and checks duplicate registration rejection.
+It then republishes the event, waits for the running user-etl group's offset to advance past
+that replay, and verifies the reporting row and both timestamps remain unchanged. An independent
+observer reads Kafka without taking partitions from user-etl. Failed checks exit nonzero and
+print service logs. No volumes are deleted; the generated client and funded account remain
+for inspection. This check is not yet wired into Jenkins.
 
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
 completed order into `reporting.orders`, the read model the analyst dashboard queries. It runs
