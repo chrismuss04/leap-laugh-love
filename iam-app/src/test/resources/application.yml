@@ -11,6 +11,16 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # Gives the context a mail sender. Tests that check the email mock it; elsewhere a failed send
+  # is logged and ignored.
+  mail:
+    host: localhost
+    port: 1025
+
+management:
+  health:
+    mail:
+      enabled: false
 
 app:
   jwt:

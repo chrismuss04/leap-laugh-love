@@ -10,6 +10,25 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # SMTP server for client emails: Mailpit locally (see docker-compose.yml), a real provider in a
+  # deployment. Username and password are empty for Mailpit, which needs no login.
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    # JavaMail waits forever by default; an unreachable server must not hang a forgot-password request.
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+# Email is best-effort: a mail server being down must not report iam-app as unhealthy,
+# which would fail CI's health wait (CI does not start Mailpit) and any probe built on it.
+management:
+  health:
+    mail:
+      enabled: false
 
 account:
   client:
@@ -25,3 +44,5 @@ app:
     # The frontend page the emailed link opens; the token is appended as ?token=...
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:4200/reset-password}
     token-ttl-minutes: 30
+    email:
+      from: ${PASSWORD_RESET_EMAIL_FROM:no-reply@example.com}
