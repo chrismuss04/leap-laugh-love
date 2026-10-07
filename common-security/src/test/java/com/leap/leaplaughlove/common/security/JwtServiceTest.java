@@ -26,6 +26,57 @@ class JwtServiceTest {
         assertNull(internal.sessionId());
     }
 
+    // Staff roles: the role claim survives signing, and tokens without one stay client tokens.
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.EnumSource(Role.class)
+    void roleClaimRoundTrips(Role role) {
+        UUID subject = UUID.randomUUID();
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        var identity = jwtService.parseIdentity(jwtService.generateToken(
+                subject, "user@example.com", role, UUID.randomUUID(), now, now.plusSeconds(3600)));
+        assertEquals(role, identity.role());
+        assertEquals(subject, identity.clientId());
+    }
+
+    @Test
+    void existingClientTokenCallsAreClientRole() {
+        var now = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+        String token = jwtService.generateToken(UUID.randomUUID(), "client@example.com",
+                UUID.randomUUID(), now, now.plusSeconds(3600));
+        assertEquals(Role.CLIENT, jwtService.parseIdentity(token).role());
+    }
+
+    @Test
+    void tokensWithoutARoleClaimAreClients() {
+        // Signed before roles existed: same key, no role claim.
+        String legacy = io.jsonwebtoken.Jwts.builder().subject(UUID.randomUUID().toString())
+                .claim("sid", UUID.randomUUID().toString())
+                .expiration(java.util.Date.from(java.time.Instant.now().plusSeconds(600)))
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                        SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .compact();
+        assertEquals(Role.CLIENT, jwtService.parseIdentity(legacy).role());
+    }
+
+    @Test
+    void unknownRoleIsRejected() {
+        String forged = io.jsonwebtoken.Jwts.builder().subject(UUID.randomUUID().toString())
+                .claim("sid", UUID.randomUUID().toString())
+                .claim("role", "ADMIN")
+                .expiration(java.util.Date.from(java.time.Instant.now().plusSeconds(600)))
+                .signWith(io.jsonwebtoken.security.Keys.hmacShaKeyFor(
+                        SECRET.getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .compact();
+        assertThrows(IllegalArgumentException.class, () -> jwtService.parseIdentity(forged));
+    }
+
+    @Test
+    void sessionTokenRequiresARole() {
+        var now = java.time.Instant.now();
+        assertThrows(IllegalArgumentException.class, () -> jwtService.generateToken(
+                UUID.randomUUID(), "user@example.com", null, UUID.randomUUID(), now, now.plusSeconds(60)));
+    }
+
     private static final String SECRET = "thisisasecretkeyforjwtsigningandvalidation123456";
     private JwtService jwtService;
 

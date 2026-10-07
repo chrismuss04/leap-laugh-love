@@ -114,7 +114,7 @@ class SecurityEdgeCasesTest {
         JwtService.TokenIdentity identity = new JwtService.TokenIdentity(
                 UUID.randomUUID(), UUID.randomUUID(), Instant.now().plusSeconds(600), null);
         when(service.parseIdentity("token")).thenReturn(identity);
-        when(sessions.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt()))
+        when(sessions.isActive(identity.role(), identity.sessionId(), identity.clientId(), identity.expiresAt()))
                 .thenThrow(new QueryTimeoutException("database is down"));
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer token");

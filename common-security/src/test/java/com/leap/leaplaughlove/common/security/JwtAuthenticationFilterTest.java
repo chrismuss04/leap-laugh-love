@@ -8,6 +8,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -58,7 +60,7 @@ class JwtAuthenticationFilterTest {
 
         var identity = new JwtService.TokenIdentity(clientId, UUID.randomUUID(), java.time.Instant.now().plusSeconds(3600), null);
         when(jwtService.parseIdentity(token)).thenReturn(identity);
-        when(sessions.isActive(identity.sessionId(), clientId, identity.expiresAt())).thenReturn(true);
+        when(sessions.isActive(identity.role(), identity.sessionId(), clientId, identity.expiresAt())).thenReturn(true);
 
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer " + token);
@@ -90,7 +92,7 @@ class JwtAuthenticationFilterTest {
         var identity = new JwtService.TokenIdentity(UUID.randomUUID(), UUID.randomUUID(),
                 java.time.Instant.now().plusSeconds(3600), null);
         when(jwtService.parseIdentity("token")).thenReturn(identity);
-        when(sessions.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt()))
+        when(sessions.isActive(identity.role(), identity.sessionId(), identity.clientId(), identity.expiresAt()))
                 .thenThrow(new org.springframework.dao.DataAccessResourceFailureException("offline"));
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("Authorization", "Bearer token");
@@ -137,6 +139,61 @@ class JwtAuthenticationFilterTest {
         new JwtAuthenticationFilter(jwtService, sessions, "account-settlement")
                 .doFilterInternal(request, new MockHttpServletResponse(), filterChain);
         assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    // Staff roles: the token's role becomes its authority, after its own session table is checked.
+    @ParameterizedTest
+    @EnumSource(Role.class)
+    @DisplayName("each role's token is granted that role's authority, and only that one")
+    void grantsTheTokensRole(Role role) throws Exception {
+        UUID subject = UUID.randomUUID();
+        var identity = new JwtService.TokenIdentity(subject, UUID.randomUUID(),
+                java.time.Instant.now().plusSeconds(3600), null, role);
+        when(jwtService.parseIdentity("token")).thenReturn(identity);
+        when(sessions.isActive(role, identity.sessionId(), subject, identity.expiresAt())).thenReturn(true);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer token");
+
+        filter.doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        assertNotNull(auth);
+        assertEquals(java.util.List.of("ROLE_" + role.name()),
+                auth.getAuthorities().stream().map(a -> a.getAuthority()).toList());
+    }
+
+    @Test
+    @DisplayName("a staff token whose staff session is inactive does not authenticate")
+    void inactiveStaffSessionDoesNotAuthenticate() throws Exception {
+        var identity = new JwtService.TokenIdentity(UUID.randomUUID(), UUID.randomUUID(),
+                java.time.Instant.now().plusSeconds(3600), null, Role.TRADING_OPERATIONS);
+        when(jwtService.parseIdentity("token")).thenReturn(identity);
+        when(sessions.isActive(Role.TRADING_OPERATIONS, identity.sessionId(), identity.clientId(),
+                identity.expiresAt())).thenReturn(false);
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Bearer token");
+
+        filter.doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+    }
+
+    @Test
+    @DisplayName("purpose-scoped service tokens are granted ROLE_SERVICE, not ROLE_CLIENT")
+    void serviceTokensGetServiceAuthority() throws Exception {
+        var identity = new JwtService.TokenIdentity(UUID.randomUUID(), null,
+                java.time.Instant.now().plusSeconds(60), "account-settlement");
+        when(jwtService.parseIdentity("token")).thenReturn(identity);
+        var request = new MockHttpServletRequest("GET",
+                "/api/account/internal/accounts/" + UUID.randomUUID() + "/validation-data");
+        request.addHeader("Authorization", "Bearer token");
+
+        new JwtAuthenticationFilter(jwtService, sessions, "account-settlement")
+                .doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+
+        assertEquals(java.util.List.of(JwtAuthenticationFilter.SERVICE_AUTHORITY),
+                SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+                        .map(a -> a.getAuthority()).toList());
     }
 
     @Test
