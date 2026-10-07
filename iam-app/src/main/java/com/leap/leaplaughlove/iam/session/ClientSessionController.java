@@ -15,9 +15,12 @@ import java.time.Instant;
 @RequestMapping("/api/iam/session")
 public class ClientSessionController {
     private final ClientSessionRepository sessions;
+    // Staff roles: staff sessions live in their own table; the token's role picks which.
+    private final StaffSessionRepository staffSessions;
 
-    public ClientSessionController(ClientSessionRepository sessions) {
+    public ClientSessionController(ClientSessionRepository sessions, StaffSessionRepository staffSessions) {
         this.sessions = sessions;
+        this.staffSessions = staffSessions;
     }
 
     // Take identity from the verified token, never a client-supplied session ID or activity timestamp.
@@ -35,7 +38,10 @@ public class ClientSessionController {
     public ResponseEntity<Void> activity(Authentication authentication) {
         Instant now = Instant.now();
         var identity = identity(authentication, now);
-        if (!sessions.recordActivity(identity.sessionId(), identity.clientId(), now)) {
+        boolean active = identity.role().isStaff()
+                ? staffSessions.recordActivity(identity.sessionId(), identity.clientId(), now)
+                : sessions.recordActivity(identity.sessionId(), identity.clientId(), now);
+        if (!active) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session is no longer active");
         }
         return ResponseEntity.noContent().build();
@@ -45,7 +51,11 @@ public class ClientSessionController {
     public ResponseEntity<Void> logout(Authentication authentication) {
         Instant now = Instant.now();
         var identity = identity(authentication, now);
-        sessions.revoke(identity.sessionId(), identity.clientId(), now);
+        if (identity.role().isStaff()) {
+            staffSessions.revoke(identity.sessionId(), identity.clientId(), now);
+        } else {
+            sessions.revoke(identity.sessionId(), identity.clientId(), now);
+        }
         return ResponseEntity.noContent().build();
     }
 }
