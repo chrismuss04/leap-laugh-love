@@ -845,8 +845,24 @@ docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-s
 **Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
 and any address works, seeded ones included. account-app sends to it over SMTP at
 `mailpit:1025` on the compose network; open `http://localhost:8025` (`MAILPIT_UI_PORT`) to read
-what was sent. A deployment points `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (and
-`SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD`) at a real SMTP provider instead.
+what was sent. Caught emails are kept in the `mailpit_data` volume, so they survive
+`docker compose down`; `down -v` clears them. A deployment points
+`SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (and `SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD`) at a
+real SMTP provider instead.
+
+The inactive account email goes out only when account-app's inactive account check runs,
+nightly at 02:00 UTC, never on startup. Henry Taylor's second account is seeded already flagged
+and not yet emailed, so after a fresh database (`down -v`) his email arrives at the next run.
+To see it without waiting, set a frequent schedule in `.env` and recreate account-app
+(`docker compose up -d account-app`):
+
+```bash
+# Every 2 minutes (Spring cron, seconds first)
+ACCOUNT_INACTIVITY_CRON=0 */2 * * * *
+```
+
+Each account is emailed once per inactive period, so a frequent schedule does not send repeats.
+
 #### Reporting ETL
 
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
