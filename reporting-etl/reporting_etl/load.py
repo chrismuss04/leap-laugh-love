@@ -1,5 +1,5 @@
 """
-Writes order rows to reporting.orders.
+Writes reporting rows using shared connection and error handling.
 
 The insert ignores an order that is already there. Kafka delivers at least once - a message is
 re-read if the ETL stops after loading it but before committing its offset - and each order
@@ -8,11 +8,14 @@ publishes once, at its final status, so a repeat is always the same row.
 
 import logging
 from dataclasses import asdict
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 
 import psycopg
 
 from .transform import OrderRow
+
+if TYPE_CHECKING:
+    from .clients import ClientRow
 
 log = logging.getLogger(__name__)
 
@@ -36,29 +39,31 @@ class DatabaseUnavailable(Exception):
     """The database couldn't be reached or failed for a reason that may pass; retry later."""
 
 
-class OrderLoader:
+class RowLoader:
     """Loads rows over one connection, opened on first use and reopened after a failure."""
+
+    statement: str
 
     def __init__(self, connect: Callable[[], psycopg.Connection]):
         self._connect = connect
         self._conn: Optional[psycopg.Connection] = None
 
     @classmethod
-    def for_url(cls, db_url: str) -> "OrderLoader":
+    def for_url(cls, db_url: str) -> "RowLoader":
         # Autocommit: each load is one INSERT, so it is its own transaction.
         return cls(lambda: psycopg.connect(db_url, autocommit=True, connect_timeout=5))
 
-    def load(self, row: OrderRow) -> bool:
+    def load(self, row: "OrderRow | ClientRow") -> bool:
         """
         Inserts the row.
-        :return: True if it was inserted, False if the order was already loaded
+        :return: True if it was inserted, False if the row was already loaded
         :raises RowRejected: if the database refuses the row itself
         :raises DatabaseUnavailable: for any other database failure
         """
         try:
             if self._conn is None or self._conn.closed:
                 self._conn = self._connect()
-            cursor = self._conn.execute(INSERT_ORDER, asdict(row))
+            cursor = self._conn.execute(self.statement, asdict(row))
             return cursor.rowcount == 1
         except (psycopg.errors.DataError, psycopg.errors.IntegrityError) as ex:
             raise RowRejected(str(ex)) from ex
@@ -75,3 +80,8 @@ class OrderLoader:
             except psycopg.Error:
                 log.debug("Ignoring error closing the database connection", exc_info=True)
             self._conn = None
+
+
+class OrderLoader(RowLoader):
+    """Load completed orders using the shared connection recovery behavior."""
+    statement = INSERT_ORDER
