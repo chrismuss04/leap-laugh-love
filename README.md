@@ -863,12 +863,18 @@ automatically backfilled. This step supplies the topic and producer; the user ET
 and registration reporting storage are added in subsequent steps.
 
 **Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
-and any address works, seeded ones included. account-app sends to it over SMTP at
+and any address works, seeded ones included. iam-app and account-app send to it over SMTP at
 `mailpit:1025` on the compose network; open `http://localhost:8025` (`MAILPIT_UI_PORT`) to read
 what was sent. Caught emails are kept in the `mailpit_data` volume, so they survive
 `docker compose down`; `down -v` clears them. A deployment points
 `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (and `SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD`) at a
 real SMTP provider instead.
+
+The password reset email is sent by iam-app as soon as a registered client submits the
+"Forgot password" page: open it in Mailpit and follow the link to choose a new password. The
+link opens `http://localhost:4200/reset-password` by default; set `PASSWORD_RESET_LINK_BASE_URL`
+in `.env` if the browser reaches the frontend on another address. It works once and expires
+after 30 minutes.
 
 The inactive account email goes out only when account-app's inactive account check runs,
 nightly at 02:00 UTC, never on startup. Henry Taylor's second account is seeded already flagged
