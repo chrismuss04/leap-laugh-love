@@ -35,6 +35,10 @@ services:
       # Inactive account emails go to the local mail catcher below, never to a real inbox.
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: 1025
+      # Spring cron (seconds first) for the inactive account check that sends those emails.
+      # Nightly at 02:00 UTC by default; set e.g. "0 */2 * * * *" in .env to see an email
+      # within minutes of a fresh "up" instead of waiting for the night.
+      ACCOUNT_INACTIVITY_CRON: "${ACCOUNT_INACTIVITY_CRON:-0 0 2 * * *}"
 
   order-app:
     image: "order-app:${IMAGE_TAG:-latest}"
@@ -177,10 +181,17 @@ services:
   # network, at mailpit:1025; the web UI that lists the caught emails is published on 8025.
   # No depends_on from the senders: a send is attempted only when an email goes out, and a
   # failed one is logged rather than failing the service.
+  #
+  # Caught emails are kept in a volume, so they survive "docker compose down"; only
+  # "down -v" empties the inbox (and that reseeds the database, so seeded emails go out again).
   mailpit:
     image: axllent/mailpit:v1.31
     ports:
       - "${MAILPIT_UI_PORT:-8025}:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit_data:/data
   # Order Reporting ETL: consumes order-events and loads each completed order into
   # reporting.orders (see reporting-etl/ and "Reporting ETL" in the README). No port: it only
   # reads Kafka and writes Postgres. Restarts on a crash; an offset is committed only after its
@@ -234,3 +245,4 @@ volumes:
     external: ${DB_VOLUME_EXTERNAL:-false}
   kafka_data:
   frontend_node_modules:
+  mailpit_data:
