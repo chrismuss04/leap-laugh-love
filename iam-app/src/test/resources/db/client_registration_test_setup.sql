@@ -3,6 +3,9 @@ CREATE SCHEMA IF NOT EXISTS iam;
 
 -- Session Timeout & Revocation: reset sessions before their parent clients.
 DROP TABLE IF EXISTS iam.client_sessions CASCADE;
+-- Staff roles: reset staff sessions before their parent staff credentials.
+DROP TABLE IF EXISTS iam.staff_sessions CASCADE;
+DROP TABLE IF EXISTS iam.reporting_service_credentials CASCADE;
 -- Password Recovery: reset tokens before their parent clients.
 DROP TABLE IF EXISTS iam.password_reset_tokens CASCADE;
 
@@ -57,6 +60,27 @@ CREATE TABLE iam.client_credentials (
 CREATE TABLE iam.client_sessions (
     session_id UUID PRIMARY KEY,
     client_id UUID NOT NULL REFERENCES iam.clients (client_id),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    revoked_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Staff roles: staff credentials and their sessions, kept apart from clients'.
+CREATE TABLE iam.reporting_service_credentials (
+    service_id UUID PRIMARY KEY,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(30) NOT NULL CHECK (role IN ('TRADING_OPERATIONS', 'COMMERCIAL_ANALYST')),
+    status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    failed_attempts INTEGER NOT NULL DEFAULT 0,
+    last_login_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE iam.staff_sessions (
+    session_id UUID PRIMARY KEY,
+    staff_id UUID NOT NULL REFERENCES iam.reporting_service_credentials (service_id),
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     last_activity_at TIMESTAMP WITH TIME ZONE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,

@@ -1,8 +1,11 @@
 package com.leap.leaplaughlove.iam.session;
 
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.common.security.Role;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -27,7 +30,8 @@ import static org.mockito.Mockito.when;
 class ClientSessionControllerUnitTest {
 
     private final ClientSessionRepository sessions = mock(ClientSessionRepository.class);
-    private final ClientSessionController controller = new ClientSessionController(sessions);
+    private final StaffSessionRepository staffSessions = mock(StaffSessionRepository.class);
+    private final ClientSessionController controller = new ClientSessionController(sessions, staffSessions);
     private final UUID clientId = UUID.randomUUID();
     private final UUID sessionId = UUID.randomUUID();
 
@@ -112,5 +116,35 @@ class ClientSessionControllerUnitTest {
 
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
         verify(sessions).revoke(eq(sessionId), eq(clientId), any());
+        verify(staffSessions, never()).revoke(any(), any(), any());
+    }
+
+    // Staff roles: a staff token's session lives in iam.staff_sessions, never iam.client_sessions.
+
+    private JwtService.TokenIdentity staffIdentity(Role role) {
+        return new JwtService.TokenIdentity(clientId, sessionId, Instant.now().plusSeconds(600), null, role);
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"TRADING_OPERATIONS", "COMMERCIAL_ANALYST"})
+    @DisplayName("records a staff token's activity against its staff session")
+    void recordsStaffActivity(Role role) {
+        when(staffSessions.recordActivity(eq(sessionId), eq(clientId), any())).thenReturn(true);
+
+        ResponseEntity<Void> response = controller.activity(authenticated(staffIdentity(role)));
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(sessions, never()).recordActivity(any(), any(), any());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"TRADING_OPERATIONS", "COMMERCIAL_ANALYST"})
+    @DisplayName("revokes a staff token's own staff session on logout")
+    void revokesStaffSession(Role role) {
+        ResponseEntity<Void> response = controller.logout(authenticated(staffIdentity(role)));
+
+        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
+        verify(staffSessions).revoke(eq(sessionId), eq(clientId), any());
+        verify(sessions, never()).revoke(any(), any(), any());
     }
 }

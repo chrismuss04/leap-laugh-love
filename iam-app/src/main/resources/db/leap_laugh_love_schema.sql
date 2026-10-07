@@ -100,6 +100,27 @@ CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Staff roles: one row per staff login, kept apart from client_sessions so a staff token can
+-- only ever match a staff session (see common-security's Role and ClientSessionValidator).
+-- Same lifetime rules as client_sessions; never store the raw JWT.
+CREATE TABLE IF NOT EXISTS iam.staff_sessions (
+    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID NOT NULL
+        REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    CONSTRAINT chk_staff_sessions_activity CHECK (last_activity_at >= created_at),
+    CONSTRAINT chk_staff_sessions_expiry CHECK (expires_at > created_at),
+    CONSTRAINT chk_staff_sessions_revocation CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_sessions_staff_id
+    ON iam.staff_sessions (staff_id);
+CREATE INDEX IF NOT EXISTS idx_staff_sessions_expires_at
+    ON iam.staff_sessions (expires_at);
+
 CREATE TABLE IF NOT EXISTS trading.accounts (
     account_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL
