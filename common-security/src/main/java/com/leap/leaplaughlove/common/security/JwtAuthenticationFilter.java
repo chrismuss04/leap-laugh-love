@@ -24,6 +24,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = "Bearer ";
 
+    /** Granted to purpose-scoped background tokens (settlement recovery, price-history seeding). */
+    public static final String SERVICE_AUTHORITY = "ROLE_SERVICE";
+
     private final JwtService jwtService;
     // Session Timeout & Revocation
     private final ClientSessionValidator sessions;
@@ -63,16 +66,22 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             try {
                 // Session Timeout & Revocation: legacy tokens without a session cannot authenticate.
                 var identity = jwtService.parseIdentity(token);
+                String authority;
                 if (identity.purpose() != null) {
                     if (!isAllowedServiceRequest(identity, request)) {
                         throw new JwtException("Token is not valid for this endpoint");
                     }
-                } else if (!sessions.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt())) {
+                    // A background job acting for the client in its subject, on one internal endpoint.
+                    authority = SERVICE_AUTHORITY;
+                } else if (!sessions.isActive(identity.role(), identity.sessionId(), identity.clientId(),
+                        identity.expiresAt())) {
                     throw new JwtException("Session is expired or revoked");
+                } else {
+                    authority = identity.role().authority();
                 }
                 UUID clientId = identity.clientId();
                 var authentication = new UsernamePasswordAuthenticationToken(
-                        clientId, null, List.of(new SimpleGrantedAuthority("ROLE_CLIENT")));
+                        clientId, null, List.of(new SimpleGrantedAuthority(authority)));
                 authentication.setDetails(identity);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
             } catch (JwtException | IllegalArgumentException e) {
