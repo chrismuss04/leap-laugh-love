@@ -862,6 +862,11 @@ Register a new client through the application to see an event. Existing clients 
 automatically backfilled. This step supplies the topic and producer; the user ETL consumer
 and registration reporting storage are added in subsequent steps.
 
+**Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
+and any address works, seeded ones included. account-app sends to it over SMTP at
+`mailpit:1025` on the compose network; open `http://localhost:8025` (`MAILPIT_UI_PORT`) to read
+what was sent. A deployment points `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (and
+`SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD`) at a real SMTP provider instead.
 #### Reporting ETL
 
 Registration reporting storage is `reporting.clients`: `client_id` is the primary key,

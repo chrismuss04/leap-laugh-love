@@ -45,6 +45,9 @@ public class Account {
     @Column(name = "inactive_since")
     private OffsetDateTime inactiveSince;
 
+    @Column(name = "inactive_notified_at")
+    private OffsetDateTime inactiveNotifiedAt;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -132,5 +135,11 @@ public class Account {
 
     /** Flags the account inactive since the given time, or clears the flag with null. */
     public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }
+
+    /** @return when the client was emailed about the current inactive period; null until then */
+    public OffsetDateTime getInactiveNotifiedAt() { return inactiveNotifiedAt; }
+
+    /** Records when the client was emailed about the inactive account, or clears it with null. */
+    public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }
 }
 

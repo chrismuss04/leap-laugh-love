@@ -20,3 +20,5 @@ app:
 account:
   inactivity:
     enabled: false
+    email:
+      enabled: false
