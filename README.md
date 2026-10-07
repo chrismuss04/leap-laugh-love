@@ -842,6 +842,11 @@ docker compose exec kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server loca
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic order-events --from-beginning
 ```
 
+**Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
+and any address works, seeded ones included. account-app sends to it over SMTP at
+`mailpit:1025` on the compose network; open `http://localhost:8025` (`MAILPIT_UI_PORT`) to read
+what was sent. A deployment points `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (and
+`SPRING_MAIL_USERNAME`/`SPRING_MAIL_PASSWORD`) at a real SMTP provider instead.
 #### Reporting ETL
 
 `reporting-etl/` is a Python 3.12 service that consumes `order-events` and loads each
