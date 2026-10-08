@@ -1,0 +1,29 @@
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--foreground);
+}
+
+.order-id code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  word-break: break-all;
+}
+
+.notice {
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+  background: var(--loss-muted);
+  color: var(--loss);
+  font-size: 14px;
+}

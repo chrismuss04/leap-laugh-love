@@ -1,0 +1,72 @@
+/* Staff Dashboards: page header and grid shared by both staff dashboards and the lifecycle trace.
+   Header typography follows the trading app's inner pages (shared/page-shell.css). */
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 12px;
+}
+
+.headline-page {
+  font-size: 32px;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 8px;
+}
+
+.headline-page em {
+  font-style: normal;
+  color: var(--primary);
+}
+
+.page-subtext {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  margin: 0;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.span-all {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .headline-page {
+    font-size: 26px;
+  }
+}

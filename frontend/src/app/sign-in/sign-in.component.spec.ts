@@ -48,7 +48,7 @@ describe('SignInComponent', () => {
     fill('ada@example.com', 'password1');
     component.onSignIn();
     expect(auth.login).toHaveBeenCalledWith('ada@example.com', 'password1');
-    expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard');
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard', { onSameUrlNavigation: 'reload' });
     expect(component.isLoading()).toBeFalse();
     expect(localStorage.getItem('rememberMe')).toBeNull();
   });
@@ -59,7 +59,7 @@ describe('SignInComponent', () => {
     auth.homeUrl.and.returnValue('/reporting');
     fill('analyst@leap.com', 'password1');
     component.onSignIn();
-    expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting');
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting', { onSameUrlNavigation: 'reload' });
   });
 
   it('remembers the user when asked', () => {
