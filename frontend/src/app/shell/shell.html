@@ -1,4 +1,5 @@
-<div class="shell fade-in">
+<!-- Activity Reporting: never render trading pages for staff; see ShellComponent.staff. -->
+<div class="shell fade-in" *ngIf="!staff">
   <header class="app-header">
     <div class="header-inner">
       <a routerLink="/dashboard" class="brand" aria-label="Leapfolio home">

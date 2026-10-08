@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
 import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -30,8 +31,9 @@ class ClientRegistrationControllerUnitTest {
     private final ClientCredentialsRepository credentials = mock(ClientCredentialsRepository.class);
     private final PasswordEncoder encoder = mock(PasswordEncoder.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+    private final StaffCredentialsRepository staff = mock(StaffCredentialsRepository.class);
     private final ClientRegistrationController controller =
-            new ClientRegistrationController(clients, credentials, encoder, events);
+            new ClientRegistrationController(clients, credentials, encoder, events, staff);
 
     private ClientRegistrationController.RegistrationRequest request() {
         return new ClientRegistrationController.RegistrationRequest(
@@ -47,6 +49,19 @@ class ClientRegistrationControllerUnitTest {
         assertEquals("15551234567", ClientRegistrationController.normalizePhone("+1 (555) 123-4567"));
         assertEquals("", ClientRegistrationController.normalizePhone("n/a"));
         assertNull(ClientRegistrationController.normalizePhone(null));
+    }
+
+    // Analyst login: sign-in checks clients first, so a client can't take a staff member's email.
+    @Test
+    @DisplayName("refuses an email that belongs to a staff member")
+    void refusesStaffEmail() {
+        when(staff.existsByEmail("ada@example.com")).thenReturn(true);
+
+        var ex = assertThrows(ClientRegistrationController.DuplicateClientException.class,
+                () -> controller.register(request()));
+
+        assertEquals("email already registered", ex.getMessage());
+        verify(clients, never()).save(any());
     }
 
     @Test

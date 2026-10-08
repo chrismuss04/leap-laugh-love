@@ -19,8 +19,23 @@ import { AuthService } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 // A signed-in user has no use for password recovery, and no sign-in screen to show it on.
-const signedOutOnly: CanActivateFn = () =>
-  !inject(AuthService).isAuthenticated() || inject(Router).parseUrl('/dashboard');
+const signedOutOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return !auth.isAuthenticated() || inject(Router).parseUrl(auth.homeUrl());
+};
+
+// Activity Reporting: staff have no access to trading, so its pages send them to reporting. The
+// trading APIs refuse staff tokens anyway; this keeps staff from landing on pages that can't load.
+export const clientOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return !auth.isStaff() || inject(Router).parseUrl(auth.homeUrl());
+};
+
+// Activity Reporting: only staff see the reporting dashboard.
+export const staffOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return auth.isStaff() || inject(Router).parseUrl(auth.homeUrl());
+};
 
 // Every signed-in page renders inside the shell, which owns the header and navigation.
 export const routes: Routes = [
@@ -30,9 +45,16 @@ export const routes: Routes = [
   // link to the dashboard.
   { path: 'forgot-password', canActivate: [signedOutOnly], children: [] },
   { path: 'reset-password', canActivate: [signedOutOnly], children: [] },
+  // Activity Reporting: staff sign in to this instead of the trading shell.
+  {
+    path: 'reporting',
+    canActivate: [staffOnly],
+    loadComponent: () => import('./reporting/reporting').then(m => m.ReportingComponent)
+  },
   {
     path: '',
     component: ShellComponent,
+    canActivate: [clientOnly],
     children: [
       // Lazy: the dashboard is most of the app's code, and sign-in doesn't need it.
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
@@ -48,7 +70,8 @@ export const routes: Routes = [
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
-  { path: '**', redirectTo: 'dashboard' }
+  // Each role's own home; the guards above would bounce staff from the dashboard anyway.
+  { path: '**', redirectTo: () => inject(AuthService).homeUrl() }
 ];
 
 @NgModule({ declarations: [
