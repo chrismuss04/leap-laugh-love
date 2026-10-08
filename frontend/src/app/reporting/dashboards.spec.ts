@@ -66,7 +66,7 @@ describe('Trading operations dashboard', () => {
     const { el } = await open('/reporting', TradingOpsDashboardComponent);
 
     expect(router.url).toBe('/reporting');
-    expect(el.querySelector('h1')!.textContent).toContain('Order audit');
+    expect(el.querySelector('h1')!.textContent).toContain('Order Audit');
     expect(panelTitles(el)).toEqual(['Order audit log', 'Rejections by reason', 'Stuck orders']);
     expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(3);
     expect(Array.from(el.querySelectorAll('.stat-label')).map(l => l.textContent))
@@ -143,7 +143,7 @@ describe('Commercial analyst dashboard', () => {
     const { el } = await open('/reporting', AnalystDashboardComponent);
 
     expect(router.url).toBe('/reporting');
-    expect(el.querySelector('h1')!.textContent).toContain('Trading activity');
+    expect(el.querySelector('h1')!.textContent).toContain('Trading Activity');
     expect(panelTitles(el)).toEqual([
       'Trading volume over time', 'Most traded instruments', 'Average order value over time', 'Client registrations over time'
     ]);
@@ -180,4 +180,32 @@ describe('Commercial analyst dashboard', () => {
     await harness.navigateByUrl(`/reporting/orders/${ORDER_ID}`);
     expect(router.url).toBe('/reporting');
   });
+});
+
+// Regression: signing out leaves the router on /reporting, so the next staff member's sign-in
+// redirect is to the URL it's already on - which Angular ignores by default, keeping the previous
+// role's dashboard. The sign-in screen re-matches with onSameUrlNavigation: 'reload'.
+describe('Switching staff in one browser session', () => {
+  const cases = [
+    { from: 'TRADING_OPERATIONS', to: 'COMMERCIAL_ANALYST', page: AnalystDashboardComponent },
+    { from: 'COMMERCIAL_ANALYST', to: 'TRADING_OPERATIONS', page: TradingOpsDashboardComponent }
+  ] as const;
+
+  afterEach(() => localStorage.clear());
+
+  for (const { from, to, page } of cases) {
+    it(`gives ${to} their own dashboard after ${from} signed out`, async () => {
+      localStorage.clear();
+      signInAs(from);
+      setUp();
+      const harness = await RouterTestingHarness.create();
+      await harness.navigateByUrl('/reporting');
+
+      signInAs(to);
+      await TestBed.inject(Router).navigateByUrl('/reporting', { onSameUrlNavigation: 'reload' });
+      harness.detectChanges();
+
+      expect(harness.fixture.debugElement.query(By.directive(page))).withContext(`${to} did not get ${page.name}`).not.toBeNull();
+    });
+  }
 });
