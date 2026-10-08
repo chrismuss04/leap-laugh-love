@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { ReportingComponent } from './reporting';
 import { AuthService } from '../services/auth.service';
 import { SessionActivityService } from '../services/session-activity';
@@ -18,7 +19,7 @@ describe('ReportingComponent', () => {
     localStorage.setItem('auth_token', token);
     TestBed.configureTestingModule({
       imports: [ReportingComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()]
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -33,11 +34,20 @@ describe('ReportingComponent', () => {
     fixture.detectChanges();
     const text = fixture.nativeElement.textContent as string;
 
-    expect(text).toContain('Reporting dashboard');
     expect(text).toContain('analyst@leap.com');
     expect(text).toContain('Commercial analyst');
     // The trading shell loads the client profile and price stream; staff tokens can't read either.
     http.expectNone(() => true);
+    fixture.destroy();
+  });
+
+  // Staff Dashboards: each role's dashboard renders inside the shell; see dashboards.spec.ts.
+  it('renders the role dashboard in its outlet, under a link home', () => {
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('main router-outlet')).not.toBeNull();
+    expect(el.querySelector('a.brand')!.getAttribute('href')).toBe('/reporting');
     fixture.destroy();
   });
 
