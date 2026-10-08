@@ -7,9 +7,10 @@ import { SessionActivityService } from '../services/session-activity';
 
 describe('ReportingComponent', () => {
   const now = Math.floor(Date.now() / 1000);
-  const token = 'header.' + btoa(JSON.stringify({
-    role: 'COMMERCIAL_ANALYST', email: 'analyst@leap.com', sid: 'staff-session', iat: now, exp: now + 3600
+  const tokenFor = (role: string, email: string) => 'header.' + btoa(JSON.stringify({
+    role, email, sid: 'staff-session', iat: now, exp: now + 3600
   })).replace(/=+$/, '') + '.signature';
+  const token = tokenFor('COMMERCIAL_ANALYST', 'analyst@leap.com');
 
   let http: HttpTestingController;
 
@@ -37,6 +38,23 @@ describe('ReportingComponent', () => {
     expect(text).toContain('analyst@leap.com');
     expect(text).toContain('Commercial analyst');
     // The trading shell loads the client profile and price stream; staff tokens can't read either.
+    http.expectNone(request => !request.url.startsWith('/api/order/reports/'));
+    fixture.destroy();
+  });
+
+  it('shows analysts the activity report', () => {
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-activity-report')).not.toBeNull();
+    http.expectOne('/api/order/reports/instruments');
+    fixture.destroy();
+  });
+
+  it('shows Trading Operations no activity report, and calls no API', () => {
+    localStorage.setItem('auth_token', tokenFor('TRADING_OPERATIONS', 'ops@leap.com'));
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-activity-report')).toBeNull();
     http.expectNone(() => true);
     fixture.destroy();
   });
