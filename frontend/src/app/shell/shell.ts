@@ -57,7 +57,13 @@ export class ShellComponent implements OnInit, OnDestroy {
     }
   });
 
+  // Activity Reporting: the route guard keeps staff out, but a shell activated while signed out
+  // is still mounted, hidden, when someone signs in - and the sign-in redirect lands only after it
+  // renders. Staff tokens can't load any of its data, so it renders and loads nothing for them.
+  readonly staff = this.auth.isStaff();
+
   ngOnInit(): void {
+    if (this.staff) return;
     // Session Timeout & Revocation
     const token = this.auth.getToken();
     // Session Timeout & Revocation: invalid tokens can expire synchronously during ngOnInit.

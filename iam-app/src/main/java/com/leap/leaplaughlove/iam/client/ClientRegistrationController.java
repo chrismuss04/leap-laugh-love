@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
 import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
@@ -38,6 +39,8 @@ public class ClientRegistrationController {
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
+    // Analyst login
+    private final StaffCredentialsRepository staffCredentialsRepository;
 
     /**
      * Constructs a new ClientRegistrationController with the specified
@@ -51,15 +54,19 @@ public class ClientRegistrationController {
      *                              before it is stored
      * @param eventPublisher        publishes the registration so the client's first
      *                              account is opened once it has committed
+     * @param staffCredentialsRepository the staff sign-in credentials, whose emails
+     *                              clients can't register with
      */
     public ClientRegistrationController(ClientRepository clientRepository,
             ClientCredentialsRepository credentialsRepository,
             PasswordEncoder passwordEncoder,
-            ApplicationEventPublisher eventPublisher) {
+            ApplicationEventPublisher eventPublisher,
+            StaffCredentialsRepository staffCredentialsRepository) {
         this.clientRepository = clientRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
         this.eventPublisher = eventPublisher;
+        this.staffCredentialsRepository = staffCredentialsRepository;
     }
 
     /**
@@ -73,7 +80,10 @@ public class ClientRegistrationController {
     @PostMapping("/register")
     @Transactional
     public ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request) {
-        if (clientRepository.existsByEmail(request.email())) {
+        // Analyst login: sign-in looks clients up before staff, so a client with a staff member's
+        // email would lock that staff member out of reporting.
+        if (clientRepository.existsByEmail(request.email())
+                || staffCredentialsRepository.existsByEmail(request.email())) {
             throw new DuplicateClientException("email already registered");
         }
         if (clientRepository.existsBySsn(request.ssn())) {

@@ -354,6 +354,52 @@ describe('AuthService', () => {
     });
   });
 
+  // ==================== Roles ====================
+  // Activity Reporting: the role comes from the token, so routing follows whoever is signed in.
+  describe('Roles', () => {
+    const tokenWith = (claims: object) =>
+      'header.' + btoa(JSON.stringify(claims)).replace(/=+$/, '') + '.signature';
+
+    it('has no role when signed out', () => {
+      expect(service.getRole()).toBeNull();
+      expect(service.isStaff()).toBeFalse();
+    });
+
+    it('reads a commercial analyst from the token and sends them to reporting', () => {
+      localStorage.setItem('auth_token', tokenWith({ role: 'COMMERCIAL_ANALYST', email: 'analyst@leap.com' }));
+      expect(service.getRole()).toBe('COMMERCIAL_ANALYST');
+      expect(service.isStaff()).toBeTrue();
+      expect(service.homeUrl()).toBe('/reporting');
+      expect(service.getEmail()).toBe('analyst@leap.com');
+    });
+
+    it('treats trading operations as staff', () => {
+      localStorage.setItem('auth_token', tokenWith({ role: 'TRADING_OPERATIONS' }));
+      expect(service.isStaff()).toBeTrue();
+      expect(service.homeUrl()).toBe('/reporting');
+    });
+
+    it('sends clients, and tokens issued before roles existed, to the dashboard', () => {
+      localStorage.setItem('auth_token', tokenWith({ role: 'CLIENT' }));
+      expect(service.getRole()).toBe('CLIENT');
+      expect(service.homeUrl()).toBe('/dashboard');
+      localStorage.setItem('auth_token', tokenWith({ sid: 's' }));
+      expect(service.getRole()).toBe('CLIENT');
+      expect(service.isStaff()).toBeFalse();
+    });
+
+    it('never treats an unknown role claim as staff', () => {
+      localStorage.setItem('auth_token', tokenWith({ role: 'ADMIN' }));
+      expect(service.isStaff()).toBeFalse();
+    });
+
+    it('has no role for an unreadable token', () => {
+      localStorage.setItem('auth_token', 'not-a-jwt');
+      expect(service.getRole()).toBeNull();
+      expect(service.homeUrl()).toBe('/dashboard');
+    });
+  });
+
   // ==================== Helper Methods ====================
   describe('Helper Methods', () => {
     it('should correctly identify when token exists (hasToken)', () => {

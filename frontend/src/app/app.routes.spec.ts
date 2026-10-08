@@ -83,3 +83,95 @@ describe('App routes', () => {
     http.match(() => true).forEach(request => request.flush(null));
   });
 });
+
+// Activity Reporting: staff only ever see reporting, and clients only ever see trading.
+describe('Role-based routing', () => {
+  const signInAs = (role?: string) => {
+    const claims = role ? { role, sid: 's', email: 'user@leap.com' } : { sid: 's' };
+    localStorage.setItem('auth_token', 'header.' + btoa(JSON.stringify(claims)).replace(/=+$/, '') + '.signature');
+  };
+
+  let router: Router;
+
+  beforeEach(() => {
+    localStorage.clear();
+    TestBed.configureTestingModule({
+      providers: [provideRouter(routes), provideHttpClient(), provideHttpClientTesting()]
+    });
+    router = TestBed.inject(Router);
+  });
+
+  afterEach(() => localStorage.clear());
+
+  for (const role of ['COMMERCIAL_ANALYST', 'TRADING_OPERATIONS']) {
+    describe(`as ${role}`, () => {
+      beforeEach(() => signInAs(role));
+
+      it('opens the reporting dashboard', async () => {
+        await router.navigateByUrl('/reporting');
+        expect(router.url).toBe('/reporting');
+      });
+
+      for (const url of ['/dashboard', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+        it(`is sent from ${url} to reporting`, async () => {
+          await router.navigateByUrl(url);
+          expect(router.url).toBe('/reporting');
+        });
+      }
+
+      it('is sent from password recovery to reporting', async () => {
+        await router.navigateByUrl('/forgot-password');
+        expect(router.url).toBe('/reporting');
+      });
+    });
+  }
+
+  describe('as a client', () => {
+    beforeEach(() => signInAs('CLIENT'));
+
+    it('is sent from reporting to the dashboard', async () => {
+      await router.navigateByUrl('/reporting');
+      expect(router.url).toBe('/dashboard');
+    });
+
+    it('still opens trading pages', async () => {
+      await router.navigateByUrl('/orders');
+      expect(router.url).toBe('/orders');
+    });
+
+    it('lands on the dashboard from an unknown URL', async () => {
+      await router.navigateByUrl('/nowhere');
+      expect(router.url).toBe('/dashboard');
+    });
+  });
+
+  it('treats a token without a role claim as a client', async () => {
+    signInAs();
+    await router.navigateByUrl('/reporting');
+    expect(router.url).toBe('/dashboard');
+  });
+});
+
+// Activity Reporting regression: signing in as staff while the (hidden) trading shell was already
+// activated rendered the dashboard for a moment, firing every trading API with a staff token.
+describe('ShellComponent for staff', () => {
+  afterEach(() => localStorage.clear());
+
+  it('renders nothing and calls no API', () => {
+    localStorage.setItem('auth_token', 'header.' + btoa(JSON.stringify({
+      role: 'COMMERCIAL_ANALYST', sid: 's', iat: 1, exp: 9999999999
+    })).replace(/=+$/, '') + '.signature');
+    TestBed.configureTestingModule({
+      imports: [ShellComponent],
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } }]
+    });
+    const http = TestBed.inject(HttpTestingController);
+    const fixture = TestBed.createComponent(ShellComponent);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.shell')).toBeNull();
+    http.expectNone(() => true);
+    fixture.destroy();
+  });
+});

@@ -1,0 +1,41 @@
+<div class="reporting fade-in">
+  <header class="reporting-header">
+    <div class="header-inner">
+      <span class="brand">
+        <span class="brand-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+            <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+            <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+          </svg>
+        </span>
+        <span class="brand-name">Leapfolio</span>
+        <span class="brand-tag">Reporting</span>
+      </span>
+
+      <div class="header-right">
+        <span class="identity">
+          <span class="identity-email">{{ email }}</span>
+          <span class="identity-role">{{ roleLabel }}</span>
+        </span>
+        <button type="button" class="sign-out" (click)="logout()">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="reporting-main">
+    <h1>Reporting dashboard</h1>
+    <p class="lede">Signed in as {{ roleLabel.toLowerCase() }}. Trading activity reports will appear here.</p>
+
+    <section class="placeholder" aria-label="Reports">
+      <div class="placeholder-card">
+        <h2>Order activity</h2>
+        <p>Filled and rejected orders across all clients.</p>
+      </div>
+      <div class="placeholder-card">
+        <h2>Client registrations</h2>
+        <p>New clients over a reporting period.</p>
+      </div>
+    </section>
+  </main>
+</div>

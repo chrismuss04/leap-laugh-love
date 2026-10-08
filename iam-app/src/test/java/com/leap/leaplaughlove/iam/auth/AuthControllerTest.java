@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.iam.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leap.leaplaughlove.common.security.Role;
 import com.leap.leaplaughlove.iam.common.GlobalExceptionHandler;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -52,9 +53,26 @@ class AuthControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.accessToken", is("mock-access-token")))
                 .andExpect(jsonPath("$.tokenType", is("Bearer")))
-                .andExpect(jsonPath("$.expiresInSeconds", is(3600)));
+                .andExpect(jsonPath("$.expiresInSeconds", is(3600)))
+                .andExpect(jsonPath("$.role", is("CLIENT")));
 
         verify(authService).authenticate("test@example.com", "SecretPass123!");
+    }
+
+    // Analyst login: the UI routes on this role, so staff land on reporting instead of trading.
+    @Test
+    @DisplayName("POST /api/iam/auth/login for an analyst returns their staff role")
+    void testLoginReturnsStaffRole() throws Exception {
+        LoginRequest request = new LoginRequest("analyst@leap.com", "SecretPass123!");
+        when(authService.authenticate("analyst@leap.com", "SecretPass123!")).thenReturn(
+                new LoginResponse("staff-token", "Bearer", 3600L, Role.COMMERCIAL_ANALYST));
+
+        mockMvc.perform(post("/api/iam/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accessToken", is("staff-token")))
+                .andExpect(jsonPath("$.role", is("COMMERCIAL_ANALYST")));
     }
 
     @Test

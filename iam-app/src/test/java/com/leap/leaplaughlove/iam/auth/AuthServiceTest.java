@@ -7,6 +7,10 @@ import com.leap.leaplaughlove.iam.client.ClientRepository;
 import com.leap.leaplaughlove.common.security.JwtService;
 // Session Timeout & Revocation
 import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
+import com.leap.leaplaughlove.common.security.Role;
+import com.leap.leaplaughlove.iam.session.StaffSessionRepository;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository.StaffCredentials;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -129,6 +133,9 @@ class AuthServiceTest {
     @Mock private JwtService jwtService;
     // Session Timeout & Revocation
     @Mock private ClientSessionRepository sessionRepository;
+    // Analyst login
+    @Mock private StaffCredentialsRepository staffCredentialsRepository;
+    @Mock private StaffSessionRepository staffSessionRepository;
 
     private AuthService authService;
     private UUID clientId;
@@ -138,7 +145,8 @@ class AuthServiceTest {
     @BeforeEach
     void setUp() {
         // Session Timeout & Revocation
-        authService = new AuthService(clientRepository, credentialsRepository, passwordEncoder, jwtService, sessionRepository);
+        authService = new AuthService(clientRepository, credentialsRepository, passwordEncoder, jwtService, sessionRepository,
+                staffCredentialsRepository, staffSessionRepository);
         clientId = UUID.randomUUID();
 
         testClient = new Client(
@@ -182,9 +190,109 @@ class AuthServiceTest {
     @Test
     void authenticate_UnknownEmail_ThrowsInvalidCredentials() {
         when(clientRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
+        when(staffCredentialsRepository.findByEmail("unknown@example.com")).thenReturn(Optional.empty());
 
         assertThrows(InvalidCredentialsException.class,
                 () -> authService.authenticate("unknown@example.com", "password"));
+        verifyNoInteractions(passwordEncoder, jwtService, sessionRepository, staffSessionRepository);
+    }
+
+    // Analyst login: an email that isn't a client's signs in as staff, with a staff session and role.
+    @Test
+    void staffLoginIssuesStaffToken() {
+        stubStaff("ACTIVE", 2);
+        when(passwordEncoder.matches("rawPassword", "$2a$10$staffhash")).thenReturn(true);
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+        when(jwtService.generateToken(eq(staffId), eq("analyst@leap.com"), eq(Role.COMMERCIAL_ANALYST),
+                any(UUID.class), any(java.time.Instant.class), any(java.time.Instant.class))).thenReturn("staff-token");
+
+        LoginResponse response = authService.authenticate("analyst@leap.com", "rawPassword");
+
+        assertEquals("staff-token", response.accessToken());
+        assertEquals(Role.COMMERCIAL_ANALYST, response.role());
+        assertEquals(3600L, response.expiresInSeconds());
+        var id = org.mockito.ArgumentCaptor.forClass(UUID.class);
+        var start = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        var end = org.mockito.ArgumentCaptor.forClass(java.time.Instant.class);
+        verify(staffSessionRepository).create(id.capture(), eq(staffId), start.capture(), end.capture());
+        verify(staffCredentialsRepository).recordSuccessfulLogin(staffId, start.getValue());
+        verify(jwtService).generateToken(staffId, "analyst@leap.com", Role.COMMERCIAL_ANALYST,
+                id.getValue(), start.getValue(), end.getValue());
+        // A staff login never touches client credentials or client sessions.
+        verifyNoInteractions(credentialsRepository, sessionRepository);
+    }
+
+    // Analyst login: trading operations staff sign in the same way, with their own role.
+    @Test
+    void tradingOperationsLoginKeepsItsRole() {
+        when(clientRepository.findByEmail("ops@leap.com")).thenReturn(Optional.empty());
+        when(staffCredentialsRepository.findByEmail("ops@leap.com")).thenReturn(Optional.of(new StaffCredentials(
+                staffId, "ops@leap.com", "$2a$10$staffhash", Role.TRADING_OPERATIONS, "ACTIVE", 0)));
+        when(passwordEncoder.matches("rawPassword", "$2a$10$staffhash")).thenReturn(true);
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+
+        assertEquals(Role.TRADING_OPERATIONS, authService.authenticate("ops@leap.com", "rawPassword").role());
+        verify(jwtService).generateToken(eq(staffId), eq("ops@leap.com"), eq(Role.TRADING_OPERATIONS),
+                any(), any(), any());
+    }
+
+    @Test
+    void staffWrongPasswordCountsAttempt() {
+        stubStaff("ACTIVE", 0);
+        when(passwordEncoder.matches("wrong", "$2a$10$staffhash")).thenReturn(false);
+        when(staffCredentialsRepository.recordFailedAttempt(staffId, 3)).thenReturn(1);
+
+        assertThrows(InvalidCredentialsException.class, () -> authService.authenticate("analyst@leap.com", "wrong"));
+
+        verify(staffCredentialsRepository, never()).recordSuccessfulLogin(any(), any());
+        verifyNoInteractions(jwtService, staffSessionRepository);
+    }
+
+    @Test
+    void staffThirdFailureLocks() {
+        stubStaff("ACTIVE", 2);
+        when(passwordEncoder.matches("wrong", "$2a$10$staffhash")).thenReturn(false);
+        when(staffCredentialsRepository.recordFailedAttempt(staffId, 3)).thenReturn(3);
+
+        assertThrows(AccountLockedException.class, () -> authService.authenticate("analyst@leap.com", "wrong"));
+        verifyNoInteractions(jwtService, staffSessionRepository);
+    }
+
+    @Test
+    void lockedStaffCannotSignIn() {
+        stubStaff("LOCKED", 3);
+
+        assertThrows(AccountLockedException.class,
+                () -> authService.authenticate("analyst@leap.com", "rawPassword"));
+        verifyNoInteractions(passwordEncoder, jwtService, staffSessionRepository);
+    }
+
+    // A pending or deleted staff account is refused without saying why.
+    @Test
+    void inactiveStaffCannotSignIn() {
+        stubStaff("DELETED", 0);
+
+        assertThrows(InvalidCredentialsException.class,
+                () -> authService.authenticate("analyst@leap.com", "rawPassword"));
+        verifyNoInteractions(passwordEncoder, jwtService, staffSessionRepository);
+    }
+
+    // A client's email always signs in as that client, never as staff.
+    @Test
+    void clientEmailNeverChecksStaff() {
+        stubValidPassword();
+        when(jwtService.getExpirationSeconds()).thenReturn(3600L);
+
+        assertEquals(Role.CLIENT, authService.authenticate("alice@example.com", "rawPassword").role());
+        verifyNoInteractions(staffCredentialsRepository, staffSessionRepository);
+    }
+
+    private final UUID staffId = UUID.randomUUID();
+
+    private void stubStaff(String status, int failedAttempts) {
+        when(clientRepository.findByEmail("analyst@leap.com")).thenReturn(Optional.empty());
+        when(staffCredentialsRepository.findByEmail("analyst@leap.com")).thenReturn(Optional.of(new StaffCredentials(
+                staffId, "analyst@leap.com", "$2a$10$staffhash", Role.COMMERCIAL_ANALYST, status, failedAttempts)));
     }
 
     @Test

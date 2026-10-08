@@ -22,7 +22,8 @@ describe('SignInComponent', () => {
 
   beforeEach(() => {
     localStorage.removeItem('rememberMe');
-    auth = jasmine.createSpyObj('AuthService', ['login'], { sessionMessage: signal<string | null>(null) });
+    auth = jasmine.createSpyObj('AuthService', ['login', 'homeUrl'], { sessionMessage: signal<string | null>(null) });
+    auth.homeUrl.and.returnValue('/dashboard');
     router = jasmine.createSpyObj('Router', ['navigateByUrl'], { events: new Subject<unknown>(), url: '/' });
     TestBed.configureTestingModule({
       declarations: [SignInComponent],
@@ -50,6 +51,15 @@ describe('SignInComponent', () => {
     expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard');
     expect(component.isLoading()).toBeFalse();
     expect(localStorage.getItem('rememberMe')).toBeNull();
+  });
+
+  // Activity Reporting: staff sign in on the same screen and land on reporting, not trading.
+  it('routes staff to the reporting dashboard', () => {
+    auth.login.and.returnValue(of({ accessToken: 't', role: 'COMMERCIAL_ANALYST' } as LoginResponse));
+    auth.homeUrl.and.returnValue('/reporting');
+    fill('analyst@leap.com', 'password1');
+    component.onSignIn();
+    expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting');
   });
 
   it('remembers the user when asked', () => {

@@ -40,6 +40,15 @@ export const personas = {
 
 export type PersonaName = keyof typeof personas;
 
+/**
+ * Seeded staff (seed_iam.sql), who sign in to reporting rather than trading. Read-only: a failed
+ * login against one counts toward its lockout, so tests must only sign them in successfully.
+ */
+export const staff = {
+  analyst: { email: 'commercial.analyst@leap.com', roleLabel: 'Commercial analyst' },
+  tradingOps: { email: 'trading.ops@leap.com', roleLabel: 'Trading operations' }
+} as const;
+
 export const TRADER_COUNT = 16;
 
 /** The funded trader reserved for one Playwright worker, so parallel tests never share an account. */

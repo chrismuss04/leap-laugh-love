@@ -91,7 +91,8 @@ export class SignInComponent implements OnInit {
 
         // The app swaps to the signed-in shell as soon as the token is stored, so route there in
         // place. A full page load here would re-bootstrap the app and fetch everything twice.
-        this.router.navigateByUrl('/dashboard');
+        // Activity Reporting: staff go to the reporting dashboard, clients to trading.
+        this.router.navigateByUrl(this.authService.homeUrl());
       },
       error: (error) => {
         this.isLoading.set(false);
