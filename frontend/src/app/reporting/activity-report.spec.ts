@@ -1,14 +1,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting, TestRequest } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { AuthService } from '../services/auth.service';
 import { ActivityReport } from '../services/reports';
 import { ActivityReportComponent } from './activity-report';
 
 describe('ActivityReportComponent', () => {
   let fixture: ComponentFixture<ActivityReportComponent>;
   let http: HttpTestingController;
-  let auth: jasmine.SpyObj<AuthService>;
   const reportUrl = '/api/order/reports/activity';
   const instrumentsUrl = '/api/order/reports/instruments';
   const zero = { tradeCount: 0, buyCount: 0, sellCount: 0, buyValue: 0, sellValue: 0, volume: 0 };
@@ -50,24 +48,14 @@ describe('ActivityReportComponent', () => {
     // Thursday 8 October 2026, 22:00 UTC: late enough that a local-time "today" could differ.
     jasmine.clock().install();
     jasmine.clock().mockDate(new Date('2026-10-08T22:00:00Z'));
-    auth = jasmine.createSpyObj<AuthService>('AuthService', ['isAuthenticated', 'logout']);
-    auth.isAuthenticated.and.returnValue(true);
     TestBed.configureTestingModule({
       imports: [ActivityReportComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting(), { provide: AuthService, useValue: auth }]
+      providers: [provideHttpClient(), provideHttpClientTesting()]
     });
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(ActivityReportComponent);
   });
   afterEach(() => { http.verify(); fixture.destroy(); jasmine.clock().uninstall(); });
-
-  // Verify signed-out visitors trigger no reporting requests.
-  it('skips loading when signed out', () => {
-    auth.isAuthenticated.and.returnValue(false);
-    fixture.detectChanges();
-    http.expectNone(instrumentsUrl);
-    http.expectNone(r => r.url === reportUrl);
-  });
 
   // Verify the page opens on a daily report for the last 7 UTC days across all instruments.
   it('loads a default report for the last 7 days', () => {

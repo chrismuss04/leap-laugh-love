@@ -6,7 +6,6 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { routes } from './app.module';
 import { AccountsComponent } from './accounts/accounts';
-import { ActivityReportComponent } from './reporting/activity-report';
 import { ShellComponent } from './shell/shell';
 import { AuthService } from './services/auth.service';
 import { PriceStreamService } from './services/price-stream';
@@ -45,16 +44,6 @@ describe('App routes', () => {
       expect(index).toBeLessThan(routes.findIndex(route => route.path === '**'));
     });
   }
-
-  // Analysts have no trading navigation, so the reporting dashboard lives outside the shell,
-  // ahead of the catch-all that would otherwise send it to the client dashboard.
-  it('/reporting opens the activity reports page outside the shell', async () => {
-    const index = routes.findIndex(route => route.path === 'reporting');
-    expect(index).withContext('no route for /reporting').toBeGreaterThanOrEqual(0);
-    expect(index).toBeLessThan(routes.findIndex(route => route.path === '**'));
-    expect(pages.some(page => page.path === 'reporting')).toBeFalse();
-    expect(await routes[index].loadComponent!()).toBe(ActivityReportComponent);
-  });
 
   it('every link in the header and profile menu reaches a real page', () => {
     TestBed.configureTestingModule({

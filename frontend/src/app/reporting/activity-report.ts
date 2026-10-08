@@ -1,6 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { AuthService } from '../services/auth.service';
 import { ActivityReport, ReportGranularity, ReportInstrument, ReportsService } from '../services/reports';
 import { formatMoney } from '../shared/format';
 
@@ -30,13 +29,9 @@ export class ActivityReportComponent implements OnInit {
 
   readonly formatMoney = formatMoney;
 
-  private authService = inject(AuthService);
   private reportsService = inject(ReportsService);
 
   ngOnInit() {
-    if (!this.authService.isAuthenticated()) {
-      return;
-    }
     // The report doesn't need the list, so a failure here only leaves the filter at "All".
     this.reportsService.getInstruments().subscribe({
       next: instruments => this.instruments.set(instruments),
@@ -91,9 +86,5 @@ export class ActivityReportComponent implements OnInit {
         this.loading.set(false);
       }
     });
-  }
-
-  logout() {
-    this.authService.logout();
   }
 }
