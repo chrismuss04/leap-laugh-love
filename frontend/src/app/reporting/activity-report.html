@@ -1,0 +1,115 @@
+<div class="page">
+
+  <div class="page-container">
+    <div class="page-header">
+      <div class="page-header-row">
+        <div>
+          <p class="eyebrow">Reporting</p>
+          <h1 class="font-display headline-page">Activity <em>Reports</em></h1>
+          <p class="page-subtext">Trading activity by instrument and period, from filled orders.</p>
+        </div>
+        <button (click)="logout()" class="btn-secondary">Sign out</button>
+      </div>
+    </div>
+
+    <div class="filter-bar">
+      <label class="filter-field">
+        <span class="filter-label">Instrument</span>
+        <select class="filter-select" data-testid="report-instrument" (change)="setInstrument($event)">
+          <option value="" [selected]="instrumentId() === null">All</option>
+          <option *ngFor="let i of instruments()" [value]="i.id" [selected]="i.id === instrumentId()">{{ i.symbol }}</option>
+        </select>
+      </label>
+
+      <label class="filter-field">
+        <span class="filter-label">From</span>
+        <input type="date" class="filter-select" data-testid="report-from" [value]="from()" (change)="setFrom($event)">
+      </label>
+
+      <label class="filter-field">
+        <span class="filter-label">To</span>
+        <input type="date" class="filter-select" data-testid="report-to" [value]="to()" (change)="setTo($event)">
+      </label>
+
+      <label class="filter-field">
+        <span class="filter-label">Breakdown</span>
+        <select class="filter-select" data-testid="report-granularity" (change)="setGranularity($event)">
+          <option value="DAILY" [selected]="granularity() === 'DAILY'">Daily</option>
+          <option value="WEEKLY" [selected]="granularity() === 'WEEKLY'">Weekly</option>
+        </select>
+      </label>
+
+      <button (click)="generate()" [disabled]="loading()" class="btn-primary" data-testid="report-generate">
+        Generate report
+      </button>
+    </div>
+
+    <div *ngIf="loading()" class="loading">Loading report...</div>
+
+    <div *ngIf="error()" class="error-message" role="alert">{{ error() }}</div>
+
+    <ng-container *ngIf="!loading() && !error() && report() as report">
+      <p class="report-scope" data-testid="report-scope">
+        {{ report.from | date: 'mediumDate' }} – {{ report.to | date: 'mediumDate' }}
+        · {{ report.granularity === 'WEEKLY' ? 'Weekly' : 'Daily' }}
+        · {{ report.instrument?.symbol ?? 'All instruments' }}
+      </p>
+
+      <div *ngIf="report.buckets.length === 0" class="empty" data-testid="no-activity">
+        No data available
+      </div>
+
+      <ng-container *ngIf="report.buckets.length > 0">
+        <div class="tiles" data-testid="activity-totals">
+          <div class="tile">
+            <span class="tile-label">Trades</span>
+            <span class="tile-value" data-testid="total-trades">{{ report.totals.tradeCount | number }}</span>
+          </div>
+          <div class="tile">
+            <span class="tile-label">Buys</span>
+            <span class="tile-value" data-testid="total-buys">{{ report.totals.buyCount | number }}</span>
+            <span class="tile-sub">{{ formatMoney(report.totals.buyValue) }}</span>
+          </div>
+          <div class="tile">
+            <span class="tile-label">Sells</span>
+            <span class="tile-value" data-testid="total-sells">{{ report.totals.sellCount | number }}</span>
+            <span class="tile-sub">{{ formatMoney(report.totals.sellValue) }}</span>
+          </div>
+          <div class="tile">
+            <span class="tile-label">Volume traded</span>
+            <span class="tile-value" data-testid="total-volume">{{ report.totals.volume | number }}</span>
+            <span class="tile-sub">units</span>
+          </div>
+        </div>
+
+        <div class="report-table-wrapper">
+          <table class="report-table">
+            <caption class="sr-only">{{ report.granularity === 'WEEKLY' ? 'Weekly' : 'Daily' }} trading activity</caption>
+            <thead>
+              <tr>
+                <th>{{ report.granularity === 'WEEKLY' ? 'Week of' : 'Day' }}</th>
+                <th class="num">Trades</th>
+                <th class="num">Buys</th>
+                <th class="num">Buy value</th>
+                <th class="num">Sells</th>
+                <th class="num">Sell value</th>
+                <th class="num">Volume</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let bucket of report.buckets" data-testid="activity-row">
+                <td>{{ bucket.periodStart | date: 'EEE d MMM y' }}</td>
+                <td class="num">{{ bucket.totals.tradeCount | number }}</td>
+                <td class="num">{{ bucket.totals.buyCount | number }}</td>
+                <td class="num">{{ formatMoney(bucket.totals.buyValue) }}</td>
+                <td class="num">{{ bucket.totals.sellCount | number }}</td>
+                <td class="num">{{ formatMoney(bucket.totals.sellValue) }}</td>
+                <td class="num">{{ bucket.totals.volume | number }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </ng-container>
+    </ng-container>
+  </div>
+</div>
