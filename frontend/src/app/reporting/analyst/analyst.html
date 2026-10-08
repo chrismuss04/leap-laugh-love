@@ -1,0 +1,40 @@
+<div class="page-header">
+  <p class="eyebrow">Business insights</p>
+  <h1 class="font-display headline-page">Trading <em>activity</em></h1>
+  <p class="page-subtext">How much clients trade, what they trade, and how the client base grows.</p>
+</div>
+
+<app-period-filter [value]="filters.value()" (periodChange)="setPeriod($event)"></app-period-filter>
+
+<section class="section" aria-label="Period summary">
+  <p class="page-subtext" data-testid="period-summary">
+    {{ periodLabel() }}:
+    <time class="num" [attr.datetime]="filters.range().from">{{ filters.range().from | date: 'd MMM y' }}</time>
+    –
+    <time class="num" [attr.datetime]="filters.range().to">{{ filters.range().to | date: 'd MMM y' }}</time>
+  </p>
+  <div class="stats">
+    <app-stat-tile label="Trading volume" hint="Value of filled orders"></app-stat-tile>
+    <app-stat-tile label="Average order value" hint="Per filled order"></app-stat-tile>
+    <app-stat-tile label="New registrations" hint="Clients who signed up"></app-stat-tile>
+    <app-stat-tile label="Active clients" hint="Placed at least one order"></app-stat-tile>
+  </div>
+</section>
+
+<section class="section grid" aria-label="Business reports">
+  <app-report-panel class="span-all" eyebrow="Volume" heading="Trading volume over time"
+                    description="Value and number of filled orders across the period, split by buys and sells."
+                    source="reporting.orders"></app-report-panel>
+
+  <app-report-panel eyebrow="Instruments" heading="Most traded instruments"
+                    description="Instruments ranked by number of trades and traded value."
+                    source="reporting.orders"></app-report-panel>
+
+  <app-report-panel eyebrow="Order size" heading="Average order value over time"
+                    description="Mean value of a filled order across the period."
+                    source="reporting.orders"></app-report-panel>
+
+  <app-report-panel class="span-all" eyebrow="Clients" heading="Client registrations over time"
+                    description="New client sign-ups across the period."
+                    source="reporting.clients"></app-report-panel>
+</section>

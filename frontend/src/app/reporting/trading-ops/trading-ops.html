@@ -1,0 +1,36 @@
+<div class="page-header">
+  <p class="eyebrow">Audit &amp; compliance</p>
+  <h1 class="font-display headline-page">Order <em>audit</em></h1>
+  <p class="page-subtext">
+    Who placed each order, when, and how it ended. Trace any order through its executions and the
+    cash and holdings ledgers.
+  </p>
+</div>
+
+<app-audit-filter [value]="filters.value()" (apply)="applyFilters($event)" (trace)="traceOrder($event)"></app-audit-filter>
+
+<section class="section" aria-label="Order activity summary">
+  <p class="page-subtext" data-testid="filter-summary">
+    {{ activeFilters() === 0 ? 'Showing all orders.' : 'Showing orders matching ' + activeFilters() + (activeFilters() === 1 ? ' filter.' : ' filters.') }}
+  </p>
+  <div class="stats">
+    <app-stat-tile label="Orders submitted"></app-stat-tile>
+    <app-stat-tile label="Filled"></app-stat-tile>
+    <app-stat-tile label="Rejected"></app-stat-tile>
+    <app-stat-tile label="Awaiting execution"></app-stat-tile>
+  </div>
+</section>
+
+<section class="section grid" aria-label="Audit reports">
+  <app-report-panel class="span-all" eyebrow="Who, what, when, result" heading="Order audit log"
+                    description="Every order with the client and account that placed it, the symbol, side and quantity, when it was submitted and completed, and its final status or rejection reason. Each row opens the order's full lifecycle."
+                    source="trading.orders · trading.executions · iam.clients"></app-report-panel>
+
+  <app-report-panel eyebrow="Exceptions" heading="Rejections by reason"
+                    description="Rejected orders grouped by rejection reason, to spot recurring failures."
+                    source="trading.orders.rejection_reason"></app-report-panel>
+
+  <app-report-panel eyebrow="Exceptions" heading="Stuck orders"
+                    description="Orders submitted or accepted that never reached a final status, oldest first."
+                    source="trading.orders.status"></app-report-panel>
+</section>
