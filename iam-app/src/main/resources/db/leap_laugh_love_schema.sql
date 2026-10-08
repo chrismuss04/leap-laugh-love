@@ -193,7 +193,14 @@ CREATE TABLE IF NOT EXISTS trading.executions (
     fill_price NUMERIC(18,6),
     status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    reason TEXT
+    reason TEXT,
+    -- Trade Reconstruction: the market quote the order was priced from. NULL when none was
+    -- used (quote unavailable, seeded fill) or the execution predates these columns.
+    quote_bid NUMERIC(18,6),
+    quote_ask NUMERIC(18,6),
+    quote_last NUMERIC(18,6),
+    quote_timestamp TIMESTAMPTZ,
+    quote_exchange TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trading.cash_ledger (

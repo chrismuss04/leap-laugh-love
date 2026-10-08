@@ -65,6 +65,11 @@ CREATE TABLE trading.executions (
     status VARCHAR(20) NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     reason VARCHAR(500),
+    quote_bid NUMERIC(18,6),
+    quote_ask NUMERIC(18,6),
+    quote_last NUMERIC(18,6),
+    quote_timestamp TIMESTAMP WITH TIME ZONE,
+    quote_exchange VARCHAR(50),
     FOREIGN KEY (order_id) REFERENCES trading.orders (order_id)
 );
 
