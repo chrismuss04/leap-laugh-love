@@ -57,7 +57,7 @@ describe('dashboard display components', () => {
 
     it('draws a path and a baseline', () => {
       const fixture = render(SparklineComponent, { values: [1, 2, 3], baseline: 2 });
-      expect(fixture.componentInstance.path.startsWith('M0.0')).toBeTrue();
+      expect(fixture.componentInstance.path.startsWith('M0.0')).toBe(true);
       expect(fixture.nativeElement.querySelector('line.base')).not.toBeNull();
     });
   });

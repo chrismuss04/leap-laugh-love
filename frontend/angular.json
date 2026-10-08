@@ -77,22 +77,20 @@
           "defaultConfiguration": "development"
         },
         "test": {
-          "builder": "@angular/build:karma",
+          "builder": "@angular/build:unit-test",
           "options": {
-            "karmaConfig": "karma.conf.cjs",
-            "polyfills": [
-              "zone.js",
-              "zone.js/testing"
-            ],
+            "runner": "vitest",
+            "browsers": ["chromium"],
+            "headless": true,
+            "buildTarget": "leap-laugh-love-frontend:build:development",
             "tsConfig": "tsconfig.spec.json",
-            "assets": [
-              "src/favicon.ico",
-              "src/assets"
-            ],
-            "styles": [
-              "src/styles.css"
-            ],
-            "scripts": []
+            "setupFiles": ["src/testing/test-setup.ts"],
+            "coverageExclude": ["**/*.html", "src/testing/**"],
+            "coverageReporters": [
+              "html",
+              ["lcovonly", { "projectRoot": ".." }],
+              "text-summary"
+            ]
           }
         }
       }

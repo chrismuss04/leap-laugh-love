@@ -10,21 +10,23 @@ import { SignInComponent } from './sign-in.component';
 import { CreateAccountComponent } from '../create-account/create-account.component';
 import { ForgotPasswordComponent } from '../forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from '../reset-password/reset-password.component';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('SignInComponent', () => {
   let fixture: ComponentFixture<SignInComponent>;
   let component: SignInComponent;
-  let auth: jasmine.SpyObj<AuthService>;
-  let router: jasmine.SpyObj<Router>;
+  let auth: MockedObject<AuthService>;
+  let router: MockedObject<Router>;
 
   const fill = (email: string, password: string, rememberMe = false) =>
     component.signinForm.setValue({ email, password, rememberMe });
 
   beforeEach(() => {
     localStorage.removeItem('rememberMe');
-    auth = jasmine.createSpyObj('AuthService', ['login', 'homeUrl'], { sessionMessage: signal<string | null>(null) });
-    auth.homeUrl.and.returnValue('/dashboard');
-    router = jasmine.createSpyObj('Router', ['navigateByUrl'], { events: new Subject<unknown>(), url: '/' });
+    auth = createSpyObj('AuthService', ['login', 'homeUrl'], { sessionMessage: signal<string | null>(null) });
+    auth.homeUrl.mockReturnValue('/dashboard');
+    router = createSpyObj('Router', ['navigateByUrl'], { events: new Subject<unknown>(), url: '/' });
     TestBed.configureTestingModule({
       declarations: [SignInComponent],
       imports: [ReactiveFormsModule],
@@ -44,26 +46,26 @@ describe('SignInComponent', () => {
   });
 
   it('signs in and routes to the dashboard', () => {
-    auth.login.and.returnValue(of({} as LoginResponse));
+    auth.login.mockReturnValue(of({} as LoginResponse));
     fill('ada@example.com', 'password1');
     component.onSignIn();
     expect(auth.login).toHaveBeenCalledWith('ada@example.com', 'password1');
     expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard');
-    expect(component.isLoading()).toBeFalse();
+    expect(component.isLoading()).toBe(false);
     expect(localStorage.getItem('rememberMe')).toBeNull();
   });
 
   // Activity Reporting: staff sign in on the same screen and land on reporting, not trading.
   it('routes staff to the reporting dashboard', () => {
-    auth.login.and.returnValue(of({ accessToken: 't', role: 'COMMERCIAL_ANALYST' } as LoginResponse));
-    auth.homeUrl.and.returnValue('/reporting');
+    auth.login.mockReturnValue(of({ accessToken: 't', role: 'COMMERCIAL_ANALYST' } as LoginResponse));
+    auth.homeUrl.mockReturnValue('/reporting');
     fill('analyst@leap.com', 'password1');
     component.onSignIn();
     expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting');
   });
 
   it('remembers the user when asked', () => {
-    auth.login.and.returnValue(of({} as LoginResponse));
+    auth.login.mockReturnValue(of({} as LoginResponse));
     fill('ada@example.com', 'password1', true);
     component.onSignIn();
     expect(localStorage.getItem('rememberMe')).toBe('true');
@@ -71,25 +73,25 @@ describe('SignInComponent', () => {
 
   it('shows the server message, or a fallback, when sign-in fails', () => {
     fill('ada@example.com', 'password1');
-    auth.login.and.returnValue(throwError(() => ({ error: { message: 'Bad credentials' } })));
+    auth.login.mockReturnValue(throwError(() => ({ error: { message: 'Bad credentials' } })));
     component.onSignIn();
     expect(component.errorMessage()).toBe('Bad credentials');
-    expect(component.isLoading()).toBeFalse();
+    expect(component.isLoading()).toBe(false);
 
-    auth.login.and.returnValue(throwError(() => ({})));
+    auth.login.mockReturnValue(throwError(() => ({})));
     component.onSignIn();
     expect(component.errorMessage()).toBe('Sign in failed. Please try again.');
   });
 
   it('toggles password visibility', () => {
     component.togglePasswordVisibility();
-    expect(component.showPassword).toBeTrue();
+    expect(component.showPassword).toBe(true);
   });
 
   it('explains field errors only once touched', () => {
-    expect(component.isFieldInvalid('email')).toBeFalse();
+    expect(component.isFieldInvalid('email')).toBe(false);
     component.signinForm.get('email')!.markAsTouched();
-    expect(component.isFieldInvalid('email')).toBeTrue();
+    expect(component.isFieldInvalid('email')).toBe(true);
     expect(component.getErrorMessage('email')).toBe('Email is required');
 
     component.signinForm.get('email')!.setValue('bad');
@@ -101,7 +103,7 @@ describe('SignInComponent', () => {
     component.signinForm.get('rememberMe')!.setErrors({ other: true });
     expect(component.getErrorMessage('rememberMe')).toBe('Invalid input');
     expect(component.getErrorMessage('nope')).toBe('');
-    expect(component.isFieldInvalid('nope')).toBeFalse();
+    expect(component.isFieldInvalid('nope')).toBe(false);
   });
 });
 

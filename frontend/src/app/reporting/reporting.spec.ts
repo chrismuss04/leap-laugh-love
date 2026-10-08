@@ -43,8 +43,8 @@ describe('ReportingComponent', () => {
 
   it('tracks session activity while open', () => {
     const activity = TestBed.inject(SessionActivityService);
-    spyOn(activity, 'start');
-    spyOn(activity, 'stop');
+    vi.spyOn(activity, 'start').mockImplementation(() => {});
+    vi.spyOn(activity, 'stop').mockImplementation(() => {});
     const fixture = TestBed.createComponent(ReportingComponent);
     fixture.detectChanges();
     expect(activity.start).toHaveBeenCalled();
@@ -59,7 +59,7 @@ describe('ReportingComponent', () => {
 
     const logout = http.expectOne('/api/iam/session/logout');
     expect(logout.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
-    expect(TestBed.inject(AuthService).isAuthenticated()).toBeFalse();
+    expect(TestBed.inject(AuthService).isAuthenticated()).toBe(false);
     fixture.destroy();
   });
 });

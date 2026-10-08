@@ -724,10 +724,12 @@ conventions for writing new ones.
 
 ```bash
 cd frontend
-npx ng test --watch=false --code-coverage
+npx ng test --watch=false --coverage
 ```
 
-Coverage is written to `frontend/coverage/` (an HTML report plus `lcov.info` for SonarQube).
+The specs run on Vitest in headless Chromium through Playwright. The first time, download that
+browser with `npx playwright install chromium` (from `frontend/`). Coverage is written to
+`frontend/coverage/leap-laugh-love-frontend/` (an HTML report plus `lcov.info` for SonarQube).
 
 ### SonarQube
 

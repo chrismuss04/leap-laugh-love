@@ -454,11 +454,13 @@ pipeline {
                 environment name: 'RUN_SONAR', value: 'true'
             }
             steps {
-                // Karma needs a Chrome, which the agent doesn't have; the E2E runner image (built
-                // in "Build and Test" under the same condition) carries Playwright's headless
-                // Chromium. The frontend's own node_modules come from the host "npm ci" above.
+                // Vitest runs the specs in headless Chromium through Playwright, which the agent
+                // doesn't have; the E2E runner image (built in "Build and Test" under the same
+                // condition) carries Playwright's headless shell in /ms-playwright. frontend/ pins
+                // the same Playwright version as e2e/, so it finds that build. The frontend's own
+                // node_modules come from the host "npm ci" above.
                 // --user keeps coverage/ and .angular/ owned by the agent account, as with Maven.
-                // Mounted at /repo/frontend, mirroring the checkout: karma.conf.cjs writes lcov
+                // Mounted at /repo/frontend, mirroring the checkout: angular.json writes lcov
                 // paths relative to the frontend's parent, and SonarQube resolves them from the
                 // repo root, so they must come out as frontend/src/...
                 sh '''
@@ -470,9 +472,7 @@ pipeline {
                         -v "$WORKSPACE/frontend":/repo/frontend \
                         -w /repo/frontend \
                         "$E2E_IMAGE" \
-                        sh -c 'export CHROME_BIN="$(find /ms-playwright -type f \\( -name headless_shell -o -name chrome-headless-shell \\) | head -n 1)" \
-                            && echo "Using $CHROME_BIN" \
-                            && npx ng test --watch=false --code-coverage'
+                        npx ng test --watch=false --coverage
                 '''
             }
             post {
