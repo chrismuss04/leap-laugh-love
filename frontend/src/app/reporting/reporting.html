@@ -27,15 +27,19 @@
     <h1>Reporting dashboard</h1>
     <p class="lede">Signed in as {{ roleLabel.toLowerCase() }}. Trading activity reports will appear here.</p>
 
-    <section class="placeholder" aria-label="Reports">
-      <div class="placeholder-card">
-        <h2>Order activity</h2>
-        <p>Filled and rejected orders across all clients.</p>
-      </div>
-      <div class="placeholder-card">
-        <h2>Client registrations</h2>
-        <p>New clients over a reporting period.</p>
-      </div>
-    </section>
+    @if (isTradingOps) {
+      <app-trade-reconstruction />
+    } @else {
+      <section class="placeholder" aria-label="Reports">
+        <div class="placeholder-card">
+          <h2>Order activity</h2>
+          <p>Filled and rejected orders across all clients.</p>
+        </div>
+        <div class="placeholder-card">
+          <h2>Client registrations</h2>
+          <p>New clients over a reporting period.</p>
+        </div>
+      </section>
+    }
   </main>
 </div>

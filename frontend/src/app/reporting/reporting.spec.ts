@@ -41,6 +41,26 @@ describe('ReportingComponent', () => {
     fixture.destroy();
   });
 
+  it('shows Trading Operations trade reconstruction instead of the report placeholders', () => {
+    localStorage.setItem('auth_token', 'header.' + btoa(JSON.stringify({
+      role: 'TRADING_OPERATIONS', email: 'ops@leap.com', sid: 'staff-session', iat: now, exp: now + 3600
+    })).replace(/=+$/, '') + '.signature');
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-trade-reconstruction')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.placeholder')).toBeNull();
+    // Nothing is looked up (or logged) until a search.
+    http.expectNone(() => true);
+    fixture.destroy();
+  });
+
+  it('shows analysts no trade reconstruction', () => {
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('app-trade-reconstruction')).toBeNull();
+    fixture.destroy();
+  });
+
   it('tracks session activity while open', () => {
     const activity = TestBed.inject(SessionActivityService);
     spyOn(activity, 'start');

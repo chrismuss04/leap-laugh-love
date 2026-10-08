@@ -1,0 +1,67 @@
+<section class="trade-reconstruction" aria-labelledby="trade-reconstruction-title">
+  <h2 id="trade-reconstruction-title">Trade reconstruction</h2>
+  <p class="subtext">Find a trade and see its placement, pricing and events. Every lookup is logged.</p>
+
+  <form class="search" (ngSubmit)="search()">
+    <label>Order ID <input name="orderId" data-testid="ops-order-id" [(ngModel)]="criteria.orderId"></label>
+    <label>Client email <input name="clientEmail" type="email" [(ngModel)]="criteria.clientEmail"></label>
+    <label>Account number <input name="accountNumber" [(ngModel)]="criteria.accountNumber"></label>
+    <label>Symbol <input name="symbol" [(ngModel)]="criteria.symbol"></label>
+    <label>From <input name="from" type="date" [(ngModel)]="criteria.from"></label>
+    <label>To <input name="to" type="date" [(ngModel)]="criteria.to"></label>
+    <button type="submit" class="primary" [disabled]="loading()" data-testid="ops-search">Search</button>
+  </form>
+
+  @if (error()) {
+    <div class="error-message" role="alert">{{ error() }}</div>
+  }
+
+  @if (timeline(); as view) {
+    <div class="timeline-header">
+      <div>
+        <h3>{{ view.trade.side }} {{ view.trade.quantity }} {{ view.trade.symbol }} · {{ view.trade.status }}</h3>
+        <p class="subtext">
+          Order {{ view.trade.orderId }} · {{ view.trade.clientEmail }} · {{ view.trade.accountNumber }}
+          @if (view.quotedPrice !== null) { · quoted {{ view.quotedPrice }} }
+          @if (view.maxSlippagePercent !== null) { · tolerance {{ view.maxSlippagePercent }}% }
+        </p>
+      </div>
+      <div class="actions">
+        <button type="button" (click)="timeline.set(null)">Back to results</button>
+        <button type="button" class="primary" [disabled]="loading()" (click)="download(view.trade.orderId)"
+                data-testid="ops-download">Download CSV</button>
+      </div>
+    </div>
+    <ol class="steps">
+      @for (step of view.steps; track $index) {
+        <li data-testid="ops-step">
+          <time>{{ step.at | date: 'yyyy-MM-dd HH:mm:ss.SSS': 'UTC' }} UTC</time>
+          <strong>{{ step.type }}</strong>
+          <span>{{ step.description }}</span>
+        </li>
+      }
+    </ol>
+  } @else if (results(); as results) {
+    @if (results.length === 0) {
+      <p class="subtext" data-testid="ops-no-results">No trades match this search.</p>
+    } @else {
+      <table>
+        <thead>
+          <tr><th>Placed (UTC)</th><th>Client</th><th>Account</th><th>Trade</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          @for (trade of results; track trade.orderId) {
+            <tr data-testid="ops-result">
+              <td>{{ trade.submittedAt | date: 'yyyy-MM-dd HH:mm:ss': 'UTC' }}</td>
+              <td>{{ trade.clientEmail }}</td>
+              <td>{{ trade.accountNumber }}</td>
+              <td>{{ trade.side }} {{ trade.quantity }} {{ trade.symbol }}</td>
+              <td>{{ trade.status }}</td>
+              <td><button type="button" (click)="open(trade.orderId)">View</button></td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+</section>
