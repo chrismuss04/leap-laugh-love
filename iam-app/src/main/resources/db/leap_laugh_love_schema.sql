@@ -300,6 +300,26 @@ CREATE TRIGGER trg_client_credentials_no_delete
     BEFORE DELETE ON iam.client_credentials
     FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
 
+-- Trade Reconstruction: who looked up which trades, written before any data is returned.
+-- order_id has no foreign key: lookups of orders that don't exist are logged too.
+CREATE TABLE IF NOT EXISTS trading.ops_access_log (
+    access_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID NOT NULL
+        REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
+    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    order_id UUID,
+    search_criteria TEXT,
+    accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_access_log_order_id
+    ON trading.ops_access_log (order_id);
+
+DROP TRIGGER IF EXISTS trg_ops_access_log_no_delete_or_update ON trading.ops_access_log;
+CREATE TRIGGER trg_ops_access_log_no_delete_or_update
+    BEFORE UPDATE OR DELETE ON trading.ops_access_log
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
 -- Market Simulation Backend: owns its own instrument/parameter table (decoupled from
 -- trading.instruments) so market-data-app has no cross-schema JPA coupling to account-app or order-app.
 CREATE TABLE IF NOT EXISTS marketdata.instruments (

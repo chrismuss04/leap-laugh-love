@@ -1,6 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
+DROP TABLE IF EXISTS trading.ops_access_log CASCADE;
 DROP TABLE IF EXISTS trading.position_movements CASCADE;
 DROP TABLE IF EXISTS trading.positions CASCADE;
 DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
@@ -71,6 +72,15 @@ CREATE TABLE trading.executions (
     quote_timestamp TIMESTAMP WITH TIME ZONE,
     quote_exchange VARCHAR(50),
     FOREIGN KEY (order_id) REFERENCES trading.orders (order_id)
+);
+
+CREATE TABLE trading.ops_access_log (
+    access_id UUID PRIMARY KEY,
+    staff_id UUID NOT NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    order_id UUID,
+    search_criteria VARCHAR(1000),
+    accessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE trading.cash_ledger (

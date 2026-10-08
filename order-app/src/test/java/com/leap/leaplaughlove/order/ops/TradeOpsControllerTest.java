@@ -3,9 +3,11 @@ package com.leap.leaplaughlove.order.ops;
 import com.leap.leaplaughlove.common.security.JwtService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -20,6 +22,10 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
@@ -45,6 +51,9 @@ class TradeOpsControllerTest {
 
     @MockBean
     private TradeTimelineService tradeTimelineService;
+
+    @MockBean
+    private OpsAccessLog accessLog;
 
     private static Authentication tradingOps() {
         return new UsernamePasswordAuthenticationToken(
@@ -154,5 +163,47 @@ class TradeOpsControllerTest {
 
         mockMvc.perform(get("/api/order/ops/orders/{id}/timeline.csv", ORDER_ID).with(authentication(tradingOps())))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("Each lookup is logged before any trade data is read")
+    void logsBeforeReading() throws Exception {
+        when(tradeTimelineService.getTimeline(ORDER_ID)).thenReturn(timeline());
+
+        mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps()))
+                .param("clientEmail", "alice.johnson@leap.com").param("from", "2026-10-01"));
+        mockMvc.perform(get("/api/order/ops/orders/{id}/timeline", ORDER_ID).with(authentication(tradingOps())));
+        mockMvc.perform(get("/api/order/ops/orders/{id}/timeline.csv", ORDER_ID).with(authentication(tradingOps())));
+
+        InOrder order = inOrder(accessLog, tradeTimelineService);
+        order.verify(accessLog).record(OpsAccessLog.Action.SEARCH, null,
+                "{clientEmail=alice.johnson@leap.com, from=2026-10-01}");
+        order.verify(tradeTimelineService).search(null, "alice.johnson@leap.com", null, null, LocalDate.of(2026, 10, 1), null);
+        order.verify(accessLog).record(OpsAccessLog.Action.VIEW_TIMELINE, ORDER_ID, null);
+        order.verify(tradeTimelineService).getTimeline(ORDER_ID);
+        order.verify(accessLog).record(OpsAccessLog.Action.DOWNLOAD_CSV, ORDER_ID, null);
+        order.verify(tradeTimelineService).getTimeline(ORDER_ID);
+    }
+
+    @Test
+    @DisplayName("A lookup of an unknown order is still logged")
+    void logsUnknownOrder() throws Exception {
+        when(tradeTimelineService.getTimeline(ORDER_ID))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + ORDER_ID));
+
+        mockMvc.perform(get("/api/order/ops/orders/{id}/timeline", ORDER_ID).with(authentication(tradingOps())))
+                .andExpect(status().isNotFound());
+        verify(accessLog).record(OpsAccessLog.Action.VIEW_TIMELINE, ORDER_ID, null);
+    }
+
+    @Test
+    @DisplayName("If the access can't be logged, nothing is read or returned")
+    void failsClosed() {
+        doThrow(new DataAccessResourceFailureException("database down"))
+                .when(accessLog).record(OpsAccessLog.Action.VIEW_TIMELINE, ORDER_ID, null);
+
+        assertThrows(Exception.class, () -> mockMvc.perform(
+                get("/api/order/ops/orders/{id}/timeline", ORDER_ID).with(authentication(tradingOps()))));
+        verifyNoInteractions(tradeTimelineService);
     }
 }
