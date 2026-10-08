@@ -11,6 +11,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.time.Instant;
@@ -23,8 +24,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Staff roles: order-app is for clients only. Every token here has a live session in its own
- * session table, so the role is the only thing that differs between them.
+ * Staff roles: order-app is for clients only, except trade reconstruction (Trading Operations
+ * only). Every token here has a live session in its own session table, so the role is the only
+ * thing that differs between them.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -77,6 +79,41 @@ class RoleAccessTest {
     @DisplayName("no token is unauthorized")
     void noTokenIsUnauthorized() throws Exception {
         mockMvc.perform(post("/api/order/orders").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnauthorized());
+    }
+    @Test
+    @Sql("/db/order_submission_test_setup.sql")
+    @DisplayName("Trading Operations can search trades, view a timeline and download it")
+    void tradingOperationsCanReconstructTrades() throws Exception {
+        String token = tokenFor(Role.TRADING_OPERATIONS);
+        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token).param("symbol", "AAPL"))
+                .andExpect(status().isOk());
+        // 404, not 403: the role got through.
+        UUID unknown = UUID.randomUUID();
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline.csv").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"CLIENT", "COMMERCIAL_ANALYST"})
+    @DisplayName("clients and commercial analysts can't reconstruct trades")
+    void othersCannotReconstructTrades(Role role) throws Exception {
+        String token = tokenFor(role);
+        UUID orderId = UUID.randomUUID();
+        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token).param("symbol", "AAPL"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId + "/timeline").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId + "/timeline.csv").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("trade reconstruction without a token is unauthorized")
+    void tradeReconstructionWithoutTokenIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/order/ops/orders").param("symbol", "AAPL"))
                 .andExpect(status().isUnauthorized());
     }
 }
