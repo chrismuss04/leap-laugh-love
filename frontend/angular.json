@@ -85,6 +85,7 @@
             "buildTarget": "leap-laugh-love-frontend:build:development",
             "tsConfig": "tsconfig.spec.json",
             "setupFiles": ["src/testing/test-setup.ts"],
+            "runnerConfig": "vitest.config.ts",
             "coverageExclude": ["**/*.html", "src/testing/**"],
             "coverageReporters": [
               "html",

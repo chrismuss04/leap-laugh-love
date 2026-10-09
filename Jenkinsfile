@@ -230,6 +230,49 @@ pipeline {
                         dir('frontend') {
                             sh 'npm run build'
                         }
+                        script {
+                            // The E2E runner image (e2e/Dockerfile): Node, the suite's dependencies
+                            // and Chromium's headless shell only. Tagged by its lockfile, so it is
+                            // built on the first build after a dependency change and found already
+                            // present otherwise. Built in this branch because the frontend specs
+                            // below run in it too.
+                            if (env.RUN_E2E == 'true' || env.RUN_SONAR == 'true') {
+                                sh '''
+                                    set -eu
+                                    if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
+                                        docker build -t "$E2E_IMAGE" e2e
+                                    fi
+                                '''
+                            }
+                            if (env.RUN_SONAR == 'true') {
+                                // Vitest runs the specs in headless Chromium through Playwright,
+                                // which the agent doesn't have; the runner image carries
+                                // Playwright's headless shell in /ms-playwright. frontend/ pins the
+                                // same Playwright version as e2e/, so it finds that build. Run here,
+                                // alongside the Maven suite, rather than as a stage after it.
+                                // --user keeps coverage/ and .angular/ owned by the agent account,
+                                // as with Maven. Mounted at /repo/frontend, mirroring the checkout:
+                                // angular.json writes lcov paths relative to the frontend's parent,
+                                // and SonarQube resolves them from the repo root, so they must come
+                                // out as frontend/src/...
+                                sh '''
+                                    set -eu
+                                    docker run --rm \
+                                        --user "$(id -u):$(id -g)" \
+                                        -e HOME=/tmp \
+                                        -e CI=1 \
+                                        -v "$WORKSPACE/frontend":/repo/frontend \
+                                        -w /repo/frontend \
+                                        "$E2E_IMAGE" \
+                                        npx ng test --watch=false --coverage
+                                '''
+                            }
+                        }
+                    }
+                    post {
+                        always {
+                            archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
+                        }
                     }
                 }
 
@@ -428,185 +471,154 @@ pipeline {
                         }
                     }
                 }
-
-                stage('E2E Runner Image') {
-                    when {
-                        environment name: 'RUN_E2E', value: 'true'
-                    }
-                    steps {
-                        // Node, the suite's dependencies and Chromium's headless shell only (see
-                        // e2e/Dockerfile). Built on the first build after a dependency change,
-                        // reused otherwise - and on the builds that do rebuild it, it no longer
-                        // holds up the E2E stage.
-                        sh '''
-                            set -eu
-                            if ! docker image inspect "$E2E_IMAGE" >/dev/null 2>&1; then
-                                docker build -t "$E2E_IMAGE" e2e
-                            fi
-                        '''
-                    }
-                }
             }
         }
 
-        stage('Frontend Unit Tests') {
-            when {
-                environment name: 'RUN_SONAR', value: 'true'
-            }
-            steps {
-                // Vitest runs the specs in headless Chromium through Playwright, which the agent
-                // doesn't have; the E2E runner image (built in "Build and Test" under the same
-                // condition) carries Playwright's headless shell in /ms-playwright. frontend/ pins
-                // the same Playwright version as e2e/, so it finds that build. The frontend's own
-                // node_modules come from the host "npm ci" above.
-                // --user keeps coverage/ and .angular/ owned by the agent account, as with Maven.
-                // Mounted at /repo/frontend, mirroring the checkout: angular.json writes lcov
-                // paths relative to the frontend's parent, and SonarQube resolves them from the
-                // repo root, so they must come out as frontend/src/...
-                sh '''
-                    set -eu
-                    docker run --rm \
-                        --user "$(id -u):$(id -g)" \
-                        -e HOME=/tmp \
-                        -e CI=1 \
-                        -v "$WORKSPACE/frontend":/repo/frontend \
-                        -w /repo/frontend \
-                        "$E2E_IMAGE" \
-                        npx ng test --watch=false --coverage
-                '''
-            }
-            post {
-                always {
-                    archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
-                }
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            when {
-                environment name: 'RUN_SONAR', value: 'true'
-            }
-            steps {
-                // "SonarScanner" is the scanner installation under Manage Jenkins > Tools and
-                // "SonarQube" the server under Manage Jenkins > System; withSonarQubeEnv supplies
-                // its URL and the sonarqube-token credential. Project settings, including the
-                // coverage report paths from the stages above, are in sonar-project.properties.
-                script {
-                    def scannerHome = tool 'SonarScanner'
-                    withSonarQubeEnv('SonarQube') {
-                        sh """
-                            ${scannerHome}/bin/sonar-scanner --version
-                            ${scannerHome}/bin/sonar-scanner
-                        """
-                    }
-                }
-            }
-        }
-
-        stage('Quality Gate') {
-            when {
-                environment name: 'RUN_SONAR', value: 'true'
-            }
-            steps {
-                // Waits for SonarQube's webhook to report the gate result and fails the build
-                // on a failed gate, before E2E spends time on it.
-                timeout(time: 5, unit: 'MINUTES') {
-                    waitForQualityGate abortPipeline: true
-                }
-            }
-        }
-
-        stage('E2E') {
-            // RUN_E2E is set in Configure Pipeline.
-            when {
-                environment name: 'RUN_E2E', value: 'true'
-            }
-            options {
-                timeout(time: 20, unit: 'MINUTES')
-            }
-            steps {
-                sh '''
-                    set -eu
-                    # The Angular dev server: its proxy is what routes /api/** to the services, the
-                    # same way a developer's browser reaches them. Started by the Frontend branch
-                    # of "Build and Test", so its install and first compile are usually done by now.
-                    echo "Waiting for the frontend (installs dependencies on first start)..."
-                    # 127.0.0.1, not localhost: ng serve --host 0.0.0.0 listens on IPv4 only, and
-                    # where the container has IPv6 (Docker Desktop) busybox wget resolves localhost
-                    # to ::1 first and gets "connection refused" from a server that is up.
-                    for i in $(seq 1 120); do
-                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://127.0.0.1:4200/; then
-                            echo "Frontend is serving"
-                            break
-                        fi
-                        if [ "$i" = "120" ]; then
-                            echo "Frontend did not start in time"
-                            exit 1
-                        fi
-                        sleep 5
-                    done
-
-                    # The runner image was built (or found) by the "E2E Runner Image" branch.
-                    # Attached to the compose network so it reaches the frontend by service name.
-                    # --user keeps the reports owned by the agent account, for the same reason as
-                    # the Maven step. The image already holds node_modules, so nothing installs.
-                    docker run --rm --ipc=host \
-                        --network "${COMPOSE_PROJECT}_default" \
-                        --user "$(id -u):$(id -g)" \
-                        -e HOME=/tmp \
-                        -e CI=1 \
-                        -e BASE_URL=http://frontend:4200 \
-                        -v "$WORKSPACE/e2e":/e2e \
-                        "$E2E_IMAGE" \
-                        sh -c "tsc --noEmit && eslint . && playwright test"
-                '''
-            }
-            post {
-                always {
-                    junit allowEmptyResults: true, testResults: 'e2e/results/junit.xml'
-                    archiveArtifacts allowEmptyArchive: true, artifacts: 'e2e/playwright-report/**, e2e/test-results/**'
-                }
-            }
-        }
-        stage('Trade Recovery Tests') {
-            when {
-                environment name: 'RUN_E2E', value: 'true'
-            }
-            options {
-                timeout(time: 30, unit: 'MINUTES')
-            }
-            environment {
-                CI = 'true'
-            }
-            steps {
-                sh '''
-                    set -eu
-                    # Recovery needs the local Docker daemon, Compose v2 and Python 3.
-                    docker compose version
-                    python3 --version
-                    # Release this build's ordinary stack before starting another four JVMs.
-                    # Keep its containers for diagnostics; final pipeline cleanup removes them.
-                    $COMPOSE -p "$COMPOSE_PROJECT" stop
-                    npm ci --prefix e2e --cache "$HOME/.npm-ci" --no-audit --no-fund
-                    npm --prefix e2e run test:recovery:proxy
-                    bash scripts/test-trade-recovery.sh npm --prefix e2e run test:recovery
-                    # A successful stage must produce a test report, not just a healthy stack.
-                    python3 -c 'import glob; assert glob.glob(".recovery-results/*/junit.xml"), "Recovery test report missing"'
-                '''
-            }
-            post {
-                always {
-                    script {
-                        try {
-                            // The marker survives termination of the shell/test process.
-                            timeout(time: 5, unit: 'MINUTES') {
-                                sh 'bash scripts/test-trade-recovery.sh --cleanup'
+        // Static analysis and the stack tests need nothing from each other, so they run side by
+        // side rather than the stack tests waiting out the scan and the quality-gate webhook.
+        // failFast: a failed quality gate aborts the stack tests, and a failed stack test aborts
+        // the analysis - either way the build is red and stops early.
+        stage('Verify') {
+            failFast true
+            parallel {
+                stage('Static Analysis') {
+                    stages {
+                        stage('SonarQube Analysis') {
+                            when {
+                                environment name: 'RUN_SONAR', value: 'true'
                             }
-                        } finally {
-                            // Keep diagnostics even when tests or fallback cleanup fail.
-                            archiveArtifacts allowEmptyArchive: true, artifacts: '.recovery-results/**'
-                            junit allowEmptyResults: true, testResults: '.recovery-results/*/junit.xml'
+                            steps {
+                                // "SonarScanner" is the scanner installation under Manage Jenkins > Tools and
+                                // "SonarQube" the server under Manage Jenkins > System; withSonarQubeEnv supplies
+                                // its URL and the sonarqube-token credential. Project settings, including the
+                                // coverage report paths from the stages above, are in sonar-project.properties.
+                                script {
+                                    def scannerHome = tool 'SonarScanner'
+                                    withSonarQubeEnv('SonarQube') {
+                                        sh """
+                                            ${scannerHome}/bin/sonar-scanner --version
+                                            ${scannerHome}/bin/sonar-scanner
+                                        """
+                                    }
+                                }
+                            }
+                    }
+
+                    stage('Quality Gate') {
+                        when {
+                            environment name: 'RUN_SONAR', value: 'true'
                         }
+                        steps {
+                            // Waits for SonarQube's webhook to report the gate result and fails the build
+                            // on a failed gate. failFast on the parallel stage then stops E2E and the
+                            // recovery suite as well, rather than letting them run on to the end.
+                            timeout(time: 5, unit: 'MINUTES') {
+                                waitForQualityGate abortPipeline: true
+                            }
+                        }
+                    }
+                    }
+                }
+
+                stage('Stack Tests') {
+                    stages {
+                        stage('E2E') {
+                            // RUN_E2E is set in Configure Pipeline.
+                            when {
+                                environment name: 'RUN_E2E', value: 'true'
+                            }
+                            options {
+                                timeout(time: 20, unit: 'MINUTES')
+                            }
+                            steps {
+                                sh '''
+                                    set -eu
+                                    # The Angular dev server: its proxy is what routes /api/** to the services, the
+                                    # same way a developer's browser reaches them. Started by the Frontend branch
+                                    # of "Build and Test", so its install and first compile are usually done by now.
+                                    echo "Waiting for the frontend (installs dependencies on first start)..."
+                                    # 127.0.0.1, not localhost: ng serve --host 0.0.0.0 listens on IPv4 only, and
+                                    # where the container has IPv6 (Docker Desktop) busybox wget resolves localhost
+                                    # to ::1 first and gets "connection refused" from a server that is up.
+                                    for i in $(seq 1 120); do
+                                        if $COMPOSE -p "$COMPOSE_PROJECT" exec -T frontend wget -q -O /dev/null http://127.0.0.1:4200/; then
+                                            echo "Frontend is serving"
+                                            break
+                                        fi
+                                        if [ "$i" = "120" ]; then
+                                            echo "Frontend did not start in time"
+                                            exit 1
+                                        fi
+                                        sleep 5
+                                    done
+
+                                    # The runner image was built (or found) by the Frontend branch of "Build and Test".
+                                    # Attached to the compose network so it reaches the frontend by service name.
+                                    # --user keeps the reports owned by the agent account, for the same reason as
+                                    # the Maven step. The image already holds node_modules, so nothing installs.
+                                    docker run --rm --ipc=host \
+                                        --network "${COMPOSE_PROJECT}_default" \
+                                        --user "$(id -u):$(id -g)" \
+                                        -e HOME=/tmp \
+                                        -e CI=1 \
+                                        -e BASE_URL=http://frontend:4200 \
+                                        -v "$WORKSPACE/e2e":/e2e \
+                                        "$E2E_IMAGE" \
+                                        sh -c "tsc --noEmit && eslint . && playwright test"
+                                '''
+                            }
+                            post {
+                                always {
+                                    junit allowEmptyResults: true, testResults: 'e2e/results/junit.xml'
+                                    archiveArtifacts allowEmptyArchive: true, artifacts: 'e2e/playwright-report/**, e2e/test-results/**'
+                                }
+                            }
+                    }
+                    stage('Trade Recovery Tests') {
+                        when {
+                            environment name: 'RUN_E2E', value: 'true'
+                        }
+                        options {
+                            timeout(time: 30, unit: 'MINUTES')
+                        }
+                        environment {
+                            CI = 'true'
+                        }
+                        steps {
+                            sh '''
+                                set -eu
+                                # Recovery needs the local Docker daemon, Compose v2 and Python 3.
+                                docker compose version
+                                python3 --version
+                                # Release this build's ordinary stack before starting another four JVMs.
+                                # Keep its containers for diagnostics; final pipeline cleanup removes them.
+                                $COMPOSE -p "$COMPOSE_PROJECT" stop
+                                npm ci --prefix e2e --cache "$HOME/.npm-ci" --no-audit --no-fund
+                                npm --prefix e2e run test:recovery:proxy
+                                # Reuse the service images "Build Docker Images" made for this commit rather
+                                # than building all four again; the build's cleanup block removes them.
+                                RECOVERY_IMAGE_TAG="$IMAGE_TAG" bash scripts/test-trade-recovery.sh npm --prefix e2e run test:recovery
+                                # A successful stage must produce a test report, not just a healthy stack.
+                                python3 -c 'import glob; assert glob.glob(".recovery-results/*/junit.xml"), "Recovery test report missing"'
+                            '''
+                        }
+                        post {
+                            always {
+                                script {
+                                    try {
+                                        // The marker survives termination of the shell/test process.
+                                        timeout(time: 5, unit: 'MINUTES') {
+                                            sh 'bash scripts/test-trade-recovery.sh --cleanup'
+                                        }
+                                    } finally {
+                                        // Keep diagnostics even when tests or fallback cleanup fail.
+                                        archiveArtifacts allowEmptyArchive: true, artifacts: '.recovery-results/**'
+                                        junit allowEmptyResults: true, testResults: '.recovery-results/*/junit.xml'
+                                    }
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }

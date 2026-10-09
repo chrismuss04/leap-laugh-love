@@ -116,18 +116,30 @@ export class RecoveryStack {
     expect((await execute('docker', ['inspect', '--format', '{{.Image}}', restoredId])).stdout.trim()).toBe(image);
   }
 
+  /**
+   * Routes order-app's settlement calls through the fault proxy, in pass mode. Safe to call
+   * again while the proxy is up: it reuses the running proxy, and order-app is only recreated
+   * when its route actually changes (or started if a failed test left it stopped), so tests
+   * sharing one proxy don't each pay for an order-app restart.
+   */
   async startProxy(): Promise<void> {
     if (!this.checked) throw new Error('Isolation must be verified before injecting faults.');
     const project = process.env.RECOVERY_PROJECT!;
     const name = `${project}-fault-proxy`;
-    await execute('docker', ['run', '-d', '--name', name, '--network', `${project}_default`,
-      '--mount', `type=bind,source=${path.join(process.env.RECOVERY_REPO_ROOT!, 'e2e/fixtures/settlement-proxy.mjs')},target=/proxy.mjs,readonly`,
-      'node:24-alpine', 'node', '/proxy.mjs'], { timeout: 180_000 });
+    const running = await execute('docker', ['inspect', '--format', '{{.State.Running}}', name])
+      .then(result => result.stdout.trim() === 'true', () => false);
+    if (!running) {
+      await execute('docker', ['rm', '-f', name]).catch(() => undefined);
+      await execute('docker', ['run', '-d', '--name', name, '--network', `${project}_default`,
+        '--mount', `type=bind,source=${path.join(process.env.RECOVERY_REPO_ROOT!, 'e2e/fixtures/settlement-proxy.mjs')},target=/proxy.mjs,readonly`,
+        'node:24-alpine', 'node', '/proxy.mjs'], { timeout: 180_000 });
+    }
     await expect.poll(async () => {
       try { await this.proxyMode('pass'); return true; } catch { return false; }
     }, { timeout: 30_000 }).toBe(true);
     this.accountRoute = `http://${name}:8080`;
-    await this.compose('up', '-d', '--no-deps', '--no-build', '--force-recreate', 'order-app');
+    // Compose recreates order-app only if its configuration (the route) differs.
+    await this.compose('up', '-d', '--no-deps', '--no-build', 'order-app');
     await this.healthy();
   }
 
