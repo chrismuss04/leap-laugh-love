@@ -130,6 +130,10 @@ class StaffLoginIntegrationTest {
                                  "city":"London","postalCode":"N1","countryCode":"GB","experienceLevel":"INTERMEDIATE",
                                  "initialDepositAmount":5000.00,"password":"password1"}
                                 """))
-                .andExpect(status().isConflict());
+                // Registration answers every application alike; the refusal shows in what gets stored.
+                .andExpect(status().isAccepted());
+
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM iam.pending_registrations", Integer.class));
+        assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM iam.clients", Integer.class));
     }
 }

@@ -1,19 +1,13 @@
 package com.leap.leaplaughlove.iam.client;
 
-import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
-import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
-import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
 import jakarta.validation.Payload;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.lang.annotation.ElementType;
@@ -22,9 +16,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.time.Period;
-import java.util.UUID;
 
 /**
  * Controller responsible for handling client registration requests and managing
@@ -35,126 +27,90 @@ import java.util.UUID;
 @RequestMapping("/api/iam/v1/clients")
 public class ClientRegistrationController {
 
-    private final ClientRepository clientRepository;
-    private final ClientCredentialsRepository credentialsRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final ApplicationEventPublisher eventPublisher;
-    // Analyst login
-    private final StaffCredentialsRepository staffCredentialsRepository;
+    static final String ACCEPTED_MESSAGE = "Thanks for applying. Check your email for the next step.";
+
+    private final ClientRegistrationService registrationService;
 
     /**
      * Constructs a new ClientRegistrationController with the specified
      * dependencies.
      *
-     * @param clientRepository      the client repository used for persisting and
-     *                              retrieving client data
-     * @param credentialsRepository the repository used for persisting the client's
-     *                              login credentials
-     * @param passwordEncoder       the encoder used to hash the client's password
-     *                              before it is stored
-     * @param eventPublisher        publishes the registration so the client's first
-     *                              account is opened once it has committed
-     * @param staffCredentialsRepository the staff sign-in credentials, whose emails
-     *                              clients can't register with
+     * @param registrationService the service that takes applications and opens the
+     *                            client once their email is confirmed
      */
-    public ClientRegistrationController(ClientRepository clientRepository,
-            ClientCredentialsRepository credentialsRepository,
-            PasswordEncoder passwordEncoder,
-            ApplicationEventPublisher eventPublisher,
-            StaffCredentialsRepository staffCredentialsRepository) {
-        this.clientRepository = clientRepository;
-        this.credentialsRepository = credentialsRepository;
-        this.passwordEncoder = passwordEncoder;
-        this.eventPublisher = eventPublisher;
-        this.staffCredentialsRepository = staffCredentialsRepository;
+    public ClientRegistrationController(ClientRegistrationService registrationService) {
+        this.registrationService = registrationService;
     }
 
     /**
-     * Handles client registration requests
+     * Handles client registration requests. The response is the same whether or not
+     * the email, phone number or SSN already belongs to a client, so this cannot be
+     * used to find out which ones are registered; the applicant is told the outcome
+     * by email instead.
      * 
      * @param request the client registration request containing all necessary
      *                client details
-     * @return RegistrationResponse containing the registration response with client
-     *         ID, email, and status
+     * @return a 202 response telling the applicant to check their email
      */
     @PostMapping("/register")
-    @Transactional
     public ResponseEntity<RegistrationResponse> register(@Valid @RequestBody RegistrationRequest request) {
-        // Analyst login: sign-in looks clients up before staff, so a client with a staff member's
-        // email would lock that staff member out of reporting.
-        if (clientRepository.existsByEmail(request.email())
-                || staffCredentialsRepository.existsByEmail(request.email())) {
-            throw new DuplicateClientException("email already registered");
-        }
-        if (clientRepository.existsBySsn(request.ssn())) {
-            throw new DuplicateClientException("ssn already registered");
-        }
-
-        OffsetDateTime now = OffsetDateTime.now();
-        Client client = new Client(
-                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), "ACTIVE", now,
-                request.fullName(), request.dateOfBirth(), request.ssn(),
-                request.addressLine1(), request.addressLine2(), request.city(),
-                request.stateRegion(), request.postalCode(), request.countryCode(),
-                request.experienceLevel(), request.initialDepositAmount());
-        clientRepository.save(client);
-
-        ClientCredentials credentials = new ClientCredentials(
-                client.getClientId(), passwordEncoder.encode(request.password()), 0, null);
-        credentialsRepository.save(credentials);
-
-        eventPublisher.publishEvent(new ClientRegistrationEvent(client.getClientId(), client.getCreatedAt()));
-
-        eventPublisher.publishEvent(new ClientRegisteredEvent(
-                client.getClientId(), client.getEmail(), request.initialDepositAmount()));
-
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));
+        registrationService.submit(request);
+        return accepted();
     }
 
     /**
-     * Normalizes a phone number into "(XXX) XXX-XXXX" for 10-digit US numbers, or
-     * the
-     * digits alone otherwise. Clients that bypass the frontend's live formatting
-     * (e.g.
-     * calling the API directly) would otherwise store phone numbers in inconsistent
-     * formats.
+     * Opens the client an application was for, using the token from the emailed
+     * link. The token travels in the body to keep it out of request logs.
+     * 
+     * @param request the request containing the token
+     * @return an empty 204 response, or 400 if the link is no longer usable
+     */
+    @PostMapping("/register/verify")
+    public ResponseEntity<Void> verify(@Valid @RequestBody VerifyRegistrationRequest request) {
+        registrationService.verify(request.token());
+        return ResponseEntity.noContent().build();
+    }
+
+    private static ResponseEntity<RegistrationResponse> accepted() {
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new RegistrationResponse(ACCEPTED_MESSAGE));
+    }
+
+    /**
+     * Normalizes a phone number into "(XXX) XXX-XXXX" for US numbers, with or
+     * without the leading country code 1, or the digits alone otherwise. Phone
+     * numbers have to be unique across clients, and clients that bypass the
+     * frontend's live formatting (e.g. calling the API directly) would otherwise
+     * store the same number in different formats.
      * 
      * @param phone the raw phone number as submitted
-     * @return the normalized phone number, or null if none was provided
+     * @return the normalized phone number, or null if it has no digits
      */
     static String normalizePhone(String phone) {
         if (phone == null) {
             return null;
         }
         String digits = phone.replaceAll("\\D", "");
+        if (digits.length() == 11 && digits.startsWith("1")) {
+            digits = digits.substring(1);
+        }
         if (digits.length() == 10) {
             return "(%s) %s-%s".formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));
         }
-        return digits;
+        return digits.isEmpty() ? null : digits;
     }
 
     /**
-     * Handles duplicate client exceptions thrown when client already exists
-     * 
-     * @param ex the exception thrown when a duplicate client is detected
-     * @return ResponseEntity containing the error message and HTTP status code
-     */
-    @ExceptionHandler(DuplicateClientException.class)
-    public ResponseEntity<String> handleDuplicate(DuplicateClientException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());
-    }
-
-    /**
-     * Handles attempts to violate data integrity constraints, such as duplicate
-     * email or SSN entries.
+     * Handles two applications for the same email arriving at the same moment, the
+     * only way storing one can violate a constraint. The loser is answered exactly
+     * like the winner.
      * 
      * @param ex the exception thrown when a data integrity violation occurs
-     * @return ResponseEntity containing the error message and HTTP status code
+     * @return the same 202 response a stored application gets
      */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
-    public ResponseEntity<String> handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT).body("email or ssn already registered");
+    public ResponseEntity<RegistrationResponse> handleDataIntegrity(
+            org.springframework.dao.DataIntegrityViolationException ex) {
+        return accepted();
     }
 
     /**
@@ -200,28 +156,21 @@ public class ClientRegistrationController {
     }
 
     /**
-     * Represents the response returned after a successful client registration.
+     * Represents the response returned for every accepted registration request.
+     * It carries nothing about the applicant, because it must not differ between
+     * an application that was stored and one that was not.
      * 
-     * @param clientId the unique identifier of the newly registered client
-     * @param email    the email of the newly registered client
-     * @param status   the registration status of the client
+     * @param message what the applicant should do next
      */
-    public record RegistrationResponse(UUID clientId, String email, String status) {
+    public record RegistrationResponse(String message) {
     }
 
     /**
-     * Exception thrown when an attempt is made to register a duplicate client.
+     * Represents the request made by the page the emailed link opens.
+     * 
+     * @param token the token from the emailed link
      */
-    static class DuplicateClientException extends RuntimeException {
-
-        /**
-         * Constructor for DuplicateClientException
-         * 
-         * @param message the error message
-         */
-        DuplicateClientException(String message) {
-            super(message);
-        }
+    public record VerifyRegistrationRequest(@NotBlank String token) {
     }
 
     /**
