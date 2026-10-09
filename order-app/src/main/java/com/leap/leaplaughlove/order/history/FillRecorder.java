@@ -4,6 +4,7 @@ import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.position.PositionMovement;
@@ -65,9 +66,14 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
+        return recordExecution(order, price, null, time);
+    }
+
+    /** As {@link #recordExecution(Order, BigDecimal, OffsetDateTime)}, keeping the quote the price came from. */
+    public Execution recordExecution(Order order, BigDecimal price, ExecutionQuote quote, OffsetDateTime time) {
         return executionRepository.saveAndFlush(new Execution(
                 order, order.getQuantity(), price, Execution.Status.FILLED,
-                "Executed at market price", time));
+                "Executed at market price", time, quote));
     }
 
     /**

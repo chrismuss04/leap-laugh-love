@@ -82,6 +82,16 @@ class TradeRecordRetentionIntegrationTest {
     }
 
     @Test
+    @DisplayName("Trading Operations access log entries must never be updated or deleted")
+    void testOpsAccessLogIsImmutable() throws Exception {
+        String schema = readFile(SCHEMA_FILE);
+
+        assertTrue(schema.contains("CREATE TRIGGER trg_ops_access_log_no_delete_or_update") &&
+                   schema.contains("BEFORE UPDATE OR DELETE ON trading.ops_access_log"),
+            "ops_access_log table should have a BEFORE UPDATE OR DELETE trigger");
+    }
+
+    @Test
     @DisplayName("Clients must never be deleted once created")
     void testClientsCannotBeDeleted() throws Exception {
         String schema = readFile(SCHEMA_FILE);

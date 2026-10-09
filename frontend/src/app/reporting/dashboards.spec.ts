@@ -125,6 +125,14 @@ describe('Trading operations dashboard', () => {
     expect(el.querySelector('[role="alert"]')!.textContent).toContain("isn't an order id");
     expect(el.querySelector('app-lifecycle-timeline')).toBeNull();
   });
+
+  it('shows trade reconstruction, and looks nothing up until a search', async () => {
+    const { el } = await open('/reporting', TradingOpsDashboardComponent);
+
+    expect(el.querySelector('app-trade-reconstruction')).not.toBeNull();
+    // Nothing is looked up (or logged) until a search.
+    http.expectNone(() => true);
+  });
 });
 
 describe('Commercial analyst dashboard', () => {
@@ -179,6 +187,12 @@ describe('Commercial analyst dashboard', () => {
     const harness = await RouterTestingHarness.create();
     await harness.navigateByUrl(`/reporting/orders/${ORDER_ID}`);
     expect(router.url).toBe('/reporting');
+  });
+
+  it('shows analysts no trade reconstruction', async () => {
+    const { el } = await open('/reporting', AnalystDashboardComponent);
+
+    expect(el.querySelector('app-trade-reconstruction')).toBeNull();
   });
 });
 

@@ -41,6 +41,8 @@ public class OrderSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // Reads every client's trades, so Trading Operations only.
+                        .requestMatchers("/api/order/ops/**").hasRole("TRADING_OPERATIONS")
                         // Client-only: staff tokens are refused here (403).
                         .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
