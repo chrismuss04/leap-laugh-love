@@ -17,11 +17,13 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
-      # Password reset emails go to the local mail catcher below, never to a real inbox.
+      # Registration and password reset emails go to the local mail catcher below, never to a real inbox.
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: 1025
       # Where the emailed reset link points; has to be the address the browser reaches the frontend on.
       PASSWORD_RESET_LINK_BASE_URL: "${PASSWORD_RESET_LINK_BASE_URL:-http://localhost:${FRONTEND_PORT:-4200}/reset-password}"
+      # Same for the link that confirms a new applicant's email and opens their account.
+      REGISTRATION_LINK_BASE_URL: "${REGISTRATION_LINK_BASE_URL:-http://localhost:${FRONTEND_PORT:-4200}/verify-email}"
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       CLIENT_REGISTRATION_EVENTS_ENABLED: "${CLIENT_REGISTRATION_EVENTS_ENABLED:-true}"
 

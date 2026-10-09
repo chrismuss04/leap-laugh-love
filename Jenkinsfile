@@ -394,7 +394,8 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl
+                                    # mailpit: the E2E suite registers users by following the link iam-app emails them.
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl mailpit
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -556,6 +557,7 @@ pipeline {
                         -e HOME=/tmp \
                         -e CI=1 \
                         -e BASE_URL=http://frontend:4200 \
+                        -e MAILPIT_URL=http://mailpit:8025 \
                         -v "$WORKSPACE/e2e":/e2e \
                         "$E2E_IMAGE" \
                         sh -c "tsc --noEmit && eslint . && playwright test"

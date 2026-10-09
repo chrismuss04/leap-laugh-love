@@ -1,5 +1,6 @@
 import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 import { formatPhone, formatSsn, Registration } from '../data/factories';
+import { confirmationToken } from './mailbox';
 
 // Response shapes, mirroring frontend/src/app/services/*. Only the fields the suite reads.
 export interface AccountSummary {
@@ -47,7 +48,8 @@ export interface LatestPrice {
 /**
  * Typed calls to the backend, used to arrange state (log in, buy a position to sell) and to
  * verify it independently of the UI. Every path goes through the frontend's dev-server proxy,
- * the same route the browser takes, so BASE_URL is the only address the suite needs.
+ * the same route the browser takes, so BASE_URL is the only backend address the suite needs
+ * (registering also reads the applicant's email; see mailbox.ts).
  */
 export class Api {
   constructor(
@@ -110,8 +112,15 @@ export class Api {
     });
   }
 
+  verifyRegistrationRaw(token: string): Promise<APIResponse> {
+    return this.request.post('/api/iam/v1/clients/register/verify', { data: { token } });
+  }
+
+  /** Applies, then confirms the email with the link iam-app sent, which is what opens the client. */
   async register(r: Registration): Promise<void> {
     await expectOk(await this.registerRaw(r), `register ${r.email}`);
+    const token = await confirmationToken(this.request, r.email);
+    await expectOk(await this.verifyRegistrationRaw(token), `confirm the email of ${r.email}`);
   }
 
   // ---- Account ----
