@@ -4,7 +4,6 @@ import { AuthService, Role } from '../services/auth.service';
 // Session Timeout & Revocation: staff sessions have the same idle timeout as clients'.
 import { SessionActivityService } from '../services/session-activity';
 import { Subscription, asapScheduler, observeOn } from 'rxjs';
-import { TradeReconstructionComponent } from './trade-reconstruction';
 
 const ROLE_LABELS: Record<Role, string> = {
   CLIENT: 'Client',
@@ -30,7 +29,6 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   readonly email = this.auth.getEmail();
   readonly roleLabel = ROLE_LABELS[this.auth.getRole() ?? 'CLIENT'];
-  readonly isTradingOps = this.auth.getRole() === 'TRADING_OPERATIONS';
 
   ngOnInit(): void {
     const token = this.auth.getToken();

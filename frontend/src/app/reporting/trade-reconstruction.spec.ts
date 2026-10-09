@@ -102,15 +102,15 @@ describe('TradeReconstructionComponent', () => {
     respond([trade]);
     (el('[data-testid="ops-result"] button') as HTMLButtonElement).click();
     respond(timeline);
-    const click = spyOn(HTMLAnchorElement.prototype, 'click');
-    spyOn(URL, 'createObjectURL').and.returnValue('blob:csv');
-    spyOn(URL, 'revokeObjectURL');
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
 
     (el('[data-testid="ops-download"]') as HTMLButtonElement).click();
     http.expectOne('/api/order/ops/orders/order-1/timeline.csv').flush(new Blob(['csv']));
 
     expect(click).toHaveBeenCalled();
-    expect((click.calls.mostRecent().object as HTMLAnchorElement).download).toBe('trade-order-1.csv');
+    expect((click.mock.contexts.at(-1) as HTMLAnchorElement).download).toBe('trade-order-1.csv');
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:csv');
   });
 

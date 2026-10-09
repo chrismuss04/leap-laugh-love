@@ -6,6 +6,7 @@ import { AuditFilterComponent } from '../filters/audit-filter';
 import { AuditFilter, activeAuditFilters } from '../filters/audit';
 import { ReportPanelComponent } from '../shared/report-panel';
 import { StatTileComponent } from '../shared/stat-tile';
+import { TradeReconstructionComponent } from '../trade-reconstruction';
 
 /**
  * Staff Dashboards: trading operations' home - who placed which order, when, and how it ended,
@@ -15,7 +16,7 @@ import { StatTileComponent } from '../shared/stat-tile';
  */
 @Component({
   selector: 'app-trading-ops-dashboard',
-  imports: [CommonModule, AuditFilterComponent, ReportPanelComponent, StatTileComponent],
+  imports: [CommonModule, AuditFilterComponent, ReportPanelComponent, StatTileComponent, TradeReconstructionComponent],
   providers: [AuditFilterState],
   templateUrl: './trading-ops.html',
   styleUrl: '../shared/dashboard.css'
