@@ -41,10 +41,10 @@ describe('Audit filter', () => {
   });
 
   it('recognises order ids, which are UUIDs', () => {
-    expect(isOrderId('3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21')).toBeTrue();
-    expect(isOrderId(' 3F2B8C1E-9A4D-4C2E-8F1A-6B7D5E0C9A21 ')).toBeTrue();
-    expect(isOrderId('3f2b8c1e')).toBeFalse();
-    expect(isOrderId('')).toBeFalse();
-    expect(isOrderId(null)).toBeFalse();
+    expect(isOrderId('3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21')).toBe(true);
+    expect(isOrderId(' 3F2B8C1E-9A4D-4C2E-8F1A-6B7D5E0C9A21 ')).toBe(true);
+    expect(isOrderId('3f2b8c1e')).toBe(false);
+    expect(isOrderId('')).toBe(false);
+    expect(isOrderId(null)).toBe(false);
   });
 });

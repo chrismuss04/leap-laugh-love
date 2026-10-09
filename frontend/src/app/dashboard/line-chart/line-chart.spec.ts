@@ -44,8 +44,8 @@ describe('LineChartComponent', () => {
 
   it('builds a line, an area and a baseline', () => {
     init({ baseline: 12 });
-    expect(chart.linePath.startsWith('M0.0,')).toBeTrue();
-    expect(chart.areaPath.endsWith('Z')).toBeTrue();
+    expect(chart.linePath.startsWith('M0.0,')).toBe(true);
+    expect(chart.areaPath.endsWith('Z')).toBe(true);
     expect(chart.baselineY).not.toBeNull();
     expect(fixture.nativeElement.querySelector('svg')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('.baseline')).not.toBeNull();
@@ -68,7 +68,7 @@ describe('LineChartComponent', () => {
 
   it('scrubs with the pointer, once per point', () => {
     init();
-    spyOn(chart['host'].nativeElement, 'getBoundingClientRect').and.returnValue({ left: 0, width: 300 } as DOMRect);
+    vi.spyOn(chart['host'].nativeElement, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 300 } as DOMRect);
     chart.onPointer({ clientX: 150 } as PointerEvent);
     chart.onPointer({ clientX: 151 } as PointerEvent);
     chart.onPointer({ clientX: 9999 } as PointerEvent);
@@ -93,8 +93,8 @@ describe('LineChartComponent', () => {
     key('Home');
     key('End');
     expect(scrubs).toEqual([2, 3, 0, 3]);
-    expect(key('x').defaultPrevented).toBeFalse();
-    expect(key('ArrowRight').defaultPrevented).toBeTrue();
+    expect(key('x').defaultPrevented).toBe(false);
+    expect(key('ArrowRight').defaultPrevented).toBe(true);
   });
 
   it('clears the scrub on Escape and on leaving', () => {

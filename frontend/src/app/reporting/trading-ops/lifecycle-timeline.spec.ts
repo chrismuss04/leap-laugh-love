@@ -16,7 +16,7 @@ describe('LifecycleTimelineComponent', () => {
     const el = render(emptyLifecycle());
     expect(rows(el).map(r => r.querySelector('.stage-label')!.textContent)).toEqual(
       ['Submitted', 'Accepted', 'Executed', 'Filled or rejected', 'Cash settled', 'Holdings updated', 'Reported']);
-    expect(rows(el).every(r => r.dataset['state'] === 'awaiting')).toBeTrue();
+    expect(rows(el).every(r => r.dataset['state'] === 'awaiting')).toBe(true);
     expect(el.querySelector('time')).toBeNull();
     expect(el.querySelector('.total')).toBeNull();
   });

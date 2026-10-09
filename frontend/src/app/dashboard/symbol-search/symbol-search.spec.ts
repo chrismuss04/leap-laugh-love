@@ -2,6 +2,8 @@ import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testin
 import { Subject, of } from 'rxjs';
 import { LatestPrice, MarketDataService } from '../../services/market-data';
 import { SymbolSearchComponent } from './symbol-search';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../../testing/create-spy-obj';
 
 describe('SymbolSearchComponent', () => {
   const catalog: LatestPrice[] = [
@@ -13,7 +15,7 @@ describe('SymbolSearchComponent', () => {
 
   let fixture: ComponentFixture<SymbolSearchComponent>;
   let search: SymbolSearchComponent;
-  let market: jasmine.SpyObj<MarketDataService>;
+  let market: MockedObject<MarketDataService>;
   let picks: string[];
 
   const key = (name: string) => {
@@ -28,8 +30,8 @@ describe('SymbolSearchComponent', () => {
   }
 
   beforeEach(() => {
-    market = jasmine.createSpyObj('MarketDataService', ['getAllLatestPrices']);
-    market.getAllLatestPrices.and.returnValue(of(catalog));
+    market = createSpyObj('MarketDataService', ['getAllLatestPrices']);
+    market.getAllLatestPrices.mockReturnValue(of(catalog));
     TestBed.configureTestingModule({
       imports: [SymbolSearchComponent],
       providers: [{ provide: MarketDataService, useValue: market }]
@@ -47,16 +49,16 @@ describe('SymbolSearchComponent', () => {
     search.onFocus();
     search.onFocus();
     expect(market.getAllLatestPrices).toHaveBeenCalledTimes(1);
-    expect(search.open()).toBeTrue();
-    expect(search.loading).toBeFalse();
+    expect(search.open()).toBe(true);
+    expect(search.loading).toBe(false);
   });
 
   it('does not load again while a load is in flight', () => {
-    market.getAllLatestPrices.and.returnValue(new Subject());
+    market.getAllLatestPrices.mockReturnValue(new Subject());
     search.onFocus();
     search.onFocus();
     expect(market.getAllLatestPrices).toHaveBeenCalledTimes(1);
-    expect(search.loading).toBeTrue();
+    expect(search.loading).toBe(true);
   });
 
   it('shows no results for an empty query', () => {
@@ -84,7 +86,7 @@ describe('SymbolSearchComponent', () => {
   });
 
   it('limits results to eight', () => {
-    market.getAllLatestPrices.and.returnValue(of(
+    market.getAllLatestPrices.mockReturnValue(of(
       Array.from({ length: 12 }, (_, i) => ({ symbol: `T${i}`, name: null, price: i, asOf: '' }))));
     search.onFocus();
     type('t');
@@ -104,9 +106,9 @@ describe('SymbolSearchComponent', () => {
   });
 
   it('ignores arrows and Enter without results', () => {
-    expect(key('ArrowDown').defaultPrevented).toBeFalse();
-    expect(key('ArrowUp').defaultPrevented).toBeFalse();
-    expect(key('Enter').defaultPrevented).toBeFalse();
+    expect(key('ArrowDown').defaultPrevented).toBe(false);
+    expect(key('ArrowUp').defaultPrevented).toBe(false);
+    expect(key('Enter').defaultPrevented).toBe(false);
     expect(picks).toEqual([]);
   });
 
@@ -117,21 +119,21 @@ describe('SymbolSearchComponent', () => {
     expect(picks).toEqual(['MSFT']);
     expect(search.query).toBe('');
     expect(search.results).toEqual([]);
-    expect(search.open()).toBeFalse();
+    expect(search.open()).toBe(false);
   });
 
   it('closes on Escape', () => {
     search.onFocus();
     key('Escape');
-    expect(search.open()).toBeFalse();
+    expect(search.open()).toBe(false);
   });
 
   it('closes shortly after blur, so a click can land first', fakeAsync(() => {
     search.onFocus();
     search.onBlur();
-    expect(search.open()).toBeTrue();
+    expect(search.open()).toBe(true);
     tick(150);
-    expect(search.open()).toBeFalse();
+    expect(search.open()).toBe(false);
   }));
 
   it('focuses on "/" unless already typing', () => {
@@ -142,9 +144,9 @@ describe('SymbolSearchComponent', () => {
       search.onGlobalKey(event);
       return event;
     };
-    expect(press(document.body).defaultPrevented).toBeTrue();
-    expect(press(input).defaultPrevented).toBeFalse();
-    expect(press(null as unknown as EventTarget).defaultPrevented).toBeTrue();
+    expect(press(document.body).defaultPrevented).toBe(true);
+    expect(press(input).defaultPrevented).toBe(false);
+    expect(press(null as unknown as EventTarget).defaultPrevented).toBe(true);
   });
 
   it('renders results and lets one be clicked', () => {

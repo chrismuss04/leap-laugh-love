@@ -50,7 +50,7 @@ describe('OrderService', () => {
   it('surfaces submission failure', () => {
     let status: number | undefined;
     service.submitOrder({ accountId: 'a', symbol: 'AAPL', side: 'SELL', quantity: 1 })
-      .subscribe({ next: () => fail('Expected an error'), error: error => status = error.status });
+      .subscribe({ next: () => expect.fail('Expected an error'), error: error => status = error.status });
     http.expectOne('/api/order/orders').flush({}, { status: 503, statusText: 'Unavailable' });
     expect(status).toBe(503);
     http.expectNone('/api/order/orders');

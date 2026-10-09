@@ -8,6 +8,21 @@ const scenarios = [
   { name: 'before order completion', mode: 'pass', settled: true }
 ] as const;
 
+// The fault proxy is shared by every scenario: starting it routes order-app through it, which
+// means recreating order-app, and doing that per test (plus once more to remove it) was most of
+// this file's run time. Each test still sets its own fault mode, which resets the proxy's
+// counters, and its own order-app kill and restart are untouched.
+test.afterAll(async ({ playwright }) => {
+  const request = await playwright.request.newContext();
+  try {
+    const stack = new RecoveryStack(request);
+    await stack.verifyIsolation();
+    await stack.stopProxy();
+  } finally {
+    await request.dispose();
+  }
+});
+
 for (const [index, scenario] of scenarios.entries()) {
   // Recover an interrupted trade once, then prove concurrent settlement retries leave it unchanged.
   test(scenario.name, async ({ request }, testInfo) => {
@@ -28,11 +43,7 @@ for (const [index, scenario] of scenarios.entries()) {
       // The completion fault is harmless in the blocked/drop cases and guarantees a pending state.
       await stack.blockCompletion(accountId);
       await stack.proxyMode(scenario.mode);
-      await expect.poll(async () => {
-        const response = await request.get(`${await stack.url('market-data-app')}/api/marketdata/prices/MSFT`,
-          { headers: { Authorization: `Bearer ${token}` } });
-        return response.status();
-      }).toBe(200);
+      await stack.freshQuote('MSFT', token);
 
       const trade = await stack.json<OrderResponse>('order-app', '/api/order/orders', token,
         { accountId, symbol: 'MSFT', side: 'BUY', quantity: 1 });
@@ -83,7 +94,9 @@ for (const [index, scenario] of scenarios.entries()) {
       await testInfo.attach('recovered', { body: JSON.stringify(recovered, null, 2), contentType: 'application/json' });
     } finally {
       await stack.allowCompletion();
-      await stack.stopProxy();
+      // Leave the shared proxy passing traffic; the next test's startProxy also restarts
+      // order-app if this one failed while it was killed.
+      await stack.proxyMode('pass');
     }
   });
 }

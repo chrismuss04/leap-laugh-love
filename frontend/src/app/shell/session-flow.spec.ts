@@ -8,6 +8,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ShellComponent } from './shell';
 import { AuthService } from '../services/auth.service';
 import { PriceStreamService } from '../services/price-stream';
+import type { Mock } from 'vitest';
 
 // Reproduce AppComponent's parent bindings: testing the shell alone misses mid-render logout.
 @Component({
@@ -23,11 +24,11 @@ describe('Session expiry in the signed-in shell', () => {
   let fixture: ComponentFixture<ShellComponent>;
   let auth: AuthService;
   let http: HttpTestingController;
-  let stop: jasmine.Spy;
+  let stop: Mock;
 
   beforeEach(async () => {
     localStorage.clear();
-    stop = jasmine.createSpy('stop');
+    stop = vi.fn().mockName('stop');
     await TestBed.configureTestingModule({
       imports: [ShellComponent, SessionHostComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),

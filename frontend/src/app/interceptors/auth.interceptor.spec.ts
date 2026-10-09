@@ -4,16 +4,18 @@ import { HttpClient, HttpErrorResponse, provideHttpClient, withInterceptorsFromD
 import { AuthInterceptor } from './auth.interceptor';
 import { AuthService } from '../services/auth.service';
 import { HTTP_INTERCEPTORS } from '@angular/common/http';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('AuthInterceptor', () => {
   let httpClient: HttpClient;
   let httpMock: HttpTestingController;
-  let authService: jasmine.SpyObj<AuthService>;
+  let authService: MockedObject<AuthService>;
 
   beforeEach(() => {
     // Create a spy object for AuthService
     // Session Timeout & Revocation: authentication failures end only the matching session.
-    const authServiceSpy = jasmine.createSpyObj('AuthService', ['getToken', 'logout', 'expireSession']);
+    const authServiceSpy = createSpyObj('AuthService', ['getToken', 'logout', 'expireSession']);
 
     TestBed.configureTestingModule({
     imports: [],
@@ -31,7 +33,7 @@ describe('AuthInterceptor', () => {
 
     httpClient = TestBed.inject(HttpClient);
     httpMock = TestBed.inject(HttpTestingController);
-    authService = TestBed.inject(AuthService) as jasmine.SpyObj<AuthService>;
+    authService = TestBed.inject(AuthService) as MockedObject<AuthService>;
   });
 
   afterEach(() => {
@@ -50,7 +52,7 @@ describe('AuthInterceptor', () => {
   describe('Request Intercepting', () => {
     it('should add Authorization header when token exists', () => {
       const mockToken = 'test-token-12345';
-      authService.getToken.and.returnValue(mockToken);
+      authService.getToken.mockReturnValue(mockToken);
 
       httpClient.get('/test-endpoint').subscribe();
 
@@ -62,7 +64,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should not add Authorization header when token does not exist', () => {
-      authService.getToken.and.returnValue(null);
+      authService.getToken.mockReturnValue(null);
 
       httpClient.get('/test-endpoint').subscribe();
 
@@ -74,7 +76,7 @@ describe('AuthInterceptor', () => {
 
     it('should preserve other headers when adding Authorization', () => {
       const mockToken = 'test-token-12345';
-      authService.getToken.and.returnValue(mockToken);
+      authService.getToken.mockReturnValue(mockToken);
 
       httpClient.get('/test-endpoint', {
         headers: { 'Custom-Header': 'custom-value' }
@@ -89,7 +91,7 @@ describe('AuthInterceptor', () => {
 
     it('should not modify the original request', () => {
       const mockToken = 'test-token-12345';
-      authService.getToken.and.returnValue(mockToken);
+      authService.getToken.mockReturnValue(mockToken);
 
       const originalRequest = httpClient.get('/test-endpoint');
 
@@ -107,10 +109,10 @@ describe('AuthInterceptor', () => {
   // ==================== Error Handling ====================
   describe('Error Handling', () => {
     it('should call logout when receiving 401 error', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with 401 error'),
+        () => expect.fail('should have failed with 401 error'),
         (error: HttpErrorResponse) => {
           expect(error.status).toBe(401);
         }
@@ -123,10 +125,10 @@ describe('AuthInterceptor', () => {
     });
 
     it('should redirect to home page when receiving 401 error', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with 401 error'),
+        () => expect.fail('should have failed with 401 error'),
         (error: HttpErrorResponse) => {
           expect(error.status).toBe(401);
         }
@@ -140,11 +142,11 @@ describe('AuthInterceptor', () => {
       expect(authService.expireSession).toHaveBeenCalledWith('test-token');
     });
 
-    it('should throw error after handling 401', (done) => {
-      authService.getToken.and.returnValue('test-token');
+    it('should throw error after handling 401', () => new Promise<void>(done => {
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with 401 error'),
+        () => expect.fail('should have failed with 401 error'),
         (error: HttpErrorResponse) => {
           expect(error.status).toBe(401);
           done();
@@ -153,13 +155,13 @@ describe('AuthInterceptor', () => {
 
       const req = httpMock.expectOne('/test-endpoint');
       req.flush('Unauthorized', { status: 401, statusText: 'Unauthorized' });
-    });
+    }));
 
-    it('should pass a 401 on a request without a token (sign-in) through to the caller', (done) => {
-      authService.getToken.and.returnValue(null);
+    it('should pass a 401 on a request without a token (sign-in) through to the caller', () => new Promise<void>(done => {
+      authService.getToken.mockReturnValue(null);
 
       httpClient.post('/api/iam/auth/login', {}).subscribe({
-        next: () => fail('should have failed with 401 error'),
+        next: () => expect.fail('should have failed with 401 error'),
         error: (error: HttpErrorResponse) => {
           expect(error.status).toBe(401);
           expect(error.error.message).toBe('Invalid email or password');
@@ -171,13 +173,13 @@ describe('AuthInterceptor', () => {
       const req = httpMock.expectOne('/api/iam/auth/login');
       req.flush({ error: 'INVALID_CREDENTIALS', message: 'Invalid email or password' },
         { status: 401, statusText: 'Unauthorized' });
-    });
+    }));
 
     it('should not call logout for non-401 errors', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with 500 error'),
+        () => expect.fail('should have failed with 500 error'),
         (error: HttpErrorResponse) => {
           expect(error.status).toBe(500);
         }
@@ -189,11 +191,11 @@ describe('AuthInterceptor', () => {
       expect(authService.logout).not.toHaveBeenCalled();
     });
 
-    it('should throw non-401 errors without modification', (done) => {
-      authService.getToken.and.returnValue('test-token');
+    it('should throw non-401 errors without modification', () => new Promise<void>(done => {
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with 500 error'),
+        () => expect.fail('should have failed with 500 error'),
         (error: HttpErrorResponse) => {
           expect(error.status).toBe(500);
           expect(error.statusText).toBe('Internal Server Error');
@@ -203,13 +205,13 @@ describe('AuthInterceptor', () => {
 
       const req = httpMock.expectOne('/test-endpoint');
       req.flush('Internal Server Error', { status: 500, statusText: 'Internal Server Error' });
-    });
+    }));
 
-    it('should handle network errors', (done) => {
-      authService.getToken.and.returnValue('test-token');
+    it('should handle network errors', () => new Promise<void>(done => {
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe(
-        () => fail('should have failed with network error'),
+        () => expect.fail('should have failed with network error'),
         (error) => {
           expect(error.status).toBe(0);
           done();
@@ -218,14 +220,14 @@ describe('AuthInterceptor', () => {
 
       const req = httpMock.expectOne('/test-endpoint');
       req.error(new ProgressEvent('Network error'));
-    });
+    }));
   });
 
   // ==================== Multiple Requests ====================
   describe('Multiple Requests', () => {
     it('should handle multiple concurrent requests correctly', () => {
       const mockToken = 'test-token-12345';
-      authService.getToken.and.returnValue(mockToken);
+      authService.getToken.mockReturnValue(mockToken);
 
       httpClient.get('/endpoint-1').subscribe();
       httpClient.get('/endpoint-2').subscribe();
@@ -245,7 +247,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should handle mix of requests with and without tokens', () => {
-      authService.getToken.and.returnValue(null);
+      authService.getToken.mockReturnValue(null);
 
       httpClient.get('/endpoint-1').subscribe();
 
@@ -254,7 +256,7 @@ describe('AuthInterceptor', () => {
 
       req1.flush({});
 
-      authService.getToken.and.returnValue('new-token');
+      authService.getToken.mockReturnValue('new-token');
 
       httpClient.get('/endpoint-2').subscribe();
 
@@ -268,7 +270,7 @@ describe('AuthInterceptor', () => {
   // ==================== Request Methods ====================
   describe('Different Request Methods', () => {
     it('should intercept GET requests', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.get('/test-endpoint').subscribe();
 
@@ -280,7 +282,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should intercept POST requests', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.post('/test-endpoint', { data: 'test' }).subscribe();
 
@@ -292,7 +294,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should intercept PUT requests', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.put('/test-endpoint', { data: 'test' }).subscribe();
 
@@ -304,7 +306,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should intercept DELETE requests', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.delete('/test-endpoint').subscribe();
 
@@ -316,7 +318,7 @@ describe('AuthInterceptor', () => {
     });
 
     it('should intercept PATCH requests', () => {
-      authService.getToken.and.returnValue('test-token');
+      authService.getToken.mockReturnValue('test-token');
 
       httpClient.patch('/test-endpoint', { data: 'test' }).subscribe();
 

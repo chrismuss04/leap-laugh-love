@@ -9,6 +9,8 @@ import { OrderHistoryPage, OrderService } from '../services/order';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
 import { DashboardComponent } from './dashboard';
+import type { Mock, MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('DashboardComponent', () => {
   const position = (symbol: string, quantity: number, averageCost: number) =>
@@ -40,12 +42,12 @@ describe('DashboardComponent', () => {
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let fixture: ComponentFixture<DashboardComponent>;
   let dashboard: DashboardComponent;
-  let holdingsApi: jasmine.SpyObj<HoldingsService>;
-  let balanceApi: jasmine.SpyObj<BalanceService>;
-  let marketApi: jasmine.SpyObj<MarketDataService>;
-  let orderApi: jasmine.SpyObj<OrderService>;
-  let portfolioApi: jasmine.SpyObj<PortfolioService>;
-  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: jasmine.Spy };
+  let holdingsApi: MockedObject<HoldingsService>;
+  let balanceApi: MockedObject<BalanceService>;
+  let marketApi: MockedObject<MarketDataService>;
+  let orderApi: MockedObject<OrderService>;
+  let portfolioApi: MockedObject<PortfolioService>;
+  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: Mock };
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -56,25 +58,25 @@ describe('DashboardComponent', () => {
 
   beforeEach(() => {
     params = new BehaviorSubject(convertToParamMap({}));
-    holdingsApi = jasmine.createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
-    balanceApi = jasmine.createSpyObj('BalanceService', ['getBalance']);
-    marketApi = jasmine.createSpyObj('MarketDataService',
+    holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
+    balanceApi = createSpyObj('BalanceService', ['getBalance']);
+    marketApi = createSpyObj('MarketDataService',
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    orderApi = jasmine.createSpyObj('OrderService', ['getOrderHistory']);
-    portfolioApi = jasmine.createSpyObj('PortfolioService', ['getHistory']);
-    stream = { prices: signal<Record<string, number>>({ SPX: 5100 }), watch: jasmine.createSpy('watch') };
+    orderApi = createSpyObj('OrderService', ['getOrderHistory']);
+    portfolioApi = createSpyObj('PortfolioService', ['getHistory']);
+    stream = { prices: signal<Record<string, number>>({ SPX: 5100 }), watch: vi.fn().mockName('watch') };
 
-    holdingsApi.getHoldings.and.returnValue(of(holdings));
-    holdingsApi.getAccounts.and.returnValue(of(summaries));
-    balanceApi.getBalance.and.returnValue(of(balance));
-    marketApi.getAllLatestPrices.and.returnValue(of([
+    holdingsApi.getHoldings.mockReturnValue(of(holdings));
+    holdingsApi.getAccounts.mockReturnValue(of(summaries));
+    balanceApi.getBalance.mockReturnValue(of(balance));
+    marketApi.getAllLatestPrices.mockReturnValue(of([
       { symbol: 'AAPL', name: 'Apple Inc.', price: 150, asOf: '' },
       { symbol: 'MSFT', name: 'Microsoft', price: 300, asOf: '' }
     ]));
-    marketApi.getPreviousClose.and.callFake(symbol => of(symbol === 'SPX' ? 5000 : 140));
-    marketApi.getIntradayCloses.and.returnValue(of([145, 150]));
-    orderApi.getOrderHistory.and.returnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
-    portfolioApi.getHistory.and.returnValue(of(history));
+    marketApi.getPreviousClose.mockImplementation(symbol => of(symbol === 'SPX' ? 5000 : 140));
+    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
+    orderApi.getOrderHistory.mockReturnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
+    portfolioApi.getHistory.mockReturnValue(of(history));
 
     TestBed.configureTestingModule({
       providers: [
@@ -96,14 +98,14 @@ describe('DashboardComponent', () => {
     beforeEach(() => create());
 
     it('loads accounts, history and orders, and picks the first held symbol', () => {
-      expect(dashboard.accountsLoading()).toBeFalse();
+      expect(dashboard.accountsLoading()).toBe(false);
       expect(dashboard.orders().length).toBe(1);
-      expect(dashboard.ordersLoading()).toBeFalse();
-      expect(dashboard.historyLoading()).toBeFalse();
+      expect(dashboard.ordersLoading()).toBe(false);
+      expect(dashboard.historyLoading()).toBe(false);
       expect(dashboard.selectedSymbol()).toBe('AAPL');
       expect(dashboard.selectedName()).toBe('AAPL Inc.');
       expect(dashboard.selectedPrice()).toBe(150);
-      expect(dashboard.isAccountView()).toBeFalse();
+      expect(dashboard.isAccountView()).toBe(false);
     });
 
     it('values the whole portfolio', () => {
@@ -125,7 +127,7 @@ describe('DashboardComponent', () => {
       expect(dashboard.tone()).toBe('gain');
       expect(dashboard.visibleRanges().length).toBe(6);
       expect(dashboard.activeRange()).toBe('1D');
-      expect(dashboard.chartEmpty()).toBeFalse();
+      expect(dashboard.chartEmpty()).toBe(false);
       expect(dashboard.chartError()).toBeNull();
       expect(dashboard.headlineLabel()).toBe('Today');
     });
@@ -141,14 +143,14 @@ describe('DashboardComponent', () => {
     });
 
     it('labels a daily-resolution scrub with the year', () => {
-      portfolioApi.getHistory.and.returnValue(of({ ...history, intervalSeconds: 86400 }));
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, intervalSeconds: 86400 }));
       dashboard.loadHistory();
       dashboard.scrubIndex.set(0);
       expect(dashboard.headlineLabel()).toMatch(/\d{4}/);
     });
 
     it('names the page by how many accounts there are', () => {
-      expect(dashboard.multiAccount()).toBeTrue();
+      expect(dashboard.multiAccount()).toBe(true);
       expect(dashboard.heroTitle()).toBe('Total value');
       expect(dashboard.accountLabel()).toBe('2 accounts');
     });
@@ -165,13 +167,13 @@ describe('DashboardComponent', () => {
     });
 
     it('keeps the stream watching everything on screen', () => {
-      const symbols = stream.watch.calls.mostRecent().args[0] as string[];
+      const symbols = stream.watch.mock.lastCall![0] as string[];
       expect(symbols).toContain('SPX');
       expect(symbols).toContain('AAPL');
     });
 
     it('changes range only when it differs, reloading history', () => {
-      portfolioApi.getHistory.calls.reset();
+      portfolioApi.getHistory.mockClear();
       dashboard.setRange('1D');
       expect(portfolioApi.getHistory).not.toHaveBeenCalled();
       dashboard.setRange('1M');
@@ -181,46 +183,46 @@ describe('DashboardComponent', () => {
     });
 
     it('explains history failures', () => {
-      portfolioApi.getHistory.and.returnValue(throwError(() => ({ status: 503 })));
+      portfolioApi.getHistory.mockReturnValue(throwError(() => ({ status: 503 })));
       dashboard.loadHistory();
       expect(dashboard.historyError()).toBe('Market data is unavailable right now.');
-      expect(dashboard.historyLoading()).toBeFalse();
+      expect(dashboard.historyLoading()).toBe(false);
       expect(dashboard.chartError()).toBe('Market data is unavailable right now.');
 
-      portfolioApi.getHistory.and.returnValue(throwError(() => ({ status: 500 })));
+      portfolioApi.getHistory.mockReturnValue(throwError(() => ({ status: 500 })));
       dashboard.loadHistory();
       expect(dashboard.historyError()).toBe('We couldn’t load your portfolio history.');
     });
 
     it('discards history that arrives for a range that is no longer selected', () => {
       const slow = new Subject<PortfolioHistory>();
-      portfolioApi.getHistory.and.returnValue(slow);
+      portfolioApi.getHistory.mockReturnValue(slow);
       dashboard.loadHistory();
-      portfolioApi.getHistory.and.returnValue(of(history));
+      portfolioApi.getHistory.mockReturnValue(of(history));
       dashboard.setRange('1M');
       slow.next({ ...history, startValue: 1 });
       expect(dashboard.history()!.startValue).toBe(2000);
 
       const failing = new Subject<PortfolioHistory>();
-      portfolioApi.getHistory.and.returnValue(failing);
+      portfolioApi.getHistory.mockReturnValue(failing);
       dashboard.loadHistory();
-      portfolioApi.getHistory.and.returnValue(of(history));
+      portfolioApi.getHistory.mockReturnValue(of(history));
       dashboard.setRange('1W');
       failing.error({ status: 500 });
       expect(dashboard.historyError()).toBeNull();
     });
 
     it('explains order failures', () => {
-      orderApi.getOrderHistory.and.returnValue(throwError(() => ({ status: 500 })));
+      orderApi.getOrderHistory.mockReturnValue(throwError(() => ({ status: 500 })));
       dashboard.loadOrders();
       expect(dashboard.ordersError()).toBe('We couldn’t load your recent orders.');
-      expect(dashboard.ordersLoading()).toBeFalse();
+      expect(dashboard.ordersLoading()).toBe(false);
     });
 
     it('reloads everything after an order is placed', () => {
-      holdingsApi.getHoldings.calls.reset();
-      portfolioApi.getHistory.calls.reset();
-      orderApi.getOrderHistory.calls.reset();
+      holdingsApi.getHoldings.mockClear();
+      portfolioApi.getHistory.mockClear();
+      orderApi.getOrderHistory.mockClear();
       dashboard.onOrderPlaced();
       expect(holdingsApi.getHoldings).toHaveBeenCalled();
       expect(portfolioApi.getHistory).toHaveBeenCalled();
@@ -228,14 +230,14 @@ describe('DashboardComponent', () => {
     });
 
     it('selects a symbol and loads its daily context', () => {
-      marketApi.getPreviousClose.calls.reset();
+      marketApi.getPreviousClose.mockClear();
       dashboard.selectSymbol('MSFT');
       expect(dashboard.selectedSymbol()).toBe('MSFT');
       expect(marketApi.getPreviousClose).toHaveBeenCalledWith('MSFT');
     });
 
     it('opens the trade panel on a side after selecting a symbol', fakeAsync(() => {
-      const open = jasmine.createSpy('open');
+      const open = vi.fn().mockName('open');
       dashboard.tradePanel = { open } as never;
       dashboard.trade('MSFT', 'SELL');
       expect(dashboard.selectedSymbol()).toBe('MSFT');
@@ -258,7 +260,7 @@ describe('DashboardComponent', () => {
     beforeEach(() => create('a2'));
 
     it('scopes holdings, cash and labels to the account', () => {
-      expect(dashboard.isAccountView()).toBeTrue();
+      expect(dashboard.isAccountView()).toBe(true);
       expect(dashboard.selectedAccount()?.accountId).toBe('a2');
       expect(dashboard.cash()).toBe(500);
       expect(dashboard.marketValue()).toBe(750);
@@ -276,7 +278,7 @@ describe('DashboardComponent', () => {
       expect(points[1].value).toBe(1250);
       expect(points[1].time - points[0].time).toBeGreaterThan(0);
       expect(dashboard.baseline()).toBe(selectedPreviousCloseValue());
-      expect(dashboard.chartLoading()).toBeFalse();
+      expect(dashboard.chartLoading()).toBe(false);
     });
 
     it('labels a scrub with the time of day', () => {
@@ -285,7 +287,7 @@ describe('DashboardComponent', () => {
     });
 
     it('ignores range changes', () => {
-      portfolioApi.getHistory.calls.reset();
+      portfolioApi.getHistory.mockClear();
       dashboard.setRange('1M');
       expect(dashboard.range()).toBe('1D');
       expect(portfolioApi.getHistory).not.toHaveBeenCalled();
@@ -306,11 +308,11 @@ describe('DashboardComponent', () => {
 
   describe('an account with nothing invested', () => {
     it('has no chart to draw', () => {
-      holdingsApi.getHoldings.and.returnValue(of({
+      holdingsApi.getHoldings.mockReturnValue(of({
         accounts: [{ accountId: 'a2', accountNumber: 'ACC-0002', baseCurrency: 'USD', positions: [] }]
       }));
       create('a2');
-      expect(dashboard.chartEmpty()).toBeTrue();
+      expect(dashboard.chartEmpty()).toBe(true);
       expect(dashboard.holdings()).toEqual([]);
       expect(dashboard.selectedSymbol()).toBeNull();
       expect(dashboard.selectedName()).toBeNull();
@@ -320,14 +322,14 @@ describe('DashboardComponent', () => {
 
   describe('before anything has loaded', () => {
     beforeEach(() => {
-      holdingsApi.getHoldings.and.returnValue(new Subject());
-      balanceApi.getBalance.and.returnValue(new Subject());
-      portfolioApi.getHistory.and.returnValue(new Subject());
+      holdingsApi.getHoldings.mockReturnValue(new Subject());
+      balanceApi.getBalance.mockReturnValue(new Subject());
+      portfolioApi.getHistory.mockReturnValue(new Subject());
       create();
     });
 
     it('reports nothing rather than zeros', () => {
-      expect(dashboard.accountsLoading()).toBeTrue();
+      expect(dashboard.accountsLoading()).toBe(true);
       expect(dashboard.holdings()).toEqual([]);
       expect(dashboard.cash()).toBeNull();
       expect(dashboard.portfolioValue()).toBeNull();
@@ -340,22 +342,22 @@ describe('DashboardComponent', () => {
       expect(dashboard.tradeAccounts()).toEqual([]);
       expect(dashboard.accountLabel()).toBe('');
       expect(dashboard.heroTitle()).toBe('Investing');
-      expect(dashboard.historyLoading()).toBeTrue();
+      expect(dashboard.historyLoading()).toBe(true);
     });
   });
 
   describe('a single account', () => {
     it('is labelled by its account number', () => {
-      balanceApi.getBalance.and.returnValue(of({ ...balance, accounts: [balance.accounts[0]] }));
+      balanceApi.getBalance.mockReturnValue(of({ ...balance, accounts: [balance.accounts[0]] }));
       create();
-      expect(dashboard.multiAccount()).toBeFalse();
+      expect(dashboard.multiAccount()).toBe(false);
       expect(dashboard.accountLabel()).toBe('ACC-0001');
       expect(dashboard.heroTitle()).toBe('Investing');
     });
   });
 
   it('falls back to the overview for an account that is not the client\'s', () => {
-    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     create('someone-elses');
     expect(navigate).toHaveBeenCalledWith(['/dashboard'], { replaceUrl: true });
   });

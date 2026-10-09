@@ -26,8 +26,8 @@ function setUp(): { router: Router; http: HttpTestingController } {
     providers: [provideRouter(routes), provideHttpClient(), provideHttpClientTesting()]
   });
   const activity = TestBed.inject(SessionActivityService);
-  spyOn(activity, 'start');
-  spyOn(activity, 'stop');
+  vi.spyOn(activity, 'start').mockImplementation(() => undefined);
+  vi.spyOn(activity, 'stop').mockImplementation(() => undefined);
   return { router: TestBed.inject(Router), http: TestBed.inject(HttpTestingController) };
 }
 
@@ -36,7 +36,7 @@ async function open<T>(url: string, page: Type<T>): Promise<{ harness: RouterTes
   const harness = await RouterTestingHarness.create();
   await harness.navigateByUrl(url);
   const found = harness.fixture.debugElement.query(By.directive(page));
-  expect(found).withContext(`${url} did not render ${page.name}`).not.toBeNull();
+  expect(found, `${url} did not render ${page.name}`).not.toBeNull();
   return { harness, page: found.componentInstance, el: found.nativeElement };
 }
 
@@ -78,7 +78,7 @@ describe('Trading operations dashboard', () => {
   it('reads the audit filter from the URL', async () => {
     const { page, el } = await open('/reporting?status=REJECTED&symbol=MSFT', TradingOpsDashboardComponent);
 
-    expect(page.filters.value()).toEqual(jasmine.objectContaining({ status: 'REJECTED', symbol: 'MSFT', clientId: null }));
+    expect(page.filters.value()).toEqual(expect.objectContaining({ status: 'REJECTED', symbol: 'MSFT', clientId: null }));
     expect(text(el.querySelector('[data-testid="filter-summary"]')!))
       .toBe('Showing orders matching 2 filters.');
   });
@@ -205,7 +205,7 @@ describe('Switching staff in one browser session', () => {
       await TestBed.inject(Router).navigateByUrl('/reporting', { onSameUrlNavigation: 'reload' });
       harness.detectChanges();
 
-      expect(harness.fixture.debugElement.query(By.directive(page))).withContext(`${to} did not get ${page.name}`).not.toBeNull();
+      expect(harness.fixture.debugElement.query(By.directive(page)), `${to} did not get ${page.name}`).not.toBeNull();
     });
   }
 });

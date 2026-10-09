@@ -20,7 +20,7 @@ describe('Order lifecycle', () => {
   });
 
   it('starts with nothing recorded', () => {
-    expect(emptyLifecycle().every(stage => stage.at === null && stage.detail === null && !stage.skipped)).toBeTrue();
+    expect(emptyLifecycle().every(stage => stage.at === null && stage.detail === null && !stage.skipped)).toBe(true);
   });
 
   it('returns fresh stages each time, so one trace cannot change another', () => {
@@ -40,14 +40,14 @@ describe('Order lifecycle', () => {
       const completed = stages.find(stage => stage.key === 'COMPLETED')!;
       expect(completed.label).toBe('Filled');
       expect(completed.source).toBe('trading.orders.filled_at');
-      expect(stages.some(stage => stage.skipped)).toBeFalse();
+      expect(stages.some(stage => stage.skipped)).toBe(false);
     });
 
     it('marks cash and holdings as not applicable for a rejected order, but still reports it', () => {
       const stages = withOutcome(emptyLifecycle(), 'REJECTED');
       expect(stages.find(stage => stage.key === 'COMPLETED')!.label).toBe('Rejected');
       expect(stages.filter(stage => stage.skipped).map(stage => stage.key)).toEqual(['CASH_SETTLED', 'HOLDINGS_UPDATED']);
-      expect(stages.find(stage => stage.key === 'REPORTED')!.skipped).toBeFalse();
+      expect(stages.find(stage => stage.key === 'REPORTED')!.skipped).toBe(false);
     });
   });
 

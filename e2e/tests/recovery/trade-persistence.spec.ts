@@ -26,11 +26,7 @@ for (const [index, scenario] of scenarios.entries()) {
     expect(account, 'seeded recovery account').toBeDefined();
     const accountId = account!.accountId;
 
-    await expect.poll(async () => {
-      const response = await request.get(`${await stack.url('market-data-app')}/api/marketdata/prices/MSFT`,
-        { headers: { Authorization: `Bearer ${token}` } });
-      return response.status();
-    }).toBe(200);
+    await stack.freshQuote('MSFT', token);
     const trade = await stack.json<OrderResponse>('order-app', '/api/order/orders', token,
       { accountId, symbol: 'MSFT', side: 'BUY', quantity: 1 });
     expect(trade.status).toBe('FILLED');

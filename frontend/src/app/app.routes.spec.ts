@@ -31,7 +31,7 @@ describe('App routes', () => {
   for (const path of ['accounts', 'accounts/:accountId']) {
     it(`/${path} opens the Accounts page`, async () => {
       const page = pages.find(route => route.path === path);
-      expect(page).withContext(`no route for /${path}`).toBeDefined();
+      expect(page, `no route for /${path}`).toBeDefined();
       expect(await page!.loadComponent!()).toBe(AccountsComponent);
     });
   }
@@ -40,7 +40,7 @@ describe('App routes', () => {
   for (const path of ['forgot-password', 'reset-password']) {
     it(`/${path} is not swallowed by the catch-all`, () => {
       const index = routes.findIndex(route => route.path === path);
-      expect(index).withContext(`no route for /${path}`).toBeGreaterThanOrEqual(0);
+      expect(index, `no route for /${path}`).toBeGreaterThanOrEqual(0);
       expect(index).toBeLessThan(routes.findIndex(route => route.path === '**'));
     });
   }
@@ -75,7 +75,7 @@ describe('App routes', () => {
 
     expect(urls).toContain('/accounts');
     for (const url of urls) {
-      expect(reachesPage(url)).withContext(`${url} has no route`).toBeTrue();
+      expect(reachesPage(url), `${url} has no route`).toBe(true);
     }
 
     fixture.destroy();
@@ -161,7 +161,7 @@ describe('Role-based routing', () => {
       const dashboards = reporting.children!.filter(route => route.path === '' && route.loadComponent);
       expect(dashboards.length).toBe(2);
       for (const route of dashboards) {
-        expect(route.canMatch?.length).withContext('a staff dashboard without a role check').toBe(1);
+        expect(route.canMatch?.length, 'a staff dashboard without a role check').toBe(1);
       }
     });
   });
