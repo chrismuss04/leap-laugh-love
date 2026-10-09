@@ -212,6 +212,7 @@ classDiagram
         +findByEmail(String) Optional~Client~
         +existsByEmail(String) boolean
         +existsBySsn(String) boolean
+        +existsByPhone(String) boolean
     }
     class ClientCredentialsRepository {
         <<interface>>
@@ -219,6 +220,7 @@ classDiagram
     }
     class ClientRegistrationController {
         +register(RegistrationRequest) RegistrationResponse
+        +verify(VerifyRegistrationRequest)
     }
     class AuthController {
         +login(LoginRequest) LoginResponse
@@ -619,7 +621,8 @@ classDiagram
 | Module | Endpoint | Description | Permitted / Auth |
 |---|---|---|---|
 | **IAM** | `POST /api/iam/auth/login` | Client login, returns JWT token | Permitted |
-| **IAM** | `POST /api/iam/v1/clients/register` | Client registration | Permitted |
+| **IAM** | `POST /api/iam/v1/clients/register` | Apply for an account; always `202` with the same body, whether or not the email, phone number or SSN is already registered. The applicant is emailed a confirmation link, or why no account was opened | Permitted |
+| **IAM** | `POST /api/iam/v1/clients/register/verify` | Confirm the applicant's email with the token from that link, which opens the client and their first account; `400 INVALID_VERIFICATION_LINK` if it is unknown, expired, used, or its details have since been registered | Permitted |
 | **IAM** | `POST /api/iam/auth/forgot-password` | Request a password reset link; always `204`, whether or not the email is registered | Permitted |
 | **IAM** | `POST /api/iam/auth/reset-password/validate` | Check that a reset link's token is still usable, without spending it; `400 INVALID_RESET_TOKEN` if not | Permitted |
 | **IAM** | `POST /api/iam/auth/reset-password` | Set a new password with the token from the reset link; `400 INVALID_RESET_TOKEN` if it is unknown, expired or used | Permitted |
@@ -858,7 +861,8 @@ docker compose up -d --build iam-app
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic client-register --from-beginning
 ```
 
-Register a new client through the application to see an event. Existing clients are not
+Register a new client through the application, and follow the confirmation link it emails
+(see Mailpit below), to see an event. Existing clients are not
 automatically backfilled. This step supplies the topic and producer; the user ETL consumer
 and registration reporting storage are added in subsequent steps.
 
@@ -875,6 +879,19 @@ The password reset email is sent by iam-app as soon as a registered client submi
 link opens `http://localhost:4200/reset-password` by default; set `PASSWORD_RESET_LINK_BASE_URL`
 in `.env` if the browser reaches the frontend on another address. It works once and expires
 after 30 minutes.
+
+Registration is confirmed by email. Submitting "Create account" opens nothing: iam-app stores
+the application and emails a link (`http://localhost:4200/verify-email` by default; set
+`REGISTRATION_LINK_BASE_URL` in `.env` for another address) that works once and expires after
+24 hours. Following it creates the client and their first account. An email address, phone
+number and SSN each belong to one client, and the sign-up page never says when one is already
+registered - the answer is always "check your email". What arrives there differs instead: a
+registered email address gets a note that it already has an account; an applicant reusing
+another client's phone number or SSN is told no account was opened but not why, and that
+client is warned someone applied with their details - one email listing everything of theirs
+that was used (email address, phone number, SSN), never the numbers themselves. Applications reserve nothing, so if two are waiting for
+the same phone number or SSN, the first link followed wins. An existing database needs
+`scripts/migrate-registration-verification.sql` (same usage as the reporting migration below).
 
 The inactive account email goes out only when account-app's inactive account check runs,
 nightly at 02:00 UTC, never on startup. Henry Taylor's second account is seeded already flagged
@@ -934,9 +951,10 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 bash scripts/test-client-events.sh
 ```
 
-The script builds and starts IAM, account-app, Kafka and user-etl. It registers a unique test
-client through HTTP, checks the Kafka key and two-field payload, compares the registration
-timestamp to IAM and the actual reporting row, and checks duplicate registration rejection.
+The script builds and starts IAM, account-app, Kafka, Mailpit and user-etl. It registers a unique
+test client through HTTP, confirming its email with the link read from Mailpit, checks the Kafka
+key and two-field payload, compares the registration timestamp to IAM and the actual reporting
+row, and checks that a duplicate registration is answered identically but opens nothing.
 It then republishes the event, waits for the running user-etl group's offset to advance past
 that replay, and verifies the reporting row and both timestamps remain unchanged. An independent
 observer reads Kafka without taking partitions from user-etl. Failed checks exit nonzero and
