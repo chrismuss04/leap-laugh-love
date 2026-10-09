@@ -1,7 +1,7 @@
 <div class="reporting fade-in">
   <header class="reporting-header">
     <div class="header-inner">
-      <span class="brand">
+      <a routerLink="/reporting" class="brand" aria-label="Reporting home">
         <span class="brand-icon" aria-hidden="true">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
             <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
@@ -11,7 +11,7 @@
         </span>
         <span class="brand-name">Leapfolio</span>
         <span class="brand-tag">Reporting</span>
-      </span>
+      </a>
 
       <div class="header-right">
         <span class="identity">
@@ -23,23 +23,8 @@
     </div>
   </header>
 
+  <!-- Staff Dashboards: each role's dashboard, and the order lifecycle trace, render here. -->
   <main class="reporting-main">
-    <h1>Reporting dashboard</h1>
-    <p class="lede">Signed in as {{ roleLabel.toLowerCase() }}. Trading activity reports will appear here.</p>
-
-    @if (isTradingOps) {
-      <app-trade-reconstruction />
-    } @else {
-      <section class="placeholder" aria-label="Reports">
-        <div class="placeholder-card">
-          <h2>Order activity</h2>
-          <p>Filled and rejected orders across all clients.</p>
-        </div>
-        <div class="placeholder-card">
-          <h2>Client registrations</h2>
-          <p>New clients over a reporting period.</p>
-        </div>
-      </section>
-    }
+    <router-outlet></router-outlet>
   </main>
 </div>

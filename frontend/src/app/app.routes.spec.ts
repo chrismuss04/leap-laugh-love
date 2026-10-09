@@ -31,7 +31,7 @@ describe('App routes', () => {
   for (const path of ['accounts', 'accounts/:accountId']) {
     it(`/${path} opens the Accounts page`, async () => {
       const page = pages.find(route => route.path === path);
-      expect(page).withContext(`no route for /${path}`).toBeDefined();
+      expect(page, `no route for /${path}`).toBeDefined();
       expect(await page!.loadComponent!()).toBe(AccountsComponent);
     });
   }
@@ -40,7 +40,7 @@ describe('App routes', () => {
   for (const path of ['forgot-password', 'reset-password']) {
     it(`/${path} is not swallowed by the catch-all`, () => {
       const index = routes.findIndex(route => route.path === path);
-      expect(index).withContext(`no route for /${path}`).toBeGreaterThanOrEqual(0);
+      expect(index, `no route for /${path}`).toBeGreaterThanOrEqual(0);
       expect(index).toBeLessThan(routes.findIndex(route => route.path === '**'));
     });
   }
@@ -75,7 +75,7 @@ describe('App routes', () => {
 
     expect(urls).toContain('/accounts');
     for (const url of urls) {
-      expect(reachesPage(url)).withContext(`${url} has no route`).toBeTrue();
+      expect(reachesPage(url), `${url} has no route`).toBe(true);
     }
 
     fixture.destroy();
@@ -125,6 +125,46 @@ describe('Role-based routing', () => {
       });
     });
   }
+
+  // Staff Dashboards: both staff roles share /reporting; only trading operations trace orders.
+  describe('staff dashboards', () => {
+    const orderUrl = '/reporting/orders/3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21';
+
+    it('opens an order lifecycle trace for trading operations', async () => {
+      signInAs('TRADING_OPERATIONS');
+      await router.navigateByUrl(orderUrl);
+      expect(router.url).toBe(orderUrl);
+    });
+
+    it('sends a commercial analyst from an order lifecycle trace to reporting', async () => {
+      signInAs('COMMERCIAL_ANALYST');
+      await router.navigateByUrl(orderUrl);
+      expect(router.url).toBe('/reporting');
+    });
+
+    for (const role of ['COMMERCIAL_ANALYST', 'TRADING_OPERATIONS']) {
+      it(`sends ${role} from an unknown reporting page to reporting`, async () => {
+        signInAs(role);
+        await router.navigateByUrl('/reporting/nowhere');
+        expect(router.url).toBe('/reporting');
+      });
+    }
+
+    it('sends a client from an order lifecycle trace to the dashboard', async () => {
+      signInAs('CLIENT');
+      await router.navigateByUrl(orderUrl);
+      expect(router.url).toBe('/dashboard');
+    });
+
+    it('each role downloads only its own dashboard', () => {
+      const reporting = routes.find(route => route.path === 'reporting')!;
+      const dashboards = reporting.children!.filter(route => route.path === '' && route.loadComponent);
+      expect(dashboards.length).toBe(2);
+      for (const route of dashboards) {
+        expect(route.canMatch?.length, 'a staff dashboard without a role check').toBe(1);
+      }
+    });
+  });
 
   describe('as a client', () => {
     beforeEach(() => signInAs('CLIENT'));

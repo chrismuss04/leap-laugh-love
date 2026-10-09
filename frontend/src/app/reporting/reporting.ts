@@ -1,4 +1,5 @@
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { AuthService, Role } from '../services/auth.service';
 // Session Timeout & Revocation: staff sessions have the same idle timeout as clients'.
 import { SessionActivityService } from '../services/session-activity';
@@ -12,12 +13,13 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 /**
- * Activity Reporting: the staff dashboard. It has its own layout rather than the trading shell,
+ * Activity Reporting: the staff shell. It has its own layout rather than the trading shell,
  * which loads the client profile and live prices - neither of which a staff token can read.
+ * Staff Dashboards: each role's dashboard renders in its router outlet (see app.module.ts).
  */
 @Component({
     selector: 'app-reporting',
-    imports: [TradeReconstructionComponent],
+    imports: [RouterOutlet, RouterLink],
     templateUrl: './reporting.html',
     styleUrl: './reporting.css'
 })

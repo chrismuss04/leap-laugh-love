@@ -6,6 +6,8 @@ import { BalanceService } from './balance';
 import { HoldingsService } from './holdings';
 import { MarketDataService } from './market-data';
 import { PriceStreamService } from './price-stream';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('AccountValuationService', () => {
   const holdings = {
@@ -33,25 +35,25 @@ describe('AccountValuationService', () => {
 
   let service: AccountValuationService;
   let streamPrices: ReturnType<typeof signal<Record<string, number>>>;
-  let holdingsApi: jasmine.SpyObj<HoldingsService>;
-  let balanceApi: jasmine.SpyObj<BalanceService>;
-  let marketApi: jasmine.SpyObj<MarketDataService>;
+  let holdingsApi: MockedObject<HoldingsService>;
+  let balanceApi: MockedObject<BalanceService>;
+  let marketApi: MockedObject<MarketDataService>;
 
   beforeEach(() => {
     streamPrices = signal<Record<string, number>>({});
-    holdingsApi = jasmine.createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
-    balanceApi = jasmine.createSpyObj('BalanceService', ['getBalance']);
-    marketApi = jasmine.createSpyObj('MarketDataService',
+    holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
+    balanceApi = createSpyObj('BalanceService', ['getBalance']);
+    marketApi = createSpyObj('MarketDataService',
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    holdingsApi.getHoldings.and.returnValue(of(holdings));
-    holdingsApi.getAccounts.and.returnValue(of(summaries));
-    balanceApi.getBalance.and.returnValue(of(balance));
-    marketApi.getAllLatestPrices.and.returnValue(of([
+    holdingsApi.getHoldings.mockReturnValue(of(holdings));
+    holdingsApi.getAccounts.mockReturnValue(of(summaries));
+    balanceApi.getBalance.mockReturnValue(of(balance));
+    marketApi.getAllLatestPrices.mockReturnValue(of([
       { symbol: 'AAPL', name: 'Apple Inc.', price: 150, asOf: '' },
       { symbol: 'SPX', name: null, price: 5000, asOf: '' }
     ]));
-    marketApi.getPreviousClose.and.returnValue(of(140));
-    marketApi.getIntradayCloses.and.returnValue(of([145, 150]));
+    marketApi.getPreviousClose.mockReturnValue(of(140));
+    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
     TestBed.configureTestingModule({
       providers: [
         AccountValuationService,
@@ -65,18 +67,18 @@ describe('AccountValuationService', () => {
   });
 
   it('is loading, with no accounts, until the first load completes', () => {
-    expect(service.accountsLoading()).toBeTrue();
+    expect(service.accountsLoading()).toBe(true);
     expect(service.accounts()).toEqual([]);
-    expect(service.multiAccount()).toBeFalse();
+    expect(service.multiAccount()).toBe(false);
   });
 
   it('values every account from balances, positions and prices', () => {
-    const loaded = jasmine.createSpy('loaded');
+    const loaded = vi.fn().mockName('loaded');
     service.load(loaded);
 
     expect(loaded).toHaveBeenCalled();
-    expect(service.accountsLoading()).toBeFalse();
-    expect(service.multiAccount()).toBeTrue();
+    expect(service.accountsLoading()).toBe(false);
+    expect(service.multiAccount()).toBe(true);
     expect(service.marketNames()).toEqual({ AAPL: 'Apple Inc.' });
 
     const [first, second] = service.accounts();
@@ -105,10 +107,10 @@ describe('AccountValuationService', () => {
   });
 
   it('reports a zero share when nothing is worth anything', () => {
-    balanceApi.getBalance.and.returnValue(of({
+    balanceApi.getBalance.mockReturnValue(of({
       accounts: [{ accountId: 'a1', accountNumber: 'ACC-0001', currency: 'USD', balance: 0 }], totalsByCurrency: {}
     }));
-    holdingsApi.getHoldings.and.returnValue(of({ accounts: [] }));
+    holdingsApi.getHoldings.mockReturnValue(of({ accounts: [] }));
     service.load();
     expect(service.accounts()[0].share).toBe(0);
     expect(service.accounts()[0].dayChange).toBeNull();
@@ -116,14 +118,14 @@ describe('AccountValuationService', () => {
   });
 
   it('has no day change until previous closes arrive', () => {
-    marketApi.getPreviousClose.and.returnValue(new Subject<number | null>());
+    marketApi.getPreviousClose.mockReturnValue(new Subject<number | null>());
     service.load();
     expect(service.accounts()[0].dayChange).toBeNull();
     expect(service.accounts()[0].previousCloseValue).toBeNull();
   });
 
   it('keeps holdings without a price unvalued', () => {
-    marketApi.getAllLatestPrices.and.returnValue(of([]));
+    marketApi.getAllLatestPrices.mockReturnValue(of([]));
     service.load();
     const [holding] = service.priceHoldings(holdings.accounts[0].positions);
     expect(holding.price).toBeNull();
@@ -175,22 +177,22 @@ describe('AccountValuationService', () => {
 
   it('keeps a live price when the snapshot arrives later', () => {
     const snapshot = new Subject<{ symbol: string; name: string | null; price: number; asOf: string }[]>();
-    marketApi.getAllLatestPrices.and.returnValue(snapshot);
+    marketApi.getAllLatestPrices.mockReturnValue(snapshot);
     service.load();
     snapshot.next([{ symbol: 'AAPL', name: null, price: 1, asOf: '' }]);
     expect(service.prices()['AAPL']).toBe(1);
   });
 
   it('surfaces a load failure using the server message, or a fallback', () => {
-    holdingsApi.getHoldings.and.returnValue(throwError(() => ({ error: { message: 'Nope' } })));
+    holdingsApi.getHoldings.mockReturnValue(throwError(() => ({ error: { message: 'Nope' } })));
     service.load();
     expect(service.accountError()).toBe('Nope');
 
-    holdingsApi.getHoldings.and.returnValue(throwError(() => ({})));
+    holdingsApi.getHoldings.mockReturnValue(throwError(() => ({})));
     service.load();
     expect(service.accountError()).toBe('We couldn’t load your accounts.');
 
-    holdingsApi.getHoldings.and.returnValue(of(holdings));
+    holdingsApi.getHoldings.mockReturnValue(of(holdings));
     service.load();
     expect(service.accountError()).toBeNull();
   });

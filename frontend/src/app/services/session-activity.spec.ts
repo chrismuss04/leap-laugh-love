@@ -5,13 +5,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { BehaviorSubject } from 'rxjs';
 import { AuthService } from './auth.service';
 import { SessionActivityService } from './session-activity';
+import type { Mock } from 'vitest';
 
 describe('SessionActivityService', () => {
   let service: SessionActivityService;
   let http: HttpTestingController;
   let token: string | null;
   let authenticated: BehaviorSubject<boolean>;
-  let addListener: jasmine.Spy;
+  let addListener: Mock;
   let reasons: string[];
   const endpoint = '/api/iam/session/activity';
   const idle = 600_000;
@@ -25,9 +26,9 @@ describe('SessionActivityService', () => {
 
   // Invoke the installed listener as the browser would; real synthetic DOM events are untrusted.
   function interact(name = 'pointermove'): void {
-    const call = addListener.calls.all().find(call => call.args[0] === name);
+    const call = addListener.mock.calls.find(args => args[0] === name);
     expect(call).toBeDefined();
-    (call!.args[1] as EventListener)({ isTrusted: true } as Event);
+    (call![1] as EventListener)({ isTrusted: true } as Event);
   }
 
   beforeEach(() => {
@@ -42,8 +43,8 @@ describe('SessionActivityService', () => {
     });
     service = TestBed.inject(SessionActivityService);
     http = TestBed.inject(HttpTestingController);
-    addListener = spyOn(document, 'addEventListener').and.callThrough();
-    spyOnProperty(document, 'visibilityState', 'get').and.returnValue('visible');
+    addListener = vi.spyOn(document, 'addEventListener');
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     reasons = [];
     service.expired$.subscribe(reason => reasons.push(reason));
   });
@@ -103,7 +104,7 @@ describe('SessionActivityService', () => {
   it('checks wall-clock time when a suspended tab resumes', fakeAsync(() => {
     service.start();
     const later = Date.now() + idle;
-    spyOn(Date, 'now').and.returnValue(later);
+    vi.spyOn(Date, 'now').mockReturnValue(later);
     window.dispatchEvent(new Event('focus'));
     expect(reasons).toEqual(['inactivity']);
     http.expectNone(endpoint);

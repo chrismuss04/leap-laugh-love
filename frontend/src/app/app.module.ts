@@ -3,7 +3,7 @@ import { BrowserModule } from '@angular/platform-browser';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { CanActivateFn, Router, RouterModule, Routes } from '@angular/router';
+import { CanActivateFn, CanMatchFn, Router, RouterModule, Routes } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
@@ -15,7 +15,7 @@ import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
 import { ProfileComponent } from './profile/profile';
 import { SettingsComponent } from './settings/settings';
-import { AuthService } from './services/auth.service';
+import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
 // A signed-in user has no use for password recovery, and no sign-in screen to show it on.
@@ -37,6 +37,10 @@ export const staffOnly: CanActivateFn = () => {
   return auth.isStaff() || inject(Router).parseUrl(auth.homeUrl());
 };
 
+// Staff Dashboards: matches a route only for one staff role, so both roles' dashboards can share
+// /reporting and neither role downloads the other's. Routing only - the APIs check the role too.
+export const staffRole = (role: Role): CanMatchFn => () => inject(AuthService).getRole() === role;
+
 // Every signed-in page renders inside the shell, which owns the header and navigation.
 export const routes: Routes = [
   // Password recovery. Signed-out visitors get the sign-in screen rather than the router outlet
@@ -48,8 +52,30 @@ export const routes: Routes = [
   // Activity Reporting: staff sign in to this instead of the trading shell.
   {
     path: 'reporting',
+    // Staff Dashboards: redirects run before canActivate, so without this a client's /reporting
+    // would hit reporting's own catch-all and redirect to itself. Unmatched, the app's catch-all sends
+    // them home instead.
+    canMatch: [() => inject(AuthService).isStaff()],
     canActivate: [staffOnly],
-    loadComponent: () => import('./reporting/reporting').then(m => m.ReportingComponent)
+    loadComponent: () => import('./reporting/reporting').then(m => m.ReportingComponent),
+    // Staff Dashboards: the first route whose role matches wins.
+    children: [
+      {
+        path: '', pathMatch: 'full', canMatch: [staffRole('TRADING_OPERATIONS')],
+        loadComponent: () => import('./reporting/trading-ops/trading-ops').then(m => m.TradingOpsDashboardComponent)
+      },
+      {
+        path: '', pathMatch: 'full', canMatch: [staffRole('COMMERCIAL_ANALYST')],
+        loadComponent: () => import('./reporting/analyst/analyst').then(m => m.AnalystDashboardComponent)
+      },
+      // One order retraced end to end, opened from the trading operations audit.
+      {
+        path: 'orders/:orderId', canMatch: [staffRole('TRADING_OPERATIONS')],
+        loadComponent: () => import('./reporting/trading-ops/order-lifecycle').then(m => m.OrderLifecycleComponent)
+      },
+      // Anything else under reporting, including a page for the other role, goes to the dashboard.
+      { path: '**', redirectTo: '/reporting' }
+    ]
   },
   {
     path: '',

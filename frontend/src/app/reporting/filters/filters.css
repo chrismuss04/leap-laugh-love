@@ -1,0 +1,124 @@
+/* Staff Dashboards: filter bars above the reports. Same field labels and inputs as the trading
+   app's order-history filter and Accounts panels, on a surface card like the dashboard's stats. */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+.filter-input {
+  width: 100%;
+  min-width: 140px;
+  padding: 8px 12px;
+  background: var(--muted);
+  color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  color-scheme: dark;
+}
+
+.filter-input::placeholder {
+  color: var(--muted-foreground);
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.filter-input.invalid {
+  border-color: var(--danger);
+}
+
+.filter-actions {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.btn-apply,
+.btn-reset {
+  padding: 8px 16px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: filter 0.15s ease, background 0.15s ease;
+}
+
+.btn-apply {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.btn-apply:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-apply:disabled {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  cursor: not-allowed;
+}
+
+.btn-reset {
+  background: var(--muted);
+  color: var(--foreground);
+}
+
+.btn-reset:hover {
+  background: var(--surface-hover);
+}
+
+.filter-error {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--danger);
+}
+
+/* Preset tabs: the dashboard's chart-range pills, in brand teal since a period is neither gain nor loss. */
+.ranges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.range {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.range:hover {
+  color: var(--foreground);
+}
+
+.range.on {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+}

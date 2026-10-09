@@ -5,6 +5,8 @@ import { BalanceService } from '../../services/balance';
 import type { CashTransactionResponse } from '../../services/balance';
 import { AccountSummary } from '../../services/holdings';
 import { OpenAccountPanelComponent } from './open-account-panel';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../../testing/create-spy-obj';
 
 describe('OpenAccountPanelComponent', () => {
   const account: AccountSummary = {
@@ -14,34 +16,34 @@ describe('OpenAccountPanelComponent', () => {
 
   let fixture: ComponentFixture<OpenAccountPanelComponent>;
   let panel: OpenAccountPanelComponent;
-  let accounts: jasmine.SpyObj<AccountsService>;
-  let balance: jasmine.SpyObj<BalanceService>;
+  let accounts: MockedObject<AccountsService>;
+  let balance: MockedObject<BalanceService>;
 
   beforeEach(() => {
-    accounts = jasmine.createSpyObj('AccountsService', ['openAccount']);
-    balance = jasmine.createSpyObj('BalanceService', ['deposit']);
-    accounts.openAccount.and.returnValue(of(account));
+    accounts = createSpyObj('AccountsService', ['openAccount']);
+    balance = createSpyObj('BalanceService', ['deposit']);
+    accounts.openAccount.mockReturnValue(of(account));
     TestBed.configureTestingModule({
       imports: [OpenAccountPanelComponent],
       providers: [{ provide: AccountsService, useValue: accounts }, { provide: BalanceService, useValue: balance }]
     });
     fixture = TestBed.createComponent(OpenAccountPanelComponent);
     panel = fixture.componentInstance;
-    spyOn(panel.opened, 'emit');
-    spyOn(panel.deposited, 'emit');
+    vi.spyOn(panel.opened, 'emit').mockImplementation(() => {});
+    vi.spyOn(panel.deposited, 'emit').mockImplementation(() => {});
     fixture.detectChanges();
   });
 
   it('treats an empty or zero amount as no deposit', () => {
-    expect(panel.wantsDeposit()).toBeFalse();
+    expect(panel.wantsDeposit()).toBe(false);
     panel.amount.set(0);
-    expect(panel.wantsDeposit()).toBeFalse();
+    expect(panel.wantsDeposit()).toBe(false);
     expect(panel.amountError()).toBeNull();
   });
 
   it('flags an amount that is not whole cents', () => {
     panel.amount.set(1.234);
-    expect(panel.wantsDeposit()).toBeTrue();
+    expect(panel.wantsDeposit()).toBe(true);
     expect(panel.amountError()).toContain('at least $0.01');
   });
 
@@ -68,7 +70,7 @@ describe('OpenAccountPanelComponent', () => {
   });
 
   it('opens an account and deposits the starting cash', () => {
-    balance.deposit.and.returnValue(of({ balanceAfter: 250 } as CashTransactionResponse));
+    balance.deposit.mockReturnValue(of({ balanceAfter: 250 } as CashTransactionResponse));
     panel.amount.set(250);
     panel.submit();
     expect(balance.deposit).toHaveBeenCalledWith('new', { amount: 250, description: 'Starting cash' });
@@ -80,7 +82,7 @@ describe('OpenAccountPanelComponent', () => {
   });
 
   it('returns to the form with the server message when opening fails', () => {
-    accounts.openAccount.and.returnValue(throwError(() => ({ error: { message: 'Limit reached' } })));
+    accounts.openAccount.mockReturnValue(throwError(() => ({ error: { message: 'Limit reached' } })));
     panel.submit();
     expect(panel.submitError()).toBe('Limit reached');
     expect(panel.step()).toBe('form');
@@ -88,13 +90,13 @@ describe('OpenAccountPanelComponent', () => {
   });
 
   it('falls back to a generic message when opening fails without one', () => {
-    accounts.openAccount.and.returnValue(throwError(() => ({})));
+    accounts.openAccount.mockReturnValue(throwError(() => ({})));
     panel.submit();
     expect(panel.submitError()).toBe('We couldn’t open your account. Please try again.');
   });
 
   it('reports a refused deposit as failed so it can be retried', () => {
-    balance.deposit.and.returnValue(throwError(() => ({ status: 400, error: { error: 'Too large' } })));
+    balance.deposit.mockReturnValue(throwError(() => ({ status: 400, error: { error: 'Too large' } })));
     panel.amount.set(250);
     panel.submit();
     expect(panel.deposit()).toBe('failed');
@@ -102,21 +104,21 @@ describe('OpenAccountPanelComponent', () => {
     expect(panel.deposited.emit).not.toHaveBeenCalled();
     expect(panel.step()).toBe('result');
 
-    balance.deposit.and.returnValue(of({ balanceAfter: 250 } as CashTransactionResponse));
+    balance.deposit.mockReturnValue(of({ balanceAfter: 250 } as CashTransactionResponse));
     panel.makeDeposit();
     expect(panel.deposit()).toBe('done');
     expect(panel.depositError()).toBeNull();
   });
 
   it('has no message for a refused deposit that gives none', () => {
-    balance.deposit.and.returnValue(throwError(() => ({ status: 422 })));
+    balance.deposit.mockReturnValue(throwError(() => ({ status: 422 })));
     panel.amount.set(250);
     panel.submit();
     expect(panel.depositError()).toBeNull();
   });
 
   it('reports an unconfirmed deposit as unknown, never inviting a retry', () => {
-    balance.deposit.and.returnValue(throwError(() => ({ status: 0 })));
+    balance.deposit.mockReturnValue(throwError(() => ({ status: 0 })));
     panel.amount.set(250);
     panel.submit();
     expect(panel.deposit()).toBe('unknown');
@@ -133,11 +135,11 @@ describe('OpenAccountPanelComponent', () => {
   });
 
   it('is busy while opening or depositing', () => {
-    expect(panel.busy()).toBeFalse();
+    expect(panel.busy()).toBe(false);
     panel.step.set('opening');
-    expect(panel.busy()).toBeTrue();
+    expect(panel.busy()).toBe(true);
     panel.step.set('depositing');
-    expect(panel.busy()).toBeTrue();
+    expect(panel.busy()).toBe(true);
   });
 
   it('resets to an empty form', () => {
