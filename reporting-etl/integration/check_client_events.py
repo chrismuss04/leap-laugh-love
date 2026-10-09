@@ -5,10 +5,12 @@ The generated client and provisioned account remain available for inspection.
 """
 import json
 import os
+import re
 import time
 import uuid
 from datetime import datetime
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 import psycopg
@@ -32,14 +34,35 @@ def wait_for(check, description, seconds=90):
     raise AssertionError(f"Timed out waiting for {description}")
 
 
-def register(body):
-    url = os.environ.get("IAM_URL", "http://iam-app:8081") + "/api/iam/v1/clients/register"
+def post(path, body):
+    url = os.environ.get("IAM_URL", "http://iam-app:8081") + path
     request = Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     try:
         with urlopen(request, timeout=30) as response:
-            return response.status, json.load(response)
+            return response.status, response.read().decode()
     except HTTPError as error:
         return error.code, error.read().decode()
+
+
+def register(body):
+    return post("/api/iam/v1/clients/register", body)
+
+
+# IAM only opens the client once the link it emails is followed, so read it from the mail catcher.
+def confirmation_token(email):
+    mailpit = os.environ.get("MAILPIT_URL", "http://mailpit:8025")
+
+    def newest():
+        query = quote(f'to:"{email}" subject:"Confirm your email"')
+        with urlopen(f"{mailpit}/api/v1/search?query={query}", timeout=10) as response:
+            messages = json.load(response)["messages"]
+        return messages[0]["ID"] if messages else None
+
+    with urlopen(f"{mailpit}/api/v1/message/{wait_for(newest, 'confirmation email')}", timeout=10) as response:
+        text = json.load(response)["Text"]
+    match = re.search(r"/verify-email\?token=([\w-]+)", text)
+    require(match, "Confirmation email has no link")
+    return match.group(1)
 
 
 # Verify a real registration reaches Kafka and the running ETL stores its original timestamp.
@@ -53,8 +76,14 @@ def check_registration(observer, conn):
         "experienceLevel": "NOVICE", "initialDepositAmount": 5000,
     }
     status, response = register(body)
-    require(status == 201, f"Registration returned {status}: {response}")
-    client_id = response["clientId"]
+    require(status == 202, f"Registration returned {status}: {response}")
+    accepted = response
+    require(conn.execute("SELECT 1 FROM iam.clients WHERE email=%s", (body["email"],)).fetchone() is None,
+            "Client was opened before its email was confirmed")
+    token = confirmation_token(body["email"])
+    status, response = post("/api/iam/v1/clients/register/verify", {"token": token})
+    require(status == 204, f"Email confirmation returned {status}: {response}")
+    client_id = str(conn.execute("SELECT client_id FROM iam.clients WHERE email=%s", (body["email"],)).fetchone()[0])
     print(f"Created test client {client_id}", flush=True)
 
     def event_for_client():
@@ -78,8 +107,13 @@ def check_registration(observer, conn):
         "SELECT registered_at, loaded_at FROM reporting.clients WHERE client_id=%s", (client_id,)).fetchone(),
         "registration reporting row")
     require(row[0] == event_time, "ETL changed the registration timestamp")
-    status, _ = register(body)
-    require(status == 409, "Duplicate registration was not rejected")
+    # A duplicate is answered exactly like the original and must open nothing.
+    status, response = register(body)
+    require((status, response) == (202, accepted), "Duplicate registration was answered differently")
+    status, _ = post("/api/iam/v1/clients/register/verify", {"token": token})
+    require(status == 400, "Confirmation link worked twice")
+    require(conn.execute("SELECT COUNT(*) FROM iam.clients WHERE email=%s", (body["email"],)).fetchone()[0] == 1,
+            "Duplicate registration opened a second client")
     return client_id, message, row
 
 
