@@ -43,11 +43,7 @@ for (const [index, scenario] of scenarios.entries()) {
       // The completion fault is harmless in the blocked/drop cases and guarantees a pending state.
       await stack.blockCompletion(accountId);
       await stack.proxyMode(scenario.mode);
-      await expect.poll(async () => {
-        const response = await request.get(`${await stack.url('market-data-app')}/api/marketdata/prices/MSFT`,
-          { headers: { Authorization: `Bearer ${token}` } });
-        return response.status();
-      }).toBe(200);
+      await stack.freshQuote('MSFT', token);
 
       const trade = await stack.json<OrderResponse>('order-app', '/api/order/orders', token,
         { accountId, symbol: 'MSFT', side: 'BUY', quantity: 1 });

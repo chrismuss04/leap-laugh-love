@@ -78,6 +78,28 @@ export class RecoveryStack {
     return response.accessToken;
   }
 
+  /**
+   * Waits until market-data holds a current quote for the symbol, so an order placed next is
+   * priced rather than rejected. order-app refuses quotes older than 5 seconds, and after a
+   * restart market-data can serve its in-memory price (/prices) while its quote ingestion is
+   * still catching up - with the recovery stack's durable Postgres every quote is its own
+   * synced commit. This reads /quotes, the endpoint order-app prices from, and wants a quote
+   * well inside that limit.
+   */
+  async freshQuote(symbol: string, token: string): Promise<void> {
+    const url = `${await this.url('market-data-app')}/api/marketdata/quotes/${symbol}`;
+    await expect.poll(async () => {
+      try {
+        const response = await this.request.get(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 5_000 });
+        if (!response.ok()) return `HTTP ${response.status()}`;
+        const { quoteTimestamp } = await response.json() as { quoteTimestamp: string };
+        return Date.now() - Date.parse(quoteTimestamp) < 2_000 ? 'fresh' : `quote from ${quoteTimestamp}`;
+      } catch (error) {
+        return String(error);
+      }
+    }, { message: `market-data has a current ${symbol} quote`, intervals: [250, 500, 1000] }).toBe('fresh');
+  }
+
   async healthy(): Promise<void> {
     for (const service of apps) {
       await expect.poll(async () => {

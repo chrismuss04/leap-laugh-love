@@ -36,15 +36,20 @@ setup('account-app and order-app answer for a signed-in user', async ({ api, tok
 
 setup('market data is live', async ({ api, tokenFor }) => {
   const as = api.as(await tokenFor(personas.alice.email));
-  // Orders are refused against a quote older than 30s, so a stalled simulation would fail every
-  // trading test with a confusing message. Catch it here instead.
-  await expect
-    .poll(
-      async () => {
-        const price = await as.latestPrice('AAPL').catch(() => null);
-        return price ? Date.now() - Date.parse(price.asOf) : Infinity;
-      },
-      { message: 'market-data-app should be ticking (AAPL quote under 10s old)', timeout: 30_000 }
-    )
-    .toBeLessThan(10_000);
+  // order-app refuses an order priced against a quote more than 5 seconds old, so stalled or
+  // lagging quotes would fail every trading test with a confusing rejection. Catch it here
+  // instead. This reads /quotes, what order-app prices from, rather than /prices: that is the
+  // simulator's in-memory price and stays current even while quotes are not being stored.
+  // Every symbol the suite trades, with a margin under the 5s limit.
+  for (const symbol of ['AAPL', 'MSFT', 'AMZN', 'TSLA']) {
+    await expect
+      .poll(
+        async () => {
+          const quote = await as.latestQuote(symbol).catch(() => null);
+          return quote ? Date.now() - Date.parse(quote.quoteTimestamp) : Infinity;
+        },
+        { message: `market-data-app should be storing quotes (${symbol} quote under 2s old)`, timeout: 30_000 }
+      )
+      .toBeLessThan(2_000);
+  }
 });
