@@ -286,9 +286,15 @@ pipeline {
                 '''
                 // Order Reporting ETL (Python). Same throwaway database, which the schema
                 // file gave a reporting schema, so the loader's SQL runs for real; the
-                // rest of the suite needs no database. Run from the repo root so
-                // coverage.xml paths come out as reporting-etl/..., the way SonarQube
-                // resolves them. The pip cache is the agent's, like the Maven repository.
+                // rest of the suite needs no database. Run from, and rooted at, the repo root
+                // so both reports name files the way SonarQube resolves them: coverage.xml as
+                // reporting-etl/..., and junit.xml's classnames as reporting-etl.tests.test_x,
+                // which Sonar maps to reporting-etl/tests/test_x.py. Rooted at reporting-etl
+                // the classnames were tests.test_x, which matches no file, so Sonar warned
+                // once per test case and dropped the per-file test results. Rooting here
+                // means pythonpath and the test directory are given relative to the repo root,
+                // overriding pyproject.toml's. The pip cache is the agent's, like the Maven
+                // repository.
                 sh '''
                     set -eu
                     docker run --rm \
@@ -304,11 +310,13 @@ pipeline {
                         python:3.12-slim \
                         sh -c 'python -m venv /tmp/venv \
                             && /tmp/venv/bin/pip install -q -r reporting-etl/requirements-dev.txt \
-                            && /tmp/venv/bin/python -m pytest -c reporting-etl/pyproject.toml --rootdir reporting-etl \
+                            && /tmp/venv/bin/python -m pytest -c reporting-etl/pyproject.toml --rootdir . \
+                                -o pythonpath=reporting-etl \
                                 -p no:cacheprovider \
                                 --junitxml=reporting-etl/test-results/junit.xml \
                                 --cov=reporting-etl/reporting_etl --cov-config=reporting-etl/pyproject.toml \
-                                --cov-report=xml:reporting-etl/coverage.xml'
+                                --cov-report=xml:reporting-etl/coverage.xml \
+                                reporting-etl/tests'
                 '''
             }
             post {
