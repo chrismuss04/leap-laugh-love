@@ -26,6 +26,9 @@ app:
   jwt:
     secret: verylongsecretkeyforjwttokengenerationspecifiedhere12345
     expiration-minutes: 60
+  registration:
+    link-base-url: http://localhost:4200/verify-email
+    token-ttl-minutes: 1440
   password-reset:
     link-base-url: http://localhost:4200/reset-password
     token-ttl-minutes: 30
