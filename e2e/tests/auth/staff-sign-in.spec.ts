@@ -18,7 +18,8 @@ test.describe('Staff sign in', () => {
       await signIn.signIn(member.email, PASSWORD);
 
       await expect(page).toHaveURL(/\/reporting$/);
-      await expect(page.getByRole('heading', { name: 'Reporting dashboard' })).toBeVisible();
+      // Staff Dashboards: each role lands on its own dashboard at /reporting.
+      await expect(page.getByRole('heading', { level: 1,name: member.dashboardHeading })).toBeVisible();
       await expect(page.getByText(member.email)).toBeVisible();
       await expect(page.getByText(member.roleLabel, { exact: true })).toBeVisible();
 
