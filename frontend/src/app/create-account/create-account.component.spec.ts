@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ReactiveFormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
 import { ClientRegistrationService } from '../services/client-registration.service';
@@ -124,9 +124,8 @@ describe('CreateAccountComponent', () => {
       expect(component.errorMessage()).toBe('Please fill in all required fields correctly.');
     });
 
-    it('sends the application then returns to sign in', fakeAsync(() => {
-      registration.register.and.returnValue(of({ clientId: 'c', email: valid.email, status: 'ACTIVE' }));
-      spyOn(component.switchToSignIn, 'emit');
+    it('sends the application, points the applicant to their email and clears the form', () => {
+      registration.register.and.returnValue(of({ message: 'Check your email' }));
       component.registrationForm.setValue(valid);
       component.onSubmit();
 
@@ -135,10 +134,10 @@ describe('CreateAccountComponent', () => {
         experienceLevel: 'INTERMEDIATE', initialDepositAmount: 5000
       }));
       expect(component.isLoading()).toBeFalse();
-      expect(component.successMessage()).toContain('Application submitted');
-      tick(1500);
-      expect(component.switchToSignIn.emit).toHaveBeenCalled();
-    }));
+      expect(component.successMessage()).toContain(`We've emailed ${valid.email}`);
+      expect(component.registrationForm.get('ssn')!.value).toBeNull();
+      expect(component.registrationForm.get('password')!.value).toBeNull();
+    });
 
     it('shows the server message, then a plain-text error, then a fallback', () => {
       component.registrationForm.setValue(valid);

@@ -156,8 +156,12 @@ export class CreateAccountComponent implements OnInit {
     this.clientRegistrationService.register(request).subscribe({
       next: () => {
         this.isLoading.set(false);
-        this.successMessage.set('Application submitted! Redirecting to sign in...');
-        setTimeout(() => this.switchToSignIn.emit(), 1500);
+        // The same whatever the server did with the application: whether the email, phone number
+        // or SSN was already registered is only ever said by email.
+        this.successMessage.set(`Application received! We've emailed ${v.email} with the next step. `
+          + 'Your account is not open until you follow it.');
+        // The applicant is done here, so their SSN and password don't stay on the page.
+        this.registrationForm.reset();
       },
       error: (error) => {
         this.isLoading.set(false);

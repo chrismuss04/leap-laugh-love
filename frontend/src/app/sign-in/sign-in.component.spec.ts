@@ -10,6 +10,7 @@ import { SignInComponent } from './sign-in.component';
 import { CreateAccountComponent } from '../create-account/create-account.component';
 import { ForgotPasswordComponent } from '../forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from '../reset-password/reset-password.component';
+import { VerifyEmailComponent } from '../verify-email/verify-email.component';
 
 describe('SignInComponent', () => {
   let fixture: ComponentFixture<SignInComponent>;
@@ -117,9 +118,11 @@ describe('SignInComponent password recovery', () => {
         ReactiveFormsModule,
         ForgotPasswordComponent,
         ResetPasswordComponent,
+        VerifyEmailComponent,
         RouterModule.forRoot([
           { path: 'forgot-password', children: [] },
           { path: 'reset-password', children: [] },
+          { path: 'verify-email', children: [] },
           { path: 'dashboard', children: [] },
           { path: '**', redirectTo: 'dashboard' }
         ])
@@ -171,6 +174,19 @@ describe('SignInComponent password recovery', () => {
 
     expect(element().querySelector('app-reset-password')).not.toBeNull();
     expect(element().querySelector('app-reset-password form')).not.toBeNull();
+    expect(element().querySelector('.tabs')).toBeNull();
+  });
+
+  it('opens the confirmation screen for the emailed registration link, keeping its token', async () => {
+    await router.navigateByUrl('/verify-email?token=abc123');
+    await settle();
+    const confirm = TestBed.inject(HttpTestingController).expectOne('/api/iam/v1/clients/register/verify');
+    expect(confirm.request.body).toEqual({ token: 'abc123' });
+    confirm.flush(null);
+    await settle();
+
+    expect(element().querySelector('app-verify-email')).not.toBeNull();
+    expect(element().textContent).toContain('Your email is confirmed and your account is open.');
     expect(element().querySelector('.tabs')).toBeNull();
   });
 });

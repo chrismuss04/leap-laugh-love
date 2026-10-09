@@ -75,7 +75,15 @@ describe('HTTP services', () => {
       const request = http.expectOne(r => r.url.endsWith('/register'));
       expect(request.request.method).toBe('POST');
       expect(request.request.body).toBe(body);
-      request.flush({ clientId: 'c', email: 'a@b.c', status: 'ACTIVE' });
+      request.flush({ message: 'Check your email' });
+    });
+
+    it('posts the token from the emailed link to open the account', () => {
+      TestBed.inject(ClientRegistrationService).verify('abc123').subscribe();
+      const request = http.expectOne(r => r.url.endsWith('/register/verify'));
+      expect(request.request.method).toBe('POST');
+      expect(request.request.body).toEqual({ token: 'abc123' });
+      request.flush(null);
     });
   });
 

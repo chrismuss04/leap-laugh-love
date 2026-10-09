@@ -25,10 +25,12 @@ export interface RegistrationRequest {
   password: string;
 }
 
+/**
+ * The same for every application, whether or not it was stored: the applicant finds out how it
+ * went from the email they are sent, never from this.
+ */
 export interface RegistrationResponse {
-  clientId: string;
-  email: string;
-  status: string;
+  message: string;
 }
 
 @Injectable({
@@ -41,5 +43,10 @@ export class ClientRegistrationService {
 
   register(request: RegistrationRequest): Observable<RegistrationResponse> {
     return this.httpClient.post<RegistrationResponse>(`${this.apiUrl}/register`, request);
+  }
+
+  /** Confirm the applicant's email and open their account, using the token from the emailed link */
+  verify(token: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/register/verify`, { token });
   }
 }

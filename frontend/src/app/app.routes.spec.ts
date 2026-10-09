@@ -36,8 +36,8 @@ describe('App routes', () => {
     });
   }
 
-  // Without a route of its own, the emailed reset link falls through to the catch-all and lands on the dashboard.
-  for (const path of ['forgot-password', 'reset-password']) {
+  // Without a route of its own, an emailed link falls through to the catch-all and lands on the dashboard.
+  for (const path of ['forgot-password', 'reset-password', 'verify-email']) {
     it(`/${path} is not swallowed by the catch-all`, () => {
       const index = routes.findIndex(route => route.path === path);
       expect(index).withContext(`no route for /${path}`).toBeGreaterThanOrEqual(0);
