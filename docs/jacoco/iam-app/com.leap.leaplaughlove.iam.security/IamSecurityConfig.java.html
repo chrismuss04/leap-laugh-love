@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.common.security.Role;
 // Session Timeout &amp; Revocation
 import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import org.springframework.context.annotation.Bean;
@@ -33,8 +34,8 @@ public class IamSecurityConfig {
     /**
      * Constructs a new IamSecurityConfig instance.
      */
-<span class="fc" id="L36">    protected IamSecurityConfig() {</span>
-<span class="fc" id="L37">    }</span>
+<span class="fc" id="L37">    protected IamSecurityConfig() {</span>
+<span class="fc" id="L38">    }</span>
 
     /**
      * Provides a password encoder bean for the IAM application.
@@ -43,7 +44,7 @@ public class IamSecurityConfig {
      */
     @Bean
     public PasswordEncoder passwordEncoder() {
-<span class="fc" id="L46">        return new BCryptPasswordEncoder();</span>
+<span class="fc" id="L47">        return new BCryptPasswordEncoder();</span>
     }
 
     /**
@@ -58,23 +59,27 @@ public class IamSecurityConfig {
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
-<span class="fc" id="L61">        http</span>
-<span class="fc" id="L62">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
-<span class="fc" id="L63">                .csrf(AbstractHttpConfigurer::disable)</span>
-<span class="fc" id="L64">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
-<span class="fc" id="L65">                .authorizeHttpRequests(auth -&gt; auth</span>
+<span class="fc" id="L62">        http</span>
+<span class="fc" id="L63">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
+<span class="fc" id="L64">                .csrf(AbstractHttpConfigurer::disable)</span>
+<span class="fc" id="L65">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L66">                .authorizeHttpRequests(auth -&gt; auth</span>
                         // LLL-117: registration must stay public - a new applicant has no JWT yet.
-<span class="fc" id="L67">                        .requestMatchers(&quot;/api/iam/auth/**&quot;, &quot;/api/iam/v1/clients/register&quot;, &quot;/actuator/health&quot;)</span>
-<span class="fc" id="L68">                        .permitAll()</span>
+<span class="fc" id="L68">                        .requestMatchers(&quot;/api/iam/auth/**&quot;, &quot;/api/iam/v1/clients/register&quot;, &quot;/actuator/health&quot;)</span>
+<span class="fc" id="L69">                        .permitAll()</span>
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
-<span class="fc" id="L71">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
-<span class="fc" id="L72">                        .anyRequest().authenticated())</span>
-<span class="fc" id="L73">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L74">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L75">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L76">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L77">        return http.build();</span>
+<span class="fc" id="L72">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+                        // Every signed-in role keeps its own session alive and signs out here.
+<span class="fc" id="L74">                        .requestMatchers(&quot;/api/iam/session/**&quot;).hasAnyRole(</span>
+<span class="fc" id="L75">                                Role.CLIENT.name(), Role.TRADING_OPERATIONS.name(), Role.COMMERCIAL_ANALYST.name())</span>
+                        // Client-only (profile and the rest): staff tokens are refused here (403).
+<span class="fc" id="L77">                        .anyRequest().hasRole(Role.CLIENT.name()))</span>
+<span class="fc" id="L78">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L79">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L80">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L81">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L82">        return http.build();</span>
     }
 
     /**
@@ -84,7 +89,7 @@ public class IamSecurityConfig {
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L87">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L92">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

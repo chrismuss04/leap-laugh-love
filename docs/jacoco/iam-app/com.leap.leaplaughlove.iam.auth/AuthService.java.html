@@ -15,6 +15,9 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
+import com.leap.leaplaughlove.iam.session.StaffSessionRepository;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository.StaffCredentials;
 
 /**
  * Service for handling authentication logic, including login and account lock management.
@@ -23,8 +26,9 @@ import com.leap.leaplaughlove.iam.session.ClientSessionRepository;
 @Service
 public class AuthService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 3;
-    private static final String LOCKED_STATUS = &quot;LOCKED&quot;;
+    static final int MAX_FAILED_ATTEMPTS = 3;
+    static final String LOCKED_STATUS = &quot;LOCKED&quot;;
+    static final String ACTIVE_STATUS = &quot;ACTIVE&quot;;
 
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
@@ -32,6 +36,9 @@ public class AuthService {
     private final JwtService jwtService;
     // Session Timeout &amp; Revocation
     private final ClientSessionRepository sessionRepository;
+    // Analyst login
+    private final StaffCredentialsRepository staffCredentialsRepository;
+    private final StaffSessionRepository staffSessionRepository;
 
     /**
      * Constructs a new AuthService with the specified dependencies.
@@ -39,19 +46,26 @@ public class AuthService {
      * @param credentialsRepository the repository for managing client credentials
      * @param passwordEncoder the password encoder for verifying client passwords
      * @param jwtService the service for generating JWT tokens
+     * @param sessionRepository the repository for client login sessions
+     * @param staffCredentialsRepository the repository for staff sign-in credentials
+     * @param staffSessionRepository the repository for staff login sessions
      */
     public AuthService(ClientRepository clientRepository,
                        ClientCredentialsRepository credentialsRepository,
                        PasswordEncoder passwordEncoder,
                        JwtService jwtService,
-<span class="fc" id="L47">                       ClientSessionRepository sessionRepository) {</span>
-<span class="fc" id="L48">        this.clientRepository = clientRepository;</span>
-<span class="fc" id="L49">        this.credentialsRepository = credentialsRepository;</span>
-<span class="fc" id="L50">        this.passwordEncoder = passwordEncoder;</span>
-<span class="fc" id="L51">        this.jwtService = jwtService;</span>
+                       ClientSessionRepository sessionRepository,
+                       StaffCredentialsRepository staffCredentialsRepository,
+<span class="fc" id="L59">                       StaffSessionRepository staffSessionRepository) {</span>
+<span class="fc" id="L60">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L61">        this.credentialsRepository = credentialsRepository;</span>
+<span class="fc" id="L62">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L63">        this.jwtService = jwtService;</span>
         // Session Timeout &amp; Revocation
-<span class="fc" id="L53">        this.sessionRepository = sessionRepository;</span>
-<span class="fc" id="L54">    }</span>
+<span class="fc" id="L65">        this.sessionRepository = sessionRepository;</span>
+<span class="fc" id="L66">        this.staffCredentialsRepository = staffCredentialsRepository;</span>
+<span class="fc" id="L67">        this.staffSessionRepository = staffSessionRepository;</span>
+<span class="fc" id="L68">    }</span>
 
     /**
      * Authenticates a client using their email and password. 
@@ -65,43 +79,80 @@ public class AuthService {
     // exceptions must not roll the transaction back or the lockout would never persist.
     @Transactional(noRollbackFor = {InvalidCredentialsException.class, AccountLockedException.class})
     public LoginResponse authenticate(String email, String rawPassword) {
-<span class="fc" id="L68">        Client client = clientRepository.findByEmail(email)</span>
-<span class="fc" id="L69">                .orElseThrow(InvalidCredentialsException::new);</span>
-
-<span class="fc" id="L71">        ClientCredentials creds = credentialsRepository.findByClientId(client.getClientId())</span>
-<span class="fc" id="L72">                .orElseThrow(InvalidCredentialsException::new);</span>
-
-<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (LOCKED_STATUS.equalsIgnoreCase(client.getStatus())) {</span>
-<span class="fc" id="L75">            throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+        // Analyst login: clients are looked up first; an email that isn't a client's may be staff.
+<span class="fc" id="L83">        Client client = clientRepository.findByEmail(email).orElse(null);</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (client == null) {</span>
+<span class="fc" id="L85">            return authenticateStaff(email, rawPassword);</span>
         }
 
-<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (!passwordEncoder.matches(rawPassword, creds.getPasswordHash())) {</span>
-<span class="fc" id="L79">            creds.incrementFailedAttempts();</span>
-<span class="fc" id="L80">            credentialsRepository.save(creds);</span>
-<span class="fc bfc" id="L81" title="All 2 branches covered.">            if (creds.getFailedAttempts() &gt;= MAX_FAILED_ATTEMPTS) {</span>
-<span class="fc" id="L82">                client.setStatus(LOCKED_STATUS);</span>
-<span class="fc" id="L83">                clientRepository.save(client);</span>
-<span class="fc" id="L84">                throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+<span class="fc" id="L88">        ClientCredentials creds = credentialsRepository.findByClientId(client.getClientId())</span>
+<span class="fc" id="L89">                .orElseThrow(InvalidCredentialsException::new);</span>
+
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        if (LOCKED_STATUS.equalsIgnoreCase(client.getStatus())) {</span>
+<span class="fc" id="L92">            throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+        }
+
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        if (!passwordEncoder.matches(rawPassword, creds.getPasswordHash())) {</span>
+<span class="fc" id="L96">            creds.incrementFailedAttempts();</span>
+<span class="fc" id="L97">            credentialsRepository.save(creds);</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            if (creds.getFailedAttempts() &gt;= MAX_FAILED_ATTEMPTS) {</span>
+<span class="fc" id="L99">                client.setStatus(LOCKED_STATUS);</span>
+<span class="fc" id="L100">                clientRepository.save(client);</span>
+<span class="fc" id="L101">                throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
             }
-<span class="fc" id="L86">            throw new InvalidCredentialsException();</span>
+<span class="fc" id="L103">            throw new InvalidCredentialsException();</span>
         }
 
         // commment reset failed attempts on successful login
-<span class="fc" id="L90">        creds.resetFailedAttempts();</span>
-<span class="fc" id="L91">        creds.setLastLoginAt(OffsetDateTime.now());</span>
-<span class="fc" id="L92">        credentialsRepository.save(creds);</span>
+<span class="fc" id="L107">        creds.resetFailedAttempts();</span>
+<span class="fc" id="L108">        creds.setLastLoginAt(OffsetDateTime.now());</span>
+<span class="fc" id="L109">        credentialsRepository.save(creds);</span>
 
         // Session Timeout &amp; Revocation: create a distinct session only after successful authentication.
         // JWT timestamps have second precision; store those exact same times in the database.
-<span class="fc" id="L96">        Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);</span>
-<span class="fc" id="L97">        long expiresIn = jwtService.getExpirationSeconds();</span>
-<span class="fc" id="L98">        Instant expiresAt = issuedAt.plusSeconds(expiresIn);</span>
-<span class="fc" id="L99">        UUID sessionId = UUID.randomUUID();</span>
-<span class="fc" id="L100">        sessionRepository.create(sessionId, client.getClientId(), issuedAt, expiresAt);</span>
-<span class="fc" id="L101">        String token = jwtService.generateToken(client.getClientId(), client.getEmail(),</span>
+<span class="fc" id="L113">        Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);</span>
+<span class="fc" id="L114">        long expiresIn = jwtService.getExpirationSeconds();</span>
+<span class="fc" id="L115">        Instant expiresAt = issuedAt.plusSeconds(expiresIn);</span>
+<span class="fc" id="L116">        UUID sessionId = UUID.randomUUID();</span>
+<span class="fc" id="L117">        sessionRepository.create(sessionId, client.getClientId(), issuedAt, expiresAt);</span>
+<span class="fc" id="L118">        String token = jwtService.generateToken(client.getClientId(), client.getEmail(),</span>
                 sessionId, issuedAt, expiresAt);
 
-<span class="fc" id="L104">        return new LoginResponse(token, &quot;Bearer&quot;, expiresIn);</span>
+<span class="fc" id="L121">        return new LoginResponse(token, &quot;Bearer&quot;, expiresIn);</span>
+    }
+
+    // Analyst login: staff get the same lockout as clients, a session in iam.staff_sessions, and a
+    // token carrying their staff role, which every trading API refuses.
+    private LoginResponse authenticateStaff(String email, String rawPassword) {
+<span class="fc" id="L127">        StaffCredentials staff = staffCredentialsRepository.findByEmail(email)</span>
+<span class="fc" id="L128">                .orElseThrow(InvalidCredentialsException::new);</span>
+
+<span class="fc bfc" id="L130" title="All 2 branches covered.">        if (LOCKED_STATUS.equalsIgnoreCase(staff.status())) {</span>
+<span class="fc" id="L131">            throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+        }
+        // A pending or deleted staff account can't sign in; don't say why.
+<span class="fc bfc" id="L134" title="All 2 branches covered.">        if (!ACTIVE_STATUS.equalsIgnoreCase(staff.status())) {</span>
+<span class="fc" id="L135">            throw new InvalidCredentialsException();</span>
+        }
+
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (!passwordEncoder.matches(rawPassword, staff.passwordHash())) {</span>
+<span class="fc" id="L139">            int attempts = staffCredentialsRepository.recordFailedAttempt(staff.serviceId(), MAX_FAILED_ATTEMPTS);</span>
+<span class="fc bfc" id="L140" title="All 2 branches covered.">            if (attempts &gt;= MAX_FAILED_ATTEMPTS) {</span>
+<span class="fc" id="L141">                throw new AccountLockedException(&quot;Account is locked due to too many failed login attempts&quot;);</span>
+            }
+<span class="fc" id="L143">            throw new InvalidCredentialsException();</span>
+        }
+
+<span class="fc" id="L146">        Instant issuedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);</span>
+<span class="fc" id="L147">        staffCredentialsRepository.recordSuccessfulLogin(staff.serviceId(), issuedAt);</span>
+<span class="fc" id="L148">        long expiresIn = jwtService.getExpirationSeconds();</span>
+<span class="fc" id="L149">        Instant expiresAt = issuedAt.plusSeconds(expiresIn);</span>
+<span class="fc" id="L150">        UUID sessionId = UUID.randomUUID();</span>
+<span class="fc" id="L151">        staffSessionRepository.create(sessionId, staff.serviceId(), issuedAt, expiresAt);</span>
+<span class="fc" id="L152">        String token = jwtService.generateToken(staff.serviceId(), staff.email(), staff.role(),</span>
+                sessionId, issuedAt, expiresAt);
+
+<span class="fc" id="L155">        return new LoginResponse(token, &quot;Bearer&quot;, expiresIn, staff.role());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -17,8 +17,10 @@ com.leap.leaplaughlove.iam.account
 com.leap.leaplaughlove.iam.auth
 com.leap.leaplaughlove.iam.client
 com.leap.leaplaughlove.iam.common
+com.leap.leaplaughlove.iam.events
 com.leap.leaplaughlove.iam.security
 com.leap.leaplaughlove.iam.session
+com.leap.leaplaughlove.iam.staff
 com.leap.leaplaughlove.marketdata
 com.leap.leaplaughlove.marketdata.api
 com.leap.leaplaughlove.marketdata.common
@@ -32,6 +34,7 @@ com.leap.leaplaughlove.order
 com.leap.leaplaughlove.order.account
 com.leap.leaplaughlove.order.client
 com.leap.leaplaughlove.order.common
+com.leap.leaplaughlove.order.events
 com.leap.leaplaughlove.order.execution
 com.leap.leaplaughlove.order.history
 com.leap.leaplaughlove.order.instrument

@@ -20,6 +20,8 @@ import java.util.UUID;
 @Service
 public class JwtService {
 
+    static final String ROLE_CLAIM = &quot;role&quot;;
+
     private final SecretKey signingKey;
     private final long expirationMinutes;
 
@@ -29,16 +31,16 @@ public class JwtService {
      * @param expirationMinutes the expiration time of JWT tokens in minutes
      */
     public JwtService(@Value(&quot;${app.jwt.secret}&quot;) String secret,
-<span class="fc" id="L32">                       @Value(&quot;${app.jwt.expiration-minutes}&quot;) long expirationMinutes) {</span>
-<span class="fc bfc" id="L33" title="All 4 branches covered.">        if (secret == null || secret.isBlank()) {</span>
-<span class="fc" id="L34">            throw new IllegalArgumentException(&quot;app.jwt.secret must not be blank&quot;);</span>
+<span class="fc" id="L34">                       @Value(&quot;${app.jwt.expiration-minutes}&quot;) long expirationMinutes) {</span>
+<span class="fc bfc" id="L35" title="All 4 branches covered.">        if (secret == null || secret.isBlank()) {</span>
+<span class="fc" id="L36">            throw new IllegalArgumentException(&quot;app.jwt.secret must not be blank&quot;);</span>
         }
-<span class="fc bfc" id="L36" title="All 2 branches covered.">        if (expirationMinutes &lt;= 0) {</span>
-<span class="fc" id="L37">            throw new IllegalArgumentException(&quot;app.jwt.expiration-minutes must be &gt; 0&quot;);</span>
+<span class="fc bfc" id="L38" title="All 2 branches covered.">        if (expirationMinutes &lt;= 0) {</span>
+<span class="fc" id="L39">            throw new IllegalArgumentException(&quot;app.jwt.expiration-minutes must be &gt; 0&quot;);</span>
         }
-<span class="fc" id="L39">        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));</span>
-<span class="fc" id="L40">        this.expirationMinutes = expirationMinutes;</span>
-<span class="fc" id="L41">    }</span>
+<span class="fc" id="L41">        this.signingKey = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));</span>
+<span class="fc" id="L42">        this.expirationMinutes = expirationMinutes;</span>
+<span class="fc" id="L43">    }</span>
 
     /**
      * Generates a JSON Web Token for the given clientId and email.
@@ -47,63 +49,89 @@ public class JwtService {
      * @return serialized JWT token as a String
      */
     public String generateToken(UUID clientId, String email) {
-<span class="fc" id="L50">        Instant now = Instant.now();</span>
-<span class="fc" id="L51">        return Jwts.builder()</span>
-<span class="fc" id="L52">                .subject(clientId.toString())</span>
-<span class="fc" id="L53">                .claim(&quot;email&quot;, email)</span>
-<span class="fc" id="L54">                .issuedAt(Date.from(now))</span>
-<span class="fc" id="L55">                .expiration(Date.from(now.plus(expirationMinutes, ChronoUnit.MINUTES)))</span>
-<span class="fc" id="L56">                .signWith(signingKey)</span>
-<span class="fc" id="L57">                .compact();</span>
+<span class="fc" id="L52">        Instant now = Instant.now();</span>
+<span class="fc" id="L53">        return Jwts.builder()</span>
+<span class="fc" id="L54">                .subject(clientId.toString())</span>
+<span class="fc" id="L55">                .claim(&quot;email&quot;, email)</span>
+<span class="fc" id="L56">                .issuedAt(Date.from(now))</span>
+<span class="fc" id="L57">                .expiration(Date.from(now.plus(expirationMinutes, ChronoUnit.MINUTES)))</span>
+<span class="fc" id="L58">                .signWith(signingKey)</span>
+<span class="fc" id="L59">                .compact();</span>
     }
 
     // Session Timeout &amp; Revocation: use the same timestamps as the persisted login session.
     public String generateToken(UUID clientId, String email, UUID sessionId,
                                 Instant issuedAt, Instant expiresAt) {
-<span class="fc bfc" id="L63" title="All 4 branches covered.">        if (sessionId == null || !expiresAt.isAfter(issuedAt)) {</span>
-<span class="fc" id="L64">            throw new IllegalArgumentException(&quot;A session ID and valid expiration are required&quot;);</span>
+<span class="fc" id="L65">        return generateToken(clientId, email, Role.CLIENT, sessionId, issuedAt, expiresAt);</span>
+    }
+
+    /**
+     * Generates a session token for a client or a staff member.
+     * @param subjectId the client ID, or the staff member's service_id
+     * @param email the signed-in email
+     * @param role the role the token grants; its session must be in the matching session table
+     * @param sessionId the persisted login session
+     * @param issuedAt when the session started
+     * @param expiresAt when the session ends
+     * @return serialized JWT token as a String
+     */
+    public String generateToken(UUID subjectId, String email, Role role, UUID sessionId,
+                                Instant issuedAt, Instant expiresAt) {
+<span class="fc bfc" id="L80" title="All 6 branches covered.">        if (role == null || sessionId == null || !expiresAt.isAfter(issuedAt)) {</span>
+<span class="fc" id="L81">            throw new IllegalArgumentException(&quot;A role, a session ID and valid expiration are required&quot;);</span>
         }
-<span class="fc" id="L66">        return Jwts.builder()</span>
-<span class="fc" id="L67">                .subject(clientId.toString())</span>
-<span class="fc" id="L68">                .claim(&quot;email&quot;, email)</span>
-<span class="fc" id="L69">                .claim(&quot;sid&quot;, sessionId.toString())</span>
-<span class="fc" id="L70">                .issuedAt(Date.from(issuedAt))</span>
-<span class="fc" id="L71">                .expiration(Date.from(expiresAt))</span>
-<span class="fc" id="L72">                .signWith(signingKey)</span>
-<span class="fc" id="L73">                .compact();</span>
+<span class="fc" id="L83">        return Jwts.builder()</span>
+<span class="fc" id="L84">                .subject(subjectId.toString())</span>
+<span class="fc" id="L85">                .claim(&quot;email&quot;, email)</span>
+<span class="fc" id="L86">                .claim(ROLE_CLAIM, role.name())</span>
+<span class="fc" id="L87">                .claim(&quot;sid&quot;, sessionId.toString())</span>
+<span class="fc" id="L88">                .issuedAt(Date.from(issuedAt))</span>
+<span class="fc" id="L89">                .expiration(Date.from(expiresAt))</span>
+<span class="fc" id="L90">                .signWith(signingKey)</span>
+<span class="fc" id="L91">                .compact();</span>
     }
 
     // Session Timeout &amp; Revocation: background recovery uses short-lived, purpose-scoped tokens.
     public String generateSettlementToken(UUID clientId) {
-<span class="fc" id="L78">        return generateServiceToken(clientId, &quot;account-settlement&quot;);</span>
+<span class="fc" id="L96">        return generateServiceToken(clientId, &quot;account-settlement&quot;);</span>
     }
 
     // Session Timeout &amp; Revocation: historical seeding can read prices, but not client APIs.
     public String generateHistoryToken(UUID clientId) {
-<span class="fc" id="L83">        return generateServiceToken(clientId, &quot;market-history&quot;);</span>
+<span class="fc" id="L101">        return generateServiceToken(clientId, &quot;market-history&quot;);</span>
     }
 
     private String generateServiceToken(UUID clientId, String purpose) {
-<span class="fc" id="L87">        Instant now = Instant.now();</span>
-<span class="fc" id="L88">        return Jwts.builder().subject(clientId.toString())</span>
-<span class="fc" id="L89">                .claim(&quot;purpose&quot;, purpose)</span>
-<span class="fc" id="L90">                .issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(60)))</span>
-<span class="fc" id="L91">                .signWith(signingKey).compact();</span>
+<span class="fc" id="L105">        Instant now = Instant.now();</span>
+<span class="fc" id="L106">        return Jwts.builder().subject(clientId.toString())</span>
+<span class="fc" id="L107">                .claim(&quot;purpose&quot;, purpose)</span>
+<span class="fc" id="L108">                .issuedAt(Date.from(now)).expiration(Date.from(now.plusSeconds(60)))</span>
+<span class="fc" id="L109">                .signWith(signingKey).compact();</span>
     }
 
     // Session Timeout &amp; Revocation: parse verified claims once, preserving the session identity.
-<span class="fc" id="L95">    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {}</span>
+    // clientId is the token's subject: a client ID, or a staff member's service_id when role is a staff role.
+<span class="fc" id="L114">    public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose, Role role) {</span>
+        /** A client's identity: tokens issued before roles existed, and every client token. */
+        public TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {
+<span class="fc" id="L117">            this(clientId, sessionId, expiresAt, purpose, Role.CLIENT);</span>
+<span class="fc" id="L118">        }</span>
+    }
 
     public TokenIdentity parseIdentity(String token) {
-<span class="fc" id="L98">        Claims claims = Jwts.parser().verifyWith(signingKey).build()</span>
-<span class="fc" id="L99">                .parseSignedClaims(token).getPayload();</span>
-<span class="fc bfc" id="L100" title="All 2 branches covered.">        if (claims.getExpiration() == null) {</span>
-<span class="fc" id="L101">            throw new IllegalArgumentException(&quot;Token expiration is required&quot;);</span>
+<span class="fc" id="L122">        Claims claims = Jwts.parser().verifyWith(signingKey).build()</span>
+<span class="fc" id="L123">                .parseSignedClaims(token).getPayload();</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (claims.getExpiration() == null) {</span>
+<span class="fc" id="L125">            throw new IllegalArgumentException(&quot;Token expiration is required&quot;);</span>
         }
-<span class="fc" id="L103">        String sessionId = claims.get(&quot;sid&quot;, String.class);</span>
-<span class="fc" id="L104">        return new TokenIdentity(UUID.fromString(claims.getSubject()),</span>
-<span class="fc bfc" id="L105" title="All 2 branches covered.">                sessionId == null ? null : UUID.fromString(sessionId),</span>
-<span class="fc" id="L106">                claims.getExpiration().toInstant(), claims.get(&quot;purpose&quot;, String.class));</span>
+<span class="fc" id="L127">        String sessionId = claims.get(&quot;sid&quot;, String.class);</span>
+        // Tokens issued before roles existed have no role claim; they were all client logins.
+        // An unknown role throws IllegalArgumentException, so the request is not authenticated.
+<span class="fc" id="L130">        String role = claims.get(ROLE_CLAIM, String.class);</span>
+<span class="fc" id="L131">        return new TokenIdentity(UUID.fromString(claims.getSubject()),</span>
+<span class="fc bfc" id="L132" title="All 2 branches covered.">                sessionId == null ? null : UUID.fromString(sessionId),</span>
+<span class="fc" id="L133">                claims.getExpiration().toInstant(), claims.get(&quot;purpose&quot;, String.class),</span>
+<span class="fc bfc" id="L134" title="All 2 branches covered.">                role == null ? Role.CLIENT : Role.valueOf(role));</span>
     }
 
     /**
@@ -111,7 +139,7 @@ public class JwtService {
      * @return expiration time in seconds
      */
     public long getExpirationSeconds() {
-<span class="fc" id="L114">        return expirationMinutes * 60;</span>
+<span class="fc" id="L142">        return expirationMinutes * 60;</span>
     }
 
     /**
@@ -120,12 +148,12 @@ public class JwtService {
      * @return the clientId extracted from the token
      */
     public UUID parseAndValidate(String token) {
-<span class="fc" id="L123">        Claims claims = Jwts.parser()</span>
-<span class="fc" id="L124">                .verifyWith(signingKey)</span>
-<span class="fc" id="L125">                .build()</span>
-<span class="fc" id="L126">                .parseSignedClaims(token)</span>
-<span class="fc" id="L127">                .getPayload();</span>
-<span class="fc" id="L128">        return UUID.fromString(claims.getSubject());</span>
+<span class="fc" id="L151">        Claims claims = Jwts.parser()</span>
+<span class="fc" id="L152">                .verifyWith(signingKey)</span>
+<span class="fc" id="L153">                .build()</span>
+<span class="fc" id="L154">                .parseSignedClaims(token)</span>
+<span class="fc" id="L155">                .getPayload();</span>
+<span class="fc" id="L156">        return UUID.fromString(claims.getSubject());</span>
     }
 }
 

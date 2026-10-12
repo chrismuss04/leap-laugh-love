@@ -24,6 +24,9 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private static final String BEARER_PREFIX = &quot;Bearer &quot;;
 
+    /** Granted to purpose-scoped background tokens (settlement recovery, price-history seeding). */
+    public static final String SERVICE_AUTHORITY = &quot;ROLE_SERVICE&quot;;
+
     private final JwtService jwtService;
     // Session Timeout &amp; Revocation
     private final ClientSessionValidator sessions;
@@ -34,16 +37,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
      * @param jwtService the JwtService used to parse and validate JWT tokens
      */
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions) {
-<span class="fc" id="L37">        this(jwtService, sessions, null);</span>
-<span class="fc" id="L38">    }</span>
+<span class="fc" id="L40">        this(jwtService, sessions, null);</span>
+<span class="fc" id="L41">    }</span>
 
     // Session Timeout &amp; Revocation: each service explicitly allows only its own background token purpose.
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions,
-<span class="fc" id="L42">                                   String allowedServicePurpose) {</span>
-<span class="fc" id="L43">        this.jwtService = jwtService;</span>
-<span class="fc" id="L44">        this.sessions = sessions;</span>
-<span class="fc" id="L45">        this.allowedServicePurpose = allowedServicePurpose;</span>
-<span class="fc" id="L46">    }</span>
+<span class="fc" id="L45">                                   String allowedServicePurpose) {</span>
+<span class="fc" id="L46">        this.jwtService = jwtService;</span>
+<span class="fc" id="L47">        this.sessions = sessions;</span>
+<span class="fc" id="L48">        this.allowedServicePurpose = allowedServicePurpose;</span>
+<span class="fc" id="L49">    }</span>
 
     /**
      * Filters incoming HTTP requests and authenticates them using JWT tokens.
@@ -57,46 +60,52 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     protected void doFilterInternal(@NonNull HttpServletRequest request,
                                      @NonNull HttpServletResponse response,
                                      @NonNull FilterChain filterChain) throws ServletException, IOException {
-<span class="fc" id="L60">        String header = request.getHeader(&quot;Authorization&quot;);</span>
-<span class="fc bfc" id="L61" title="All 4 branches covered.">        if (header != null &amp;&amp; header.startsWith(BEARER_PREFIX)) {</span>
-<span class="fc" id="L62">            String token = header.substring(BEARER_PREFIX.length());</span>
+<span class="fc" id="L63">        String header = request.getHeader(&quot;Authorization&quot;);</span>
+<span class="fc bfc" id="L64" title="All 4 branches covered.">        if (header != null &amp;&amp; header.startsWith(BEARER_PREFIX)) {</span>
+<span class="fc" id="L65">            String token = header.substring(BEARER_PREFIX.length());</span>
             try {
                 // Session Timeout &amp; Revocation: legacy tokens without a session cannot authenticate.
-<span class="fc" id="L65">                var identity = jwtService.parseIdentity(token);</span>
-<span class="fc bfc" id="L66" title="All 2 branches covered.">                if (identity.purpose() != null) {</span>
-<span class="fc bfc" id="L67" title="All 2 branches covered.">                    if (!isAllowedServiceRequest(identity, request)) {</span>
-<span class="fc" id="L68">                        throw new JwtException(&quot;Token is not valid for this endpoint&quot;);</span>
+<span class="fc" id="L68">                var identity = jwtService.parseIdentity(token);</span>
+                String authority;
+<span class="fc bfc" id="L70" title="All 2 branches covered.">                if (identity.purpose() != null) {</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">                    if (!isAllowedServiceRequest(identity, request)) {</span>
+<span class="fc" id="L72">                        throw new JwtException(&quot;Token is not valid for this endpoint&quot;);</span>
                     }
-<span class="fc bfc" id="L70" title="All 2 branches covered.">                } else if (!sessions.isActive(identity.sessionId(), identity.clientId(), identity.expiresAt())) {</span>
-<span class="fc" id="L71">                    throw new JwtException(&quot;Session is expired or revoked&quot;);</span>
+                    // A background job acting for the client in its subject, on one internal endpoint.
+<span class="fc" id="L75">                    authority = SERVICE_AUTHORITY;</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">                } else if (!sessions.isActive(identity.role(), identity.sessionId(), identity.clientId(),</span>
+<span class="fc" id="L77">                        identity.expiresAt())) {</span>
+<span class="fc" id="L78">                    throw new JwtException(&quot;Session is expired or revoked&quot;);</span>
+                } else {
+<span class="fc" id="L80">                    authority = identity.role().authority();</span>
                 }
-<span class="fc" id="L73">                UUID clientId = identity.clientId();</span>
-<span class="fc" id="L74">                var authentication = new UsernamePasswordAuthenticationToken(</span>
-<span class="fc" id="L75">                        clientId, null, List.of(new SimpleGrantedAuthority(&quot;ROLE_CLIENT&quot;)));</span>
-<span class="fc" id="L76">                authentication.setDetails(identity);</span>
-<span class="fc" id="L77">                SecurityContextHolder.getContext().setAuthentication(authentication);</span>
-<span class="fc" id="L78">            } catch (JwtException | IllegalArgumentException e) {</span>
-<span class="fc" id="L79">                SecurityContextHolder.clearContext();</span>
-<span class="fc" id="L80">            } catch (DataAccessException e) {</span>
-<span class="fc" id="L81">                SecurityContextHolder.clearContext();</span>
-<span class="fc" id="L82">                response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);</span>
-<span class="fc" id="L83">                return;</span>
-<span class="fc" id="L84">            }</span>
+<span class="fc" id="L82">                UUID clientId = identity.clientId();</span>
+<span class="fc" id="L83">                var authentication = new UsernamePasswordAuthenticationToken(</span>
+<span class="fc" id="L84">                        clientId, null, List.of(new SimpleGrantedAuthority(authority)));</span>
+<span class="fc" id="L85">                authentication.setDetails(identity);</span>
+<span class="fc" id="L86">                SecurityContextHolder.getContext().setAuthentication(authentication);</span>
+<span class="fc" id="L87">            } catch (JwtException | IllegalArgumentException e) {</span>
+<span class="fc" id="L88">                SecurityContextHolder.clearContext();</span>
+<span class="fc" id="L89">            } catch (DataAccessException e) {</span>
+<span class="fc" id="L90">                SecurityContextHolder.clearContext();</span>
+<span class="fc" id="L91">                response.setStatus(HttpServletResponse.SC_SERVICE_UNAVAILABLE);</span>
+<span class="fc" id="L92">                return;</span>
+<span class="fc" id="L93">            }</span>
         }
-<span class="fc" id="L86">        filterChain.doFilter(request, response);</span>
-<span class="fc" id="L87">    }</span>
+<span class="fc" id="L95">        filterChain.doFilter(request, response);</span>
+<span class="fc" id="L96">    }</span>
 
     // Session Timeout &amp; Revocation: these tokens cannot access client-facing APIs or other services.
     private boolean isAllowedServiceRequest(JwtService.TokenIdentity identity, HttpServletRequest request) {
-<span class="fc bfc" id="L91" title="All 4 branches covered.">        if (allowedServicePurpose == null || !allowedServicePurpose.equals(identity.purpose())) return false;</span>
-<span class="fc" id="L92">        String path = request.getRequestURI().substring(request.getContextPath().length());</span>
-<span class="fc bfc" id="L93" title="All 2 branches covered.">        if (&quot;market-history&quot;.equals(identity.purpose())) {</span>
-<span class="pc bpc" id="L94" title="1 of 2 branches missed.">            return &quot;GET&quot;.equals(request.getMethod())</span>
-<span class="fc bfc" id="L95" title="All 2 branches covered.">                    &amp;&amp; path.matches(&quot;/api/marketdata/prices/[^/]+/history&quot;);</span>
+<span class="fc bfc" id="L100" title="All 4 branches covered.">        if (allowedServicePurpose == null || !allowedServicePurpose.equals(identity.purpose())) return false;</span>
+<span class="fc" id="L101">        String path = request.getRequestURI().substring(request.getContextPath().length());</span>
+<span class="fc bfc" id="L102" title="All 2 branches covered.">        if (&quot;market-history&quot;.equals(identity.purpose())) {</span>
+<span class="pc bpc" id="L103" title="1 of 2 branches missed.">            return &quot;GET&quot;.equals(request.getMethod())</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">                    &amp;&amp; path.matches(&quot;/api/marketdata/prices/[^/]+/history&quot;);</span>
         }
-<span class="pc bpc" id="L97" title="1 of 2 branches missed.">        String endpoint = &quot;GET&quot;.equals(request.getMethod()) ? &quot;validation-data&quot;</span>
-<span class="pc bpc" id="L98" title="1 of 2 branches missed.">                : &quot;POST&quot;.equals(request.getMethod()) ? &quot;settlement&quot; : &quot;&quot;;</span>
-<span class="pc bpc" id="L99" title="1 of 4 branches missed.">        return !endpoint.isEmpty() &amp;&amp; path.matches(</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        String endpoint = &quot;GET&quot;.equals(request.getMethod()) ? &quot;validation-data&quot;</span>
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">                : &quot;POST&quot;.equals(request.getMethod()) ? &quot;settlement&quot; : &quot;&quot;;</span>
+<span class="pc bpc" id="L108" title="1 of 4 branches missed.">        return !endpoint.isEmpty() &amp;&amp; path.matches(</span>
                 &quot;/api/account/internal/accounts/[0-9a-fA-F-]{36}/&quot; + endpoint);
     }
 }

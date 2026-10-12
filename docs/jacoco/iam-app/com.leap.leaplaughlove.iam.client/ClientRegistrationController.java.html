@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientRegistrationController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.client</a> &gt; <span class="el_source">ClientRegistrationController.java</span></div><h1>ClientRegistrationController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.iam.account.ClientRegisteredEvent;
+import com.leap.leaplaughlove.iam.events.ClientRegistrationEvent;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
 import jakarta.validation.Constraint;
 import jakarta.validation.ConstraintValidator;
 import jakarta.validation.ConstraintValidatorContext;
@@ -37,6 +39,8 @@ public class ClientRegistrationController {
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
     private final ApplicationEventPublisher eventPublisher;
+    // Analyst login
+    private final StaffCredentialsRepository staffCredentialsRepository;
 
     /**
      * Constructs a new ClientRegistrationController with the specified
@@ -50,16 +54,20 @@ public class ClientRegistrationController {
      *                              before it is stored
      * @param eventPublisher        publishes the registration so the client's first
      *                              account is opened once it has committed
+     * @param staffCredentialsRepository the staff sign-in credentials, whose emails
+     *                              clients can't register with
      */
     public ClientRegistrationController(ClientRepository clientRepository,
             ClientCredentialsRepository credentialsRepository,
             PasswordEncoder passwordEncoder,
-<span class="fc" id="L57">            ApplicationEventPublisher eventPublisher) {</span>
-<span class="fc" id="L58">        this.clientRepository = clientRepository;</span>
-<span class="fc" id="L59">        this.credentialsRepository = credentialsRepository;</span>
-<span class="fc" id="L60">        this.passwordEncoder = passwordEncoder;</span>
-<span class="fc" id="L61">        this.eventPublisher = eventPublisher;</span>
-<span class="fc" id="L62">    }</span>
+            ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L64">            StaffCredentialsRepository staffCredentialsRepository) {</span>
+<span class="fc" id="L65">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L66">        this.credentialsRepository = credentialsRepository;</span>
+<span class="fc" id="L67">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L68">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L69">        this.staffCredentialsRepository = staffCredentialsRepository;</span>
+<span class="fc" id="L70">    }</span>
 
     /**
      * Handles client registration requests
@@ -72,31 +80,36 @@ public class ClientRegistrationController {
     @PostMapping(&quot;/register&quot;)
     @Transactional
     public ResponseEntity&lt;RegistrationResponse&gt; register(@Valid @RequestBody RegistrationRequest request) {
-<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (clientRepository.existsByEmail(request.email())) {</span>
-<span class="fc" id="L76">            throw new DuplicateClientException(&quot;email already registered&quot;);</span>
+        // Analyst login: sign-in looks clients up before staff, so a client with a staff member's
+        // email would lock that staff member out of reporting.
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        if (clientRepository.existsByEmail(request.email())</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">                || staffCredentialsRepository.existsByEmail(request.email())) {</span>
+<span class="fc" id="L87">            throw new DuplicateClientException(&quot;email already registered&quot;);</span>
         }
-<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (clientRepository.existsBySsn(request.ssn())) {</span>
-<span class="fc" id="L79">            throw new DuplicateClientException(&quot;ssn already registered&quot;);</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (clientRepository.existsBySsn(request.ssn())) {</span>
+<span class="fc" id="L90">            throw new DuplicateClientException(&quot;ssn already registered&quot;);</span>
         }
 
-<span class="fc" id="L82">        OffsetDateTime now = OffsetDateTime.now();</span>
-<span class="fc" id="L83">        Client client = new Client(</span>
-<span class="fc" id="L84">                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), &quot;ACTIVE&quot;, now,</span>
-<span class="fc" id="L85">                request.fullName(), request.dateOfBirth(), request.ssn(),</span>
-<span class="fc" id="L86">                request.addressLine1(), request.addressLine2(), request.city(),</span>
-<span class="fc" id="L87">                request.stateRegion(), request.postalCode(), request.countryCode(),</span>
-<span class="fc" id="L88">                request.experienceLevel(), request.initialDepositAmount());</span>
-<span class="fc" id="L89">        clientRepository.save(client);</span>
+<span class="fc" id="L93">        OffsetDateTime now = OffsetDateTime.now();</span>
+<span class="fc" id="L94">        Client client = new Client(</span>
+<span class="fc" id="L95">                UUID.randomUUID(), request.email(), normalizePhone(request.phone()), &quot;ACTIVE&quot;, now,</span>
+<span class="fc" id="L96">                request.fullName(), request.dateOfBirth(), request.ssn(),</span>
+<span class="fc" id="L97">                request.addressLine1(), request.addressLine2(), request.city(),</span>
+<span class="fc" id="L98">                request.stateRegion(), request.postalCode(), request.countryCode(),</span>
+<span class="fc" id="L99">                request.experienceLevel(), request.initialDepositAmount());</span>
+<span class="fc" id="L100">        clientRepository.save(client);</span>
 
-<span class="fc" id="L91">        ClientCredentials credentials = new ClientCredentials(</span>
-<span class="fc" id="L92">                client.getClientId(), passwordEncoder.encode(request.password()), 0, null);</span>
-<span class="fc" id="L93">        credentialsRepository.save(credentials);</span>
+<span class="fc" id="L102">        ClientCredentials credentials = new ClientCredentials(</span>
+<span class="fc" id="L103">                client.getClientId(), passwordEncoder.encode(request.password()), 0, null);</span>
+<span class="fc" id="L104">        credentialsRepository.save(credentials);</span>
 
-<span class="fc" id="L95">        eventPublisher.publishEvent(new ClientRegisteredEvent(</span>
-<span class="fc" id="L96">                client.getClientId(), client.getEmail(), request.initialDepositAmount()));</span>
+<span class="fc" id="L106">        eventPublisher.publishEvent(new ClientRegistrationEvent(client.getClientId(), client.getCreatedAt()));</span>
 
-<span class="fc" id="L98">        return ResponseEntity.status(HttpStatus.CREATED)</span>
-<span class="fc" id="L99">                .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));</span>
+<span class="fc" id="L108">        eventPublisher.publishEvent(new ClientRegisteredEvent(</span>
+<span class="fc" id="L109">                client.getClientId(), client.getEmail(), request.initialDepositAmount()));</span>
+
+<span class="fc" id="L111">        return ResponseEntity.status(HttpStatus.CREATED)</span>
+<span class="fc" id="L112">                .body(new RegistrationResponse(client.getClientId(), client.getEmail(), client.getStatus()));</span>
     }
 
     /**
@@ -111,14 +124,14 @@ public class ClientRegistrationController {
      * @return the normalized phone number, or null if none was provided
      */
     static String normalizePhone(String phone) {
-<span class="fc bfc" id="L114" title="All 2 branches covered.">        if (phone == null) {</span>
-<span class="fc" id="L115">            return null;</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (phone == null) {</span>
+<span class="fc" id="L128">            return null;</span>
         }
-<span class="fc" id="L117">        String digits = phone.replaceAll(&quot;\\D&quot;, &quot;&quot;);</span>
-<span class="fc bfc" id="L118" title="All 2 branches covered.">        if (digits.length() == 10) {</span>
-<span class="fc" id="L119">            return &quot;(%s) %s-%s&quot;.formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));</span>
+<span class="fc" id="L130">        String digits = phone.replaceAll(&quot;\\D&quot;, &quot;&quot;);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (digits.length() == 10) {</span>
+<span class="fc" id="L132">            return &quot;(%s) %s-%s&quot;.formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));</span>
         }
-<span class="fc" id="L121">        return digits;</span>
+<span class="fc" id="L134">        return digits;</span>
     }
 
     /**
@@ -129,7 +142,7 @@ public class ClientRegistrationController {
      */
     @ExceptionHandler(DuplicateClientException.class)
     public ResponseEntity&lt;String&gt; handleDuplicate(DuplicateClientException ex) {
-<span class="fc" id="L132">        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());</span>
+<span class="fc" id="L145">        return ResponseEntity.status(HttpStatus.CONFLICT).body(ex.getMessage());</span>
     }
 
     /**
@@ -141,7 +154,7 @@ public class ClientRegistrationController {
      */
     @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
     public ResponseEntity&lt;String&gt; handleDataIntegrity(org.springframework.dao.DataIntegrityViolationException ex) {
-<span class="fc" id="L144">        return ResponseEntity.status(HttpStatus.CONFLICT).body(&quot;email or ssn already registered&quot;);</span>
+<span class="fc" id="L157">        return ResponseEntity.status(HttpStatus.CONFLICT).body(&quot;email or ssn already registered&quot;);</span>
     }
 
     /**
@@ -166,7 +179,7 @@ public class ClientRegistrationController {
      * @param password             the applicant's chosen sign-in password (must be
      *                             at least 8 characters)
      */
-<span class="fc" id="L169">    public record RegistrationRequest(</span>
+<span class="fc" id="L182">    public record RegistrationRequest(</span>
             @NotBlank @Email String email,
             String phone,
             @NotBlank String fullName,
@@ -193,7 +206,7 @@ public class ClientRegistrationController {
      * @param email    the email of the newly registered client
      * @param status   the registration status of the client
      */
-<span class="fc" id="L196">    public record RegistrationResponse(UUID clientId, String email, String status) {</span>
+<span class="fc" id="L209">    public record RegistrationResponse(UUID clientId, String email, String status) {</span>
     }
 
     /**
@@ -207,8 +220,8 @@ public class ClientRegistrationController {
          * @param message the error message
          */
         DuplicateClientException(String message) {
-<span class="fc" id="L210">            super(message);</span>
-<span class="fc" id="L211">        }</span>
+<span class="fc" id="L223">            super(message);</span>
+<span class="fc" id="L224">        }</span>
     }
 
     /**
@@ -255,7 +268,7 @@ public class ClientRegistrationController {
          * @return true if the date of birth meets the minimum age requirement, false
          *         otherwise
          */
-<span class="fc" id="L258">        class Validator implements ConstraintValidator&lt;MinimumAge, LocalDate&gt; {</span>
+<span class="fc" id="L271">        class Validator implements ConstraintValidator&lt;MinimumAge, LocalDate&gt; {</span>
 
             private int minimumAge;
 
@@ -266,8 +279,8 @@ public class ClientRegistrationController {
              */
             @Override
             public void initialize(MinimumAge annotation) {
-<span class="fc" id="L269">                this.minimumAge = annotation.value();</span>
-<span class="fc" id="L270">            }</span>
+<span class="fc" id="L282">                this.minimumAge = annotation.value();</span>
+<span class="fc" id="L283">            }</span>
 
             /**
              * Checks if the given DOB meets minimum age requirement
@@ -281,10 +294,10 @@ public class ClientRegistrationController {
             public boolean isValid(LocalDate dateOfBirth, ConstraintValidatorContext context) {
                 // Let @NotNull handle a missing date of birth - we only judge dates that are
                 // actually present.
-<span class="pc bpc" id="L284" title="1 of 2 branches missed.">                if (dateOfBirth == null) {</span>
-<span class="nc" id="L285">                    return true;</span>
+<span class="pc bpc" id="L297" title="1 of 2 branches missed.">                if (dateOfBirth == null) {</span>
+<span class="nc" id="L298">                    return true;</span>
                 }
-<span class="fc bfc" id="L287" title="All 2 branches covered.">                return Period.between(dateOfBirth, LocalDate.now()).getYears() &gt;= minimumAge;</span>
+<span class="fc bfc" id="L300" title="All 2 branches covered.">                return Period.between(dateOfBirth, LocalDate.now()).getYears() &gt;= minimumAge;</span>
             }
         }
     }

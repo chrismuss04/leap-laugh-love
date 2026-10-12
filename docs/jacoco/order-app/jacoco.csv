@@ -2,7 +2,7 @@ GROUP,PACKAGE,CLASS,INSTRUCTION_MISSED,INSTRUCTION_COVERED,BRANCH_MISSED,BRANCH_
 order-app,com.leap.leaplaughlove.order.execution,ExecutionItem,0,15,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.execution,Execution.Status,0,15,0,0,0,2,0,1,0,1
 order-app,com.leap.leaplaughlove.order.execution,Execution,1,61,1,1,0,20,1,10,0,10
-order-app,com.leap.leaplaughlove.order,OrderApplication,5,3,0,0,2,1,1,1,1,1
+order-app,com.leap.leaplaughlove.order,OrderApplication,0,8,0,0,0,3,0,2,0,2
 order-app,com.leap.leaplaughlove.order.order,Order,0,188,0,10,0,57,0,32,0,27
 order-app,com.leap.leaplaughlove.order.order,Order.Side,0,15,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.order,Order.Status,0,27,0,0,0,1,0,1,0,1
@@ -13,7 +13,7 @@ order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionController,0,24
 order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionRequest,0,34,0,4,0,2,0,4,0,2
 order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionResponse,0,48,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionResponse.ExecutionDto,0,21,0,0,0,1,0,1,0,1
-order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionService,10,586,2,48,0,133,3,37,1,14
+order-app,com.leap.leaplaughlove.order.submission,OrderSubmissionService,10,603,2,50,0,138,3,38,1,14
 order-app,com.leap.leaplaughlove.order.quote,PriceHistoryClient.CandleClose,0,9,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.quote,PriceHistoryClient.LatestPrice,0,9,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.quote,PriceHistoryClient.CandlePage,0,9,0,0,0,1,0,1,0,1
@@ -35,11 +35,15 @@ order-app,com.leap.leaplaughlove.order.client,AccountSummaryDto,0,21,0,0,0,1,0,1
 order-app,com.leap.leaplaughlove.order.client,AccountValidationDto,0,24,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.client,AccountClient,0,138,1,5,0,36,1,10,0,8
 order-app,com.leap.leaplaughlove.order.client,AccountClientConfig,0,24,0,0,0,6,0,2,0,2
-order-app,com.leap.leaplaughlove.order.security,OrderSecurityConfig,0,75,0,0,0,15,0,8,0,8
+order-app,com.leap.leaplaughlove.order.security,OrderSecurityConfig,0,76,0,0,0,15,0,8,0,8
 order-app,com.leap.leaplaughlove.order.history,OrderHistoryController,0,23,0,0,0,6,0,3,0,3
-order-app,com.leap.leaplaughlove.order.history,SeededFillService,0,434,1,31,0,93,1,30,0,15
-order-app,com.leap.leaplaughlove.order.history,PendingFillRecovery,18,210,3,11,3,49,4,16,1,12
-order-app,com.leap.leaplaughlove.order.history,FillRecorder,1,178,4,16,1,41,4,13,0,7
+order-app,com.leap.leaplaughlove.order.history,SeededFillService,0,446,1,33,0,97,1,31,0,15
+order-app,com.leap.leaplaughlove.order.history,PendingFillRecovery,14,275,0,18,2,67,1,21,1,12
+order-app,com.leap.leaplaughlove.order.history,FillRecorder,1,198,4,22,1,44,4,16,0,7
 order-app,com.leap.leaplaughlove.order.history,OrderHistoryService.DateRange,0,9,0,0,0,1,0,1,0,1
 order-app,com.leap.leaplaughlove.order.history,OrderHistoryItem,0,46,0,4,0,4,0,4,0,2
 order-app,com.leap.leaplaughlove.order.history,OrderHistoryService,0,242,1,23,0,60,1,21,0,10
+order-app,com.leap.leaplaughlove.order.events,OrderEventsProducerWarmup,15,104,3,7,6,27,3,6,0,4
+order-app,com.leap.leaplaughlove.order.events,OrderEventsKafkaConfig,0,32,0,0,0,8,0,4,0,4
+order-app,com.leap.leaplaughlove.order.events,OrderEventPublisher,0,123,0,4,0,37,0,10,0,8
+order-app,com.leap.leaplaughlove.order.events,OrderCompletedEvent,0,42,0,0,0,1,0,1,0,1

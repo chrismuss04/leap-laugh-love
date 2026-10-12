@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,44 +20,56 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
-/** Nightly job that flags accounts empty for longer than the threshold and clears accounts that no longer are. */
+/**
+ * Nightly job that flags accounts empty for longer than the threshold and clears accounts that no
+ * longer are. Each run then publishes an {@link InactivityCheckedEvent}, delivered after it commits,
+ * which {@link InactiveAccountNotifier} uses to email the clients of newly flagged accounts.
+ */
 @Component
 @ConditionalOnProperty(prefix = &quot;account.inactivity&quot;, name = &quot;enabled&quot;, havingValue = &quot;true&quot;, matchIfMissing = true)
 public class InactiveAccountDetector {
 
-<span class="fc" id="L27">    private static final Logger log = LoggerFactory.getLogger(InactiveAccountDetector.class);</span>
+<span class="fc" id="L32">    private static final Logger log = LoggerFactory.getLogger(InactiveAccountDetector.class);</span>
 
     private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final int thresholdDays;
     private final Clock clock;
 
     /** Creates the detector on the system clock. */
     @Autowired
-    public InactiveAccountDetector(AccountRepository accountRepository,
+    public InactiveAccountDetector(AccountRepository accountRepository, ApplicationEventPublisher eventPublisher,
                                    @Value(&quot;${account.inactivity.threshold-days:30}&quot;) int thresholdDays) {
-<span class="nc" id="L37">        this(accountRepository, thresholdDays, Clock.systemUTC());</span>
-<span class="nc" id="L38">    }</span>
-
-<span class="fc" id="L40">    InactiveAccountDetector(AccountRepository accountRepository, int thresholdDays, Clock clock) {</span>
-<span class="fc" id="L41">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L42">        this.thresholdDays = thresholdDays;</span>
-<span class="fc" id="L43">        this.clock = clock;</span>
+<span class="fc" id="L43">        this(accountRepository, eventPublisher, thresholdDays, Clock.systemUTC());</span>
 <span class="fc" id="L44">    }</span>
+
+    InactiveAccountDetector(AccountRepository accountRepository, ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L47">                            int thresholdDays, Clock clock) {</span>
+<span class="fc" id="L48">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L49">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L50">        this.thresholdDays = thresholdDays;</span>
+<span class="fc" id="L51">        this.clock = clock;</span>
+<span class="fc" id="L52">    }</span>
 
     @Scheduled(cron = &quot;${account.inactivity.cron:0 0 2 * * *}&quot;, zone = &quot;UTC&quot;)
     @Transactional
     public void detect() {
-<span class="fc" id="L49">        Map&lt;UUID, OffsetDateTime&gt; empty = accountRepository</span>
-<span class="fc" id="L50">                .findEmptySince(OffsetDateTime.now(clock).minusDays(thresholdDays)).stream()</span>
-<span class="fc" id="L51">                .collect(Collectors.toMap(EmptyAccount::getAccountId, EmptyAccount::getEmptySince));</span>
+<span class="fc" id="L57">        Map&lt;UUID, OffsetDateTime&gt; empty = accountRepository</span>
+<span class="fc" id="L58">                .findEmptySince(OffsetDateTime.now(clock).minusDays(thresholdDays)).stream()</span>
+<span class="fc" id="L59">                .collect(Collectors.toMap(EmptyAccount::getAccountId, EmptyAccount::getEmptySince));</span>
 
-<span class="fc" id="L53">        List&lt;Account&gt; cleared = accountRepository.findByInactiveSinceIsNotNull().stream()</span>
-<span class="fc bfc" id="L54" title="All 2 branches covered.">                .filter(a -&gt; !empty.containsKey(a.getAccountId())).toList();</span>
-<span class="fc" id="L55">        cleared.forEach(a -&gt; a.setInactiveSince(null));</span>
-<span class="fc" id="L56">        List&lt;Account&gt; flagged = accountRepository.findAllById(empty.keySet()).stream()</span>
-<span class="fc bfc" id="L57" title="All 2 branches covered.">                .filter(a -&gt; a.getInactiveSince() == null).toList();</span>
-<span class="fc" id="L58">        flagged.forEach(a -&gt; a.setInactiveSince(empty.get(a.getAccountId())));</span>
-<span class="fc" id="L59">        log.info(&quot;Inactive account check flagged {} and cleared {} account(s)&quot;, flagged.size(), cleared.size());</span>
-<span class="fc" id="L60">    }</span>
+<span class="fc" id="L61">        List&lt;Account&gt; cleared = accountRepository.findByInactiveSinceIsNotNull().stream()</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">                .filter(a -&gt; !empty.containsKey(a.getAccountId())).toList();</span>
+        // A reactivated account's next inactive period gets an email of its own.
+<span class="fc" id="L64">        cleared.forEach(a -&gt; {</span>
+<span class="fc" id="L65">            a.setInactiveSince(null);</span>
+<span class="fc" id="L66">            a.setInactiveNotifiedAt(null);</span>
+<span class="fc" id="L67">        });</span>
+<span class="fc" id="L68">        List&lt;Account&gt; flagged = accountRepository.findAllById(empty.keySet()).stream()</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">                .filter(a -&gt; a.getInactiveSince() == null).toList();</span>
+<span class="fc" id="L70">        flagged.forEach(a -&gt; a.setInactiveSince(empty.get(a.getAccountId())));</span>
+<span class="fc" id="L71">        log.info(&quot;Inactive account check flagged {} and cleared {} account(s)&quot;, flagged.size(), cleared.size());</span>
+<span class="fc" id="L72">        eventPublisher.publishEvent(new InactivityCheckedEvent());</span>
+<span class="fc" id="L73">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

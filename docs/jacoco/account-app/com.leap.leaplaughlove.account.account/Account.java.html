@@ -45,11 +45,14 @@ public class Account {
     @Column(name = &quot;inactive_since&quot;)
     private OffsetDateTime inactiveSince;
 
+    @Column(name = &quot;inactive_notified_at&quot;)
+    private OffsetDateTime inactiveNotifiedAt;
+
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L51">    protected Account() {</span>
-<span class="fc" id="L52">    }</span>
+<span class="fc" id="L54">    protected Account() {</span>
+<span class="fc" id="L55">    }</span>
 
     /**
      * Constructor for the Account entity with all fields specified.
@@ -62,76 +65,82 @@ public class Account {
      * @param createdAt the timestamp when the account was created
      */
     public Account(UUID accountId, UUID clientId, String accountNumber, String status,
-<span class="fc" id="L65">                   String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {</span>
-<span class="fc" id="L66">        this.accountId = accountId;</span>
-<span class="fc" id="L67">        this.clientId = clientId;</span>
-<span class="fc" id="L68">        this.accountNumber = accountNumber;</span>
-<span class="fc" id="L69">        this.status = status;</span>
-<span class="fc" id="L70">        this.baseCurrency = baseCurrency;</span>
-<span class="fc" id="L71">        this.tradingEnabled = tradingEnabled;</span>
-<span class="fc" id="L72">        this.createdAt = createdAt;</span>
-<span class="fc" id="L73">    }</span>
+<span class="fc" id="L68">                   String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {</span>
+<span class="fc" id="L69">        this.accountId = accountId;</span>
+<span class="fc" id="L70">        this.clientId = clientId;</span>
+<span class="fc" id="L71">        this.accountNumber = accountNumber;</span>
+<span class="fc" id="L72">        this.status = status;</span>
+<span class="fc" id="L73">        this.baseCurrency = baseCurrency;</span>
+<span class="fc" id="L74">        this.tradingEnabled = tradingEnabled;</span>
+<span class="fc" id="L75">        this.createdAt = createdAt;</span>
+<span class="fc" id="L76">    }</span>
 
     /**
      * Returns the account identifier.
      * @return the unique identifier for the account
      */
-<span class="fc" id="L79">    public UUID getAccountId() { return accountId; }</span>
+<span class="fc" id="L82">    public UUID getAccountId() { return accountId; }</span>
 
     /**
      * Returns the client identifier.
      * @return the unique identifier for the client owning the account
      */
-<span class="fc" id="L85">    public UUID getClientId() { return clientId; }</span>
+<span class="fc" id="L88">    public UUID getClientId() { return clientId; }</span>
 
     /**
      * Returns the account number.
      * @return the unique account number
      */
-<span class="fc" id="L91">    public String getAccountNumber() { return accountNumber; }</span>
+<span class="fc" id="L94">    public String getAccountNumber() { return accountNumber; }</span>
 
     /**
      * Returns the account status.
      * @return the status of the account
      */
-<span class="fc" id="L97">    public String getStatus() { return status; }</span>
+<span class="fc" id="L100">    public String getStatus() { return status; }</span>
 
     /**
      * Returns the base currency of the account.
      * @return the base currency of the account
      */
-<span class="fc" id="L103">    public String getBaseCurrency() { return baseCurrency; }</span>
+<span class="fc" id="L106">    public String getBaseCurrency() { return baseCurrency; }</span>
 
     /**
      * Indicates if trading is enabled for the account.
      * @return true if trading is enabled, false otherwise
      */
-<span class="fc" id="L109">    public boolean isTradingEnabled() { return tradingEnabled; }</span>
+<span class="fc" id="L112">    public boolean isTradingEnabled() { return tradingEnabled; }</span>
 
     /**
      * Returns the saved price tolerance: the most, in percent, the price may move either way
      * between an order's quote and its execution before order-app rejects it.
      * @return the tolerance in percent, or null when none is saved
      */
-<span class="fc" id="L116">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
+<span class="fc" id="L119">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
 
     /**
      * Saves the account's price tolerance.
      * @param maxSlippagePercent the tolerance in percent, or null to clear it
      */
-<span class="fc" id="L122">    public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }</span>
+<span class="fc" id="L125">    public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }</span>
 
     /**
      * Returns the creation timestamp of the account.
      * @return the timestamp when the account was created
      */
-<span class="fc" id="L128">    public OffsetDateTime getCreatedAt() { return createdAt; }</span>
+<span class="fc" id="L131">    public OffsetDateTime getCreatedAt() { return createdAt; }</span>
 
     /** @return when the account became empty, if the inactivity job has flagged it; otherwise null */
-<span class="fc" id="L131">    public OffsetDateTime getInactiveSince() { return inactiveSince; }</span>
+<span class="fc" id="L134">    public OffsetDateTime getInactiveSince() { return inactiveSince; }</span>
 
     /** Flags the account inactive since the given time, or clears the flag with null. */
-<span class="fc" id="L134">    public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }</span>
+<span class="fc" id="L137">    public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }</span>
+
+    /** @return when the client was emailed about the current inactive period; null until then */
+<span class="nc" id="L140">    public OffsetDateTime getInactiveNotifiedAt() { return inactiveNotifiedAt; }</span>
+
+    /** Records when the client was emailed about the inactive account, or clears it with null. */
+<span class="fc" id="L143">    public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }</span>
 }
 
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

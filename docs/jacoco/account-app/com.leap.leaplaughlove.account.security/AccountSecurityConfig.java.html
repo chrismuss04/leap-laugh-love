@@ -42,12 +42,16 @@ import org.springframework.web.cors.CorsConfigurationSource;
 <span class="fc" id="L42">                .authorizeHttpRequests(auth -&gt; auth</span>
 <span class="fc" id="L43">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
 <span class="fc" id="L44">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
-<span class="fc" id="L45">                        .anyRequest().authenticated())</span>
-<span class="fc" id="L46">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L47">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L48">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L49">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;account-settlement&quot;), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L50">        return http.build();</span>
+                        // Settlement is called with the client's own token by order-app, or with a
+                        // settlement service token by its background recovery.
+<span class="fc" id="L47">                        .requestMatchers(&quot;/api/account/internal/**&quot;).hasAnyRole(&quot;CLIENT&quot;, &quot;SERVICE&quot;)</span>
+                        // Client-only: staff tokens are refused here (403).
+<span class="fc" id="L49">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
+<span class="fc" id="L50">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L51">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L52">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L53">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;account-settlement&quot;), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L54">        return http.build();</span>
     }
 
     /**
@@ -56,7 +60,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L59">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L63">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 

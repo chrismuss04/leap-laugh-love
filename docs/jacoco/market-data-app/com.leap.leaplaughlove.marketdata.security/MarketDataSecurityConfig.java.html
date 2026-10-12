@@ -10,6 +10,7 @@ import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -24,7 +25,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 // Session Timeout &amp; Revocation: common-security is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
-<span class="fc" id="L27">public class MarketDataSecurityConfig {</span>
+<span class="fc" id="L28">public class MarketDataSecurityConfig {</span>
 
     /**
      * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
@@ -37,24 +38,27 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
-<span class="fc" id="L40">        http</span>
-<span class="fc" id="L41">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
-<span class="fc" id="L42">                .csrf(AbstractHttpConfigurer::disable)</span>
-<span class="fc" id="L43">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
-<span class="fc" id="L44">                .authorizeHttpRequests(auth -&gt; auth</span>
-<span class="fc" id="L45">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
+<span class="fc" id="L41">        http</span>
+<span class="fc" id="L42">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
+<span class="fc" id="L43">                .csrf(AbstractHttpConfigurer::disable)</span>
+<span class="fc" id="L44">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L45">                .authorizeHttpRequests(auth -&gt; auth</span>
+<span class="fc" id="L46">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
-<span class="fc" id="L48">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+<span class="fc" id="L49">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
                         // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
                         // the original REQUEST dispatch was already authenticated
-<span class="fc" id="L51">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
-<span class="fc" id="L52">                        .anyRequest().authenticated())</span>
-<span class="fc" id="L53">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L54">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="nc" id="L55">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L56">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;market-history&quot;), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L57">        return http.build();</span>
+<span class="fc" id="L52">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
+                        // order-app's seeded fills read history with a market-history service token.
+<span class="fc" id="L54">                        .requestMatchers(HttpMethod.GET, &quot;/api/marketdata/prices/*/history&quot;).hasAnyRole(&quot;CLIENT&quot;, &quot;SERVICE&quot;)</span>
+                        // Client-only: staff tokens are refused here (403).
+<span class="fc" id="L56">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
+<span class="fc" id="L57">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L58">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L59">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L60">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;market-history&quot;), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L61">        return http.build();</span>
     }
 
     /**
@@ -63,7 +67,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L66">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L70">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -148,7 +148,7 @@ public class QuoteIngestionService {
         }
 
 <span class="fc" id="L150">        Long lastSequence = lastSequenceBySymbol.get(message.symbol());</span>
-<span class="pc bpc" id="L151" title="1 of 4 branches missed.">        if (lastSequence != null &amp;&amp; message.sequenceNumber() &lt;= lastSequence) {</span>
+<span class="fc bfc" id="L151" title="All 4 branches covered.">        if (lastSequence != null &amp;&amp; message.sequenceNumber() &lt;= lastSequence) {</span>
 <span class="fc" id="L152">            return &quot;sequenceNumber &quot; + message.sequenceNumber()</span>
                     + &quot; is not greater than last accepted &quot; + lastSequence;
         }

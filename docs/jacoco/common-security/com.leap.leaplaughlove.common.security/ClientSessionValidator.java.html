@@ -1,4 +1,5 @@
-<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientSessionValidator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common-security</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.security</a> &gt; <span class="el_source">ClientSessionValidator.java</span></div><h1>ClientSessionValidator.java</h1><pre class="source lang-java linenums">// Session Timeout &amp; Revocation: read-only validation shared by every protected service.
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientSessionValidator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common-security</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.security</a> &gt; <span class="el_source">ClientSessionValidator.java</span></div><h1>ClientSessionValidator.java</h1><pre class="source lang-java linenums">// Session Timeout &amp; Revocation: read-only validation shared by every protected service, for
+// client and staff sessions alike (see Role).
 package com.leap.leaplaughlove.common.security;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,34 +13,56 @@ import java.util.UUID;
 
 @Service
 public class ClientSessionValidator {
-<span class="fc" id="L15">    public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);</span>
+<span class="fc" id="L16">    public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);</span>
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
     @Autowired
     public ClientSessionValidator(JdbcTemplate jdbc) {
-<span class="fc" id="L21">        this(jdbc, Clock.systemUTC());</span>
-<span class="fc" id="L22">    }</span>
+<span class="fc" id="L22">        this(jdbc, Clock.systemUTC());</span>
+<span class="fc" id="L23">    }</span>
 
-<span class="fc" id="L24">    ClientSessionValidator(JdbcTemplate jdbc, Clock clock) {</span>
-<span class="fc" id="L25">        this.jdbc = jdbc;</span>
-<span class="fc" id="L26">        this.clock = clock;</span>
-<span class="fc" id="L27">    }</span>
+<span class="fc" id="L25">    ClientSessionValidator(JdbcTemplate jdbc, Clock clock) {</span>
+<span class="fc" id="L26">        this.jdbc = jdbc;</span>
+<span class="fc" id="L27">        this.clock = clock;</span>
+<span class="fc" id="L28">    }</span>
 
     // Never extend activity here: polling and market-data requests must not keep a login alive.
     public boolean isActive(UUID sessionId, UUID clientId, Instant tokenExpiry) {
-<span class="fc" id="L31">        Instant now = clock.instant();</span>
-<span class="fc bfc" id="L32" title="All 8 branches covered.">        if (sessionId == null || clientId == null || tokenExpiry == null || !tokenExpiry.isAfter(now)) {</span>
-<span class="fc" id="L33">            return false;</span>
+<span class="fc" id="L32">        return isActive(Role.CLIENT, sessionId, clientId, tokenExpiry);</span>
+    }
+
+    /**
+     * Whether a session token's login is still live, looked up in its role's own session table:
+     * iam.client_sessions for clients, iam.staff_sessions for staff. A token only ever matches a
+     * session in its own table, so a client token can't pass as staff, or the other way round.
+     * @param role the token's role
+     * @param sessionId the token's session
+     * @param subjectId the token's subject: a client ID, or a staff member's service_id
+     * @param tokenExpiry the token's expiry
+     * @return true if the session exists, is unrevoked, unexpired and not idle
+     */
+    public boolean isActive(Role role, UUID sessionId, UUID subjectId, Instant tokenExpiry) {
+<span class="fc" id="L46">        Instant now = clock.instant();</span>
+<span class="fc bfc" id="L47" title="All 8 branches covered.">        if (role == null || sessionId == null || subjectId == null || tokenExpiry == null</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">                || !tokenExpiry.isAfter(now)) {</span>
+<span class="fc" id="L49">            return false;</span>
         }
-<span class="fc" id="L35">        Integer count = jdbc.queryForObject(&quot;&quot;&quot;</span>
+        // Table and column names are fixed per role, never taken from the token.
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        String sql = role.isStaff() ? &quot;&quot;&quot;</span>
+                SELECT COUNT(*) FROM iam.staff_sessions
+                WHERE session_id = ? AND staff_id = ? AND revoked_at IS NULL
+                  AND expires_at &gt; ? AND last_activity_at &gt; ?
+                  AND last_activity_at &lt;= ?
+<span class="fc" id="L57">                &quot;&quot;&quot; : &quot;&quot;&quot;</span>
                 SELECT COUNT(*) FROM iam.client_sessions
                 WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
                   AND expires_at &gt; ? AND last_activity_at &gt; ?
                   AND last_activity_at &lt;= ?
-<span class="fc" id="L40">                &quot;&quot;&quot;, Integer.class, sessionId, clientId, now.atOffset(ZoneOffset.UTC),</span>
-<span class="fc" id="L41">                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));</span>
-<span class="fc bfc" id="L42" title="All 4 branches covered.">        return count != null &amp;&amp; count == 1;</span>
+                &quot;&quot;&quot;;
+<span class="fc" id="L63">        Integer count = jdbc.queryForObject(sql, Integer.class, sessionId, subjectId, now.atOffset(ZoneOffset.UTC),</span>
+<span class="fc" id="L64">                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));</span>
+<span class="fc bfc" id="L65" title="All 4 branches covered.">        return count != null &amp;&amp; count == 1;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

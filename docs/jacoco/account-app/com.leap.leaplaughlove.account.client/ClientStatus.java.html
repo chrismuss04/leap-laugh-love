@@ -10,7 +10,8 @@ import java.util.UUID;
 
 /**
  * Read-only view of a client's status in the iam schema. account-app never writes to it; it only
- * needs the status to decide how a newly opened account starts out.
+ * needs the status to decide how a newly opened account starts out, and the email address to
+ * tell the client their account has gone inactive.
  */
 @Entity
 @Immutable
@@ -24,32 +25,52 @@ public class ClientStatus {
     @Column(name = &quot;status&quot;, nullable = false)
     private String status;
 
+    @Column(name = &quot;email&quot;, nullable = false)
+    private String email;
+
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L30">    protected ClientStatus() {</span>
-<span class="fc" id="L31">    }</span>
+<span class="fc" id="L34">    protected ClientStatus() {</span>
+<span class="fc" id="L35">    }</span>
 
     /**
      * Constructs a ClientStatus.
      * @param clientId the unique identifier of the client
      * @param status the client's status (PENDING, ACTIVE, LOCKED or DELETED)
      */
-<span class="fc" id="L38">    public ClientStatus(UUID clientId, String status) {</span>
-<span class="fc" id="L39">        this.clientId = clientId;</span>
-<span class="fc" id="L40">        this.status = status;</span>
-<span class="fc" id="L41">    }</span>
+    public ClientStatus(UUID clientId, String status) {
+<span class="fc" id="L43">        this(clientId, status, null);</span>
+<span class="fc" id="L44">    }</span>
+
+    /**
+     * Constructs a ClientStatus with the client's email address.
+     * @param clientId the unique identifier of the client
+     * @param status the client's status (PENDING, ACTIVE, LOCKED or DELETED)
+     * @param email the client's email address
+     */
+<span class="fc" id="L52">    public ClientStatus(UUID clientId, String status, String email) {</span>
+<span class="fc" id="L53">        this.clientId = clientId;</span>
+<span class="fc" id="L54">        this.status = status;</span>
+<span class="fc" id="L55">        this.email = email;</span>
+<span class="fc" id="L56">    }</span>
 
     /**
      * Returns the client identifier.
      * @return the unique identifier of the client
      */
-<span class="fc" id="L47">    public UUID getClientId() { return clientId; }</span>
+<span class="fc" id="L62">    public UUID getClientId() { return clientId; }</span>
 
     /**
      * Returns the client's status.
      * @return the status of the client
      */
-<span class="fc" id="L53">    public String getStatus() { return status; }</span>
+<span class="fc" id="L68">    public String getStatus() { return status; }</span>
+
+    /**
+     * Returns the client's email address.
+     * @return the email address of the client
+     */
+<span class="fc" id="L74">    public String getEmail() { return email; }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -25,27 +26,37 @@ public final class SecurityUtils {
      *
      * @return the UUID of the authenticated client
      * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid
-     *                                 authenticated principal is found
+     *                                 authenticated principal is found, or 403
+     *                                 FORBIDDEN if the caller is staff
      */
     public static UUID getAuthenticatedClientId() {
-<span class="fc" id="L31">        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();</span>
-<span class="fc bfc" id="L32" title="All 4 branches covered.">        if (authentication == null || !authentication.isAuthenticated()) {</span>
-<span class="fc" id="L33">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
+<span class="fc" id="L33">        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();</span>
+<span class="fc bfc" id="L34" title="All 4 branches covered.">        if (authentication == null || !authentication.isAuthenticated()) {</span>
+<span class="fc" id="L35">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
                     &quot;A valid authenticated principal is required&quot;);
         }
-<span class="fc" id="L36">        Object principal = authentication.getPrincipal();</span>
-<span class="fc bfc" id="L37" title="All 2 branches covered.">        if (principal instanceof UUID clientId) {</span>
-<span class="fc" id="L38">            return clientId;</span>
+        // Staff tokens carry a service_id, not a client ID. The route rules already keep staff off
+        // client endpoints; this stops one being read as a client if a route is ever missed.
+<span class="fc" id="L40">        boolean staff = authentication.getAuthorities().stream().anyMatch(granted -&gt;</span>
+<span class="fc" id="L41">                Arrays.stream(Role.values()).anyMatch(role -&gt;</span>
+<span class="fc bfc" id="L42" title="All 4 branches covered.">                        role.isStaff() &amp;&amp; role.authority().equals(granted.getAuthority())));</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        if (staff) {</span>
+<span class="fc" id="L44">            throw new ResponseStatusException(HttpStatus.FORBIDDEN,</span>
+                    &quot;Staff accounts cannot use client endpoints&quot;);
         }
-<span class="fc bfc" id="L40" title="All 4 branches covered.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
-<span class="pc bpc" id="L41" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(principalString)) {</span>
+<span class="fc" id="L47">        Object principal = authentication.getPrincipal();</span>
+<span class="fc bfc" id="L48" title="All 2 branches covered.">        if (principal instanceof UUID clientId) {</span>
+<span class="fc" id="L49">            return clientId;</span>
+        }
+<span class="fc bfc" id="L51" title="All 4 branches covered.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(principalString)) {</span>
             try {
-<span class="fc" id="L43">                return UUID.fromString(principalString);</span>
-<span class="fc" id="L44">            } catch (IllegalArgumentException ignored) {</span>
+<span class="fc" id="L54">                return UUID.fromString(principalString);</span>
+<span class="fc" id="L55">            } catch (IllegalArgumentException ignored) {</span>
                 // fall through to unauthorized
             }
         }
-<span class="fc" id="L48">        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
+<span class="fc" id="L59">        throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,</span>
                 &quot;Authenticated principal is invalid for this operation&quot;);
     }
 }

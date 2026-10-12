@@ -29,7 +29,7 @@ account-app,com.leap.leaplaughlove.account.account,AccountSummary,0,27,0,0,0,1,0
 account-app,com.leap.leaplaughlove.account.account,AccountAuthorizationService,0,96,0,8,0,23,0,11,0,7
 account-app,com.leap.leaplaughlove.account.account,AccountService,0,172,0,18,0,40,0,16,0,6
 account-app,com.leap.leaplaughlove.account.account,TradeSettingsRequest,0,6,0,0,0,1,0,1,0,1
-account-app,com.leap.leaplaughlove.account.account,Account,0,62,0,0,0,22,0,13,0,13
+account-app,com.leap.leaplaughlove.account.account,Account,3,66,0,0,1,23,1,14,1,14
 account-app,com.leap.leaplaughlove.account.account,AccountController,0,83,0,0,0,26,0,6,0,6
 account-app,com.leap.leaplaughlove.account.account,CreateAccountRequest,0,6,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.settlement,AccountSettlementController,0,20,0,0,0,5,0,3,0,3
@@ -38,10 +38,12 @@ account-app,com.leap.leaplaughlove.account.settlement,AccountSettlementService,1
 account-app,com.leap.leaplaughlove.account.settlement,SettlementResponse,0,15,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.settlement,AccountValidationDto,0,24,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.common,AccountGlobalExceptionHandler,0,73,0,2,0,13,0,8,0,7
-account-app,com.leap.leaplaughlove.account.inactivity,InactiveAccountDetector,6,97,0,4,2,17,1,9,1,7
+account-app,com.leap.leaplaughlove.account.inactivity,InactiveAccountNotifier,0,203,1,7,0,47,1,11,0,8
+account-app,com.leap.leaplaughlove.account.inactivity,InactivityCheckedEvent,0,3,0,0,0,1,0,1,0,1
+account-app,com.leap.leaplaughlove.account.inactivity,InactiveAccountDetector,0,116,0,4,0,24,0,10,0,8
 account-app,com.leap.leaplaughlove.account.instrument,Instrument,0,72,0,0,0,23,0,10,0,10
-account-app,com.leap.leaplaughlove.account.client,ClientStatus,0,18,0,0,0,8,0,4,0,4
-account-app,com.leap.leaplaughlove.account.security,AccountSecurityConfig,0,76,0,0,0,15,0,8,0,8
+account-app,com.leap.leaplaughlove.account.client,ClientStatus,0,30,0,0,0,12,0,6,0,6
+account-app,com.leap.leaplaughlove.account.security,AccountSecurityConfig,0,96,0,0,0,16,0,8,0,8
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioController,0,12,0,0,0,4,0,2,0,2
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryResponse,0,24,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryService,18,674,8,46,2,120,9,32,1,13
