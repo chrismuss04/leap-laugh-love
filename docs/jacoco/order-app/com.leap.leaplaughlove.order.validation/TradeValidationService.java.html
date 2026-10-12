@@ -16,6 +16,8 @@ import java.math.RoundingMode;
 @Service
 <span class="fc" id="L17">public class TradeValidationService {</span>
 
+<span class="fc" id="L19">    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);</span>
+
     /**
      * Validates if a trade can be accepted and executed.
      *
@@ -28,46 +30,72 @@ import java.math.RoundingMode;
      */
     public TradeValidationResult validateTrade(AccountValidationDto accountValidation, Instrument instrument,
                                               Order.Side side, long quantity, BigDecimal price) {
-<span class="pc bpc" id="L31" title="1 of 4 branches missed.">        if (accountValidation == null || !accountValidation.accountActive()) {</span>
-<span class="fc" id="L32">            return TradeValidationResult.rejected(&quot;Account is not active&quot;);</span>
+<span class="fc bfc" id="L33" title="All 4 branches covered.">        if (accountValidation == null || !accountValidation.accountActive()) {</span>
+<span class="fc" id="L34">            return TradeValidationResult.rejected(&quot;Account is not active&quot;);</span>
         }
 
-<span class="fc bfc" id="L35" title="All 2 branches covered.">        if (!accountValidation.tradingEnabled()) {</span>
-<span class="fc" id="L36">            return TradeValidationResult.rejected(&quot;Trading is disabled for this account&quot;);</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">        if (!accountValidation.tradingEnabled()) {</span>
+<span class="fc" id="L38">            return TradeValidationResult.rejected(&quot;Trading is disabled for this account&quot;);</span>
         }
 
-<span class="pc bpc" id="L39" title="1 of 4 branches missed.">        if (instrument == null || !instrument.isTradable()) {</span>
-<span class="fc" id="L40">            return TradeValidationResult.rejected(&quot;Instrument is not tradable&quot;);</span>
+<span class="fc bfc" id="L41" title="All 4 branches covered.">        if (instrument == null || !instrument.isTradable()) {</span>
+<span class="fc" id="L42">            return TradeValidationResult.rejected(&quot;Instrument is not tradable&quot;);</span>
         }
 
-<span class="fc bfc" id="L43" title="All 2 branches covered.">        if (quantity &lt;= 0) {</span>
-<span class="fc" id="L44">            return TradeValidationResult.rejected(&quot;Quantity must be greater than zero&quot;);</span>
+<span class="fc bfc" id="L45" title="All 2 branches covered.">        if (quantity &lt;= 0) {</span>
+<span class="fc" id="L46">            return TradeValidationResult.rejected(&quot;Quantity must be greater than zero&quot;);</span>
         }
 
-<span class="pc bpc" id="L47" title="2 of 4 branches missed.">        if (price == null || price.compareTo(BigDecimal.ZERO) &lt;= 0) {</span>
-<span class="nc" id="L48">            return TradeValidationResult.rejected(&quot;Price must be greater than zero&quot;);</span>
+<span class="fc bfc" id="L49" title="All 4 branches covered.">        if (price == null || price.compareTo(BigDecimal.ZERO) &lt;= 0) {</span>
+<span class="fc" id="L50">            return TradeValidationResult.rejected(&quot;Price must be greater than zero&quot;);</span>
         }
 
-<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (side == Order.Side.BUY) {</span>
-<span class="fc" id="L52">            BigDecimal totalCost = price.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);</span>
-<span class="fc" id="L53">            BigDecimal currentBalance = accountValidation.cashBalance();</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (side == Order.Side.BUY) {</span>
+<span class="fc" id="L54">            BigDecimal totalCost = price.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L55">            BigDecimal currentBalance = accountValidation.cashBalance();</span>
 
-<span class="pc bpc" id="L55" title="1 of 4 branches missed.">            if (currentBalance == null || currentBalance.compareTo(totalCost) &lt; 0) {</span>
-<span class="fc" id="L56">                return TradeValidationResult.rejected(&quot;Insufficient funds - order rejected&quot;);</span>
+<span class="fc bfc" id="L57" title="All 4 branches covered.">            if (currentBalance == null || currentBalance.compareTo(totalCost) &lt; 0) {</span>
+<span class="fc" id="L58">                return TradeValidationResult.rejected(&quot;Insufficient funds - order rejected&quot;);</span>
             }
 
-<span class="fc" id="L59">            return TradeValidationResult.accepted();</span>
-<span class="pc bpc" id="L60" title="1 of 2 branches missed.">        } else if (side == Order.Side.SELL) {</span>
-<span class="fc" id="L61">            long currentQuantity = accountValidation.holdingQuantity();</span>
+<span class="fc" id="L61">            return TradeValidationResult.accepted();</span>
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        } else if (side == Order.Side.SELL) {</span>
+<span class="fc" id="L63">            long currentQuantity = accountValidation.holdingQuantity();</span>
 
-<span class="fc bfc" id="L63" title="All 2 branches covered.">            if (currentQuantity &lt; quantity) {</span>
-<span class="fc" id="L64">                return TradeValidationResult.rejected(&quot;Insufficient position quantity - order rejected&quot;);</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">            if (currentQuantity &lt; quantity) {</span>
+<span class="fc" id="L66">                return TradeValidationResult.rejected(&quot;Insufficient position quantity - order rejected&quot;);</span>
             }
 
-<span class="fc" id="L67">            return TradeValidationResult.accepted();</span>
+<span class="fc" id="L69">            return TradeValidationResult.accepted();</span>
         }
 
-<span class="nc" id="L70">        return TradeValidationResult.rejected(&quot;Unsupported order side: &quot; + side);</span>
+<span class="fc" id="L72">        return TradeValidationResult.rejected(&quot;Unsupported order side: &quot; + side);</span>
+    }
+
+    /**
+     * Checks the execution price hasn't moved further from the client's quote than they allow.
+     * A move either way counts, and a move of exactly the tolerance is accepted.
+     *
+     * @param quotedPrice the price the client was quoted (&gt; 0)
+     * @param executionPrice the price the order would fill at
+     * @param maxSlippagePercent the largest move allowed, in percent of the quoted price
+     * @return TradeValidationResult (accepted, or rejected with the size of the move)
+     */
+    public TradeValidationResult checkPriceTolerance(BigDecimal quotedPrice, BigDecimal executionPrice,
+                                                     BigDecimal maxSlippagePercent) {
+<span class="fc" id="L86">        BigDecimal move = executionPrice.subtract(quotedPrice).abs();</span>
+        // |execution - quoted| / quoted * 100 &gt; tolerance, cross-multiplied so nothing is rounded.
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        if (move.multiply(HUNDRED).compareTo(maxSlippagePercent.multiply(quotedPrice)) &lt;= 0) {</span>
+<span class="fc" id="L89">            return TradeValidationResult.accepted();</span>
+        }
+
+<span class="fc" id="L92">        BigDecimal movePercent = move.multiply(HUNDRED).divide(quotedPrice, 2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L93">        return TradeValidationResult.rejected(String.format(</span>
+                &quot;Price moved %s%% from your quoted $%s to $%s, beyond your %s%% tolerance - order rejected&quot;,
+<span class="fc" id="L95">                movePercent.toPlainString(),</span>
+<span class="fc" id="L96">                quotedPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc" id="L97">                executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc" id="L98">                maxSlippagePercent.setScale(2, RoundingMode.HALF_UP).toPlainString()));</span>
     }
 }
 

@@ -26,17 +26,21 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final ClientStatusRepository clientStatusRepository;
-<span class="fc" id="L29">    private final SecureRandom random = new SecureRandom();</span>
+    private final AccountAuthorizationService accountAuthorizationService;
+<span class="fc" id="L30">    private final SecureRandom random = new SecureRandom();</span>
 
     /**
      * Constructs an AccountService.
      * @param accountRepository the repository used to persist accounts
      * @param clientStatusRepository the read-only lookup of the client's status
+     * @param accountAuthorizationService checks the authenticated client owns an account
      */
-<span class="fc" id="L36">    public AccountService(AccountRepository accountRepository, ClientStatusRepository clientStatusRepository) {</span>
-<span class="fc" id="L37">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L38">        this.clientStatusRepository = clientStatusRepository;</span>
-<span class="fc" id="L39">    }</span>
+    public AccountService(AccountRepository accountRepository, ClientStatusRepository clientStatusRepository,
+<span class="fc" id="L39">                          AccountAuthorizationService accountAuthorizationService) {</span>
+<span class="fc" id="L40">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L41">        this.clientStatusRepository = clientStatusRepository;</span>
+<span class="fc" id="L42">        this.accountAuthorizationService = accountAuthorizationService;</span>
+<span class="fc" id="L43">    }</span>
 
     /**
      * Opens a new account for the authenticated client. The account starts out in the state
@@ -47,60 +51,73 @@ public class AccountService {
      */
     @Transactional
     public Account createAccount(CreateAccountRequest request) {
-<span class="fc" id="L50">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L54">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
 
-<span class="fc" id="L52">        ClientStatus client = clientStatusRepository.findById(clientId)</span>
-<span class="fc" id="L53">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
+<span class="fc" id="L56">        ClientStatus client = clientStatusRepository.findById(clientId)</span>
+<span class="fc" id="L57">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
 
         String accountStatus;
         boolean tradingEnabled;
-<span class="fc bfc" id="L57" title="All 4 branches covered.">        switch (client.getStatus()) {</span>
+<span class="fc bfc" id="L61" title="All 4 branches covered.">        switch (client.getStatus()) {</span>
             case &quot;ACTIVE&quot; -&gt; {
-<span class="fc" id="L59">                accountStatus = &quot;ACTIVE&quot;;</span>
-<span class="fc" id="L60">                tradingEnabled = true;</span>
-<span class="fc" id="L61">            }</span>
-            case &quot;PENDING&quot; -&gt; {
-<span class="fc" id="L63">                accountStatus = &quot;PENDING&quot;;</span>
-<span class="fc" id="L64">                tradingEnabled = false;</span>
+<span class="fc" id="L63">                accountStatus = &quot;ACTIVE&quot;;</span>
+<span class="fc" id="L64">                tradingEnabled = true;</span>
 <span class="fc" id="L65">            }</span>
-            case &quot;LOCKED&quot; -&gt; {
-<span class="fc" id="L67">                accountStatus = &quot;BLOCKED&quot;;</span>
+            case &quot;PENDING&quot; -&gt; {
+<span class="fc" id="L67">                accountStatus = &quot;PENDING&quot;;</span>
 <span class="fc" id="L68">                tradingEnabled = false;</span>
 <span class="fc" id="L69">            }</span>
-<span class="fc" id="L70">            default -&gt; throw new ResponseStatusException(HttpStatus.FORBIDDEN,</span>
+            case &quot;LOCKED&quot; -&gt; {
+<span class="fc" id="L71">                accountStatus = &quot;BLOCKED&quot;;</span>
+<span class="fc" id="L72">                tradingEnabled = false;</span>
+<span class="fc" id="L73">            }</span>
+<span class="fc" id="L74">            default -&gt; throw new ResponseStatusException(HttpStatus.FORBIDDEN,</span>
                     &quot;Client cannot open accounts&quot;);
         }
 
-<span class="fc" id="L74">        String currency = resolveCurrency(request);</span>
+<span class="fc" id="L78">        String currency = resolveCurrency(request);</span>
 
         // A null id lets Hibernate generate the UUID; a preset id would make save() merge.
-<span class="fc" id="L77">        Account account = new Account(null, clientId, generateAccountNumber(), accountStatus, currency,</span>
-<span class="fc" id="L78">                tradingEnabled, OffsetDateTime.now());</span>
-<span class="fc" id="L79">        return accountRepository.save(account);</span>
+<span class="fc" id="L81">        Account account = new Account(null, clientId, generateAccountNumber(), accountStatus, currency,</span>
+<span class="fc" id="L82">                tradingEnabled, OffsetDateTime.now());</span>
+<span class="fc" id="L83">        return accountRepository.save(account);</span>
+    }
+
+    /**
+     * Saves the trading settings of one of the authenticated client's active accounts.
+     * @param accountId the account to update
+     * @param request the settings to save; a null tolerance clears the saved one
+     * @return the updated account
+     */
+    @Transactional
+    public Account updateTradeSettings(UUID accountId, TradeSettingsRequest request) {
+<span class="fc" id="L94">        Account account = accountAuthorizationService.getAuthorizedAccountForUpdate(accountId);</span>
+<span class="fc" id="L95">        account.setMaxSlippagePercent(request.maxSlippagePercent());</span>
+<span class="fc" id="L96">        return accountRepository.save(account);</span>
     }
 
     private String resolveCurrency(CreateAccountRequest request) {
-<span class="fc bfc" id="L83" title="All 6 branches covered.">        if (request == null || request.baseCurrency() == null || request.baseCurrency().isBlank()) {</span>
-<span class="fc" id="L84">            return DEFAULT_CURRENCY;</span>
+<span class="fc bfc" id="L100" title="All 6 branches covered.">        if (request == null || request.baseCurrency() == null || request.baseCurrency().isBlank()) {</span>
+<span class="fc" id="L101">            return DEFAULT_CURRENCY;</span>
         }
-<span class="fc" id="L86">        String currency = request.baseCurrency().trim().toUpperCase();</span>
-<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (!DEFAULT_CURRENCY.equals(currency)) {</span>
-<span class="fc" id="L88">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Only USD accounts are supported&quot;);</span>
+<span class="fc" id="L103">        String currency = request.baseCurrency().trim().toUpperCase();</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        if (!DEFAULT_CURRENCY.equals(currency)) {</span>
+<span class="fc" id="L105">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Only USD accounts are supported&quot;);</span>
         }
-<span class="fc" id="L90">        return currency;</span>
+<span class="fc" id="L107">        return currency;</span>
     }
 
     private String generateAccountNumber() {
-<span class="fc bfc" id="L94" title="All 2 branches covered.">        for (int attempt = 0; attempt &lt; MAX_NUMBER_ATTEMPTS; attempt++) {</span>
-<span class="fc" id="L95">            StringBuilder number = new StringBuilder(ACCOUNT_NUMBER_PREFIX);</span>
-<span class="fc bfc" id="L96" title="All 2 branches covered.">            for (int i = 0; i &lt; ACCOUNT_NUMBER_SUFFIX_LENGTH; i++) {</span>
-<span class="fc" id="L97">                number.append(SUFFIX_ALPHABET.charAt(random.nextInt(SUFFIX_ALPHABET.length())));</span>
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        for (int attempt = 0; attempt &lt; MAX_NUMBER_ATTEMPTS; attempt++) {</span>
+<span class="fc" id="L112">            StringBuilder number = new StringBuilder(ACCOUNT_NUMBER_PREFIX);</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">            for (int i = 0; i &lt; ACCOUNT_NUMBER_SUFFIX_LENGTH; i++) {</span>
+<span class="fc" id="L114">                number.append(SUFFIX_ALPHABET.charAt(random.nextInt(SUFFIX_ALPHABET.length())));</span>
             }
-<span class="fc bfc" id="L99" title="All 2 branches covered.">            if (!accountRepository.existsByAccountNumber(number.toString())) {</span>
-<span class="fc" id="L100">                return number.toString();</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">            if (!accountRepository.existsByAccountNumber(number.toString())) {</span>
+<span class="fc" id="L117">                return number.toString();</span>
             }
         }
-<span class="fc" id="L103">        throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,</span>
+<span class="fc" id="L120">        throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR,</span>
                 &quot;Could not allocate an account number&quot;);
     }
 }

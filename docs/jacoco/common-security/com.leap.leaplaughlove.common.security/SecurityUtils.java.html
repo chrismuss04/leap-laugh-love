@@ -37,7 +37,7 @@ public final class SecurityUtils {
 <span class="fc bfc" id="L37" title="All 2 branches covered.">        if (principal instanceof UUID clientId) {</span>
 <span class="fc" id="L38">            return clientId;</span>
         }
-<span class="pc bpc" id="L40" title="2 of 4 branches missed.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
+<span class="fc bfc" id="L40" title="All 4 branches covered.">        if (principal instanceof String principalString &amp;&amp; !principalString.isBlank()</span>
 <span class="pc bpc" id="L41" title="1 of 2 branches missed.">                &amp;&amp; !&quot;anonymousUser&quot;.equals(principalString)) {</span>
             try {
 <span class="fc" id="L43">                return UUID.fromString(principalString);</span>

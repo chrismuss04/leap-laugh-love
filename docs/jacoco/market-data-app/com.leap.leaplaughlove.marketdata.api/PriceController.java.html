@@ -105,11 +105,11 @@ public class PriceController {
             @RequestParam(defaultValue = &quot;60&quot;) int interval,
             @RequestParam(defaultValue = &quot;0&quot;) int page,
             @RequestParam(defaultValue = &quot;100&quot;) int size) {
-<span class="pc bpc" id="L108" title="1 of 2 branches missed.">        if (page &lt; 0) {</span>
-<span class="nc" id="L109">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;page must not be negative&quot;);</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        if (page &lt; 0) {</span>
+<span class="fc" id="L109">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;page must not be negative&quot;);</span>
         }
-<span class="pc bpc" id="L111" title="2 of 4 branches missed.">        if (size &lt; 1 || size &gt; MAX_HISTORY_PAGE_SIZE) {</span>
-<span class="nc" id="L112">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc bfc" id="L111" title="All 4 branches covered.">        if (size &lt; 1 || size &gt; MAX_HISTORY_PAGE_SIZE) {</span>
+<span class="fc" id="L112">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
                     &quot;size must be between 1 and &quot; + MAX_HISTORY_PAGE_SIZE);
         }
 <span class="fc bfc" id="L115" title="All 2 branches covered.">        if (!SUPPORTED_INTERVALS.contains(interval)) {</span>
@@ -118,8 +118,8 @@ public class PriceController {
         }
 <span class="fc bfc" id="L119" title="All 2 branches covered.">        OffsetDateTime rangeTo = to != null ? to : OffsetDateTime.now();</span>
 <span class="fc bfc" id="L120" title="All 2 branches covered.">        OffsetDateTime rangeFrom = from != null ? from : rangeTo.minusDays(1);</span>
-<span class="pc bpc" id="L121" title="1 of 2 branches missed.">        if (rangeFrom.isAfter(rangeTo)) {</span>
-<span class="nc" id="L122">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;from must not be after to&quot;);</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (rangeFrom.isAfter(rangeTo)) {</span>
+<span class="fc" id="L122">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;from must not be after to&quot;);</span>
         }
 <span class="fc" id="L124">        return candleRepository</span>
 <span class="fc" id="L125">                .findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(</span>
@@ -146,9 +146,9 @@ public class PriceController {
      * @return the PriceCandleResponse
      */
     private PriceCandleResponse toResponse(PriceCandle candle) {
-<span class="nc" id="L149">        return new PriceCandleResponse(</span>
-<span class="nc" id="L150">                candle.getBucketStart(), candle.getBucketSeconds(),</span>
-<span class="nc" id="L151">                candle.getOpen(), candle.getHigh(), candle.getLow(), candle.getClose());</span>
+<span class="fc" id="L149">        return new PriceCandleResponse(</span>
+<span class="fc" id="L150">                candle.getBucketStart(), candle.getBucketSeconds(),</span>
+<span class="fc" id="L151">                candle.getOpen(), candle.getHigh(), candle.getLow(), candle.getClose());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

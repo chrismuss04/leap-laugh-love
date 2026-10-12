@@ -3,6 +3,7 @@ com.leap.leaplaughlove.account.account
 com.leap.leaplaughlove.account.balance
 com.leap.leaplaughlove.account.client
 com.leap.leaplaughlove.account.common
+com.leap.leaplaughlove.account.inactivity
 com.leap.leaplaughlove.account.instrument
 com.leap.leaplaughlove.account.ledger
 com.leap.leaplaughlove.account.portfolio

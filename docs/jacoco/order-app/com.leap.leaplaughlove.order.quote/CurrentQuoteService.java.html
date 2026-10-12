@@ -39,7 +39,7 @@ public class CurrentQuoteService {
      * @throws StaleQuoteException if the retrieved quote is older than the maximum allowed age
      */
     public QuoteSnapshot getCurrentQuote(String symbol) {
-<span class="pc bpc" id="L42" title="1 of 4 branches missed.">        if (symbol == null || symbol.isBlank()) {</span>
+<span class="fc bfc" id="L42" title="All 4 branches covered.">        if (symbol == null || symbol.isBlank()) {</span>
 <span class="fc" id="L43">            throw new IllegalArgumentException(&quot;symbol must not be blank&quot;);</span>
         }
 

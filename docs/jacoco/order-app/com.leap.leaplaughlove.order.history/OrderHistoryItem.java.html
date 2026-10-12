@@ -34,7 +34,7 @@ public record OrderHistoryItem(
      * Compact constructor ensuring an unmodifiable list of executions.
      */
 <span class="fc" id="L36">    public OrderHistoryItem {</span>
-<span class="pc bpc" id="L37" title="1 of 2 branches missed.">        executions = executions != null ? List.copyOf(executions) : List.of();</span>
+<span class="fc bfc" id="L37" title="All 2 branches covered.">        executions = executions != null ? List.copyOf(executions) : List.of();</span>
 <span class="fc" id="L38">    }</span>
 
     /**

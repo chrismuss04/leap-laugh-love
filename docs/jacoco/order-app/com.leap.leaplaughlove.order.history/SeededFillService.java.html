@@ -110,36 +110,36 @@ public class SeededFillService {
      */
     @EventListener(ApplicationReadyEvent.class)
     public void start() {
-<span class="nc" id="L113">        Thread worker = new Thread(this::bookUntilDone, &quot;seeded-fills&quot;);</span>
-<span class="nc" id="L114">        worker.setDaemon(true);</span>
-<span class="nc" id="L115">        worker.start();</span>
-<span class="nc" id="L116">    }</span>
+<span class="fc" id="L113">        Thread worker = new Thread(this::bookUntilDone, &quot;seeded-fills&quot;);</span>
+<span class="fc" id="L114">        worker.setDaemon(true);</span>
+<span class="fc" id="L115">        worker.start();</span>
+<span class="fc" id="L116">    }</span>
 
     /**
      * Loops attempting to book pending seeded fills until all fills are booked or max attempts are exceeded.
      */
     private void bookUntilDone() {
-<span class="nc bnc" id="L122" title="All 2 branches missed.">        for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">        for (int attempt = 1; attempt &lt;= maxAttempts; attempt++) {</span>
             int remaining;
             try {
-<span class="nc" id="L125">                remaining = bookPendingFills();</span>
-<span class="nc" id="L126">            } catch (RuntimeException ex) {</span>
-<span class="nc" id="L127">                log.warn(&quot;Booking seeded fills failed (attempt {}/{}): {}&quot;, attempt, maxAttempts, ex.getMessage());</span>
-<span class="nc" id="L128">                remaining = -1;</span>
-<span class="nc" id="L129">            }</span>
-<span class="nc bnc" id="L130" title="All 2 branches missed.">            if (remaining == 0) {</span>
-<span class="nc" id="L131">                return;</span>
+<span class="fc" id="L125">                remaining = bookPendingFills();</span>
+<span class="fc" id="L126">            } catch (RuntimeException ex) {</span>
+<span class="fc" id="L127">                log.warn(&quot;Booking seeded fills failed (attempt {}/{}): {}&quot;, attempt, maxAttempts, ex.getMessage());</span>
+<span class="fc" id="L128">                remaining = -1;</span>
+<span class="fc" id="L129">            }</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">            if (remaining == 0) {</span>
+<span class="fc" id="L131">                return;</span>
             }
             try {
-<span class="nc" id="L134">                Thread.sleep(retrySeconds * 1000);</span>
-<span class="nc" id="L135">            } catch (InterruptedException ex) {</span>
-<span class="nc" id="L136">                Thread.currentThread().interrupt();</span>
-<span class="nc" id="L137">                return;</span>
-<span class="nc" id="L138">            }</span>
+<span class="fc" id="L134">                Thread.sleep(retrySeconds * 1000);</span>
+<span class="fc" id="L135">            } catch (InterruptedException ex) {</span>
+<span class="fc" id="L136">                Thread.currentThread().interrupt();</span>
+<span class="fc" id="L137">                return;</span>
+<span class="fc" id="L138">            }</span>
         }
-<span class="nc" id="L140">        log.warn(&quot;Gave up booking seeded fills after {} attempts; they will be retried on the next start&quot;,</span>
-<span class="nc" id="L141">                maxAttempts);</span>
-<span class="nc" id="L142">    }</span>
+<span class="fc" id="L140">        log.warn(&quot;Gave up booking seeded fills after {} attempts; they will be retried on the next start&quot;,</span>
+<span class="fc" id="L141">                maxAttempts);</span>
+<span class="fc" id="L142">    }</span>
 
     /**
      * Books every pending fill that market data can price now, in fill-time order.
@@ -156,7 +156,7 @@ public class SeededFillService {
 <span class="fc bfc" id="L156" title="All 2 branches covered.">            if (blocked.contains(holding)) {</span>
 <span class="fc" id="L157">                continue;</span>
             }
-<span class="pc bpc" id="L159" title="1 of 2 branches missed.">            Optional&lt;BigDecimal&gt; price = order.getFilledAt() == null ? Optional.empty() : priceAt(order);</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">            Optional&lt;BigDecimal&gt; price = order.getFilledAt() == null ? Optional.empty() : priceAt(order);</span>
 <span class="fc bfc" id="L160" title="All 2 branches covered.">            if (price.isEmpty()) {</span>
 <span class="fc" id="L161">                blocked.add(holding);</span>
 <span class="fc" id="L162">                continue;</span>
@@ -208,8 +208,8 @@ public class SeededFillService {
 
 <span class="fc" id="L209">        Boolean booked = transactionTemplate.execute(status -&gt; {</span>
 <span class="fc" id="L210">            orderRepository.findByIdForUpdate(order.getOrderId());</span>
-<span class="pc bpc" id="L211" title="1 of 2 branches missed.">            if (positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
-<span class="nc" id="L212">                return false;</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">            if (positionMovementRepository.existsByOrderId(order.getOrderId())) {</span>
+<span class="fc" id="L212">                return false;</span>
             }
 <span class="fc" id="L214">            fillRecorder.recordPositionMovement(order, execution);</span>
 <span class="fc" id="L215">            return true;</span>
@@ -257,7 +257,7 @@ public class SeededFillService {
     private UUID getClientId(Order order) {
 <span class="fc" id="L258">        return accountRepository.findById(order.getAccountId())</span>
 <span class="fc" id="L259">                .map(Account::getClientId)</span>
-<span class="pc" id="L260">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
+<span class="fc" id="L260">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

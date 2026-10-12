@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientProfileController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.client</a> &gt; <span class="el_source">ClientProfileController.java</span></div><h1>ClientProfileController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.common.security.SecurityUtils;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -12,50 +20,104 @@ import java.util.UUID;
 
 /**
  * Controller exposing the authenticated client's own profile, so the UI can show who is signed
- * in without the login response or the JWT having to carry profile fields.
- * Maps to the /api/iam/v1/clients/me endpoint.
+ * in without the login response or the JWT having to carry profile fields, and letting the client
+ * update it. Maps to the /api/iam/v1/clients/me endpoint.
  */
 @RestController
 @RequestMapping(&quot;/api/iam/v1/clients&quot;)
 public class ClientProfileController {
 
     private final ClientRepository clientRepository;
+    private final ClientCredentialsRepository credentialsRepository;
+    private final PasswordEncoder passwordEncoder;
 
-    /**
-     * Constructs a new ClientProfileController with the specified client repository.
-     * @param clientRepository the client repository used to look up the authenticated client
-     */
-<span class="fc" id="L28">    public ClientProfileController(ClientRepository clientRepository) {</span>
-<span class="fc" id="L29">        this.clientRepository = clientRepository;</span>
-<span class="fc" id="L30">    }</span>
+    /** Constructs a new ClientProfileController with the specified dependencies. */
+    public ClientProfileController(ClientRepository clientRepository,
+                                   ClientCredentialsRepository credentialsRepository,
+<span class="fc" id="L37">                                   PasswordEncoder passwordEncoder) {</span>
+<span class="fc" id="L38">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L39">        this.credentialsRepository = credentialsRepository;</span>
+<span class="fc" id="L40">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L41">    }</span>
 
     /**
      * Retrieves the profile of the authenticated client. Sensitive identity fields (SSN, date of
-     * birth, address) are deliberately left out - this is display data for the signed-in header
-     * and the profile page.
+     * birth) are deliberately left out - this is display data for the signed-in header, the
+     * profile page and account settings.
      * @return the authenticated client's display profile
      * @throws ResponseStatusException with 404 NOT_FOUND if the token's client no longer exists
      */
     @GetMapping(&quot;/me&quot;)
     public ClientProfileResponse me() {
-<span class="fc" id="L41">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
-<span class="fc" id="L42">        Client client = clientRepository.findById(clientId)</span>
-<span class="pc" id="L43">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
-<span class="fc" id="L44">        return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),</span>
-<span class="fc" id="L45">                client.getExperienceLevel(), client.getStatus(), client.getCreatedAt());</span>
+<span class="fc" id="L52">        return toResponse(authenticatedClient());</span>
     }
 
     /**
-     * Represents the display profile of the authenticated client.
-     * @param clientId the unique identifier of the client
-     * @param email the client's email address
-     * @param fullName the client's full name
-     * @param experienceLevel the client's investment experience level (NOVICE, INTERMEDIATE, ADVANCED)
-     * @param status the client's account status
-     * @param createdAt the timestamp when the client's account was created
+     * Updates the authenticated client's settings. Changing the email or password needs the current
+     * password (403 if wrong); a new email already in use is a 409.
      */
-<span class="fc" id="L57">    public record ClientProfileResponse(UUID clientId, String email, String fullName,</span>
-                                        String experienceLevel, String status, OffsetDateTime createdAt) {
+    @PutMapping(&quot;/me&quot;)
+    @Transactional
+    public ClientProfileResponse updateMe(@Valid @RequestBody UpdateSettingsRequest request) {
+<span class="fc" id="L62">        Client client = authenticatedClient();</span>
+<span class="fc bfc" id="L63" title="All 2 branches covered.">        boolean emailChanged = !client.getEmail().equals(request.email());</span>
+<span class="pc bpc" id="L64" title="1 of 4 branches missed.">        if (emailChanged || request.newPassword() != null) {</span>
+<span class="fc" id="L65">            ClientCredentials credentials = credentialsRepository.findByClientId(client.getClientId())</span>
+<span class="pc bpc" id="L66" title="1 of 2 branches missed.">                    .filter(c -&gt; request.currentPassword() != null</span>
+<span class="fc bfc" id="L67" title="All 2 branches covered.">                            &amp;&amp; passwordEncoder.matches(request.currentPassword(), c.getPasswordHash()))</span>
+<span class="fc" id="L68">                    .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.FORBIDDEN, &quot;current password is incorrect&quot;));</span>
+<span class="pc bpc" id="L69" title="1 of 4 branches missed.">            if (emailChanged &amp;&amp; clientRepository.existsByEmail(request.email())) {</span>
+<span class="fc" id="L70">                throw new ResponseStatusException(HttpStatus.CONFLICT, &quot;email already registered&quot;);</span>
+            }
+<span class="pc bpc" id="L72" title="1 of 2 branches missed.">            if (request.newPassword() != null) {</span>
+<span class="fc" id="L73">                credentials.setPasswordHash(passwordEncoder.encode(request.newPassword()));</span>
+            }
+        }
+<span class="fc" id="L76">        client.updateSettings(request.fullName(), request.email(),</span>
+<span class="fc" id="L77">                ClientRegistrationController.normalizePhone(request.phone()),</span>
+<span class="fc" id="L78">                request.notifyOrderFills(), request.notifyPriceAlerts());</span>
+<span class="fc" id="L79">        client.updateAddress(request.addressLine1(), request.addressLine2(), request.city(),</span>
+<span class="fc" id="L80">                request.stateRegion(), request.postalCode(), request.countryCode());</span>
+<span class="fc" id="L81">        return toResponse(client);</span>
+    }
+
+    private Client authenticatedClient() {
+<span class="fc" id="L85">        UUID clientId = SecurityUtils.getAuthenticatedClientId();</span>
+<span class="fc" id="L86">        return clientRepository.findById(clientId)</span>
+<span class="pc" id="L87">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Client not found&quot;));</span>
+    }
+
+    private static ClientProfileResponse toResponse(Client client) {
+<span class="fc" id="L91">        return new ClientProfileResponse(client.getClientId(), client.getEmail(), client.getFullName(),</span>
+<span class="fc" id="L92">                client.getExperienceLevel(), client.getStatus(), client.getCreatedAt(), client.getPhone(),</span>
+<span class="fc" id="L93">                client.getAddressLine1(), client.getAddressLine2(), client.getCity(), client.getStateRegion(),</span>
+<span class="fc" id="L94">                client.getPostalCode(), client.getCountryCode(),</span>
+<span class="fc" id="L95">                client.isNotifyOrderFills(), client.isNotifyPriceAlerts());</span>
+    }
+
+    /** The client's display profile; leaves out SSN and date of birth. */
+<span class="fc" id="L99">    public record ClientProfileResponse(UUID clientId, String email, String fullName,</span>
+                                        String experienceLevel, String status, OffsetDateTime createdAt,
+                                        String phone, String addressLine1, String addressLine2, String city,
+                                        String stateRegion, String postalCode, String countryCode,
+                                        boolean notifyOrderFills, boolean notifyPriceAlerts) {
+    }
+
+    /** The settings a client can change; currentPassword is needed to change email or password. */
+<span class="fc" id="L107">    public record UpdateSettingsRequest(</span>
+            @NotBlank String fullName,
+            @NotBlank @Email String email,
+            String phone,
+            @NotBlank String addressLine1,
+            String addressLine2,
+            @NotBlank String city,
+            String stateRegion,
+            @NotBlank String postalCode,
+            @NotBlank @Size(min = 2, max = 2) String countryCode,
+            boolean notifyOrderFills,
+            boolean notifyPriceAlerts,
+            String currentPassword,
+            @Size(min = 8, message = &quot;password must be at least 8 characters&quot;) String newPassword) {
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

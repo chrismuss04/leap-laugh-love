@@ -10,14 +10,16 @@ import java.math.BigDecimal;
  * @param holdingQuantity the quantity of the instrument held in the account
  * @param baseCurrency the base currency of the account
  * @param accountNumber the account number associated with the account
+ * @param maxSlippagePercent the account's saved price tolerance in percent, or null when none is saved
  */
-<span class="fc" id="L14">public record AccountValidationDto(</span>
+<span class="fc" id="L15">public record AccountValidationDto(</span>
         boolean accountActive,
         boolean tradingEnabled,
         BigDecimal cashBalance,
         long holdingQuantity,
         String baseCurrency,
-        String accountNumber
+        String accountNumber,
+        BigDecimal maxSlippagePercent
 ) {}
 
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

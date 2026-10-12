@@ -23,8 +23,8 @@ import java.util.List;
      * @throws IllegalArgumentException if the list is empty or any pair is malformed
      */
     static List&lt;CandleTier&gt; parse(List&lt;String&gt; spec) {
-<span class="pc bpc" id="L26" title="1 of 2 branches missed.">        if (spec.isEmpty()) {</span>
-<span class="nc" id="L27">            throw new IllegalArgumentException(&quot;at least one candle tier must be configured&quot;);</span>
+<span class="fc bfc" id="L26" title="All 2 branches covered.">        if (spec.isEmpty()) {</span>
+<span class="fc" id="L27">            throw new IllegalArgumentException(&quot;at least one candle tier must be configured&quot;);</span>
         }
 <span class="fc" id="L29">        List&lt;CandleTier&gt; parsed = new ArrayList&lt;&gt;();</span>
 <span class="fc bfc" id="L30" title="All 2 branches covered.">        for (String pair : spec) {</span>

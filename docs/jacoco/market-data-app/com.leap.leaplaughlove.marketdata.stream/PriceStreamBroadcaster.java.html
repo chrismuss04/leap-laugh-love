@@ -190,7 +190,7 @@ public class PriceStreamBroadcaster {
 <span class="fc" id="L190">                    draining.set(false);</span>
                     // A price offered after the loop above but before draining was cleared saw a
                     // drain in progress and didn't start one, so pick it up here.
-<span class="pc bpc" id="L193" title="1 of 4 branches missed.">                    if (unsent.isEmpty() || !draining.compareAndSet(false, true)) {</span>
+<span class="fc bfc" id="L193" title="All 4 branches covered.">                    if (unsent.isEmpty() || !draining.compareAndSet(false, true)) {</span>
 <span class="fc" id="L194">                        return;</span>
                     }
 <span class="fc" id="L196">                }</span>
