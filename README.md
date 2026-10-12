@@ -1264,6 +1264,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |
+| `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders`; run once the new `reporting-etl` is deployed, rerun any time to rebuild (see *Reporting ETL*) |
 | `migrate-price-candles-key.sql` | Moves `marketdata.price_candles` to its natural primary key; stop market-data-app first |
 
 `reporting.orders` has no migration script; it needs `docker compose down -v` once (see *Reporting ETL*).
@@ -1486,6 +1487,12 @@ as the `reporting-etl` compose service (no port).
   broker. Known gap: an event is lost if order-app stops between the commit and the send - a
   transactional outbox would close it. `REPORTING_EVENTS_ENABLED=false` turns publishing off,
   as `scripts/start-local.ps1` does since no Kafka runs natively.
+- **Monthly rollup**: the same statement that inserts a new order also adds it to its client's
+  UTC month in `reporting.client_months` (orders of any status, filled orders, filled value),
+  which backs the analyst reports in `reporting-app`. A repeated order the insert ignores adds
+  nothing, so a replay never counts twice. `scripts/migrate-reporting-client-months.sql` adds
+  the table to an existing database and rebuilds it from `reporting.orders`; it locks out the
+  ETL's inserts while it runs, so it is safe against a live stack and safe to rerun.
 - **New schema**: `reporting.orders` is created by the schema file, which only runs on an empty
   database - run `docker compose down -v` once to pick it up.
 
