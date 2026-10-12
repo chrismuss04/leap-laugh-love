@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.iam.client;
 
 import com.leap.leaplaughlove.common.security.SecurityUtils;
+import com.leap.leaplaughlove.iam.staff.StaffCredentialsRepository;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
@@ -30,14 +31,17 @@ public class ClientProfileController {
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
     private final PasswordEncoder passwordEncoder;
+    private final StaffCredentialsRepository staffCredentialsRepository;
 
     /** Constructs a new ClientProfileController with the specified dependencies. */
     public ClientProfileController(ClientRepository clientRepository,
                                    ClientCredentialsRepository credentialsRepository,
-                                   PasswordEncoder passwordEncoder) {
+                                   PasswordEncoder passwordEncoder,
+                                   StaffCredentialsRepository staffCredentialsRepository) {
         this.clientRepository = clientRepository;
         this.credentialsRepository = credentialsRepository;
         this.passwordEncoder = passwordEncoder;
+        this.staffCredentialsRepository = staffCredentialsRepository;
     }
 
     /**
@@ -54,7 +58,8 @@ public class ClientProfileController {
 
     /**
      * Updates the authenticated client's settings. Changing the email or password needs the current
-     * password (403 if wrong); a new email already in use is a 409.
+     * password (403 if wrong); a new email or phone number already in use is a 409 whose error
+     * code (EMAIL_TAKEN or PHONE_TAKEN) says which, so the settings page can.
      */
     @PutMapping("/me")
     @Transactional
@@ -66,15 +71,21 @@ public class ClientProfileController {
                     .filter(c -> request.currentPassword() != null
                             && passwordEncoder.matches(request.currentPassword(), c.getPasswordHash()))
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "current password is incorrect"));
-            if (emailChanged && clientRepository.existsByEmail(request.email())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "email already registered");
+            // Analyst login: a staff member's email is as taken as another client's (see registration).
+            if (emailChanged && (clientRepository.existsByEmail(request.email())
+                    || staffCredentialsRepository.existsByEmail(request.email()))) {
+                throw new DetailTakenException("EMAIL_TAKEN", "That email is already registered to another account.");
             }
             if (request.newPassword() != null) {
                 credentials.setPasswordHash(passwordEncoder.encode(request.newPassword()));
             }
         }
-        client.updateSettings(request.fullName(), request.email(),
-                ClientRegistrationController.normalizePhone(request.phone()),
+        String phone = ClientRegistrationController.normalizePhone(request.phone());
+        if (phone != null && clientRepository.existsByPhoneAndClientIdNot(phone, client.getClientId())) {
+            throw new DetailTakenException("PHONE_TAKEN",
+                    "That phone number is already registered to another account.");
+        }
+        client.updateSettings(request.fullName(), request.email(), phone,
                 request.notifyOrderFills(), request.notifyPriceAlerts());
         client.updateAddress(request.addressLine1(), request.addressLine2(), request.city(),
                 request.stateRegion(), request.postalCode(), request.countryCode());

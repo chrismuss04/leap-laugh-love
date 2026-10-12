@@ -14,8 +14,13 @@ import { formatMoney, formatPhone } from '../shared/format';
 
 const SAVE_ERRORS: Record<number, string> = {
   400: 'Some details are invalid. Please check them and try again.',
-  403: 'Your current password is incorrect.',
-  409: 'That email is already registered to another account.'
+  403: 'Your current password is incorrect.'
+};
+
+/** A 409 names which detail another account already has (see iam-app's ClientProfileController). */
+const TAKEN: Record<string, { field: 'email' | 'phone'; message: string }> = {
+  EMAIL_TAKEN: { field: 'email', message: 'That email is already registered to another account.' },
+  PHONE_TAKEN: { field: 'phone', message: 'That phone number is already registered to another account.' }
 };
 
 /** Edits the signed-in client's settings, starting from and saving back to the shell's profile. */
@@ -62,6 +67,8 @@ export class SettingsComponent {
   readonly saving = signal(false);
   readonly saved = signal(false);
   readonly error = signal<string | null>(null);
+  /** The field the last save was refused for because another account already has its value. */
+  readonly taken = signal<'email' | 'phone' | null>(null);
 
   // ---- Trading: price protection, saved per account ----
   private readonly accountsService = inject(AccountsService);
@@ -184,6 +191,7 @@ export class SettingsComponent {
     this.form.markAllAsTouched();
     this.saved.set(false);
     this.error.set(null);
+    this.taken.set(null);
     if (this.form.invalid) return;
 
     const { currentPassword, password, confirmPassword, ...settings } = this.form.getRawValue();
@@ -198,8 +206,11 @@ export class SettingsComponent {
         this.shell.profile.set(profile);
         this.saved.set(true);
       },
-      error: (error: HttpErrorResponse) =>
-        this.error.set(SAVE_ERRORS[error.status] ?? "Couldn't save your changes. Please try again.")
+      error: (error: HttpErrorResponse) => {
+        const taken = error.status === 409 ? TAKEN[error.error?.error] : undefined;
+        this.taken.set(taken?.field ?? null);
+        this.error.set(taken?.message ?? SAVE_ERRORS[error.status] ?? "Couldn't save your changes. Please try again.");
+      }
     });
   }
 }
