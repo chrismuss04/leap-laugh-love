@@ -44,6 +44,10 @@ tbody th { color: var(--foreground); font-size: 14px; }
 .sort-button:hover, .clear-filters:hover { color: var(--primary); }
 .clear-filters { color: var(--primary); font-size: 14px; }
 .result-count { color: var(--muted-foreground); font-size: 12px; margin: 16px 0 0; }
+.mover-list { list-style: none; padding: 0; margin: 16px 0 0; }
+.mover-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 14px; }
+.mover-list li > div:first-child { min-width: 0; overflow-wrap: anywhere; }
+.mover-price { display: grid; gap: 4px; text-align: right; flex-shrink: 0; }
 
 @media (max-width: 760px) {
   .instruments { padding: 24px 16px 40px; gap: 16px; }
