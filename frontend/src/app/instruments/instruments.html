@@ -2,6 +2,14 @@
   <header class="page-heading">
     <h1>Instruments</h1>
     <p>Browse financial instruments, compare performance, and discover market movers.</p>
+    <label class="period-control">Performance period
+      <select #periodSelect [value]="period()" (change)="selectPeriod(periodSelect.value)">
+        <option value="today">Today</option>
+        <option value="week">1 week</option>
+        <option value="month">1 month</option>
+      </select>
+    </label>
+    <p class="period-context">Simulated market · UTC periods. Changes compare against the last completed daily close before the period.</p>
   </header>
 
   <div class="movers">
@@ -17,10 +25,21 @@
 
   <section class="panel" aria-labelledby="all-instruments-title">
     <h2 id="all-instruments-title">All instruments</h2>
-    <p class="pending">Instrument data, search, and filters are coming in the next steps.</p>
+    <div *ngIf="error()" class="banner" role="alert">
+      <span>{{ error() }}</span><button type="button" (click)="retry()">Try again</button>
+    </div>
+    <div *ngIf="loading()" class="loading" role="status">
+      <span class="sr-only">Loading instruments</span>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </div>
+    <ng-container *ngIf="overview() as data">
+    <p class="pending">{{ data.instruments.length }} instruments · Updated {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
+    <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
     <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
       <table>
-        <caption class="sr-only">Instrument prices and performance. Data is not connected yet.</caption>
+        <caption class="sr-only">Instrument prices and performance for the selected UTC period.</caption>
         <thead>
           <tr>
             <th scope="col">Instrument</th>
@@ -31,9 +50,17 @@
           </tr>
         </thead>
         <tbody>
-          <tr><td colspan="5" class="placeholder">Market data is not connected yet.</td></tr>
+          <tr *ngFor="let instrument of data.instruments">
+            <th scope="row"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></th>
+            <td>{{ assetLabel(instrument.assetClass) }}</td>
+            <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span></td>
+            <td class="numeric num" [ngClass]="'text-' + direction(instrument.change)">{{ signed(instrument.change) }}</td>
+            <td class="numeric num" [ngClass]="'text-' + direction(instrument.changePercent)">{{ percent(instrument.changePercent) }}</td>
+          </tr>
+          <tr *ngIf="!data.instruments.length"><td colspan="5" class="placeholder">No instruments are currently available.</td></tr>
         </tbody>
       </table>
     </div>
+    </ng-container>
   </section>
 </div>
