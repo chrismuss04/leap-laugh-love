@@ -21,6 +21,7 @@ We are using the Trunk branching strategy because it best fits our development s
   - [iam-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/iam-app/)
   - [market-data-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/market-data-app/)
   - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
+  - [reporting-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/reporting-app/)
 
 ---
 
@@ -33,8 +34,9 @@ The repository is a **Multi-Module Maven Project** splitting identity and tradin
 3. **`account-app` (Account & Portfolio Services)**: Handles client accounts and trade settings, cash balances, deposits, withdrawals, transfers between accounts, portfolio holdings/positions, portfolio value history, and the internal validation and settlement endpoints that `order-app` calls. A nightly job flags inactive accounts and emails their clients. Runs on port `8082`.
 4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Background jobs finish interrupted fills and book the seeded order history, and every completed order is published to the `order-events` Kafka topic. Runs on port `8084`.
 5. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument, a validated quote (bid, ask, last) for each tick, and OHLC candle history with scheduled retention, exposed via REST and an SSE push stream. Runs on port `8083`.
-6. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
-7. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
+6. **`reporting-app` (Staff Reports)**: Serves commercial analysts' reports from the `reporting` schema read models that `reporting-etl` loads; it reads nothing operational and writes nothing. Every endpoint requires the `COMMERCIAL_ANALYST` role. Runs on port `8085`.
+7. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
+8. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
 
 ```mermaid
 flowchart TB
@@ -95,6 +97,11 @@ flowchart TB
             StreamC["PriceStreamController<br/>/api/marketdata/stream (SSE)"]
             QuoteC["QuoteController<br/>/api/marketdata/quotes"]
         end
+
+        subgraph REPORTING["reporting-app (Port 8085)"]
+            RepApp["ReportingApplication @Import(JwtService)"]
+            RepSec["ReportingSecurityConfig (CORS Enabled)<br/>COMMERCIAL_ANALYST only"]
+        end
     end
 
     subgraph PG["PostgreSQL"]
@@ -118,6 +125,7 @@ flowchart TB
     UI -->|"HTTP / JSON (8082)"| AccountSec
     UI -->|"HTTP / JSON (8084)"| OrderSec
     UI -->|"HTTP / JSON / SSE (8083)"| MdSec
+    UI -->|"HTTP / JSON (8085)"| RepSec
 
     IamSec --> AuthC
     IamSec --> PwC
@@ -171,6 +179,8 @@ flowchart TB
     AccountApp -. "Library Dependency" .-> JwtS
     OrderApp -. "Library Dependency" .-> JwtS
     MdApp -. "Library Dependency" .-> JwtS
+    RepApp -. "Library Dependency" .-> JwtS
+    RepSec -. "reads" .-> REPORTING_DB
 
     AuthC --> IAM_DB
     PwC --> IAM_DB
@@ -196,7 +206,7 @@ flowchart TB
 
 ## UML Class Diagrams
 
-Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
+Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, `market-data-app`, and `reporting-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
 
 **Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
 
@@ -210,10 +220,12 @@ flowchart LR
     MD["market-data-app<br/>(instruments · simulation · quotes · candles)"]:::mod
     ACCT["account-app<br/>(accounts · balance · positions · portfolio)"]:::mod
     ORD["order-app<br/>(orders · validation · executions · events)"]:::mod
+    REP["reporting-app<br/>(staff reports)"]:::mod
     IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
     ACCT -- "depends on" --> CS
     ORD -- "depends on" --> CS
+    REP -- "depends on" --> CS
     IAM -. "opens first account" .-> ACCT
     ORD -. "calls" .-> ACCT
     ORD -. "calls" .-> MD
@@ -1027,6 +1039,7 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT (client) |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
+| **Reporting** | `GET /actuator/health` | Reporting service health check | Permitted |
 
 ---
 
@@ -1079,7 +1092,8 @@ to its own dashboard, and a client who opens `/reporting` is redirected home.
 
 > [!NOTE]
 > The dashboards are built, routed, filtered and tested, but the report panels are still
-> placeholders: no reporting API exists yet, so the pages show the layout and filters without data.
+> placeholders: `reporting-app` (port `8085`, `/api/reporting/**`) is where their reports will be
+> served from, and has none yet, so the pages show the layout and filters without data.
 > The data they will read is being collected in the `reporting.orders` and `reporting.clients`
 > tables by the ETL services described under [Reporting ETL](#reporting-etl).
 
@@ -1153,6 +1167,9 @@ mvn -pl order-app -am test
 
 # Test Market Data module (with dependency building)
 mvn -pl market-data-app -am test
+
+# Test Reporting module (with dependency building)
+mvn -pl reporting-app -am test
 ```
 
 ### End-to-end tests (Playwright)
@@ -1302,7 +1319,7 @@ To update the live GitHub Pages documentation hosted on the `gh-pages` branch:
 ### 3. Launch Services via Docker Compose (Recommended)
 
 Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
-container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app` and `frontend`:
+container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app`, `reporting-app` and `frontend`:
 
 ```bash
 docker compose up -d --build
@@ -1320,6 +1337,7 @@ Services will be exposed on:
 - **Account Application**: `http://localhost:8082`
 - **Order Application**: `http://localhost:8084`
 - **Market Data Application**: `http://localhost:8083`
+- **Reporting Application**: `http://localhost:8085`
 - **PostgreSQL Database**: `localhost:5432`
 
 The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
@@ -1568,7 +1586,7 @@ PostgreSQL are all it needs.
 
 ```powershell
 .\scripts\setup-windows-db.ps1   # once: creates and seeds the paysprint database
-.\scripts\start-local.ps1        # builds, starts all five in their own windows, opens the browser
+.\scripts\start-local.ps1        # builds, starts all six in their own windows, opens the browser
 .\scripts\stop-local.ps1         # stops them again
 ```
 
@@ -1610,6 +1628,11 @@ mvn -pl order-app spring-boot:run
 Run Market Data App (in a separate terminal):
 ```bash
 mvn -pl market-data-app spring-boot:run
+```
+
+Run Reporting App (in a separate terminal):
+```bash
+mvn -pl reporting-app spring-boot:run
 ```
 
 ---
