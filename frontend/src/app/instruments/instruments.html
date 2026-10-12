@@ -25,6 +25,18 @@
 
   <section class="panel" aria-labelledby="all-instruments-title">
     <h2 id="all-instruments-title">All instruments</h2>
+    <div class="list-controls">
+      <label class="search-control">Search instruments
+        <input #searchInput type="search" placeholder="Name or symbol" [value]="query()" (input)="query.set(searchInput.value)">
+      </label>
+      <label>Asset type
+        <select #assetSelect [value]="asset()" (change)="asset.set(assetSelect.value)">
+          <option value="">All asset types</option>
+          <option *ngFor="let type of assetOptions()" [value]="type">{{ assetLabel(type) }}</option>
+        </select>
+      </label>
+      <button *ngIf="query() || asset()" type="button" class="clear-filters" (click)="clearFilters()">Clear filters</button>
+    </div>
     <div *ngIf="error()" class="banner" role="alert">
       <span>{{ error() }}</span><button type="button" (click)="retry()">Try again</button>
     </div>
@@ -35,6 +47,7 @@
       <div class="skeleton" aria-hidden="true"></div>
     </div>
     <ng-container *ngIf="overview() as data">
+    <p class="result-count" role="status">Showing {{ visibleInstruments().length }} of {{ data.instruments.length }} instruments</p>
     <p class="pending">{{ data.instruments.length }} instruments · Updated {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
     <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
     <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
@@ -42,15 +55,15 @@
         <caption class="sr-only">Instrument prices and performance for the selected UTC period.</caption>
         <thead>
           <tr>
-            <th scope="col">Instrument</th>
+            <th scope="col" [attr.aria-sort]="sortState('name')"><button class="sort-button" type="button" (click)="sortBy('name')">Instrument <span aria-hidden="true">{{ sortIndicator('name') }}</span><span class="sr-only">, sort by name</span></button></th>
             <th scope="col">Asset type</th>
-            <th scope="col" class="numeric">Latest price</th>
+            <th scope="col" class="numeric" [attr.aria-sort]="sortState('price')"><button class="sort-button" type="button" (click)="sortBy('price')">Latest price <span aria-hidden="true">{{ sortIndicator('price') }}</span></button></th>
             <th scope="col" class="numeric">Change</th>
-            <th scope="col" class="numeric">Change %</th>
+            <th scope="col" class="numeric" [attr.aria-sort]="sortState('changePercent')"><button class="sort-button" type="button" (click)="sortBy('changePercent')">Change % <span aria-hidden="true">{{ sortIndicator('changePercent') }}</span></button></th>
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let instrument of data.instruments">
+          <tr *ngFor="let instrument of visibleInstruments()">
             <th scope="row"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></th>
             <td>{{ assetLabel(instrument.assetClass) }}</td>
             <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span></td>
@@ -58,6 +71,7 @@
             <td class="numeric num" [ngClass]="'text-' + direction(instrument.changePercent)">{{ percent(instrument.changePercent) }}</td>
           </tr>
           <tr *ngIf="!data.instruments.length"><td colspan="5" class="placeholder">No instruments are currently available.</td></tr>
+          <tr *ngIf="data.instruments.length && !visibleInstruments().length"><td colspan="5" class="placeholder">No instruments match your search and filters.</td></tr>
         </tbody>
       </table>
     </div>
