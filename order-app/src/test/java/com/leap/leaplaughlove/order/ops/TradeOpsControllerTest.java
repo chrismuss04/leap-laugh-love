@@ -1,6 +1,8 @@
 package com.leap.leaplaughlove.order.ops;
 
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
@@ -16,7 +18,6 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
@@ -70,14 +71,18 @@ class TradeOpsControllerTest {
     @Test
     @DisplayName("GET /api/order/ops/orders - 200 with the matching trades")
     void search() throws Exception {
-        when(tradeTimelineService.search(null, "alice.johnson@leap.com", null, null,
-                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 8))).thenReturn(List.of(TRADE));
+        when(tradeTimelineService.search(new TradeSearch(null, null, "alice.johnson@leap.com", null, null, "AAPL",
+                Order.Side.BUY, Order.Status.FILLED, OffsetDateTime.parse("2026-10-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-10-08T17:31:00Z")))).thenReturn(List.of(TRADE));
 
         mockMvc.perform(get("/api/order/ops/orders")
                         .with(authentication(tradingOps()))
                         .param("clientEmail", "alice.johnson@leap.com")
-                        .param("from", "2026-10-01")
-                        .param("to", "2026-10-08"))
+                        .param("from", "2026-10-01T09:00:00Z")
+                        .param("to", "2026-10-08T17:31:00Z")
+                        .param("symbol", "AAPL")
+                        .param("side", "BUY")
+                        .param("status", "FILLED"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].orderId").value(ORDER_ID.toString()))
                 .andExpect(jsonPath("$[0].clientEmail").value("alice.johnson@leap.com"))
@@ -86,18 +91,18 @@ class TradeOpsControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/order/ops/orders - 400 with the service's message when no criterion is given")
+    @DisplayName("GET /api/order/ops/orders - 400 with the service's message when a required criterion is missing")
     void searchWithoutCriteria() throws Exception {
-        when(tradeTimelineService.search(null, null, null, null, null, null))
-                .thenThrow(new IllegalArgumentException("Give at least one search criterion"));
+        when(tradeTimelineService.search(new TradeSearch(null, null, null, null, null, null, null, null, null, null)))
+                .thenThrow(new IllegalArgumentException("Give a time period to search"));
 
         mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps())))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.message").value("Give at least one search criterion"));
+                .andExpect(jsonPath("$.message").value("Give a time period to search"));
     }
 
     @Test
-    @DisplayName("GET /api/order/ops/orders - 400 for a malformed order ID or date")
+    @DisplayName("GET /api/order/ops/orders - 400 for a malformed id, date-time, side or status")
     void searchMalformed() throws Exception {
         mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps())).param("orderId", "not-a-uuid"))
                 .andExpect(status().isBadRequest())
@@ -105,6 +110,12 @@ class TradeOpsControllerTest {
         mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps())).param("from", "08/10/2026"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.message").value("from is not valid"));
+        mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps())).param("clientId", "c-1"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("clientId is not valid"));
+        mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps())).param("side", "HOLD"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("side is not valid"));
         verifyNoInteractions(tradeTimelineService);
     }
 
@@ -171,14 +182,16 @@ class TradeOpsControllerTest {
         when(tradeTimelineService.getTimeline(ORDER_ID)).thenReturn(timeline());
 
         mockMvc.perform(get("/api/order/ops/orders").with(authentication(tradingOps()))
-                .param("clientEmail", "alice.johnson@leap.com").param("from", "2026-10-01"));
+                .param("clientEmail", "alice.johnson@leap.com")
+                .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-02T00:00:00Z"));
         mockMvc.perform(get("/api/order/ops/orders/{id}/timeline", ORDER_ID).with(authentication(tradingOps())));
         mockMvc.perform(get("/api/order/ops/orders/{id}/timeline.csv", ORDER_ID).with(authentication(tradingOps())));
 
         InOrder order = inOrder(accessLog, tradeTimelineService);
         order.verify(accessLog).record(OpsAccessLog.Action.SEARCH, null,
-                "{clientEmail=alice.johnson@leap.com, from=2026-10-01}");
-        order.verify(tradeTimelineService).search(null, "alice.johnson@leap.com", null, null, LocalDate.of(2026, 10, 1), null);
+                "{from=2026-10-01T00:00Z, to=2026-10-02T00:00Z, clientEmail=alice.johnson@leap.com}");
+        order.verify(tradeTimelineService).search(new TradeSearch(null, null, "alice.johnson@leap.com", null, null,
+                null, null, null, OffsetDateTime.parse("2026-10-01T00:00:00Z"), OffsetDateTime.parse("2026-10-02T00:00:00Z")));
         order.verify(accessLog).record(OpsAccessLog.Action.VIEW_TIMELINE, ORDER_ID, null);
         order.verify(tradeTimelineService).getTimeline(ORDER_ID);
         order.verify(accessLog).record(OpsAccessLog.Action.DOWNLOAD_CSV, ORDER_ID, null);

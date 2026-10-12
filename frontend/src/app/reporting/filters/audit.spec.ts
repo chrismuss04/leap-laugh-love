@@ -1,9 +1,12 @@
 import { convertToParamMap } from '@angular/router';
-import { EMPTY_AUDIT_FILTER, activeAuditFilters, auditParams, isOrderId, normalizeAudit, parseAudit } from './audit';
+import {
+  EMPTY_AUDIT_FILTER, activeAuditFilters, auditParams, isOrderId, missingAuditCriteria, normalizeAudit, parseAudit,
+  toTradeSearch
+} from './audit';
 
 describe('Audit filter', () => {
   const full = {
-    from: '2026-10-01T09:00', to: '2026-10-08T17:30', clientId: 'c-1', accountId: 'a-1',
+    from: '2026-10-01T09:00', to: '2026-10-08T17:30', clientId: 'c-1', clientEmail: 'alice@leap.com', accountId: 'a-1',
     symbol: 'AAPL', side: 'BUY' as const, status: 'REJECTED' as const
   };
 
@@ -22,7 +25,7 @@ describe('Audit filter', () => {
   });
 
   it('trims text, upper-cases symbols, and treats blanks as no filter', () => {
-    expect(normalizeAudit({ ...EMPTY_AUDIT_FILTER, clientId: '  c-1 ', accountId: '   ', symbol: ' msft ' }))
+    expect(normalizeAudit({ ...EMPTY_AUDIT_FILTER, clientId: '  c-1 ', clientEmail: ' ', accountId: '   ', symbol: ' msft ' }))
       .toEqual({ ...EMPTY_AUDIT_FILTER, clientId: 'c-1', symbol: 'MSFT' });
   });
 
@@ -37,7 +40,16 @@ describe('Audit filter', () => {
 
   it('counts the fields in use', () => {
     expect(activeAuditFilters(EMPTY_AUDIT_FILTER)).toBe(0);
-    expect(activeAuditFilters(full)).toBe(7);
+    expect(activeAuditFilters(full)).toBe(8);
+  });
+
+  it('needs the period and a client, by id or email, before it can be searched', () => {
+    const period = { ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', to: '2026-10-08T17:30' };
+    expect(missingAuditCriteria(EMPTY_AUDIT_FILTER)).toContain('time period');
+    expect(missingAuditCriteria({ ...period, to: null, clientId: 'c-1' })).toContain('time period');
+    expect(missingAuditCriteria(period)).toContain('client id or client email');
+    expect(missingAuditCriteria({ ...period, clientId: 'c-1' })).toBeNull();
+    expect(missingAuditCriteria({ ...period, clientEmail: 'alice@leap.com' })).toBeNull();
   });
 
   it('recognises order ids, which are UUIDs', () => {
@@ -46,5 +58,26 @@ describe('Audit filter', () => {
     expect(isOrderId('3f2b8c1e')).toBe(false);
     expect(isOrderId('')).toBe(false);
     expect(isOrderId(null)).toBe(false);
+  });
+
+  it('searches trades over the period, with to running to the end of its minute', () => {
+    const filter = {
+      ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', to: '2026-10-08T17:30', clientEmail: 'alice@leap.com', side: 'BUY' as const
+    };
+    expect(toTradeSearch(filter)).toEqual(expect.objectContaining({
+      from: new Date('2026-10-01T09:00').toISOString(),
+      to: new Date('2026-10-08T17:31').toISOString(),
+      clientEmail: 'alice@leap.com',
+      clientId: undefined,
+      side: 'BUY'
+    }));
+  });
+
+  it('searches an account by id when it is a UUID, otherwise by account number', () => {
+    const filter = { ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', to: '2026-10-08T17:30', clientId: 'c-1' };
+    const id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
+    expect(toTradeSearch({ ...filter, accountId: id })).toEqual(expect.objectContaining({ accountId: id, accountNumber: undefined }));
+    expect(toTradeSearch({ ...filter, accountId: 'ACC-1001' }))
+      .toEqual(expect.objectContaining({ accountId: undefined, accountNumber: 'ACC-1001' }));
   });
 });

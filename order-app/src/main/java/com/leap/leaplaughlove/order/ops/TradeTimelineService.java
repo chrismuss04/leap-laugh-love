@@ -13,9 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -37,24 +35,23 @@ public class TradeTimelineService {
     }
 
     /**
-     * from and to are inclusive UTC days.
-     * @throws IllegalArgumentException if no criterion is given or from is after to
+     * Needs a period (from inclusive, to exclusive) and the client, by id or email; the rest is optional.
+     * @throws IllegalArgumentException if the period or client is missing, or from is not before to
      */
-    public List<TradeSummary> search(UUID orderId, String clientEmail, String accountNumber, String symbol,
-                                     LocalDate from, LocalDate to) {
-        clientEmail = blankToNull(clientEmail);
-        accountNumber = blankToNull(accountNumber);
-        symbol = blankToNull(symbol);
-        if (orderId == null && clientEmail == null && accountNumber == null && symbol == null
-                && from == null && to == null) {
-            throw new IllegalArgumentException("Give at least one search criterion");
+    public List<TradeSummary> search(TradeSearch criteria) {
+        TradeSearch search = new TradeSearch(criteria.orderId(), criteria.clientId(),
+                blankToNull(criteria.clientEmail()), criteria.accountId(), blankToNull(criteria.accountNumber()),
+                blankToNull(criteria.symbol()), criteria.side(), criteria.status(), criteria.from(), criteria.to());
+        if (search.from() == null || search.to() == null) {
+            throw new IllegalArgumentException("Give a time period to search");
         }
-        if (from != null && to != null && from.isAfter(to)) {
-            throw new IllegalArgumentException("from must be on or before to");
+        if (search.clientId() == null && search.clientEmail() == null) {
+            throw new IllegalArgumentException("Give a client id or client email to search");
         }
-        return tradeOpsRepository.search(new TradeSearch(orderId, clientEmail, accountNumber, symbol,
-                from == null ? null : from.atStartOfDay().atOffset(ZoneOffset.UTC),
-                to == null ? null : to.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC)));
+        if (!search.from().isBefore(search.to())) {
+            throw new IllegalArgumentException("from must be before to");
+        }
+        return tradeOpsRepository.search(search);
     }
 
     /** @throws ResponseStatusException 404 if there is no such order */

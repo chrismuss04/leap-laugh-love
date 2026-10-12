@@ -26,14 +26,20 @@ export interface TradeTimeline {
   steps: TimelineStep[];
 }
 
-/** Empty fields aren't sent; from and to are inclusive UTC days (yyyy-MM-dd). */
+/**
+ * Empty fields aren't sent. from and to are ISO date-times, from inclusive and to exclusive; order-app
+ * needs them and a client id or email, and the rest only narrow the search.
+ */
 export interface TradeSearch {
-  orderId?: string;
+  from: string;
+  to: string;
+  clientId?: string;
   clientEmail?: string;
+  accountId?: string;
   accountNumber?: string;
   symbol?: string;
-  from?: string;
-  to?: string;
+  side?: string;
+  status?: string;
 }
 
 /** Trade reconstruction for Trading Operations; order-app refuses every other role. */

@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.ops.TradeOpsRepository.ExecutionRecord;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.OrderRecord;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.PositionMovementRecord;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -17,7 +18,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -179,13 +179,17 @@ class TradeTimelineServiceTest {
         assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
     }
 
+    private static TradeSearch criteria(UUID clientId, String clientEmail, OffsetDateTime from, OffsetDateTime to) {
+        return new TradeSearch(null, clientId, clientEmail, null, " ", "aapl", Order.Side.BUY, null, from, to);
+    }
+
     @Test
-    @DisplayName("Search passes trimmed criteria and turns UTC days into a half-open range")
+    @DisplayName("Search passes the period and trimmed criteria through")
     void searchCriteria() {
         when(repository.search(any())).thenReturn(List.of(summary("FILLED")));
 
-        List<TradeSummary> results = service.search(null, "  alice.johnson@leap.com ", " ", "aapl",
-                LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 8));
+        List<TradeSummary> results = service.search(criteria(null, "  alice.johnson@leap.com ",
+                OffsetDateTime.parse("2026-10-01T09:00:00Z"), OffsetDateTime.parse("2026-10-08T17:31:00Z")));
 
         assertEquals(1, results.size());
         ArgumentCaptor<TradeSearch> captor = ArgumentCaptor.forClass(TradeSearch.class);
@@ -194,22 +198,43 @@ class TradeTimelineServiceTest {
         assertEquals("alice.johnson@leap.com", search.clientEmail());
         assertNull(search.accountNumber());
         assertEquals("aapl", search.symbol());
-        assertEquals(OffsetDateTime.parse("2026-10-01T00:00:00Z"), search.from());
-        assertEquals(OffsetDateTime.parse("2026-10-09T00:00:00Z"), search.to());
+        assertEquals(Order.Side.BUY, search.side());
+        assertEquals(OffsetDateTime.parse("2026-10-01T09:00:00Z"), search.from());
+        assertEquals(OffsetDateTime.parse("2026-10-08T17:31:00Z"), search.to());
     }
 
     @Test
-    @DisplayName("Search needs at least one criterion")
-    void searchNeedsCriterion() {
-        assertThrows(IllegalArgumentException.class, () -> service.search(null, " ", null, "", null, null));
+    @DisplayName("Search needs a time period")
+    void searchNeedsPeriod() {
+        UUID client = UUID.randomUUID();
+        OffsetDateTime at = OffsetDateTime.parse("2026-10-01T00:00:00Z");
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
+                () -> service.search(criteria(client, null, null, null)));
+        assertEquals("Give a time period to search", missing.getMessage());
+        assertThrows(IllegalArgumentException.class, () -> service.search(criteria(client, null, at, null)));
+        assertThrows(IllegalArgumentException.class, () -> service.search(criteria(client, null, null, at)));
         verifyNoInteractions(repository);
     }
 
     @Test
-    @DisplayName("Search rejects from after to")
+    @DisplayName("Search needs the client, by id or email")
+    void searchNeedsClient() {
+        when(repository.search(any())).thenReturn(List.of());
+        OffsetDateTime from = OffsetDateTime.parse("2026-10-01T00:00:00Z");
+        OffsetDateTime to = OffsetDateTime.parse("2026-10-08T00:00:00Z");
+
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
+                () -> service.search(criteria(null, " ", from, to)));
+        assertEquals("Give a client id or client email to search", missing.getMessage());
+        service.search(criteria(UUID.randomUUID(), null, from, to));
+        service.search(criteria(null, "alice.johnson@leap.com", from, to));
+    }
+
+    @Test
+    @DisplayName("Search rejects a period that ends before it starts")
     void searchDatesWrongWayRound() {
-        assertThrows(IllegalArgumentException.class,
-                () -> service.search(null, null, null, null, LocalDate.of(2026, 10, 8), LocalDate.of(2026, 10, 1)));
+        assertThrows(IllegalArgumentException.class, () -> service.search(criteria(null, "alice.johnson@leap.com",
+                OffsetDateTime.parse("2026-10-08T00:00:00Z"), OffsetDateTime.parse("2026-10-01T00:00:00Z"))));
         verifyNoInteractions(repository);
     }
 }

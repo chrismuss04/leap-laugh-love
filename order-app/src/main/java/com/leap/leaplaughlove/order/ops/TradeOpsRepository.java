@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.order.ops;
 
 import com.leap.leaplaughlove.order.execution.ExecutionQuote;
+import com.leap.leaplaughlove.order.order.Order;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -34,8 +35,9 @@ public class TradeOpsRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    /** Null fields aren't filtered on. Email and symbol ignore case; to is exclusive. */
-    public record TradeSearch(UUID orderId, String clientEmail, String accountNumber, String symbol,
+    /** Null fields aren't filtered on. Email and symbol ignore case; from is inclusive, to exclusive. */
+    public record TradeSearch(UUID orderId, UUID clientId, String clientEmail, UUID accountId, String accountNumber,
+                              String symbol, Order.Side side, Order.Status status,
                               OffsetDateTime from, OffsetDateTime to) {}
 
     public record OrderRecord(TradeSummary summary, OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
@@ -62,9 +64,17 @@ public class TradeOpsRepository {
             conditions.add("o.order_id = :orderId");
             params.addValue("orderId", search.orderId());
         }
+        if (search.clientId() != null) {
+            conditions.add("a.client_id = :clientId");
+            params.addValue("clientId", search.clientId());
+        }
         if (search.clientEmail() != null) {
             conditions.add("LOWER(c.email) = LOWER(:clientEmail)");
             params.addValue("clientEmail", search.clientEmail());
+        }
+        if (search.accountId() != null) {
+            conditions.add("o.account_id = :accountId");
+            params.addValue("accountId", search.accountId());
         }
         if (search.accountNumber() != null) {
             conditions.add("a.account_number = :accountNumber");
@@ -73,6 +83,14 @@ public class TradeOpsRepository {
         if (search.symbol() != null) {
             conditions.add("UPPER(i.symbol) = UPPER(:symbol)");
             params.addValue("symbol", search.symbol());
+        }
+        if (search.side() != null) {
+            conditions.add("o.side = :side");
+            params.addValue("side", search.side().name());
+        }
+        if (search.status() != null) {
+            conditions.add("o.status = :status");
+            params.addValue("status", search.status().name());
         }
         if (search.from() != null) {
             conditions.add("o.submitted_at >= :from");

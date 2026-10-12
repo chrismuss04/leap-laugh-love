@@ -16,9 +16,12 @@ describe('TradeOpsService', () => {
 
   // Verify only filled-in search fields are sent, trimmed.
   it('searches by the filled-in fields', () => {
-    service.search({ orderId: '', clientEmail: ' alice@leap.com ', symbol: 'AAPL', from: '2026-10-01' }).subscribe();
+    service.search({
+      from: '2026-10-01T00:00:00.000Z', to: '2026-10-02T00:00:00.000Z', clientId: '', clientEmail: ' alice@leap.com ',
+      symbol: 'AAPL'
+    }).subscribe();
     const request = http.expectOne(r => r.url === '/api/order/ops/orders');
-    expect(request.request.params.keys().sort()).toEqual(['clientEmail', 'from', 'symbol']);
+    expect(request.request.params.keys().sort()).toEqual(['clientEmail', 'from', 'symbol', 'to']);
     expect(request.request.params.get('clientEmail')).toBe('alice@leap.com');
     request.flush([]);
   });

@@ -68,7 +68,8 @@ describe('Trading operations dashboard', () => {
     expect(router.url).toBe('/reporting');
     expect(el.querySelector('h1')!.textContent).toContain('Order Audit');
     expect(panelTitles(el)).toEqual(['Order audit log', 'Rejections by reason', 'Stuck orders']);
-    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(3);
+    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(2);
+    expect(el.querySelector('.panel-body')!.textContent).toContain('time period and a client id or email');
     expect(Array.from(el.querySelectorAll('.stat-label')).map(l => l.textContent))
       .toEqual(['Orders submitted', 'Filled', 'Rejected', 'Awaiting execution']);
     expect(text(el.querySelector('[data-testid="filter-summary"]')!)).toBe('Showing all orders.');
@@ -86,14 +87,17 @@ describe('Trading operations dashboard', () => {
   it('keeps applied filters in the URL', async () => {
     const { harness, el } = await open('/reporting', TradingOpsDashboardComponent);
 
+    type(el, 'input[formControlName="from"]', '2026-10-01T09:00');
+    type(el, 'input[formControlName="to"]', '2026-10-08T17:30');
+    type(el, 'input[formControlName="clientEmail"]', 'alice@leap.com');
     type(el, 'input[formControlName="symbol"]', 'aapl');
-    type(el, 'input[formControlName="clientId"]', 'c-1');
     el.querySelector('form[aria-label="Audit filters"]')!.dispatchEvent(new Event('submit'));
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(router.url).toBe('/reporting?clientId=c-1&symbol=AAPL');
-    expect(text(el.querySelector('[data-testid="filter-summary"]')!)).toBe('Showing orders matching 2 filters.');
+    expect(router.url).toBe('/reporting?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=alice@leap.com&symbol=AAPL');
+    expect(text(el.querySelector('[data-testid="filter-summary"]')!)).toBe('Showing orders matching 4 filters.');
+    http.expectOne(request => request.url === '/api/order/ops/orders').flush([]);
   });
 
   it('traces an order, keeping the audit filters for the way back', async () => {
@@ -119,19 +123,85 @@ describe('Trading operations dashboard', () => {
     http.expectNone(() => true);
   });
 
+  it('downloads the traced order as CSV', async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+
+    (el.querySelector('[data-testid="lifecycle-download"]') as HTMLButtonElement).click();
+    http.expectOne(`/api/order/ops/orders/${ORDER_ID}/timeline.csv`).flush(new Blob(['csv']));
+    harness.detectChanges();
+
+    expect((click.mock.contexts.at(-1) as HTMLAnchorElement).download).toBe(`trade-${ORDER_ID}.csv`);
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:csv');
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it('says when there is no order to download', async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+
+    (el.querySelector('[data-testid="lifecycle-download"]') as HTMLButtonElement).click();
+    http.expectOne(`/api/order/ops/orders/${ORDER_ID}/timeline.csv`)
+      .flush(new Blob(['']), { status: 404, statusText: 'Not Found' });
+    harness.detectChanges();
+
+    expect(el.querySelector('[role="alert"]')!.textContent).toContain('No order has this id.');
+  });
+
   it('explains when the address does not hold an order id', async () => {
     const { el } = await open('/reporting/orders/not-an-order', OrderLifecycleComponent);
 
     expect(el.querySelector('[role="alert"]')!.textContent).toContain("isn't an order id");
     expect(el.querySelector('app-lifecycle-timeline')).toBeNull();
+    expect(el.querySelector('[data-testid="lifecycle-download"]')).toBeNull();
   });
 
-  it('shows trade reconstruction, and looks nothing up until a search', async () => {
-    const { el } = await open('/reporting', TradingOpsDashboardComponent);
+  it('looks no orders up until the filter has a period and a client', async () => {
+    const { el } = await open('/reporting?symbol=AAPL', TradingOpsDashboardComponent);
 
-    expect(el.querySelector('app-trade-reconstruction')).not.toBeNull();
-    // Nothing is looked up (or logged) until a search.
+    expect(el.querySelector('app-trade-reconstruction')).toBeNull();
+    expect(el.querySelector('.panel-body')!.textContent).toContain('time period and a client id or email');
+    // Nothing is looked up (or logged) until the filter can be searched.
     http.expectNone(() => true);
+  });
+
+  it('lists the orders the audit filter finds, each tracing to its lifecycle', async () => {
+    const { harness, el } = await open(
+      '/reporting?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=alice%40leap.com&status=FILLED',
+      TradingOpsDashboardComponent);
+
+    const search = http.expectOne(request => request.url === '/api/order/ops/orders');
+    expect(search.request.params.get('clientEmail')).toBe('alice@leap.com');
+    expect(search.request.params.get('status')).toBe('FILLED');
+    search.flush([{
+      orderId: ORDER_ID, submittedAt: '2026-10-02T10:00:00Z', clientEmail: 'alice@leap.com', accountNumber: 'ACC-1001',
+      symbol: 'AAPL', side: 'BUY', quantity: 10, status: 'FILLED'
+    }]);
+    harness.detectChanges();
+
+    const rows = el.querySelectorAll('[data-testid="audit-log-row"]');
+    expect(rows.length).toBe(1);
+    expect(Array.from(rows[0].querySelectorAll('td')).map(cell => text(cell)))
+      .toEqual(['2026-10-02 10:00:00', 'alice@leap.com', 'ACC-1001', 'BUY 10 AAPL', 'Filled', 'Trace']);
+    expect(rows[0].querySelector('a')!.getAttribute('href')).toBe(
+      `/reporting/orders/${ORDER_ID}?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=alice@leap.com&status=FILLED`);
+  });
+
+  it('says when no orders match, and shows why a search failed', async () => {
+    const { harness, el } = await open(
+      '/reporting?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=nobody%40leap.com', TradingOpsDashboardComponent);
+
+    http.expectOne(request => request.url === '/api/order/ops/orders').flush([]);
+    harness.detectChanges();
+    expect(el.querySelector('.panel-body')!.textContent).toContain('No orders match these filters.');
+
+    (harness.fixture.debugElement.query(By.directive(TradingOpsDashboardComponent)).componentInstance as TradingOpsDashboardComponent)
+      .retrySearch();
+    http.expectOne(request => request.url === '/api/order/ops/orders')
+      .flush({ message: 'Give a client id or client email to search' }, { status: 400, statusText: 'Bad Request' });
+    harness.detectChanges();
+    expect(el.querySelector('[role="alert"]')!.textContent).toContain('Give a client id or client email to search');
   });
 });
 
@@ -189,11 +259,6 @@ describe('Commercial analyst dashboard', () => {
     expect(router.url).toBe('/reporting');
   });
 
-  it('shows analysts no trade reconstruction', async () => {
-    const { el } = await open('/reporting', AnalystDashboardComponent);
-
-    expect(el.querySelector('app-trade-reconstruction')).toBeNull();
-  });
 });
 
 // Regression: signing out leaves the router on /reporting, so the next staff member's sign-in

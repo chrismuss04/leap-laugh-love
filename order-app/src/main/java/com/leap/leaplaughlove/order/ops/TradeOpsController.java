@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.order.ops;
 
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -16,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.nio.charset.StandardCharsets;
-import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,25 +43,37 @@ public class TradeOpsController {
         this.accessLog = accessLog;
     }
 
-    /** Needs at least one criterion. from and to are inclusive UTC days. */
+    /**
+     * Needs a period and the client, by id or email; the other criteria narrow it further.
+     * from and to are ISO date-times; from is inclusive, to exclusive.
+     */
     @GetMapping
     public List<TradeSummary> search(
-            @RequestParam(required = false) UUID orderId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) UUID clientId,
             @RequestParam(required = false) String clientEmail,
+            @RequestParam(required = false) UUID accountId,
             @RequestParam(required = false) String accountNumber,
             @RequestParam(required = false) String symbol,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+            @RequestParam(required = false) Order.Side side,
+            @RequestParam(required = false) Order.Status status,
+            @RequestParam(required = false) UUID orderId) {
         Map<String, Object> criteria = new LinkedHashMap<>();
-        criteria.put("orderId", orderId);
-        criteria.put("clientEmail", clientEmail);
-        criteria.put("accountNumber", accountNumber);
-        criteria.put("symbol", symbol);
         criteria.put("from", from);
         criteria.put("to", to);
+        criteria.put("clientId", clientId);
+        criteria.put("clientEmail", clientEmail);
+        criteria.put("accountId", accountId);
+        criteria.put("accountNumber", accountNumber);
+        criteria.put("symbol", symbol);
+        criteria.put("side", side);
+        criteria.put("status", status);
+        criteria.put("orderId", orderId);
         criteria.values().removeIf(Objects::isNull);
         accessLog.record(OpsAccessLog.Action.SEARCH, null, criteria.toString());
-        return tradeTimelineService.search(orderId, clientEmail, accountNumber, symbol, from, to);
+        return tradeTimelineService.search(new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,
+                symbol, side, status, from, to));
     }
 
     @GetMapping("/{orderId}/timeline")

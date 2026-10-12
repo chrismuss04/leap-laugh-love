@@ -86,7 +86,9 @@ class RoleAccessTest {
     @DisplayName("Trading Operations can search trades, view a timeline and download it")
     void tradingOperationsCanReconstructTrades() throws Exception {
         String token = tokenFor(Role.TRADING_OPERATIONS);
-        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token).param("symbol", "AAPL"))
+        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z")
+                        .param("clientEmail", "owner@example.com"))
                 .andExpect(status().isOk());
         // 404, not 403: the role got through.
         UUID unknown = UUID.randomUUID();

@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.order.ops;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.ExecutionRecord;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.OrderRecord;
 import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class TradeOpsRepositoryTest {
 
     // Seeded by order_submission_test_setup.sql.
+    private static final UUID OWNER_CLIENT = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID OWNER_ACCOUNT = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID OTHER_ACCOUNT = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static final UUID AAPL = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001");
@@ -89,7 +91,7 @@ class TradeOpsRepositoryTest {
     }
 
     private static TradeSearch search() {
-        return new TradeSearch(null, null, null, null, null, null);
+        return new TradeSearch(null, null, null, null, null, null, null, null, null, null);
     }
 
     private static List<UUID> ids(List<TradeSummary> trades) {
@@ -100,7 +102,7 @@ class TradeOpsRepositoryTest {
     @DisplayName("Finds a client's trades by email, ignoring case, newest first")
     void searchByEmail() {
         List<TradeSummary> trades = repository.search(
-                new TradeSearch(null, "OWNER@example.com", null, null, null, null));
+                new TradeSearch(null, null, "OWNER@example.com", null, null, null, null, null, null, null));
 
         assertEquals(List.of(REJECTED_ORDER, FILLED_ORDER), ids(trades));
         TradeSummary filled = trades.get(1);
@@ -114,15 +116,28 @@ class TradeOpsRepositoryTest {
     }
 
     @Test
-    @DisplayName("Filters by order ID, account number, symbol and submission time")
+    @DisplayName("Filters by order ID, client, account, symbol, side, status and submission time")
     void searchFilters() {
-        assertEquals(List.of(OTHER_ORDER), ids(repository.search(new TradeSearch(OTHER_ORDER, null, null, null, null, null))));
-        assertEquals(List.of(OTHER_ORDER), ids(repository.search(new TradeSearch(null, null, "ACC-OTHER-USD", null, null, null))));
-        assertEquals(List.of(OTHER_ORDER, FILLED_ORDER), ids(repository.search(new TradeSearch(null, null, null, "aapl", null, null))));
-        assertEquals(List.of(REJECTED_ORDER), ids(repository.search(new TradeSearch(null, null, null, null,
-                at("2026-10-03T00:00:00Z"), at("2026-10-06T00:00:00Z")))));
-        assertEquals(List.of(FILLED_ORDER), ids(repository.search(new TradeSearch(null, "owner@example.com", null, "AAPL", null, null))));
-        assertTrue(repository.search(new TradeSearch(null, "nobody@example.com", null, null, null, null)).isEmpty());
+        assertEquals(List.of(OTHER_ORDER), ids(repository.search(new TradeSearch(OTHER_ORDER, null, null, null, null,
+                null, null, null, null, null))));
+        assertEquals(List.of(REJECTED_ORDER, FILLED_ORDER), ids(repository.search(new TradeSearch(null, OWNER_CLIENT,
+                null, null, null, null, null, null, null, null))));
+        assertEquals(List.of(OTHER_ORDER), ids(repository.search(new TradeSearch(null, null, null, OTHER_ACCOUNT, null,
+                null, null, null, null, null))));
+        assertEquals(List.of(OTHER_ORDER), ids(repository.search(new TradeSearch(null, null, null, null, "ACC-OTHER-USD",
+                null, null, null, null, null))));
+        assertEquals(List.of(OTHER_ORDER, FILLED_ORDER), ids(repository.search(new TradeSearch(null, null, null, null, null,
+                "aapl", null, null, null, null))));
+        assertEquals(List.of(REJECTED_ORDER), ids(repository.search(new TradeSearch(null, null, null, null, null,
+                null, Order.Side.SELL, null, null, null))));
+        assertEquals(List.of(FILLED_ORDER), ids(repository.search(new TradeSearch(null, null, null, null, null,
+                null, null, Order.Status.FILLED, null, null))));
+        assertEquals(List.of(REJECTED_ORDER), ids(repository.search(new TradeSearch(null, null, null, null, null,
+                null, null, null, at("2026-10-03T00:00:00Z"), at("2026-10-06T00:00:00Z")))));
+        assertEquals(List.of(FILLED_ORDER), ids(repository.search(new TradeSearch(null, null, "owner@example.com", null,
+                null, "AAPL", null, null, null, null))));
+        assertTrue(repository.search(new TradeSearch(null, null, "nobody@example.com", null, null,
+                null, null, null, null, null)).isEmpty());
     }
 
 

@@ -100,7 +100,9 @@ describe('AuditFilterComponent', () => {
   it('offers every filter trading operations audits by', () => {
     const labels = Array.from(fixture.nativeElement.querySelectorAll('form[aria-label="Audit filters"] .filter-label'))
       .map(label => (label as HTMLElement).textContent!.trim());
-    expect(labels).toEqual(['Submitted from', 'Submitted to', 'Client id', 'Account id', 'Symbol', 'Side', 'Status']);
+    expect(labels).toEqual([
+      'Submitted from', 'Submitted to', 'Client id', 'Client email', 'Account id or number', 'Symbol', 'Side', 'Status'
+    ]);
     const statuses = Array.from(fixture.nativeElement.querySelectorAll('select[formControlName="status"] option'))
       .map(option => (option as HTMLOptionElement).value);
     expect(statuses).toEqual(['', 'SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED']);
@@ -108,18 +110,52 @@ describe('AuditFilterComponent', () => {
 
   it('applies the filled-in fields together, tidied', () => {
     type(fixture, 'input[formControlName="from"]', '2026-10-01T09:00');
+    type(fixture, 'input[formControlName="to"]', '2026-10-08T17:30');
+    type(fixture, 'input[formControlName="clientEmail"]', ' alice@leap.com ');
     type(fixture, 'input[formControlName="symbol"]', ' aapl ');
     type(fixture, 'select[formControlName="side"]', 'SELL');
     type(fixture, 'select[formControlName="status"]', 'REJECTED');
     submit(fixture, 'Audit filters');
     expect(applied).toEqual([{
-      ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', symbol: 'AAPL', side: 'SELL', status: 'REJECTED'
+      ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', to: '2026-10-08T17:30', clientEmail: 'alice@leap.com',
+      symbol: 'AAPL', side: 'SELL', status: 'REJECTED'
     }]);
+  });
+
+  it('needs a time period before applying', () => {
+    type(fixture, 'input[formControlName="from"]', '2026-10-01T09:00');
+    type(fixture, 'input[formControlName="clientEmail"]', 'alice@leap.com');
+    submit(fixture, 'Audit filters');
+    expect(applied).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('time period');
+  });
+
+  it('needs a client id or email before applying, but nothing else', () => {
+    type(fixture, 'input[formControlName="from"]', '2026-10-01T09:00');
+    type(fixture, 'input[formControlName="to"]', '2026-10-08T17:30');
+    type(fixture, 'input[formControlName="symbol"]', 'AAPL');
+    submit(fixture, 'Audit filters');
+    expect(applied).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('client id or client email');
+
+    type(fixture, 'input[formControlName="clientId"]', '11111111-1111-1111-1111-111111111111');
+    submit(fixture, 'Audit filters');
+    expect(applied).toEqual([expect.objectContaining({ clientId: '11111111-1111-1111-1111-111111111111', clientEmail: null })]);
+  });
+
+  it('refuses a client id that is not a full id', () => {
+    type(fixture, 'input[formControlName="from"]', '2026-10-01T09:00');
+    type(fixture, 'input[formControlName="to"]', '2026-10-08T17:30');
+    type(fixture, 'input[formControlName="clientId"]', 'c-1');
+    submit(fixture, 'Audit filters');
+    expect(applied).toEqual([]);
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('full client id');
   });
 
   it('refuses a time range that runs backwards', () => {
     type(fixture, 'input[formControlName="from"]', '2026-10-08T09:00');
     type(fixture, 'input[formControlName="to"]', '2026-10-01T09:00');
+    type(fixture, 'input[formControlName="clientEmail"]', 'alice@leap.com');
     submit(fixture, 'Audit filters');
     expect(applied).toEqual([]);
     expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('on or before');
