@@ -19,6 +19,22 @@ import static org.mockito.Mockito.when;
 @DisplayName("CurrentQuoteService Unit Tests")
 class CurrentQuoteServiceTest {
 
+    // Verify a null symbol is rejected without contacting market data.
+    @Test
+    void rejectsNullSymbol() {
+        assertThrows(IllegalArgumentException.class, () -> service.getCurrentQuote(null));
+        org.mockito.Mockito.verifyNoInteractions(quoteClient);
+    }
+
+    // Verify a market-data failure propagates instead of supplying an execution price.
+    @Test
+    void propagatesQuoteFailure() {
+        var failure = new QuoteUnavailableException("market data unavailable");
+        when(quoteClient.fetchLatest("AAPL")).thenThrow(failure);
+        org.junit.jupiter.api.Assertions.assertSame(failure,
+                assertThrows(QuoteUnavailableException.class, () -> service.getCurrentQuote("AAPL")));
+    }
+
     private static final long MAX_QUOTE_AGE_SECONDS = 5;
 
     @Mock

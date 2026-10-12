@@ -86,16 +86,6 @@
                     <doclint>none</doclint>
                     <failOnError>false</failOnError>
                 </configuration>
-                <executions>
-                    <execution>
-                        <id>aggregate-javadoc</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>aggregate</goal>
-                        </goals>
-                        <inherited>false</inherited> <!-- Run only once at the root -->
-                    </execution>
-                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
@@ -130,6 +120,23 @@
             </properties>
             <build>
                 <plugins>
+                    <!-- Only here, not in the normal build: the root builds before its modules, so
+                         an aggregate there resolves common-security from ~/.m2, which fails on a
+                         clean CI run and quietly uses a stale copy everywhere else. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>aggregate-javadoc</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>aggregate</goal>
+                                </goals>
+                                <inherited>false</inherited> <!-- Run only once at the root -->
+                            </execution>
+                        </executions>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-resources-plugin</artifactId>

@@ -5,6 +5,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.Arrays;
 import java.util.UUID;
 
 /**
@@ -25,13 +26,23 @@ public final class SecurityUtils {
      *
      * @return the UUID of the authenticated client
      * @throws ResponseStatusException with 401 UNAUTHORIZED if no valid
-     *                                 authenticated principal is found
+     *                                 authenticated principal is found, or 403
+     *                                 FORBIDDEN if the caller is staff
      */
     public static UUID getAuthenticatedClientId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED,
                     "A valid authenticated principal is required");
+        }
+        // Staff tokens carry a service_id, not a client ID. The route rules already keep staff off
+        // client endpoints; this stops one being read as a client if a route is ever missed.
+        boolean staff = authentication.getAuthorities().stream().anyMatch(granted ->
+                Arrays.stream(Role.values()).anyMatch(role ->
+                        role.isStaff() && role.authority().equals(granted.getAuthority())));
+        if (staff) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN,
+                    "Staff accounts cannot use client endpoints");
         }
         Object principal = authentication.getPrincipal();
         if (principal instanceof UUID clientId) {

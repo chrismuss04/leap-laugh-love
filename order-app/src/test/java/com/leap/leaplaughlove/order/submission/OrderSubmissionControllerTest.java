@@ -21,7 +21,10 @@ import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
@@ -92,7 +95,7 @@ class OrderSubmissionControllerTest {
         when(orderSubmissionService.submitOrder(any(OrderSubmissionRequest.class))).thenReturn(mockResponse);
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .with(csrf())
@@ -116,7 +119,7 @@ class OrderSubmissionControllerTest {
         UUID accountId = UUID.randomUUID();
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                accountId, "AAPL", null, Order.Side.BUY, 0, new BigDecimal("150.00"));
+                accountId, "AAPL", null, Order.Side.BUY, 0, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .with(csrf())
@@ -131,7 +134,7 @@ class OrderSubmissionControllerTest {
     @DisplayName("POST /api/order/orders - 401 when unauthenticated")
     void testSubmitOrder_Unauthenticated() throws Exception {
         OrderSubmissionRequest request = new OrderSubmissionRequest(
-                UUID.randomUUID(), "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"));
+                UUID.randomUUID(), "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
 
         mockMvc.perform(post("/api/order/orders")
                         .with(csrf())
@@ -139,5 +142,54 @@ class OrderSubmissionControllerTest {
                         .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isUnauthorized());
     }
-}
 
+    /** Posts an order for 10 AAPL with the given price-tolerance fields and expects a 400 naming the problem. */
+    private void assertToleranceRejected(String toleranceFields, String expectedMessage) throws Exception {
+        String body = "{\"accountId\":\"" + UUID.randomUUID() + "\",\"symbol\":\"AAPL\",\"side\":\"BUY\","
+                + "\"quantity\":10," + toleranceFields + "}";
+
+        mockMvc.perform(post("/api/order/orders")
+                        .with(csrf())
+                        .with(authentication(createAuthenticationWithClientId(UUID.randomUUID())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(containsString(expectedMessage)));
+        verify(orderSubmissionService, never()).submitOrder(any());
+    }
+
+    @Test
+    @DisplayName("POST /api/order/orders - 400 when a price tolerance is given without a quoted price")
+    void testSubmitOrder_ToleranceWithoutQuotedPrice_BadRequest() throws Exception {
+        assertToleranceRejected("\"maxSlippagePercent\":1.00",
+                "quotedPrice is required when maxSlippagePercent is set");
+    }
+
+    @Test
+    @DisplayName("POST /api/order/orders - 400 when the price tolerance is negative")
+    void testSubmitOrder_NegativeTolerance_BadRequest() throws Exception {
+        assertToleranceRejected("\"quotedPrice\":150.00,\"maxSlippagePercent\":-0.5",
+                "maxSlippagePercent must be between 0 and 10");
+    }
+
+    @Test
+    @DisplayName("POST /api/order/orders - 400 when the price tolerance is above 10%")
+    void testSubmitOrder_ToleranceAboveCap_BadRequest() throws Exception {
+        assertToleranceRejected("\"quotedPrice\":150.00,\"maxSlippagePercent\":10.01",
+                "maxSlippagePercent must be between 0 and 10");
+    }
+
+    @Test
+    @DisplayName("POST /api/order/orders - 400 when the price tolerance has more than two decimals")
+    void testSubmitOrder_TolerancePrecision_BadRequest() throws Exception {
+        assertToleranceRejected("\"quotedPrice\":150.00,\"maxSlippagePercent\":1.255",
+                "maxSlippagePercent may have at most two decimal places");
+    }
+
+    @Test
+    @DisplayName("POST /api/order/orders - 400 when the quoted price is not positive")
+    void testSubmitOrder_NonPositiveQuotedPrice_BadRequest() throws Exception {
+        assertToleranceRejected("\"quotedPrice\":0,\"maxSlippagePercent\":1.00",
+                "quotedPrice must be greater than zero");
+    }
+}

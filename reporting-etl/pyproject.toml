@@ -1,0 +1,15 @@
+[project]
+name = "reporting-etl"
+version = "0.1.0"
+description = "Loads completed-order events from Kafka into the reporting schema"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.coverage.run]
+# Paths in coverage.xml relative to where pytest runs. CI runs it from the repo root, so they come
+# out as reporting-etl/reporting_etl/..., which is how SonarQube resolves them.
+relative_files = true
+branch = true

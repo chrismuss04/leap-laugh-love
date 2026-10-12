@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
 import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.common.security.Role;
 // Session Timeout & Revocation
 import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import org.springframework.context.annotation.Bean;
@@ -69,7 +70,11 @@ public class IamSecurityConfig {
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated())
+                        // Every signed-in role keeps its own session alive and signs out here.
+                        .requestMatchers("/api/iam/session/**").hasAnyRole(
+                                Role.CLIENT.name(), Role.TRADING_OPERATIONS.name(), Role.COMMERCIAL_ANALYST.name())
+                        // Client-only (profile and the rest): staff tokens are refused here (403).
+                        .anyRequest().hasRole(Role.CLIENT.name()))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))

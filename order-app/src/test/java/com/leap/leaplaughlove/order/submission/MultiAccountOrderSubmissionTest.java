@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
@@ -14,6 +15,7 @@ import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovement;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
+import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.OffsetDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +66,7 @@ class MultiAccountOrderSubmissionTest {
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private CurrentQuoteService currentQuoteService;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private OrderEventPublisher orderEventPublisher;
 
     private OrderSubmissionService service;
 
@@ -76,10 +80,14 @@ class MultiAccountOrderSubmissionTest {
         FillRecorder fillRecorder = new FillRecorder(executionRepository, positionMovementRepository, accountClient);
         service = new OrderSubmissionService(accountClient, instrumentRepository, orderRepository,
                 executionRepository, fillRecorder, new TradeValidationService(), currentQuoteService,
-                new TransactionTemplate(transactionManager));
+                new TransactionTemplate(transactionManager), orderEventPublisher);
 
         instrument = new Instrument(UUID.randomUUID(), "AAPL", "Apple Inc.", "EQUITY", "NASDAQ", "USD", true);
         when(instrumentRepository.findBySymbol("AAPL")).thenReturn(Optional.of(instrument));
+        // Orders fill at the live quote; a flat $150 market keeps buy and sell prices alike.
+        BigDecimal price = new BigDecimal("150.00");
+        lenient().when(currentQuoteService.getCurrentQuote("AAPL")).thenReturn(new QuoteSnapshot(
+                "AAPL", price, 100L, price, 100L, price, 100L, "NASDAQ", OffsetDateTime.now()));
 
         // Outside a database nothing assigns ids, and two orders can only be told apart by theirs.
         when(orderRepository.saveAndFlush(any(Order.class))).thenAnswer(invocation -> {
@@ -107,7 +115,7 @@ class MultiAccountOrderSubmissionTest {
 
     private void account(UUID accountId, String number, String cash, long holdings) {
         lenient().when(accountClient.getValidationData(eq(accountId), any()))
-                .thenReturn(new AccountValidationDto(true, true, new BigDecimal(cash), holdings, "USD", number));
+                .thenReturn(new AccountValidationDto(true, true, new BigDecimal(cash), holdings, "USD", number, null));
     }
 
     private void settles(UUID accountId, String balanceAfter) {
@@ -116,7 +124,7 @@ class MultiAccountOrderSubmissionTest {
     }
 
     private OrderSubmissionRequest order(UUID accountId, Order.Side side, long quantity) {
-        return new OrderSubmissionRequest(accountId, "AAPL", null, side, quantity, new BigDecimal("150.00"));
+        return new OrderSubmissionRequest(accountId, "AAPL", null, side, quantity, new BigDecimal("150.00"), null);
     }
 
     private static HttpClientErrorException refusal(String message) {

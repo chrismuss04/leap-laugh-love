@@ -16,6 +16,8 @@ import java.math.RoundingMode;
 @Service
 public class TradeValidationService {
 
+    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);
+
     /**
      * Validates if a trade can be accepted and executed.
      *
@@ -68,6 +70,32 @@ public class TradeValidationService {
         }
 
         return TradeValidationResult.rejected("Unsupported order side: " + side);
+    }
+
+    /**
+     * Checks the execution price hasn't moved further from the client's quote than they allow.
+     * A move either way counts, and a move of exactly the tolerance is accepted.
+     *
+     * @param quotedPrice the price the client was quoted (> 0)
+     * @param executionPrice the price the order would fill at
+     * @param maxSlippagePercent the largest move allowed, in percent of the quoted price
+     * @return TradeValidationResult (accepted, or rejected with the size of the move)
+     */
+    public TradeValidationResult checkPriceTolerance(BigDecimal quotedPrice, BigDecimal executionPrice,
+                                                     BigDecimal maxSlippagePercent) {
+        BigDecimal move = executionPrice.subtract(quotedPrice).abs();
+        // |execution - quoted| / quoted * 100 > tolerance, cross-multiplied so nothing is rounded.
+        if (move.multiply(HUNDRED).compareTo(maxSlippagePercent.multiply(quotedPrice)) <= 0) {
+            return TradeValidationResult.accepted();
+        }
+
+        BigDecimal movePercent = move.multiply(HUNDRED).divide(quotedPrice, 2, RoundingMode.HALF_UP);
+        return TradeValidationResult.rejected(String.format(
+                "Price moved %s%% from your quoted $%s to $%s, beyond your %s%% tolerance - order rejected",
+                movePercent.toPlainString(),
+                quotedPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                maxSlippagePercent.setScale(2, RoundingMode.HALF_UP).toPlainString()));
     }
 }
 

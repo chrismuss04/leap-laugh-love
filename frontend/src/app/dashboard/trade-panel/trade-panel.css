@@ -143,6 +143,75 @@ h2 {
   background: var(--muted);
 }
 
+/* Price protection: a field row that opens the picker for this order. */
+.protection-toggle {
+  width: 100%;
+  padding: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.protection-toggle[aria-expanded='true'] { border-bottom-color: transparent; }
+
+.protection-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.protection-value .off { color: var(--muted-foreground); font-weight: 500; }
+
+.chevron {
+  color: var(--muted-foreground);
+  transition: transform 0.2s ease;
+}
+
+.chevron.open { transform: rotate(180deg); }
+
+.protection-toggle:hover .chevron,
+.protection-toggle:hover .field-label { color: var(--foreground); }
+
+.protection-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.protection-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 0 14px;
+  border-bottom: 1px solid var(--border);
+  animation: reveal 0.18s ease;
+}
+
+.protection-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.protection-note a {
+  color: var(--primary);
+  text-decoration: none;
+}
+
+.protection-note a:hover { text-decoration: underline; }
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .protection-panel { animation: none; }
+  .chevron { transition: none; }
+}
+
 .hint {
   min-height: 20px;
   font-size: 13px;

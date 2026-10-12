@@ -50,4 +50,14 @@ public class ClientSessionRepository {
                 WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
                 """, now.atOffset(ZoneOffset.UTC), sessionId, clientId);
     }
+
+    // Password Recovery: a reset signs the client out everywhere, since whoever knew the old
+    // password may still be signed in.
+    @Transactional
+    public void revokeAll(UUID clientId, Instant now) {
+        jdbcTemplate.update("""
+                UPDATE iam.client_sessions SET revoked_at = ?
+                WHERE client_id = ? AND revoked_at IS NULL
+                """, now.atOffset(ZoneOffset.UTC), clientId);
+    }
 }

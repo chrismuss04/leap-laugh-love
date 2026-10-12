@@ -6,6 +6,7 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
 import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
@@ -45,6 +46,7 @@ public class OrderSubmissionService {
     private final TradeValidationService tradeValidationService;
     private final CurrentQuoteService currentQuoteService;
     private final TransactionTemplate transactionTemplate;
+    private final OrderEventPublisher orderEventPublisher;
 
     /**
      * What the first step of a submission decided: either a finished rejection, or an accepted
@@ -62,6 +64,7 @@ public class OrderSubmissionService {
      * @param tradeValidationService the service used for validating trades
      * @param currentQuoteService the service used for obtaining current market quotes
      * @param transactionTemplate runs each step of a submission in its own transaction
+     * @param orderEventPublisher reports each order to Kafka once it is final
      */
     public OrderSubmissionService(AccountClient accountClient,
                                   InstrumentRepository instrumentRepository,
@@ -70,7 +73,8 @@ public class OrderSubmissionService {
                                   FillRecorder fillRecorder,
                                   TradeValidationService tradeValidationService,
                                   CurrentQuoteService currentQuoteService,
-                                  TransactionTemplate transactionTemplate) {
+                                  TransactionTemplate transactionTemplate,
+                                  OrderEventPublisher orderEventPublisher) {
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -79,6 +83,7 @@ public class OrderSubmissionService {
         this.tradeValidationService = tradeValidationService;
         this.currentQuoteService = currentQuoteService;
         this.transactionTemplate = transactionTemplate;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     /**
@@ -130,13 +135,17 @@ public class OrderSubmissionService {
                 order.markRejected(reason, rejectedAt);
                 lockedCopy(order).markRejected(reason, rejectedAt);
             });
+            // It executed and is now final, so reporting gets it; validation rejections above don't.
+            orderEventPublisher.publishRejected(order);
             // A 4xx, so the customer is told it definitely didn't go through, and why.
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, reason, ex);
         }
 
         BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;
+        boolean finishedHere;
         try {
-            transactionTemplate.executeWithoutResult(status -> fillRecorder.completeFill(lockedCopy(order), execution));
+            finishedHere = Boolean.TRUE.equals(
+                    transactionTemplate.execute(status -> fillRecorder.completeFill(lockedCopy(order), execution)));
         } catch (RuntimeException ex) {
             // Cash and holdings have moved; only this app's record of it is missing, and
             // PendingFillRecovery writes it once this app's database is back.
@@ -145,6 +154,10 @@ public class OrderSubmissionService {
             return toResponse(order, execution, balanceAfter);
         }
         order.markFilled(execution.getExecutedAt());
+        // If recovery finished it first, recovery published it.
+        if (finishedHere) {
+            orderEventPublisher.publishFilled(order, execution);
+        }
         return toResponse(order, execution, balanceAfter);
     }
 
@@ -183,23 +196,42 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account: " + ex.getMessage());
         }
 
+        // The order's own price tolerance, or else the one saved on the account
+        BigDecimal maxSlippagePercent = request.maxSlippagePercent() != null
+                ? request.maxSlippagePercent()
+                : accountValidation.maxSlippagePercent();
+        if (maxSlippagePercent != null && request.quotedPrice() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "quotedPrice is required: this account has a saved price tolerance");
+        }
+
         // 3. Store order immediately with status SUBMITTED for audit retention
         OffsetDateTime now = OffsetDateTime.now();
         Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
         order.setAccountNumber(accountValidation.accountNumber());
+        order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
         order = orderRepository.saveAndFlush(order);
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
         BigDecimal executionPrice;
         try {
-            executionPrice = resolvePrice(request, instrument);
+            executionPrice = resolvePrice(request.side(), instrument);
         } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {
             String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();
             return new FirstStep(rejectOrder(order, accountValidation,
                     rejectReason != null ? rejectReason : "Market quote unavailable"), null, null);
         }
 
-        // 5. Execute Trade Validation
+        // 5. Price tolerance: reject if the market moved too far from the client's quote
+        if (maxSlippagePercent != null) {
+            TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(
+                    request.quotedPrice(), executionPrice, maxSlippagePercent);
+            if (!toleranceResult.isValid()) {
+                return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason()), null, null);
+            }
+        }
+
+        // 6. Execute Trade Validation
         TradeValidationResult validationResult = tradeValidationService.validateTrade(
                 accountValidation, instrument, request.side(), request.quantity(), executionPrice);
 
@@ -212,7 +244,7 @@ public class OrderSubmissionService {
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
-        // 6. Execution success: record the FILLED execution; settlement follows once it is committed
+        // 7. Execution success: record the FILLED execution; settlement follows once it is committed
         Execution execution = fillRecorder.recordExecution(order, executionPrice, OffsetDateTime.now());
         return new FirstStep(null, order, execution);
     }
@@ -258,17 +290,14 @@ public class OrderSubmissionService {
     }
 
     /**
-     * Resolves the price for the order submission request based on the provided instrument and current market quotes.
-     * @param request the order submission request containing price and side details
+     * Resolves the price the order fills at from the current market quote. The client's quoted
+     * price is never used: it is only checked against this one.
+     * @param side the side of the order: BUY fills at the ask, SELL at the bid
      * @param instrument the instrument associated with the order
      * @return the resolved price for the order
      * @throws ResponseStatusException unprocessable entity (422) if no valid price can be determined
      */
-    private BigDecimal resolvePrice(OrderSubmissionRequest request, Instrument instrument) {
-        if (request.price() != null && request.price().compareTo(BigDecimal.ZERO) > 0) {
-            return request.price().setScale(4, RoundingMode.HALF_UP);
-        }
-
+    private BigDecimal resolvePrice(Order.Side side, Instrument instrument) {
         QuoteSnapshot quote = currentQuoteService.getCurrentQuote(instrument.getSymbol());
         if (quote == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
@@ -276,7 +305,7 @@ public class OrderSubmissionService {
         }
 
         BigDecimal price;
-        if (request.side() == Order.Side.BUY) {
+        if (side == Order.Side.BUY) {
             price = (quote.askPrice() != null && quote.askPrice().compareTo(BigDecimal.ZERO) > 0)
                     ? quote.askPrice()
                     : quote.lastPrice();

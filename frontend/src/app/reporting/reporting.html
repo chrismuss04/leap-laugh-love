@@ -1,0 +1,30 @@
+<div class="reporting fade-in">
+  <header class="reporting-header">
+    <div class="header-inner">
+      <a routerLink="/reporting" class="brand" aria-label="Reporting home">
+        <span class="brand-icon" aria-hidden="true">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="1" y="9" width="3" height="6" rx="0.5" fill="#0d0d0f" />
+            <rect x="6.5" y="5" width="3" height="10" rx="0.5" fill="#0d0d0f" />
+            <rect x="12" y="1" width="3" height="14" rx="0.5" fill="#0d0d0f" />
+          </svg>
+        </span>
+        <span class="brand-name">Leapfolio</span>
+        <span class="brand-tag">Reporting</span>
+      </a>
+
+      <div class="header-right">
+        <span class="identity">
+          <span class="identity-email">{{ email }}</span>
+          <span class="identity-role">{{ roleLabel }}</span>
+        </span>
+        <button type="button" class="sign-out" (click)="logout()">Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Staff Dashboards: each role's dashboard, and the order lifecycle trace, render here. -->
+  <main class="reporting-main">
+    <router-outlet></router-outlet>
+  </main>
+</div>

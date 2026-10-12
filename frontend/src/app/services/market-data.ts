@@ -11,6 +11,15 @@ export interface LatestPrice {
   asOf: string;
 }
 
+/** The current bid/ask: what a sell or a buy would fill at right now. */
+export interface Quote {
+  symbol: string;
+  bidPrice: number;
+  askPrice: number;
+  lastPrice: number;
+  quoteTimestamp: string;
+}
+
 export interface Candle {
   bucketStart: string;
   bucketSeconds: number;
@@ -49,6 +58,10 @@ export class MarketDataService {
       shareReplay(1)
     );
     return this.allPrices$;
+  }
+
+  getQuote(symbol: string): Observable<Quote> {
+    return this.http.get<Quote>(`${this.API_URL}/quotes/${encodeURIComponent(symbol)}`);
   }
 
   getLatestPrice(symbol: string): Observable<LatestPrice> {

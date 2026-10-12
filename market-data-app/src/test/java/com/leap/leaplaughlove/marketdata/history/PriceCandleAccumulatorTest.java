@@ -31,6 +31,38 @@ import static org.mockito.Mockito.when;
 @DisplayName("PriceCandleAccumulator Unit Tests")
 class PriceCandleAccumulatorTest {
 
+    // Verify the final candle is persisted even when no subsequent price tick arrives.
+    @Test
+    void flushesFinalCandle() {
+        tick(HOUR_BOUNDARY, "150.00");
+        var candles = flushAndCapture();
+        assertEquals(2, candles.size());
+        for (var candle : candles) {
+            assertEquals(new BigDecimal("150.00"), candle.getOpen());
+            assertEquals(candle.getOpen(), candle.getHigh());
+            assertEquals(candle.getOpen(), candle.getLow());
+            assertEquals(candle.getOpen(), candle.getClose());
+        }
+    }
+
+    // Verify repeated scheduled flushes do not save completed candles twice.
+    @Test
+    void avoidsDuplicateFlush() {
+        tick(HOUR_BOUNDARY, "150.00");
+        accumulator.flushStaleBuckets();
+        accumulator.flushStaleBuckets();
+        verify(candleRepository).saveAll(any());
+    }
+
+    // Verify unknown symbols cannot create persisted history candles.
+    @Test
+    void skipsUnknownSymbol() {
+        accumulator.onPriceTick(new PriceTickEvent(new PriceState("UNKNOWN", BigDecimal.ONE,
+                OffsetDateTime.ofInstant(Instant.ofEpochSecond(HOUR_BOUNDARY), ZoneOffset.UTC))));
+        accumulator.flushStaleBuckets();
+        verify(candleRepository, never()).saveAll(any());
+    }
+
     @Mock
     private SimulatedInstrumentRepository instrumentRepository;
 

@@ -2,6 +2,7 @@ import { Component, EventEmitter, OnInit, Output, signal } from '@angular/core';
 import { AbstractControl, FormBuilder, FormGroup, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ClientRegistrationService, RegistrationRequest } from '../services/client-registration.service';
 import { COUNTRIES, CountryOption } from '../shared/countries';
+import { formatPhone } from '../shared/format';
 
 type ExperienceLabel = 'Beginner' | 'Intermediate' | 'Advanced';
 
@@ -110,19 +111,7 @@ export class CreateAccountComponent implements OnInit {
 
   /** Auto-formats the phone input as the user types: 5551234567 -> (555) 123-4567 */
   onPhoneInput(event: Event): void {
-    const input = event.target as HTMLInputElement;
-    const digits = input.value.replace(/\D/g, '').slice(0, 10);
-
-    let formatted = digits;
-    if (digits.length > 6) {
-      formatted = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
-    } else if (digits.length > 3) {
-      formatted = `(${digits.slice(0, 3)}) ${digits.slice(3)}`;
-    } else if (digits.length > 0) {
-      formatted = `(${digits}`;
-    }
-
-    this.registrationForm.get('phone')?.setValue(formatted);
+    this.registrationForm.get('phone')?.setValue(formatPhone((event.target as HTMLInputElement).value));
   }
 
   selectExperience(level: ExperienceLabel): void {

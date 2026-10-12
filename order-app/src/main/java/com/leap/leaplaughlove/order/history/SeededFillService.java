@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.order.history;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -66,6 +67,7 @@ public class SeededFillService {
     private final PriceHistoryClient priceHistoryClient;
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
+    private final OrderEventPublisher orderEventPublisher;
     private final long retrySeconds;
     private final int maxAttempts;
 
@@ -80,6 +82,7 @@ public class SeededFillService {
      * @param priceHistoryClient         the client for fetching historical prices
      * @param jwtService                 the JWT service for authenticating service requests
      * @param transactionTemplate        the transaction template for executing atomic units of work
+     * @param orderEventPublisher        reports each booked seeded fill to Kafka
      * @param retrySeconds               the interval in seconds between retry attempts
      * @param maxAttempts                the maximum number of retry attempts before giving up
      */
@@ -91,6 +94,7 @@ public class SeededFillService {
                              PriceHistoryClient priceHistoryClient,
                              JwtService jwtService,
                              TransactionTemplate transactionTemplate,
+                             OrderEventPublisher orderEventPublisher,
                              @Value("${trading.seeded-fills.retry-seconds:10}") long retrySeconds,
                              @Value("${trading.seeded-fills.max-attempts:60}") int maxAttempts) {
         this.orderRepository = orderRepository;
@@ -101,6 +105,7 @@ public class SeededFillService {
         this.priceHistoryClient = priceHistoryClient;
         this.jwtService = jwtService;
         this.transactionTemplate = transactionTemplate;
+        this.orderEventPublisher = orderEventPublisher;
         this.retrySeconds = retrySeconds;
         this.maxAttempts = maxAttempts;
     }
@@ -214,7 +219,13 @@ public class SeededFillService {
             fillRecorder.recordPositionMovement(order, execution);
             return true;
         });
-        return Boolean.TRUE.equals(booked);
+        if (!Boolean.TRUE.equals(booked)) {
+            return false;
+        }
+        // Booking happens once per seeded order, on the first boot that can price it, so the
+        // seed history reaches reporting once, at the price it was booked at.
+        orderEventPublisher.publishFilled(order, execution);
+        return true;
     }
 
     /**

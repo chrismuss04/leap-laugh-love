@@ -1,25 +1,86 @@
-import { NgModule } from '@angular/core';
+import { NgModule, inject } from '@angular/core';
 import { BrowserModule } from '@angular/platform-browser';
 import { HTTP_INTERCEPTORS, provideHttpClient, withInterceptorsFromDi } from '@angular/common/http';
 import { ReactiveFormsModule, FormsModule } from '@angular/forms';
 import { CommonModule } from '@angular/common';
-import { RouterModule, Routes } from '@angular/router';
+import { CanActivateFn, CanMatchFn, Router, RouterModule, Routes } from '@angular/router';
 
 import { AppComponent } from './app.component';
 import { SignInComponent } from './sign-in/sign-in.component';
 import { CreateAccountComponent } from './create-account/create-account.component';
+import { ForgotPasswordComponent } from './forgot-password/forgot-password.component';
+import { ResetPasswordComponent } from './reset-password/reset-password.component';
 import { OrderHistoryComponent } from './order-history/order-history';
 import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
 import { ProfileComponent } from './profile/profile';
-import { AuthService } from './services/auth.service';
+import { SettingsComponent } from './settings/settings';
+import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
+// A signed-in user has no use for password recovery, and no sign-in screen to show it on.
+const signedOutOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return !auth.isAuthenticated() || inject(Router).parseUrl(auth.homeUrl());
+};
+
+// Activity Reporting: staff have no access to trading, so its pages send them to reporting. The
+// trading APIs refuse staff tokens anyway; this keeps staff from landing on pages that can't load.
+export const clientOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return !auth.isStaff() || inject(Router).parseUrl(auth.homeUrl());
+};
+
+// Activity Reporting: only staff see the reporting dashboard.
+export const staffOnly: CanActivateFn = () => {
+  const auth = inject(AuthService);
+  return auth.isStaff() || inject(Router).parseUrl(auth.homeUrl());
+};
+
+// Staff Dashboards: matches a route only for one staff role, so both roles' dashboards can share
+// /reporting and neither role downloads the other's. Routing only - the APIs check the role too.
+export const staffRole = (role: Role): CanMatchFn => () => inject(AuthService).getRole() === role;
+
 // Every signed-in page renders inside the shell, which owns the header and navigation.
-const routes: Routes = [
+export const routes: Routes = [
+  // Password recovery. Signed-out visitors get the sign-in screen rather than the router outlet
+  // (see app.component.html), and that screen picks its view from the URL - so these render
+  // nothing themselves. They exist so the catch-all below doesn't redirect the emailed reset
+  // link to the dashboard.
+  { path: 'forgot-password', canActivate: [signedOutOnly], children: [] },
+  { path: 'reset-password', canActivate: [signedOutOnly], children: [] },
+  // Activity Reporting: staff sign in to this instead of the trading shell.
+  {
+    path: 'reporting',
+    // Staff Dashboards: redirects run before canActivate, so without this a client's /reporting
+    // would hit reporting's own catch-all and redirect to itself. Unmatched, the app's catch-all sends
+    // them home instead.
+    canMatch: [() => inject(AuthService).isStaff()],
+    canActivate: [staffOnly],
+    loadComponent: () => import('./reporting/reporting').then(m => m.ReportingComponent),
+    // Staff Dashboards: the first route whose role matches wins.
+    children: [
+      {
+        path: '', pathMatch: 'full', canMatch: [staffRole('TRADING_OPERATIONS')],
+        loadComponent: () => import('./reporting/trading-ops/trading-ops').then(m => m.TradingOpsDashboardComponent)
+      },
+      {
+        path: '', pathMatch: 'full', canMatch: [staffRole('COMMERCIAL_ANALYST')],
+        loadComponent: () => import('./reporting/analyst/analyst').then(m => m.AnalystDashboardComponent)
+      },
+      // One order retraced end to end, opened from the trading operations audit.
+      {
+        path: 'orders/:orderId', canMatch: [staffRole('TRADING_OPERATIONS')],
+        loadComponent: () => import('./reporting/trading-ops/order-lifecycle').then(m => m.OrderLifecycleComponent)
+      },
+      // Anything else under reporting, including a page for the other role, goes to the dashboard.
+      { path: '**', redirectTo: '/reporting' }
+    ]
+  },
   {
     path: '',
     component: ShellComponent,
+    canActivate: [clientOnly],
     children: [
       // Lazy: the dashboard is most of the app's code, and sign-in doesn't need it.
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
@@ -27,11 +88,16 @@ const routes: Routes = [
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
+      // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
+      { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
+      { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'profile', component: ProfileComponent },
+      { path: 'settings', component: SettingsComponent },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
-  { path: '**', redirectTo: 'dashboard' }
+  // Each role's own home; the guards above would bounce staff from the dashboard anyway.
+  { path: '**', redirectTo: () => inject(AuthService).homeUrl() }
 ];
 
 @NgModule({ declarations: [
@@ -45,7 +111,9 @@ const routes: Routes = [
         CommonModule,
         RouterModule.forRoot(routes),
         OrderHistoryComponent,
-        HoldingsComponent], providers: [
+        HoldingsComponent,
+        ForgotPasswordComponent,
+        ResetPasswordComponent], providers: [
         AuthService,
         {
             provide: HTTP_INTERCEPTORS,

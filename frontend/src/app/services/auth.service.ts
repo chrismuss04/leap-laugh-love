@@ -12,10 +12,17 @@ export interface LoginRequest {
 }
 
 /**
+ * Who a session belongs to, from the token's role claim. Clients use the trading app; staff
+ * (trading operations and commercial analysts) use the reporting dashboard and nothing else.
+ */
+export type Role = 'CLIENT' | 'TRADING_OPERATIONS' | 'COMMERCIAL_ANALYST';
+
+/**
  * Interface for login response
  */
 export interface LoginResponse {
   accessToken: string;
+  role?: Role;
   user?: {
     id: string;
     email: string;
@@ -152,6 +159,40 @@ export class AuthService implements OnDestroy {
   }
 
   /**
+   * The signed-in role, read from the token's claims. Decoding is only for routing; every API
+   * checks the role itself. Tokens issued before roles existed have no claim, and were all clients.
+   */
+  getRole(): Role | null {
+    const claims = this.getClaims();
+    if (!claims) return null;
+    return claims['role'] === 'TRADING_OPERATIONS' || claims['role'] === 'COMMERCIAL_ANALYST'
+      ? claims['role'] : 'CLIENT';
+  }
+
+  /**
+   * Whether the signed-in user is staff, who see reporting instead of trading.
+   */
+  isStaff(): boolean {
+    const role = this.getRole();
+    return role !== null && role !== 'CLIENT';
+  }
+
+  /**
+   * The page a signed-in user starts on: reporting for staff, the trading dashboard for clients.
+   */
+  homeUrl(): string {
+    return this.isStaff() ? '/reporting' : '/dashboard';
+  }
+
+  /**
+   * The signed-in email, from the token's claims.
+   */
+  getEmail(): string | null {
+    const email = this.getClaims()?.['email'];
+    return typeof email === 'string' ? email : null;
+  }
+
+  /**
    * Get current user
    */
   getCurrentUser(): any {
@@ -181,10 +222,45 @@ export class AuthService implements OnDestroy {
   }
 
   /**
+   * Ask for a password reset link to be emailed to this address
+   */
+  requestPasswordReset(email: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/forgot-password`, { email });
+  }
+
+  /**
+   * Check that the token from an emailed reset link can still be used
+   */
+  checkResetToken(token: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/reset-password/validate`, { token });
+  }
+
+  /**
+   * Set a new password, using the token from the emailed reset link
+   */
+  resetPassword(token: string, newPassword: string): Observable<void> {
+    return this.httpClient.post<void>(`${this.apiUrl}/reset-password`, { token, newPassword });
+  }
+
+  /**
    * Private helper: Check if token exists
    */
   private hasToken(): boolean {
     return !!localStorage.getItem('auth_token');
+  }
+
+  /**
+   * Private helper: the token's payload, or null when there's no readable token
+   */
+  private getClaims(): Record<string, unknown> | null {
+    const token = this.getToken();
+    if (!token) return null;
+    try {
+      const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+      return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));
+    } catch {
+      return null;
+    }
   }
 
   /**

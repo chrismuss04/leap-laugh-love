@@ -9,12 +9,21 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
+      # Password reset emails go to the local mail catcher below, never to a real inbox.
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      # Where the emailed reset link points; has to be the address the browser reaches the frontend on.
+      PASSWORD_RESET_LINK_BASE_URL: "${PASSWORD_RESET_LINK_BASE_URL:-http://localhost:${FRONTEND_PORT:-4200}/reset-password}"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_REGISTRATION_EVENTS_ENABLED: "${CLIENT_REGISTRATION_EVENTS_ENABLED:-true}"
 
   account-app:
     image: "account-app:${IMAGE_TAG:-latest}"
@@ -32,6 +41,13 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
+      # Inactive account emails go to the local mail catcher below, never to a real inbox.
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      # Spring cron (seconds first) for the inactive account check that sends those emails.
+      # Nightly at 02:00 UTC by default; set e.g. "0 */2 * * * *" in .env to see an email
+      # within minutes of a fresh "up" instead of waiting for the night.
+      ACCOUNT_INACTIVITY_CRON: "${ACCOUNT_INACTIVITY_CRON:-0 0 2 * * *}"
 
   order-app:
     image: "order-app:${IMAGE_TAG:-latest}"
@@ -43,6 +59,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # Completed orders are published to order-events, which has to exist first: the broker
+      # doesn't create topics on first use.
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
       SPRING_DATASOURCE_USERNAME: paysprint
@@ -50,6 +70,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"
@@ -115,8 +136,117 @@ services:
              { npm ci --no-audit --no-fund && cp package-lock.json node_modules/.installed-lock; } &&
              exec npx ng serve --host 0.0.0.0 --port 4200 --poll 2000"
 
+  # Single-node Kafka in KRaft mode (this node is both controller and broker, so there is no
+  # ZooKeeper). Reachable only on the compose network, at kafka:9092 - no host port is
+  # published, so nothing outside Docker can connect and CI builds cannot collide on a port.
+  # The advertised address has to be the one clients use: a client bootstraps against it, then
+  # reconnects to whatever the broker advertises.
+  kafka:
+    image: apache/kafka:3.9.0
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # One broker, so the internal topics cannot replicate to more than one.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are declared in kafka-init below, not created by whoever publishes first, so a
+      # typo in a topic name fails loudly instead of quietly creating a new topic.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Keeps the broker from competing with five Spring apps and Postgres on a CI agent.
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx512m"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  # One-shot: creates the topics once the broker is healthy, then exits. Idempotent, so it is
+  # safe on every "up". Add new topics to this list.
+  kafka-init:
+    image: apache/kafka:3.9.0
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic order-events --partitions 3 --replication-factor 1
+        /opt/kafka/bin/kafka-topics.sh --bootstrap-server kafka:9092 \
+          --create --if-not-exists --topic client-register --partitions 3 --replication-factor 1
+
+  # Local mail catcher: services send email here over SMTP and it keeps every message instead
+  # of delivering it, so no real inbox is ever reached. SMTP is reachable only on the compose
+  # network, at mailpit:1025; the web UI that lists the caught emails is published on 8025.
+  # No depends_on from the senders: a send is attempted only when an email goes out, and a
+  # failed one is logged rather than failing the service.
+  #
+  # Caught emails are kept in a volume, so they survive "docker compose down"; only
+  # "down -v" empties the inbox (and that reseeds the database, so seeded emails go out again).
+  mailpit:
+    image: axllent/mailpit:v1.31
+    ports:
+      - "${MAILPIT_UI_PORT:-8025}:8025"
+    environment:
+      MP_DATABASE: /data/mailpit.db
+    volumes:
+      - mailpit_data:/data
+  # Order Reporting ETL: consumes order-events and loads each completed order into
+  # reporting.orders (see reporting-etl/ and "Reporting ETL" in the README). No port: it only
+  # reads Kafka and writes Postgres. Restarts on a crash; an offset is committed only after its
+  # row is stored, so a restart re-reads rather than loses anything.
+  reporting-etl:
+    image: "reporting-etl:${IMAGE_TAG:-latest}"
+    build:
+      context: ./reporting-etl
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      ORDER_EVENTS_TOPIC: order-events
+      CONSUMER_GROUP: reporting-etl
+      REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
+
+  # Same ETL image, independent topic and consumer group for registrations.
+  user-etl:
+    image: "reporting-etl:${IMAGE_TAG:-latest}"
+    build:
+      context: ./reporting-etl
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      ETL_MODE: clients
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CLIENT_EVENTS_TOPIC: client-register
+      CONSUMER_GROUP: user-etl
+      REPORTING_DB_URL: postgresql://paysprint:${DB_PASSWORD:-changeme}@db:5432/paysprint
+
   db:
     image: postgres:16-alpine
+    # Persistent runs and recovery tests require durable commits. The disposable
+    # CI overlay replaces this command with its existing performance settings.
+    command: ["postgres", "-c", "fsync=on", "-c", "synchronous_commit=on", "-c", "full_page_writes=on"]
     environment:
       POSTGRES_DB: paysprint
       POSTGRES_USER: paysprint
@@ -139,4 +269,10 @@ services:
 
 volumes:
   db_data:
+    # Preserve the usual Compose name by default. For a persistent deployment, set
+    # DB_VOLUME_NAME to the existing volume and DB_VOLUME_EXTERNAL=true in .env.
+    name: "${DB_VOLUME_NAME:-${COMPOSE_PROJECT_NAME}_db_data}"
+    external: ${DB_VOLUME_EXTERNAL:-false}
+  kafka_data:
   frontend_node_modules:
+  mailpit_data:

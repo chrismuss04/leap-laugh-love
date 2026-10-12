@@ -7,7 +7,7 @@ export class HoldingsPage {
 
   constructor(readonly page: Page) {
     this.accounts = page.getByTestId('holdings-account');
-    this.empty = page.locator('.no-holdings');
+    this.empty = page.getByTestId('no-holdings');
     this.error = page.locator('.error-message');
   }
 

@@ -5,6 +5,8 @@ import com.leap.leaplaughlove.order.client.SettlementRequest;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
@@ -47,6 +49,27 @@ class FillRecorderRefusalTest {
         return assertThrows(RuntimeException.class, () -> accountClient.settleOrderAs(ACCOUNT_ID,
                 new SettlementRequest(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "AAPL", "SELL",
                         5, new BigDecimal("150.00"), OffsetDateTime.now()), "token"));
+    }
+
+    // Keep ambiguous client errors pending because an earlier settlement may have committed.
+    @ParameterizedTest
+    @ValueSource(ints = {401, 403, 404, 405, 408, 409, 429})
+    void retriesClientFailures(int status) {
+        accountApp.expect(requestTo("http://account-app/api/account/internal/accounts/" + ACCOUNT_ID + "/settlement"))
+                .andRespond(withStatus(HttpStatus.valueOf(status)));
+
+        assertFalse(FillRecorder.isRefused(settleFailure()));
+        accountApp.verify();
+    }
+
+    // Preserve explicit business refusal handling for unprocessable settlement requests.
+    @Test
+    void rejectsInvalidSettlement() {
+        accountApp.expect(requestTo("http://account-app/api/account/internal/accounts/" + ACCOUNT_ID + "/settlement"))
+                .andRespond(withStatus(HttpStatus.UNPROCESSABLE_ENTITY));
+
+        assertTrue(FillRecorder.isRefused(settleFailure()));
+        accountApp.verify();
     }
 
     @Test

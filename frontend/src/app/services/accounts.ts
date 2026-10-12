@@ -47,4 +47,10 @@ export class AccountsService {
   transferCash(request: CashTransferRequest): Observable<CashTransferResponse> {
     return this.http.post<CashTransferResponse>(`${this.API_URL}/balance/transfers`, request);
   }
+
+  /** Saves an account's price protection in percent; null turns it off. */
+  updateTradeSettings(accountId: string, maxSlippagePercent: number | null): Observable<AccountSummary> {
+    return this.http.put<AccountSummary>(`${this.API_URL}/accounts/${encodeURIComponent(accountId)}/trade-settings`,
+      { maxSlippagePercent });
+  }
 }

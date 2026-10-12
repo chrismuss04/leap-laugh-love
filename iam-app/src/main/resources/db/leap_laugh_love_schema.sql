@@ -3,6 +3,7 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 CREATE SCHEMA IF NOT EXISTS marketdata;
+CREATE SCHEMA IF NOT EXISTS reporting;
 
 CREATE TABLE IF NOT EXISTS iam.clients (
     client_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -32,6 +33,8 @@ CREATE TABLE IF NOT EXISTS iam.client_profile (
     experience_level TEXT NOT NULL
         CHECK (experience_level IN ('NOVICE', 'INTERMEDIATE', 'ADVANCED')),
     initial_deposit_amount NUMERIC(18,2) NOT NULL DEFAULT 0,
+    notify_order_fills BOOLEAN NOT NULL DEFAULT TRUE,
+    notify_price_alerts BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -64,6 +67,24 @@ CREATE INDEX IF NOT EXISTS idx_client_sessions_client_id
 CREATE INDEX IF NOT EXISTS idx_client_sessions_expires_at
     ON iam.client_sessions (expires_at);
 
+-- Password Recovery: one row per emailed reset link. Only a SHA-256 hash of the token is stored,
+-- so reading this table does not reveal a usable link.
+CREATE TABLE IF NOT EXISTS iam.password_reset_tokens (
+    token_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_id UUID NOT NULL
+        REFERENCES iam.clients (client_id) ON DELETE RESTRICT,
+    token_hash TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    -- Set when the link resets the password, or when a newer link replaces it.
+    used_at TIMESTAMPTZ,
+    CONSTRAINT chk_password_reset_tokens_expiry CHECK (expires_at > created_at)
+);
+
+-- Password Recovery: find a client's outstanding links when a new one replaces them.
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_client_id
+    ON iam.password_reset_tokens (client_id);
+
 -- LLL-176
 -- Staff credentials for reporting access; separate from customer identities.
 CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
@@ -79,6 +100,27 @@ CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Staff roles: one row per staff login, kept apart from client_sessions so a staff token can
+-- only ever match a staff session (see common-security's Role and ClientSessionValidator).
+-- Same lifetime rules as client_sessions; never store the raw JWT.
+CREATE TABLE IF NOT EXISTS iam.staff_sessions (
+    session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID NOT NULL
+        REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    revoked_at TIMESTAMPTZ,
+    CONSTRAINT chk_staff_sessions_activity CHECK (last_activity_at >= created_at),
+    CONSTRAINT chk_staff_sessions_expiry CHECK (expires_at > created_at),
+    CONSTRAINT chk_staff_sessions_revocation CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+);
+
+CREATE INDEX IF NOT EXISTS idx_staff_sessions_staff_id
+    ON iam.staff_sessions (staff_id);
+CREATE INDEX IF NOT EXISTS idx_staff_sessions_expires_at
+    ON iam.staff_sessions (expires_at);
+
 CREATE TABLE IF NOT EXISTS trading.accounts (
     account_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     client_id UUID NOT NULL
@@ -88,7 +130,16 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
         CHECK (status IN ('PENDING', 'ACTIVE', 'BLOCKED', 'CLOSED')),
     base_currency CHAR(3) NOT NULL DEFAULT 'USD',
     trading_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    -- Saved price tolerance: an order is rejected if the price moves more than this percent
+    -- (either way) between the client's quote and execution. NULL means no saved tolerance.
+    max_slippage_pct NUMERIC(5,2)
+        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Inactive Accounts: when the account became empty, set by account-app's nightly job.
+    inactive_since TIMESTAMPTZ,
+    -- When the client was emailed about the current inactive period; NULL until that email is
+    -- sent, so a failed send is retried by the next nightly run. Cleared with inactive_since.
+    inactive_notified_at TIMESTAMPTZ
 );
 
 -- Backs the account lookup by client_id used by the order history query.
@@ -122,7 +173,12 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     accepted_at TIMESTAMPTZ,
     rejected_at TIMESTAMPTZ,
     filled_at TIMESTAMPTZ,
-    rejection_reason TEXT
+    rejection_reason TEXT,
+    -- The price the client was quoted and the tolerance applied to it, kept so a price-move
+    -- rejection can be explained later. NULL when the order carried no quote.
+    quoted_price NUMERIC(18,6) CHECK (quoted_price IS NULL OR quoted_price > 0),
+    max_slippage_pct NUMERIC(5,2)
+        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100))
 );
 
 -- Backs OrderRepository's chronological (newest-first) paginated history lookup by account.
@@ -308,3 +364,47 @@ CREATE TABLE IF NOT EXISTS marketdata.quotes (
 -- Backs the "latest quote for a symbol" lookup used by QuoteIngestionService/QuoteController.
 CREATE INDEX IF NOT EXISTS idx_quotes_instrument_quote_timestamp
     ON marketdata.quotes (instrument_id, quote_timestamp DESC);
+
+-- Order Reporting: one row per completed order, loaded by reporting-etl from the order-events
+-- Kafka topic that order-app publishes to once an order is FILLED, or REJECTED after its
+-- execution was refused at settlement. A read model for the analyst dashboard, so it has no
+-- foreign keys into trading: it is only ever written by the ETL, and replaying the topic must
+-- not depend on the trading rows still being there.
+CREATE TABLE IF NOT EXISTS reporting.orders (
+    order_id UUID PRIMARY KEY,
+    account_id UUID NOT NULL,
+    client_id UUID NOT NULL,
+    instrument_id UUID NOT NULL,
+    symbol TEXT NOT NULL,
+    side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
+    quantity BIGINT NOT NULL CHECK (quantity > 0),
+    status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
+    -- NULL when the order was rejected.
+    fill_price NUMERIC(18,6) CHECK (fill_price IS NULL OR fill_price > 0),
+    rejection_reason TEXT,
+    submitted_at TIMESTAMPTZ NOT NULL,
+    -- filled_at for a FILLED order, rejected_at for a REJECTED one.
+    completed_at TIMESTAMPTZ NOT NULL,
+    -- When the ETL loaded the row, kept apart from completed_at so pipeline lag is visible.
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Backs per-client activity (most recent fill) and per-client order reports.
+CREATE INDEX IF NOT EXISTS idx_reporting_orders_client_completed_at
+    ON reporting.orders (client_id, completed_at);
+-- Backs reports over a time range across all clients.
+CREATE INDEX IF NOT EXISTS idx_reporting_orders_completed_at
+    ON reporting.orders (completed_at);
+
+-- User Reporting: one row per registered client, loaded from client-register events.
+-- No IAM foreign key: reporting replay must not depend on operational client rows.
+CREATE TABLE IF NOT EXISTS reporting.clients (
+    client_id UUID PRIMARY KEY,
+    registered_at TIMESTAMPTZ NOT NULL,
+    -- ETL arrival time is separate from the original registration time.
+    loaded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Supports registration counts over a reporting period.
+CREATE INDEX IF NOT EXISTS idx_reporting_clients_registered_at
+    ON reporting.clients (registered_at);

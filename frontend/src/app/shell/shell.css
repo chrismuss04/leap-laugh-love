@@ -194,6 +194,9 @@
 }
 
 .menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   text-align: left;
   padding: 10px;
@@ -209,11 +212,6 @@
 
 .menu-item.danger {
   color: var(--loss);
-}
-
-a.menu-item {
-  display: block;
-  text-decoration: none;
 }
 
 .narrow-only {
@@ -236,8 +234,8 @@ a.menu-item {
     display: none;
   }
 
-  a.narrow-only {
-    display: block;
+  .menu-item.narrow-only {
+    display: flex;
   }
 
   .main-nav {

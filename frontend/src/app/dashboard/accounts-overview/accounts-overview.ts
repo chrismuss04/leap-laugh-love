@@ -49,6 +49,7 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
                 <span class="name">
                   <span class="dot" [style.background]="account.color" aria-hidden="true"></span>
                   {{ account.name }}
+                  <span *ngIf="account.inactiveSince" class="badge-inactive">Inactive</span>
                 </span>
                 <span class="sub">
                   {{ account.positionCount }} {{ account.positionCount === 1 ? 'position' : 'positions' }}<span

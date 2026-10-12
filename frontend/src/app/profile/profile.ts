@@ -1,6 +1,7 @@
 import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ShellComponent } from '../shell/shell';
+import { countryName } from '../shared/countries';
 
 /** The signed-in client's account details. Reads the profile the shell already loaded instead of fetching it again. */
 @Component({
@@ -10,12 +11,19 @@ import { ShellComponent } from '../shell/shell';
     <div class="page"><div class="page-container">
       <div class="page-header">
         <p class="eyebrow">Account</p>
-        <h1 class="font-display headline-page">My <em>Profile</em></h1>
+        <h1 class="font-display headline-page"><em>Profile</em></h1>
       </div>
       <dl *ngIf="shell.profile() as p; else loading">
         <dt>Name</dt><dd>{{ p.fullName }}</dd>
         <dt>Email</dt><dd>{{ p.email }}</dd>
         <dt>Username</dt><dd>{{ p.email }}</dd>
+        <dt>Phone</dt><dd>{{ p.phone || '—' }}</dd>
+        <dt>Address</dt>
+        <dd>
+          {{ p.addressLine1 }}<ng-container *ngIf="p.addressLine2">, {{ p.addressLine2 }}</ng-container><br />
+          {{ p.city }}<ng-container *ngIf="p.stateRegion">, {{ p.stateRegion }}</ng-container> {{ p.postalCode }}<br />
+          {{ countryName(p.countryCode) }}
+        </dd>
         <dt>Account type</dt><dd>{{ shell.experienceLabel() }}</dd>
         <dt>Account created</dt><dd>{{ p.createdAt | date: 'longDate' }}</dd>
       </dl>
@@ -33,4 +41,5 @@ import { ShellComponent } from '../shell/shell';
 })
 export class ProfileComponent {
   readonly shell = inject(ShellComponent);
+  readonly countryName = countryName;
 }

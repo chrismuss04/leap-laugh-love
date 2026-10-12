@@ -99,7 +99,9 @@ public class FillRecorder {
     /**
      * Tells whether a failed {@link #settle} means account-app refused the fill, so nothing was
      * booked. account-app settles in one transaction and answers a refusal (e.g. not enough
-     * shares to sell) with a 4xx. Anything else - no answer (unreachable, timed out), a 5xx, or a
+     * shares to sell) with a 400 or 422. Authentication, routing, conflict and throttling
+     * responses do not prove that a previous attempt was not booked. Anything else -
+     * no answer (unreachable, timed out), a 5xx, or a
      * failure on this side - leaves it unknown whether cash and holdings moved. Such a fill must
      * not be recorded as rejected: it is left for {@link PendingFillRecovery} to settle again,
      * which is safe because account-app settles each execution only once.
@@ -107,7 +109,11 @@ public class FillRecorder {
      * @return true only if account-app answered with a refusal
      */
     public static boolean isRefused(RuntimeException failure) {
-        return failure instanceof HttpClientErrorException;
+        if (!(failure instanceof HttpClientErrorException clientError)) {
+            return false;
+        }
+        int status = clientError.getStatusCode().value();
+        return status == 400 || status == 422;
     }
 
     /**

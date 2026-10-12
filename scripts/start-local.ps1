@@ -103,8 +103,19 @@ if ($dotEnv.DB_PASSWORD) { $env:SPRING_DATASOURCE_PASSWORD = $dotEnv.DB_PASSWORD
 if ($dotEnv.JWT_SECRET) { $env:JWT_SECRET = $dotEnv.JWT_SECRET }
 $env:MARKET_DATA_BASE_URL = 'http://localhost:8083'
 $env:ACCOUNT_SERVICE_BASE_URL = 'http://localhost:8082'
+# No Kafka runs natively, so order-app doesn't publish order events (reporting-etl runs in Docker
+# only); otherwise every completed order would wait on a broker that isn't there.
+$env:REPORTING_EVENTS_ENABLED = 'false'
 if ($LightHistory) {
     $env:MARKETDATA_HISTORY_BACKFILL_TIERS = '86400:30,3600:7,300:2,60:1'
+}
+
+# Maven 3.9.9's own jansi and Guava use JDK internals that JDK 24+ warns about on every build.
+# These flags don't exist on JDK 21, so they're set here for newer JDKs only, not in
+# .mvn/jvm.config, which the JDK 21 builds in Docker and Jenkins would read too and fail on.
+$javaVersion = cmd /c 'java -version 2>&1' | Select-Object -First 1
+if ($javaVersion -match 'version "(\d+)' -and [int]$Matches[1] -ge 24) {
+    $env:MAVEN_OPTS = "$env:MAVEN_OPTS --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow".Trim()
 }
 
 # ---- Build -----------------------------------------------------------------------------------

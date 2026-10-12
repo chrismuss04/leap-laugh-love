@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.order;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -68,6 +69,12 @@ public class Order {
 
     @Column(name = "rejection_reason")
     private String rejectionReason;
+
+    @Column(name = "quoted_price", precision = 18, scale = 6)
+    private BigDecimal quotedPrice;
+
+    @Column(name = "max_slippage_pct", precision = 5, scale = 2)
+    private BigDecimal maxSlippagePercent;
 
     /**
      * Protected no-argument constructor for JPA.
@@ -250,5 +257,24 @@ public class Order {
      * @param rejectionReason the rejection reason to set
      */
     public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }
+    /**
+     * Returns the price the client was quoted when placing the order, if it carried one.
+     * @return the quoted price
+     */
+    public BigDecimal getQuotedPrice() { return quotedPrice; }
+    /**
+     * Returns the price tolerance, in percent, the order was checked against, if any.
+     * @return the price tolerance in percent
+     */
+    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }
+    /**
+     * Records the quote the client placed the order at and the tolerance applied to it.
+     * @param quotedPrice the price the client was quoted, or null
+     * @param maxSlippagePercent the price tolerance in percent, or null when none applied
+     */
+    public void setPriceTolerance(BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
+        this.quotedPrice = quotedPrice;
+        this.maxSlippagePercent = maxSlippagePercent;
+    }
 }
 

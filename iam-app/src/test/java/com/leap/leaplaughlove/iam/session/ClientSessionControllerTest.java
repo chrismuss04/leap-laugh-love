@@ -107,6 +107,26 @@ class ClientSessionControllerTest {
         assertFalse(sessions.recordActivity(sid, CLIENT, now));
     }
 
+    // Password Recovery: a reset ends every login of that client and nobody else's.
+    @Test void revokeAllEndsEverySessionOfThatClientOnly() throws Exception {
+        UUID stranger = UUID.randomUUID(), strangerSid = UUID.randomUUID();
+        jdbc.update("INSERT INTO iam.clients (client_id, email, status) VALUES (?, 'carol@example.com', 'ACTIVE')",
+                stranger);
+        String first = token(UUID.randomUUID(), Instant.now());
+        String second = token(UUID.randomUUID(), Instant.now());
+        jdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, ?, NULL)", strangerSid, stranger,
+                OffsetDateTime.now().minusMinutes(1), OffsetDateTime.now(), OffsetDateTime.now().plusMinutes(30));
+
+        sessions.revokeAll(CLIENT, Instant.now());
+
+        for (String token : new String[]{first, second}) {
+            mvc.perform(get("/api/iam/v1/clients/me").header("Authorization", "Bearer " + token))
+                    .andExpect(status().isUnauthorized());
+        }
+        assertNull(jdbc.queryForObject("SELECT revoked_at FROM iam.client_sessions WHERE session_id = ?",
+                OffsetDateTime.class, strangerSid));
+    }
+
     @Test void anotherClientCannotUpdateOrRevokeSession() {
         UUID sid = UUID.randomUUID();
         token(sid, Instant.now().minusSeconds(60));

@@ -7,6 +7,10 @@
 # existing database needs "docker compose down -v" first (or e2e/scripts/seed-local.ps1 against
 # a native one).
 services:
+  order-app:
+    environment:
+      # Recovery tests route settlement through a fault proxy; ordinary E2E runs stay direct.
+      ACCOUNT_SERVICE_BASE_URL: "${RECOVERY_ACCOUNT_SERVICE_BASE_URL:-http://account-app:8082}"
   db:
     volumes:
       # After the regular seeds (01-06): funded per-worker trader accounts and the fixtures the

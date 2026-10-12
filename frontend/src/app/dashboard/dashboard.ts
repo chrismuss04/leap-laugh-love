@@ -16,6 +16,7 @@ import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
 import { AccountSwitcherComponent } from './account-switcher/account-switcher';
 import { AccountsOverviewComponent } from './accounts-overview/accounts-overview';
+import { InactiveNoticeComponent } from './inactive-notice/inactive-notice';
 import { AccountDetailsComponent } from './account-details/account-details';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
@@ -32,7 +33,7 @@ const INTRADAY_INTERVAL_MS = 300_000;
     imports: [
         CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
         PositionsListComponent, RecentActivityComponent, TradePanelComponent, RollingNumberComponent,
-        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent
+        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent, InactiveNoticeComponent
     ],
     templateUrl: './dashboard.html',
     styleUrl: './dashboard.css',
@@ -220,13 +221,15 @@ export class DashboardComponent implements OnInit {
     if (!balance) {
       return [];
     }
+    const summaries = this.valuation.accountSummaries();
     return balance.accounts.map(account => {
       const positions = holdings?.accounts.find(a => a.accountId === account.accountId)?.positions ?? [];
       return {
         accountId: account.accountId,
         accountNumber: account.accountNumber,
         buyingPower: account.balance,
-        shares: Object.fromEntries(positions.map(p => [p.symbol, p.quantity]))
+        shares: Object.fromEntries(positions.map(p => [p.symbol, p.quantity])),
+        maxSlippagePercent: summaries.find(s => s.accountId === account.accountId)?.maxSlippagePercent ?? null
       };
     });
   });

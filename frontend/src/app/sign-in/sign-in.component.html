@@ -41,7 +41,13 @@
 
   <!-- Right Side: Sign In / Create Account -->
   <div class="auth-panel">
-    <div class="signin-form-wrapper" [class.wide]="activeTab === 'create-account'">
+    <!-- Password recovery takes over the panel; which screen comes from the URL. -->
+    <div class="signin-form-wrapper" *ngIf="recoveryView() as view">
+      <app-forgot-password *ngIf="view === 'forgot-password'"></app-forgot-password>
+      <app-reset-password *ngIf="view === 'reset-password'"></app-reset-password>
+    </div>
+
+    <div class="signin-form-wrapper" *ngIf="!recoveryView()" [class.wide]="activeTab === 'create-account'">
       <div class="tabs">
         <button type="button" class="tab" [class.active]="activeTab === 'signin'" (click)="activeTab = 'signin'">Sign in</button>
         <button type="button" class="tab" [class.active]="activeTab === 'create-account'" (click)="activeTab = 'create-account'">Create account</button>
@@ -53,7 +59,7 @@
           <p>Sign in to access your client portal.</p>
         </div>
 
-        <form [formGroup]="signinForm" (ngSubmit)="onSignIn()" class="signin-form">
+        <form [formGroup]="signinForm" method="post" (ngSubmit)="onSignIn()" class="signin-form">
           <!-- Email Field -->
           <div class="form-group">
             <label for="email" class="form-label">Email Address</label>
@@ -106,7 +112,7 @@
               <input type="checkbox" formControlName="rememberMe" />
               <span>Remember me</span>
             </label>
-            <a href="#" class="forgot-password">Forgot password?</a>
+            <a routerLink="/forgot-password" class="forgot-password">Forgot password?</a>
           </div>
 
           <!-- Sign In Button -->

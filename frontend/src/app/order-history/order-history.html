@@ -39,12 +39,13 @@
 
     <div *ngIf="error()" class="error-message">{{ error() }}</div>
 
-    <div *ngIf="!loading() && orders().length === 0 && !error()" class="empty">
+    <div *ngIf="!loading() && orders().length === 0 && !error()" class="empty" data-testid="no-orders">
       {{ year() !== null ? 'No orders match this filter' : 'No orders found' }}
     </div>
 
     <div *ngIf="!loading() && orders().length > 0" class="orders-table-wrapper">
       <table class="orders-table">
+        <caption class="sr-only">Order history</caption>
         <thead>
           <tr>
             <th></th>
@@ -85,6 +86,7 @@
                 </div>
 
                 <table *ngIf="order.executions.length > 0" class="fills-table">
+                  <caption class="sr-only">Executions for {{ order.side }} {{ order.symbol }} order</caption>
                   <thead>
                     <tr>
                       <th>Execution ID</th>

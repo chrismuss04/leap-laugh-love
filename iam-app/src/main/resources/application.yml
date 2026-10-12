@@ -2,6 +2,13 @@ server:
   port: 8081
 
 spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      properties:
+        max.block.ms: 2000
+        request.timeout.ms: 5000
+        delivery.timeout.ms: 10000
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
     username: ${SPRING_DATASOURCE_USERNAME:paysprint}
@@ -10,6 +17,31 @@ spring:
     hibernate:
       ddl-auto: none
     open-in-view: false
+  # SMTP server for client emails: Mailpit locally (see docker-compose.yml), a real provider in a
+  # deployment. Username and password are empty for Mailpit, which needs no login.
+  mail:
+    host: ${SPRING_MAIL_HOST:localhost}
+    port: ${SPRING_MAIL_PORT:1025}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    # JavaMail waits forever by default; an unreachable server must not hang a forgot-password request.
+    properties:
+      mail.smtp.connectiontimeout: 5000
+      mail.smtp.timeout: 5000
+      mail.smtp.writetimeout: 5000
+
+# Email is best-effort: a mail server being down must not report iam-app as unhealthy,
+# which would fail CI's health wait (CI does not start Mailpit) and any probe built on it.
+management:
+  health:
+    mail:
+      enabled: false
+
+reporting:
+  registrations:
+    # Compose enables publishing; native runs without Kafka default to disabled.
+    enabled: ${CLIENT_REGISTRATION_EVENTS_ENABLED:false}
+    topic: client-register
 
 account:
   client:
@@ -21,3 +53,9 @@ app:
   jwt:
     secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
     expiration-minutes: 60
+  password-reset:
+    # The frontend page the emailed link opens; the token is appended as ?token=...
+    link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:4200/reset-password}
+    token-ttl-minutes: 30
+    email:
+      from: ${PASSWORD_RESET_EMAIL_FROM:no-reply@example.com}

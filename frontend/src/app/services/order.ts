@@ -33,12 +33,18 @@ export interface OrderHistoryPage {
 
 export type OrderSide = 'BUY' | 'SELL';
 
-/** A market order: omitting price lets order-app fill at the live ask (buy) or bid (sell). */
+/**
+ * A market order: order-app fills it at the live ask (buy) or bid (sell). With price protection -
+ * maxSlippagePercent, or else the account's saved one - it's rejected if that fill is further than
+ * the protection from quotedPrice, the price the client reviewed.
+ */
 export interface OrderSubmissionRequest {
   accountId: string;
   symbol: string;
   side: OrderSide;
   quantity: number;
+  quotedPrice?: number;
+  maxSlippagePercent?: number;
 }
 
 export interface OrderSubmissionResponse {

@@ -37,3 +37,8 @@ export const COUNTRIES: CountryOption[] = [
   { code: 'GB', name: 'United Kingdom' },
   { code: 'US', name: 'United States' }
 ];
+
+/** The country's name for display, or the code itself if it isn't in the list. */
+export function countryName(code: string): string {
+  return COUNTRIES.find(country => country.code === code)?.name ?? code;
+}

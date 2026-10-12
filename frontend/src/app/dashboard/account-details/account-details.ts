@@ -26,6 +26,10 @@ import { formatMoney } from '../../shared/format';
           <dt>Opened</dt>
           <dd>{{ account.openedAt ? (account.openedAt | date: 'MMM d, y') : '—' }}</dd>
         </div>
+        <div *ngIf="account.inactiveSince" class="row">
+          <dt>Inactive since</dt>
+          <dd>{{ account.inactiveSince | date: 'MMM d, y' }} · deposit funds to reactivate</dd>
+        </div>
         <div class="row">
           <dt>Trading</dt>
           <dd>{{ account.tradingEnabled === null ? '—' : account.tradingEnabled ? 'Enabled' : 'Restricted' }}</dd>

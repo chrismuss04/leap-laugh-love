@@ -72,3 +72,15 @@ SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c 
 ON CONFLICT (client_id) DO UPDATE SET
     password_hash = EXCLUDED.password_hash,
     failed_attempts = EXCLUDED.failed_attempts;
+
+-- Staff roles: one staff account per role, for local use and tests. Staff emails must not match
+-- any client's: sign-in looks clients up first.
+INSERT INTO iam.reporting_service_credentials (email, password_hash, role, status)
+VALUES
+    ('trading.ops@leap.com', crypt('Password123!', gen_salt('bf')), 'TRADING_OPERATIONS', 'ACTIVE'),
+    ('commercial.analyst@leap.com', crypt('Password123!', gen_salt('bf')), 'COMMERCIAL_ANALYST', 'ACTIVE')
+ON CONFLICT (email) DO UPDATE SET
+    password_hash = EXCLUDED.password_hash,
+    role = EXCLUDED.role,
+    status = EXCLUDED.status,
+    failed_attempts = 0;

@@ -1,0 +1,2 @@
+# Linux recovery scripts must remain executable by Bash from Windows checkouts.
+*.sh text eol=lf

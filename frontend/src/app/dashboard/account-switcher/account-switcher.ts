@@ -24,6 +24,7 @@ import { AccountView } from '../models';
            [attr.aria-label]="account.name">
           <span class="dot" [style.background]="account.color" aria-hidden="true"></span>
           {{ account.name }}
+          <span *ngIf="account.inactiveSince" class="badge-inactive">Inactive</span>
         </a>
       </ng-container>
       <ng-container *ngIf="loading">

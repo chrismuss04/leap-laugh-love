@@ -34,6 +34,14 @@ services:
     depends_on: !reset {}
     environment: *external-datasource
 
+  # Still waits for its Kafka topic, just not for the bundled db.
+  reporting-etl:
+    depends_on: !override
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      REPORTING_DB_URL: "postgresql://paysprint:${DB_PASSWORD:-changeme}@${EXTERNAL_DB_HOST:?EXTERNAL_DB_HOST must be set to use docker-compose.external-db.yml}:${EXTERNAL_DB_PORT:-5432}/paysprint"
+
   # Keeps the bundled database (and its volume) from starting unless asked for by profile.
   db:
     profiles: ["bundled-db"]

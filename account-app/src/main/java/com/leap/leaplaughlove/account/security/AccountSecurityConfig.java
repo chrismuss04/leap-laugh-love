@@ -42,7 +42,11 @@ public class AccountSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
-                        .anyRequest().authenticated())
+                        // Settlement is called with the client's own token by order-app, or with a
+                        // settlement service token by its background recovery.
+                        .requestMatchers("/api/account/internal/**").hasAnyRole("CLIENT", "SERVICE")
+                        // Client-only: staff tokens are refused here (403).
+                        .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))

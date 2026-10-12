@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.headerDoesNotExist;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.queryParam;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withServerError;
@@ -104,5 +105,101 @@ class PriceHistoryClientTest {
         assertEquals(Optional.of(new BigDecimal("187.25")), client.fetchLatestPrice("AAPL"));
         assertTrue(client.fetchLatestPrice("NOPE").isEmpty());
     }
-}
 
+    @Test
+    @DisplayName("authenticates with the given token instead of the caller's")
+    void usesExplicitToken() {
+        OffsetDateTime now = OffsetDateTime.now();
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/AAPL/history")))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer job-token"))
+                .andRespond(withSuccess("""
+                        {"content":[{"bucketStart":"2026-01-01T00:00:00Z","close":100}],"last":true}""",
+                        MediaType.APPLICATION_JSON));
+
+        List<PriceHistoryClient.CandleClose> closes = client.fetchCloses("AAPL", now.minusDays(1), now, 300, "job-token");
+
+        mockServer.verify();
+        assertEquals(1, closes.size());
+    }
+
+    @Test
+    @DisplayName("treats an unknown symbol's history as empty")
+    void unknownSymbolHasNoHistory() {
+        OffsetDateTime now = OffsetDateTime.now();
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/NOPE/history")))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND));
+
+        assertTrue(client.fetchCloses("NOPE", now.minusDays(1), now, 300).isEmpty());
+    }
+
+    @Test
+    @DisplayName("stops paging on an empty body, an empty page, or a missing content list")
+    void stopsOnEmptyPages() {
+        OffsetDateTime now = OffsetDateTime.now();
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/A/history")))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/B/history")))
+                .andRespond(withSuccess("{\"last\":false}", MediaType.APPLICATION_JSON));
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/C/history")))
+                .andRespond(withSuccess("{\"content\":[],\"last\":false}", MediaType.APPLICATION_JSON));
+
+        assertTrue(client.fetchCloses("A", now.minusDays(1), now, 300).isEmpty());
+        assertTrue(client.fetchCloses("B", now.minusDays(1), now, 300).isEmpty());
+        assertTrue(client.fetchCloses("C", now.minusDays(1), now, 300).isEmpty());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("gives up paging after the page limit if the service never says it is last")
+    void stopsAtPageLimit() {
+        OffsetDateTime now = OffsetDateTime.now();
+        for (int page = 0; page < 20; page++) {
+            mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/AAPL/history")))
+                    .andRespond(withSuccess("""
+                            {"content":[{"bucketStart":"2026-01-01T00:00:00Z","close":1}],"last":false}""",
+                            MediaType.APPLICATION_JSON));
+        }
+
+        assertEquals(20, client.fetchCloses("AAPL", now.minusDays(1), now, 300).size());
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("sends no authorization header without a caller request or header")
+    void noCallerToken() {
+        OffsetDateTime now = OffsetDateTime.now();
+        RequestContextHolder.resetRequestAttributes();
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/AAPL/history")))
+                .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))
+                .andRespond(withSuccess("{\"content\":[],\"last\":true}", MediaType.APPLICATION_JSON));
+        mockServer.expect(requestTo(BASE_URL + "/api/marketdata/prices/AAPL"))
+                .andExpect(headerDoesNotExist(HttpHeaders.AUTHORIZATION))
+                .andRespond(withSuccess("""
+                        {"symbol":"AAPL","price":1}""", MediaType.APPLICATION_JSON));
+        client.fetchCloses("AAPL", now.minusDays(1), now, 300);
+
+        RequestContextHolder.setRequestAttributes(new ServletRequestAttributes(new MockHttpServletRequest()));
+        client.fetchLatestPrice("AAPL");
+        mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("returns empty when the latest price response has no body, and maps failures")
+    void latestPriceEdgeCases() {
+        mockServer.expect(requestTo(BASE_URL + "/api/marketdata/prices/EMPTY"))
+                .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+        mockServer.expect(requestTo(BASE_URL + "/api/marketdata/prices/BOOM"))
+                .andRespond(withServerError());
+
+        assertTrue(client.fetchLatestPrice("EMPTY").isEmpty());
+        assertThrows(QuoteUnavailableException.class, () -> client.fetchLatestPrice("BOOM"));
+    }
+
+    @Test
+    @DisplayName("QuoteUnavailableException keeps its message and cause")
+    void exceptionConstructors() {
+        RuntimeException cause = new RuntimeException("boom");
+        assertEquals("plain", new QuoteUnavailableException("plain").getMessage());
+        assertEquals(cause, new QuoteUnavailableException("wrapped", cause).getCause());
+    }
+}

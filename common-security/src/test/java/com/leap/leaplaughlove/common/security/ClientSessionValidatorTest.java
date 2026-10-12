@@ -70,4 +70,44 @@ class ClientSessionValidatorTest {
         jdbc.execute("DROP TABLE iam.client_sessions");
         assertThrows(org.springframework.dao.DataAccessException.class, this::active);
     }
+
+    // Staff roles: each role's token is checked only against its own session table.
+
+    private void addStaffSession(UUID staffSid, UUID staff) {
+        jdbc.execute("CREATE TABLE IF NOT EXISTS iam.staff_sessions (session_id UUID PRIMARY KEY, staff_id UUID, "
+                + "last_activity_at TIMESTAMP WITH TIME ZONE, expires_at TIMESTAMP WITH TIME ZONE, "
+                + "revoked_at TIMESTAMP WITH TIME ZONE)");
+        jdbc.update("INSERT INTO iam.staff_sessions VALUES (?, ?, ?, ?, NULL)",
+                staffSid, staff, now.atOffset(ZoneOffset.UTC), now.plusSeconds(3600).atOffset(ZoneOffset.UTC));
+    }
+
+    @Test void acceptsStaffSessionsForBothStaffRoles() {
+        UUID staffSid = UUID.randomUUID(), staff = UUID.randomUUID();
+        addStaffSession(staffSid, staff);
+        assertTrue(validator.isActive(Role.TRADING_OPERATIONS, staffSid, staff, now.plusSeconds(3600)));
+        assertTrue(validator.isActive(Role.COMMERCIAL_ANALYST, staffSid, staff, now.plusSeconds(3600)));
+    }
+
+    @Test void clientTokenCannotUseStaffSessionAndStaffTokenCannotUseClientSession() {
+        UUID staffSid = UUID.randomUUID(), staff = UUID.randomUUID();
+        addStaffSession(staffSid, staff);
+        // A client-role token naming a staff session, and a staff-role token naming a client session.
+        assertFalse(validator.isActive(Role.CLIENT, staffSid, staff, now.plusSeconds(3600)));
+        assertFalse(validator.isActive(Role.TRADING_OPERATIONS, sid, client, now.plusSeconds(3600)));
+        assertFalse(validator.isActive(Role.COMMERCIAL_ANALYST, sid, client, now.plusSeconds(3600)));
+    }
+
+    @Test void staffSessionsFollowTheSameIdleAndRevocationRules() {
+        UUID staffSid = UUID.randomUUID(), staff = UUID.randomUUID();
+        addStaffSession(staffSid, staff);
+        jdbc.update("UPDATE iam.staff_sessions SET last_activity_at = ?", now.minusSeconds(600).atOffset(ZoneOffset.UTC));
+        assertFalse(validator.isActive(Role.TRADING_OPERATIONS, staffSid, staff, now.plusSeconds(3600)));
+        jdbc.update("UPDATE iam.staff_sessions SET last_activity_at = ?, revoked_at = ?",
+                now.atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));
+        assertFalse(validator.isActive(Role.TRADING_OPERATIONS, staffSid, staff, now.plusSeconds(3600)));
+    }
+
+    @Test void rejectsMissingRole() {
+        assertFalse(validator.isActive(null, sid, client, now.plusSeconds(3600)));
+    }
 }
