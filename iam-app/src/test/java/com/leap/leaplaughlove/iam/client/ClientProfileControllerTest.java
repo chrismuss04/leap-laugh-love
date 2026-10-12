@@ -150,6 +150,19 @@ class ClientProfileControllerTest {
     }
 
     @Test
+    @DisplayName("PUT /me rejects a phone number that belongs to another client, however it is typed")
+    void rejectsAnotherClientsPhone() throws Exception {
+        jdbc.update("INSERT INTO iam.clients (client_id, email, phone, status) VALUES (?::uuid, ?, ?, 'ACTIVE')",
+                "22222222-2222-2222-2222-222222222222", "bob@example.com", "(212) 555-0101");
+
+        updateSettings(Map.of("phone", "+1 212-555-0101")).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", is("PHONE_TAKEN")))
+                .andExpect(jsonPath("$.message", is("That phone number is already registered to another account.")));
+
+        getMe().andExpect(jsonPath("$.phone", is("555-0100")));
+    }
+
+    @Test
     @DisplayName("PUT /me changes the email and password when the current password is correct")
     void changesEmailAndPasswordWithCurrentPassword() throws Exception {
         givenPassword("OldPassword1!");
@@ -181,7 +194,24 @@ class ClientProfileControllerTest {
                 UUID.randomUUID());
 
         updateSettings(Map.of("email", "bob@example.com", "currentPassword", "OldPassword1!"))
-                .andExpect(status().isConflict());
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", is("EMAIL_TAKEN")))
+                .andExpect(jsonPath("$.message", is("That email is already registered to another account.")));
+
+        getMe().andExpect(jsonPath("$.email", is("alice@example.com")));
+    }
+
+    // Analyst login: sign-in checks clients first, so a client can't take a staff member's email.
+    @Test
+    @DisplayName("PUT /me rejects an email that belongs to a staff member")
+    void rejectsStaffEmail() throws Exception {
+        givenPassword("OldPassword1!");
+        jdbc.update("INSERT INTO iam.reporting_service_credentials (service_id, email, password_hash, role) "
+                + "VALUES (?, 'analyst@leap.com', 'x', 'COMMERCIAL_ANALYST')", UUID.randomUUID());
+
+        updateSettings(Map.of("email", "analyst@leap.com", "currentPassword", "OldPassword1!"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.error", is("EMAIL_TAKEN")));
     }
 
     @Test
