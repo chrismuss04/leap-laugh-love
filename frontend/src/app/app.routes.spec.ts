@@ -6,6 +6,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { routes } from './app.module';
 import { AccountsComponent } from './accounts/accounts';
+import { InstrumentsComponent } from './instruments/instruments';
 import { ShellComponent } from './shell/shell';
 import { AuthService } from './services/auth.service';
 import { PriceStreamService } from './services/price-stream';
@@ -27,6 +28,11 @@ function reachesPage(url: string): boolean {
 }
 
 describe('App routes', () => {
+  it('/instruments lazy-loads the Instruments page inside the client shell', async () => {
+    const page = pages.find(route => route.path === 'instruments');
+    expect(page).toBeDefined();
+    expect(await page!.loadComponent!()).toBe(InstrumentsComponent);
+  });
   // Regression: a revert merge once dropped these, and every Accounts link silently led to the dashboard.
   for (const path of ['accounts', 'accounts/:accountId']) {
     it(`/${path} opens the Accounts page`, async () => {
@@ -74,6 +80,7 @@ describe('App routes', () => {
       .map(tree => router.serializeUrl(tree!));
 
     expect(urls).toContain('/accounts');
+    expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
     }
@@ -112,7 +119,7 @@ describe('Role-based routing', () => {
         expect(router.url).toBe('/reporting');
       });
 
-      for (const url of ['/dashboard', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
         it(`is sent from ${url} to reporting`, async () => {
           await router.navigateByUrl(url);
           expect(router.url).toBe('/reporting');
