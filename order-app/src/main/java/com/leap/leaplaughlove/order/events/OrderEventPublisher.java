@@ -87,7 +87,8 @@ public class OrderEventPublisher {
                     fillPrice,
                     order.getRejectionReason(),
                     order.getSubmittedAt(),
-                    completedAt);
+                    completedAt,
+                    order.getOrderType().name());
             // Keyed by order, so any later event for the same order lands on the same partition.
             kafkaTemplate.send(topic, orderId.toString(), event)
                     .whenComplete((result, failure) -> {

@@ -23,6 +23,7 @@ import java.util.UUID;
  * @param rejectionReason why it was rejected, or null when filled
  * @param submittedAt when the order was submitted
  * @param completedAt when it was filled or rejected
+ * @param orderType MARKET, LIMIT, STOP or STOP_LIMIT
  */
 public record OrderCompletedEvent(
         UUID eventId,
@@ -37,5 +38,6 @@ public record OrderCompletedEvent(
         BigDecimal fillPrice,
         String rejectionReason,
         OffsetDateTime submittedAt,
-        OffsetDateTime completedAt) {
+        OffsetDateTime completedAt,
+        String orderType) {
 }

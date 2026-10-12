@@ -405,4 +405,193 @@ describe('TradePanelComponent order confirmation', () => {
       expect(result.textContent).not.toContain('Review at new price');
     });
   });
+
+  describe('order types', () => {
+    beforeEach(() => loadProfile('ADVANCED'));
+
+    function typeButton(label: string): HTMLButtonElement {
+      const found = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('.types .type'))
+        .find(b => b.textContent?.trim() === label);
+      if (!found) throw new Error(`Missing order type: ${label}`);
+      return found;
+    }
+
+    function pick(label: string): void {
+      typeButton(label).click();
+      fixture.detectChanges();
+    }
+
+    function text(selector: string): string {
+      return fixture.nativeElement.querySelector(selector)?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+    }
+
+    function place() {
+      component.review();
+      fixture.detectChanges();
+      submit();
+      return http.expectOne(ordersUrl);
+    }
+
+    it('offers market, limit, stop and stop limit, starting on market', () => {
+      const labels = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('.types .type'))
+        .map(b => b.textContent?.trim());
+      expect(labels).toEqual(['Market', 'Limit', 'Stop', 'Stop limit']);
+      expect(typeButton('Market').getAttribute('aria-checked')).toBe('true');
+      expect(fixture.nativeElement.querySelector('#trade-limit')).toBeNull();
+    });
+
+    it('suggests a limit 1% better than the market, and sends a limit order without price protection', () => {
+      pick('Limit');
+      expect(component.limitPrice()).toBe(99);
+      expect(text('.price-field .distance')).toBe('1.0% below the current price');
+      component.quantity.set(3);
+      component.setTimeInForce('GTC');
+      fixture.detectChanges();
+      expect(text('[data-testid="order-sentence"]')).toBe('Buy 3 shares of AAPL at $99.00 or lower, good until cancelled.');
+
+      expect(place().request.body).toEqual({
+        accountId: 'account-1', symbol: 'AAPL', side: 'BUY', quantity: 3,
+        orderType: 'LIMIT', limitPrice: 99, timeInForce: 'GTC'
+      });
+    });
+
+    it('suggests a sell stop 5% below the market, with a break-even chip above cost', () => {
+      fixture.componentRef.setInput('accounts', [{
+        accountId: 'account-1', accountNumber: 'ACC-001', buyingPower: 100_000, shares: { AAPL: 10 },
+        maxSlippagePercent: null, averageCost: { AAPL: 80 }
+      }]);
+      component.setSide('SELL');
+      pick('Stop');
+      expect(component.stopPrice()).toBe(95);
+      expect(component.stopChips().map(c => c.label)).toEqual(['−2%', '−5%', '−10%', 'Break-even']);
+      component.setStopPrice(component.stopChips()[3].value);
+      component.quantity.set(10);
+      fixture.detectChanges();
+      expect(component.stopPrice()).toBe(80);
+      expect(component.blocker()).toBeNull();
+    });
+
+    it('blocks a sell stop at or above the market, which would trigger at once', () => {
+      component.setSide('SELL');
+      pick('Stop');
+      component.quantity.set(1);
+      component.setStopPrice(101);
+      fixture.detectChanges();
+      expect(component.blocker()).toBe('A sell stop must be below the current price ($100.00)');
+      expect(component.canReview()).toBe(false);
+    });
+
+    it('needs a price for the type before review', () => {
+      pick('Stop limit');
+      component.quantity.set(1);
+      component.setLimitPrice(null);
+      fixture.detectChanges();
+      expect(component.blocker()).toBe('Enter a limit price');
+    });
+
+    it('warns of a limit that would fill at once, and one that may never be reached', () => {
+      pick('Limit');
+      component.setLimitPrice(101);
+      expect(component.warning()).toContain('will fill right away');
+      component.setLimitPrice(60);
+      expect(component.warning()).toContain('40% from the current price');
+    });
+
+    it('checks a buy against what it will hold, not the market estimate', () => {
+      fixture.componentRef.setInput('accounts', [{
+        accountId: 'account-1', accountNumber: 'ACC-001', buyingPower: 1_000, shares: {}, maxSlippagePercent: null
+      }]);
+      pick('Stop');
+      component.quantity.set(10);
+      component.setStopPrice(98);
+      fixture.detectChanges();
+      // A stop buy holds 5% over its stop, as it can fill above it.
+      expect(component.blocker()).toBe('A buy stop must be above the current price ($100.00)');
+      component.setStopPrice(99.5);
+      expect(component.costToHold()).toBeCloseTo(1044.75);
+      component.setStopPrice(101);
+      expect(component.blocker()).toBe('Not enough buying power ($1,000.00 available)');
+    });
+
+    it('counts shares open orders hold as unavailable to sell', () => {
+      fixture.componentRef.setInput('accounts', [{
+        accountId: 'account-1', accountNumber: 'ACC-001', buyingPower: 100_000, shares: { AAPL: 10 },
+        maxSlippagePercent: null, sharesOnHold: { AAPL: 8 }
+      }]);
+      component.setSide('SELL');
+      component.quantity.set(5);
+      fixture.detectChanges();
+      expect(component.sharesHeld()).toBe(2);
+      expect(component.blocker()).toBe('Only 2 shares are free to sell — 8 are held for open orders');
+    });
+
+    describe('with a quote', () => {
+      // Last trade $100.00; a buy fills at the ask, $100.05, a sell at the bid, $99.95.
+      beforeEach(() => {
+        fixture.componentRef.setInput('quoteOffset', { ask: 0.05, bid: -0.05 });
+        fixture.detectChanges();
+      });
+
+      it('shows the bid and ask, highlighting the side the order fills at', () => {
+        expect(text('[data-testid="bid-ask"]')).toBe('Bid $99.95 · Ask $100.05');
+        expect(text('[data-testid="bid-ask"] .active')).toBe('Ask $100.05');
+        component.setSide('SELL');
+        fixture.detectChanges();
+        expect(text('[data-testid="bid-ask"] .active')).toBe('Bid $99.95');
+      });
+
+      it('prices a market buy at the ask', () => {
+        component.quantity.set(10);
+        expect(component.estimate()).toBeCloseTo(1000.5);
+      });
+
+      it('measures a buy limit from the ask, offering the ask itself', () => {
+        pick('Limit');
+        component.setLimitPrice(100);
+        fixture.detectChanges();
+        expect(text('.price-field .distance')).toBe('0.05% below the ask');
+        expect(component.limitChips()[0]).toEqual({ label: 'Ask', value: 100.05 });
+        expect(component.warning()).toBeNull();
+        component.setLimitPrice(100.05);
+        expect(component.warning()).toBe('Your limit is at or above the ask, so this will fill right away.');
+      });
+
+      it('checks a sell stop against the bid', () => {
+        component.setSide('SELL');
+        pick('Stop');
+        component.quantity.set(1);
+        // Below the last trade, but not below the bid: it would trigger at once.
+        component.setStopPrice(99.97);
+        expect(component.blocker()).toBe('A sell stop must be below the bid ($99.95)');
+        component.setStopPrice(99.9);
+        expect(component.blocker()).toBeNull();
+        expect(component.stopDistance()).toBe('0.05% below the bid');
+      });
+    });
+
+    it('keeps the order type for the next ticket, with fresh prices', () => {
+      pick('Limit');
+      component.setLimitPrice(90);
+      component.open('SELL');
+      fixture.detectChanges();
+      expect(component.orderType()).toBe('LIMIT');
+      expect(component.limitPrice()).toBe(101);
+    });
+
+    it('explains an order left open, waiting for its price', () => {
+      pick('Limit');
+      component.quantity.set(2);
+      place().flush({
+        orderId: 'order-1', accountId: 'account-1', accountNumber: 'ACC-001', symbol: 'AAPL', side: 'BUY',
+        quantity: 2, status: 'OPEN', submittedAt: '2026-09-28T12:00:00Z', filledAt: null, rejectionReason: null,
+        execution: null, accountBalanceAfter: null, orderType: 'LIMIT', limitPrice: 99, stopPrice: null,
+        timeInForce: 'DAY', expiresAt: '2026-09-29T04:00:00Z', reservedCash: 198
+      });
+      fixture.detectChanges();
+      expect(text('[data-testid="trade-result"] .result-title')).toBe('Limit order placed');
+      expect(text('[data-testid="trade-open"]')).toContain("We'll buy 2 shares of AAPL once AAPL falls to $99.00. It's good for today");
+      expect(text('[data-testid="trade-result"] .summary')).toContain('$198.00');
+    });
+  });
 });
+

@@ -33,7 +33,7 @@ export interface OrderResponse {
   accountBalanceAfter: number | null;
 }
 export interface OrderHistoryPage {
-  content: { orderId: string; symbol: string; side: string; quantity: number; status: string; submittedAt: string }[];
+  content: { orderId: string; symbol: string; side: string; quantity: number; status: string; submittedAt: string; completedAt?: string }[];
   totalElements: number;
   totalPages: number;
 }

@@ -65,9 +65,21 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
+        return recordExecution(order, price, time, "Executed at market price");
+    }
+
+    /**
+     * Writes the FILLED execution for a fill of the whole order at one price, with the given
+     * description of how it was priced. Does not change the order's own status.
+     * @param order the order being filled
+     * @param price the execution price per share
+     * @param time when the fill happened; stamped on every row the fill writes
+     * @param reason how the fill was priced, e.g. at a limit price or better
+     * @return the saved FILLED execution
+     */
+    public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time, String reason) {
         return executionRepository.saveAndFlush(new Execution(
-                order, order.getQuantity(), price, Execution.Status.FILLED,
-                "Executed at market price", time));
+                order, order.getQuantity(), price, Execution.Status.FILLED, reason, time));
     }
 
     /**

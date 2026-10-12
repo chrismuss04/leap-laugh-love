@@ -1,0 +1,201 @@
+/* Order types: the type picker, limit and stop prices, time in force, the order sentence and warnings. */
+
+/* A segmented control under the side, explained in one line beneath it. */
+.order-type {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.types {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+  padding: 3px;
+  background: var(--muted);
+  border-radius: var(--radius-md);
+}
+
+.type {
+  padding: 7px 4px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.type:hover { color: var(--foreground); }
+
+.type.on {
+  background: var(--surface-hover);
+  color: var(--foreground);
+  box-shadow: inset 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+.type:focus-visible,
+.tif-option:focus-visible,
+.chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.type-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+  animation: reveal 0.18s ease;
+}
+
+/* Limit and stop prices: a $ input, its distance from the market, and one-tap suggestions. */
+.price-field {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+  animation: reveal 0.18s ease;
+}
+
+.price-field .field-row {
+  border-bottom: none;
+  min-height: 52px;
+}
+
+.price-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.distance {
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+}
+
+.money-input {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  transition: border-color 0.15s ease;
+}
+
+.money-input:focus-within { border-color: var(--accent); }
+
+.currency {
+  color: var(--muted-foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.price-input {
+  width: 92px;
+  padding: 2px 0;
+  text-align: right;
+  font-size: 16px;
+  font-weight: 600;
+  background: transparent;
+  color: var(--foreground);
+  border: none;
+  outline: none;
+  -moz-appearance: textfield;
+}
+
+.price-input::-webkit-outer-spin-button,
+.price-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chip:hover { color: var(--foreground); border-color: var(--muted-foreground); }
+
+.chip.on {
+  background: var(--accent-muted);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+/* Time in force: two small options inline in the row. */
+.tif {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--muted);
+  border-radius: 999px;
+}
+
+.tif-option {
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tif-option.on {
+  background: var(--surface-hover);
+  color: var(--foreground);
+}
+
+/* The order in plain English, updated as it's edited. */
+.sentence {
+  margin: 4px 0 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--accent-muted);
+  border-left: 3px solid var(--accent);
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--foreground);
+}
+
+.sentence strong { font-weight: 700; color: var(--accent); }
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--warning-muted);
+  color: var(--warning);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.warning svg { flex-shrink: 0; margin-top: 2px; }
+
+@keyframes reveal {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .price-field,
+  .type-hint { animation: none; }
+}

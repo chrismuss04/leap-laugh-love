@@ -184,7 +184,7 @@ class OrderEventPublisherTest {
         Order order = filledOrder();
         OrderCompletedEvent event = new OrderCompletedEvent(UUID.randomUUID(), order.getOrderId(),
                 account.getAccountId(), account.getClientId(), aapl.getInstrumentId(), "AAPL", "BUY", 10L,
-                "FILLED", new BigDecimal("187.4200"), null, SUBMITTED_AT, COMPLETED_AT);
+                "FILLED", new BigDecimal("187.4200"), null, SUBMITTED_AT, COMPLETED_AT, "MARKET");
         RecordHeaders headers = new RecordHeaders();
 
         // The producer's own serializer. Given a mapper that still writes dates as timestamps

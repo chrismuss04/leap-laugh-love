@@ -141,6 +141,31 @@ class JwtAuthenticationFilterTest {
         assertNull(SecurityContextHolder.getContext().getAuthentication());
     }
 
+    // Order types: quote tokens read every live quote, and nothing else.
+    @Test
+    @DisplayName("quote tokens can only list live quotes, on a service that allows them")
+    void quoteTokensCanOnlyListQuotes() throws Exception {
+        var identity = new JwtService.TokenIdentity(new UUID(0L, 0L), null,
+                java.time.Instant.now().plusSeconds(60), "market-quotes");
+        when(jwtService.parseIdentity("token")).thenReturn(identity);
+        var marketFilter = new JwtAuthenticationFilter(jwtService, sessions, "market-history", "market-quotes");
+        var request = new MockHttpServletRequest("GET", "/api/marketdata/quotes");
+        request.addHeader("Authorization", "Bearer token");
+        marketFilter.doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+        assertNotNull(SecurityContextHolder.getContext().getAuthentication());
+        SecurityContextHolder.clearContext();
+
+        request.setRequestURI("/api/marketdata/quotes/AAPL");
+        marketFilter.doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+        assertNull(SecurityContextHolder.getContext().getAuthentication());
+
+        request.setRequestURI("/api/marketdata/quotes");
+        new JwtAuthenticationFilter(jwtService, sessions, "market-history")
+                .doFilterInternal(request, new MockHttpServletResponse(), filterChain);
+        assertNull(SecurityContextHolder.getContext().getAuthentication(), "a service that doesn't allow them refuses");
+        org.mockito.Mockito.verifyNoInteractions(sessions);
+    }
+
     // Staff roles: the token's role becomes its authority, after its own session table is checked.
     @ParameterizedTest
     @EnumSource(Role.class)

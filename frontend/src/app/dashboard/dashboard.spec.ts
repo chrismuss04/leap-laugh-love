@@ -4,8 +4,8 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { BalanceService } from '../services/balance';
 import { HoldingsService } from '../services/holdings';
-import { MarketDataService } from '../services/market-data';
-import { OrderHistoryPage, OrderService } from '../services/order';
+import { MarketDataService, Quote } from '../services/market-data';
+import { OpenOrder, OrderHistoryPage, OrderService } from '../services/order';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
 import { DashboardComponent } from './dashboard';
@@ -61,8 +61,8 @@ describe('DashboardComponent', () => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
     marketApi = createSpyObj('MarketDataService',
-      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    orderApi = createSpyObj('OrderService', ['getOrderHistory']);
+      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
+    orderApi = createSpyObj('OrderService', ['getOrderHistory', 'getOpenOrders']);
     portfolioApi = createSpyObj('PortfolioService', ['getHistory']);
     stream = { prices: signal<Record<string, number>>({ SPX: 5100 }), watch: vi.fn().mockName('watch') };
 
@@ -76,6 +76,8 @@ describe('DashboardComponent', () => {
     marketApi.getPreviousClose.mockImplementation(symbol => of(symbol === 'SPX' ? 5000 : 140));
     marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
     orderApi.getOrderHistory.mockReturnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
+    orderApi.getOpenOrders.mockReturnValue(of([]));
+    marketApi.getQuote.mockReturnValue(of({ symbol: 'AAPL', bidPrice: 149.9, askPrice: 150.1, lastPrice: 150 } as Quote));
     portfolioApi.getHistory.mockReturnValue(of(history));
 
     TestBed.configureTestingModule({
@@ -223,10 +225,82 @@ describe('DashboardComponent', () => {
       holdingsApi.getHoldings.mockClear();
       portfolioApi.getHistory.mockClear();
       orderApi.getOrderHistory.mockClear();
+      orderApi.getOpenOrders.mockClear();
       dashboard.onOrderPlaced();
       expect(holdingsApi.getHoldings).toHaveBeenCalled();
       expect(portfolioApi.getHistory).toHaveBeenCalled();
       expect(orderApi.getOrderHistory).toHaveBeenCalled();
+      expect(orderApi.getOpenOrders).toHaveBeenCalled();
+    });
+
+    describe('open orders', () => {
+      const openOrder = (overrides: Partial<OpenOrder>): OpenOrder => ({
+        orderId: 'open-1', accountId: 'a1', symbol: 'AAPL', side: 'BUY', quantity: 2, status: 'OPEN',
+        orderType: 'LIMIT', limitPrice: 140, stopPrice: null, timeInForce: 'DAY', submittedAt: '',
+        expiresAt: null, triggeredAt: null, reservedCash: 280, ...overrides
+      });
+
+      it('takes what open orders hold out of buying power and free shares', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([
+          openOrder({}),
+          openOrder({ orderId: 'open-2', side: 'SELL', quantity: 4, orderType: 'STOP', limitPrice: null,
+            stopPrice: 120, reservedCash: null })
+        ]));
+        dashboard.loadOpenOrders();
+
+        const [first] = dashboard.tradeAccounts();
+        expect(first.buyingPower).toBe(720);
+        expect(first.cashOnHold).toBe(280);
+        expect(first.sharesOnHold).toEqual({ AAPL: 4 });
+        expect(first.averageCost).toEqual({ AAPL: 100 });
+        // Cash still counts in the portfolio's value; buying power doesn't include what's held.
+        expect(dashboard.cash()).toBe(1500);
+        expect(dashboard.buyingPower()).toBe(1220);
+      });
+
+      it('reloads and announces an open order that filled', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        holdingsApi.getHoldings.mockClear();
+        orderApi.getOrderHistory.mockReturnValue(of({ content: [{
+          orderId: 'open-1', symbol: 'AAPL', side: 'BUY', quantity: 2, status: 'FILLED', submittedAt: '',
+          filledAt: '', executions: [{ executionId: 'e1', quantity: 2, price: 139.5, executedAt: '' }]
+        }] } as OrderHistoryPage));
+
+        orderApi.getOpenOrders.mockReturnValue(of([]));
+        dashboard.loadOpenOrders();
+
+        expect(dashboard.openOrders()).toEqual([]);
+        expect(holdingsApi.getHoldings).toHaveBeenCalled();
+        expect(dashboard.notice()).toEqual({ text: 'Limit buy of 2 AAPL filled at $139.50', tone: 'gain' });
+        dashboard.dismissNotice();
+        expect(dashboard.notice()).toBeNull();
+      });
+
+      it('drops a cancelled order at once, without announcing it', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        orderApi.getOpenOrders.mockReturnValue(of([]));
+
+        dashboard.onOpenOrderCancelled(openOrder({}));
+
+        expect(dashboard.openOrders()).toEqual([]);
+        expect(dashboard.notice()).toBeNull();
+      });
+
+      it("reads open orders' quotes, for how far ask and bid sit from the last trade", () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        expect(marketApi.getQuote).toHaveBeenCalledWith('AAPL');
+        expect(dashboard.quoteOffsets()['AAPL'].ask).toBeCloseTo(0.1);
+        expect(dashboard.quoteOffsets()['AAPL'].bid).toBeCloseTo(-0.1);
+      });
+
+      it('carries on without open orders when they cannot be loaded', () => {
+        orderApi.getOpenOrders.mockReturnValue(throwError(() => ({ status: 503 })));
+        dashboard.loadOpenOrders();
+        expect(dashboard.openOrders()).toEqual([]);
+      });
     });
 
     it('selects a symbol and loads its daily context', () => {

@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     side TEXT NOT NULL CHECK (side IN ('BUY', 'SELL')),
     quantity BIGINT NOT NULL CHECK (quantity > 0),
     status TEXT NOT NULL
-        CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED')),
+        CHECK (status IN ('SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED')),
     submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     accepted_at TIMESTAMPTZ,
     rejected_at TIMESTAMPTZ,
@@ -96,8 +96,32 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     -- rejection can be explained later. NULL when the order carried no quote.
     quoted_price NUMERIC(18,6) CHECK (quoted_price IS NULL OR quoted_price > 0),
     max_slippage_pct NUMERIC(5,2)
-        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100))
+        CHECK (max_slippage_pct IS NULL OR (max_slippage_pct >= 0 AND max_slippage_pct <= 100)),
+    -- Order types: MARKET fills at once; the others wait OPEN until the market reaches their
+    -- price (see OrderTriggerEngine). A limit caps the fill price; a stop sets when the order
+    -- starts working.
+    order_type TEXT NOT NULL DEFAULT 'MARKET'
+        CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT')),
+    limit_price NUMERIC(18,6) CHECK (limit_price IS NULL OR limit_price > 0),
+    stop_price NUMERIC(18,6) CHECK (stop_price IS NULL OR stop_price > 0),
+    -- NULL for a market order, which never waits.
+    time_in_force TEXT CHECK (time_in_force IS NULL OR time_in_force IN ('DAY', 'GTC')),
+    expires_at TIMESTAMPTZ,
+    -- When a stop order's stop price was reached.
+    triggered_at TIMESTAMPTZ,
+    cancelled_at TIMESTAMPTZ,
+    expired_at TIMESTAMPTZ,
+    -- Cash an OPEN buy holds back from buying power, so open orders can't spend it twice.
+    reserved_cash NUMERIC(18,2) CHECK (reserved_cash IS NULL OR reserved_cash >= 0),
+    CONSTRAINT orders_limit_price_by_type
+        CHECK ((order_type IN ('LIMIT', 'STOP_LIMIT')) = (limit_price IS NOT NULL)),
+    CONSTRAINT orders_stop_price_by_type
+        CHECK ((order_type IN ('STOP', 'STOP_LIMIT')) = (stop_price IS NOT NULL))
 );
+
+-- Backs OrderTriggerEngine's scan and the per-account holds on cash and shares.
+CREATE INDEX IF NOT EXISTS idx_orders_open
+    ON trading.orders (account_id, instrument_id) WHERE status = 'OPEN';
 
 -- Backs OrderRepository's chronological (newest-first) paginated history lookup by account.
 CREATE INDEX IF NOT EXISTS idx_orders_account_submitted_at_order_id

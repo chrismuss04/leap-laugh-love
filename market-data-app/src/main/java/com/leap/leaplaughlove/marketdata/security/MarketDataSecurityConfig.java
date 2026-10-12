@@ -52,12 +52,14 @@ public class MarketDataSecurityConfig {
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         // order-app's seeded fills read history with a market-history service token.
                         .requestMatchers(HttpMethod.GET, "/api/marketdata/prices/*/history").hasAnyRole("CLIENT", "SERVICE")
+                        // order-app's trigger engine reads every quote with a market-quotes service token.
+                        .requestMatchers(HttpMethod.GET, "/api/marketdata/quotes").hasAnyRole("CLIENT", "SERVICE")
                         // Client-only: staff tokens are refused here (403).
                         .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
                                 JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))
-                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, "market-history"), UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, "market-history", "market-quotes"), UsernamePasswordAuthenticationFilter.class);
         return http.build();
     }
 

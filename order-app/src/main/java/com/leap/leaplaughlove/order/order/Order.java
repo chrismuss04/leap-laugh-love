@@ -12,7 +12,9 @@ import com.leap.leaplaughlove.order.instrument.Instrument;
 /**
  * Represents a trading order placed for a specific instrument.
  * Decoupled from Account JPA entity: stores accountId directly.
- * Follows the audit lifecycle: SUBMITTED -> ACCEPTED or REJECTED -> FILLED.
+ * Follows the audit lifecycle: SUBMITTED -> ACCEPTED or REJECTED -> FILLED. Orders other than
+ * market orders wait in between: SUBMITTED -> OPEN -> ACCEPTED -> FILLED once the market reaches
+ * their price, or OPEN -> CANCELLED or EXPIRED if it never does.
  */
 @Entity
 @Table(name = "orders", schema = "trading")
@@ -24,10 +26,37 @@ public class Order {
     public enum Side { BUY, SELL }
 
     /**
-     * The status of the order matching the database check constraint:
-     * SUBMITTED, ACCEPTED, REJECTED, FILLED.
+     * The status of the order matching the database check constraint. OPEN orders are waiting
+     * for the market to reach their price; CANCELLED and EXPIRED ones never executed.
      */
-    public enum Status { SUBMITTED, ACCEPTED, REJECTED, FILLED }
+    public enum Status { SUBMITTED, OPEN, ACCEPTED, REJECTED, FILLED, CANCELLED, EXPIRED }
+
+    /**
+     * How the order is priced. MARKET fills at once at the live quote. LIMIT fills only at its
+     * limit price or better. STOP becomes a market order once the price reaches its stop price,
+     * and STOP_LIMIT becomes a limit order then.
+     */
+    public enum OrderType {
+        MARKET, LIMIT, STOP, STOP_LIMIT;
+
+        /**
+         * Returns whether this type carries a limit price.
+         * @return true for LIMIT and STOP_LIMIT
+         */
+        public boolean hasLimit() { return this == LIMIT || this == STOP_LIMIT; }
+
+        /**
+         * Returns whether this type carries a stop price.
+         * @return true for STOP and STOP_LIMIT
+         */
+        public boolean hasStop() { return this == STOP || this == STOP_LIMIT; }
+    }
+
+    /**
+     * How long an order that hasn't filled keeps working: DAY until the end of the day it was
+     * placed, GTC (good till cancelled) until cancelled, for at most 90 days.
+     */
+    public enum TimeInForce { DAY, GTC }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -75,6 +104,35 @@ public class Order {
 
     @Column(name = "max_slippage_pct", precision = 5, scale = 2)
     private BigDecimal maxSlippagePercent;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "order_type", nullable = false)
+    private OrderType orderType = OrderType.MARKET;
+
+    @Column(name = "limit_price", precision = 18, scale = 6)
+    private BigDecimal limitPrice;
+
+    @Column(name = "stop_price", precision = 18, scale = 6)
+    private BigDecimal stopPrice;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "time_in_force")
+    private TimeInForce timeInForce;
+
+    @Column(name = "expires_at")
+    private OffsetDateTime expiresAt;
+
+    @Column(name = "triggered_at")
+    private OffsetDateTime triggeredAt;
+
+    @Column(name = "cancelled_at")
+    private OffsetDateTime cancelledAt;
+
+    @Column(name = "expired_at")
+    private OffsetDateTime expiredAt;
+
+    @Column(name = "reserved_cash", precision = 18, scale = 2)
+    private BigDecimal reservedCash;
 
     /**
      * Protected no-argument constructor for JPA.
@@ -139,6 +197,62 @@ public class Order {
                  OffsetDateTime filledAt, String rejectionReason) {
         this(orderId, account != null ? account.getAccountId() : null, instrument, side,
              quantity, status, submittedAt, acceptedAt, rejectedAt, filledAt, rejectionReason);
+    }
+
+    /**
+     * Sets how the order is priced and how long it may wait. Called once, before the order is
+     * first stored.
+     * @param orderType the order type
+     * @param limitPrice the limit price, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the stop price, for STOP and STOP_LIMIT orders
+     * @param timeInForce how long it may wait; null for a market order
+     * @param expiresAt when it expires if still OPEN; null for a market order
+     */
+    public void setConditions(OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                              TimeInForce timeInForce, OffsetDateTime expiresAt) {
+        this.orderType = orderType != null ? orderType : OrderType.MARKET;
+        this.limitPrice = limitPrice;
+        this.stopPrice = stopPrice;
+        this.timeInForce = timeInForce;
+        this.expiresAt = expiresAt;
+    }
+
+    /**
+     * Transitions order state to OPEN: it waits for the market to reach its price.
+     * @param reservedCash the cash it holds back from buying power while open; null for a sell
+     */
+    public void markOpen(BigDecimal reservedCash) {
+        this.status = Status.OPEN;
+        this.reservedCash = reservedCash;
+    }
+
+    /**
+     * Records that a stop order's stop price was reached. A STOP_LIMIT order stays OPEN, now
+     * working as a limit order. Only the first trigger is kept.
+     * @param triggeredAt the timestamp when the stop price was reached
+     */
+    public void markTriggered(OffsetDateTime triggeredAt) {
+        if (this.triggeredAt == null) {
+            this.triggeredAt = triggeredAt != null ? triggeredAt : OffsetDateTime.now();
+        }
+    }
+
+    /**
+     * Transitions an OPEN order to CANCELLED at the client's request.
+     * @param cancelledAt the timestamp when the order was cancelled
+     */
+    public void markCancelled(OffsetDateTime cancelledAt) {
+        this.status = Status.CANCELLED;
+        this.cancelledAt = cancelledAt != null ? cancelledAt : OffsetDateTime.now();
+    }
+
+    /**
+     * Transitions an OPEN order to EXPIRED once its time in force has run out.
+     * @param expiredAt the timestamp when the order expired
+     */
+    public void markExpired(OffsetDateTime expiredAt) {
+        this.status = Status.EXPIRED;
+        this.expiredAt = expiredAt != null ? expiredAt : OffsetDateTime.now();
     }
 
     /**
@@ -233,6 +347,19 @@ public class Order {
      */
     public OffsetDateTime getFilledAt() { return filledAt; }
     /**
+     * Returns when the order last changed for good: when it filled, was rejected, cancelled or
+     * expired - or, while it is still working, when it was submitted. Order history is listed and
+     * filtered by this, matching OrderRepository's queries.
+     * @return the completion time, or the submission time while the order is not final
+     */
+    public OffsetDateTime getCompletedAt() {
+        if (filledAt != null) return filledAt;
+        if (rejectedAt != null) return rejectedAt;
+        if (cancelledAt != null) return cancelledAt;
+        if (expiredAt != null) return expiredAt;
+        return submittedAt;
+    }
+    /**
      * Returns the reason for order rejection, if any.
      * @return the rejection reason
      */
@@ -276,5 +403,50 @@ public class Order {
         this.quotedPrice = quotedPrice;
         this.maxSlippagePercent = maxSlippagePercent;
     }
+    /**
+     * Returns how the order is priced.
+     * @return the order type; MARKET for an order stored before order types existed
+     */
+    public OrderType getOrderType() { return orderType != null ? orderType : OrderType.MARKET; }
+    /**
+     * Returns the limit price of a LIMIT or STOP_LIMIT order.
+     * @return the limit price, or null
+     */
+    public BigDecimal getLimitPrice() { return limitPrice; }
+    /**
+     * Returns the stop price of a STOP or STOP_LIMIT order.
+     * @return the stop price, or null
+     */
+    public BigDecimal getStopPrice() { return stopPrice; }
+    /**
+     * Returns how long the order may wait to fill.
+     * @return the time in force, or null for a market order
+     */
+    public TimeInForce getTimeInForce() { return timeInForce; }
+    /**
+     * Returns when the order expires if it is still OPEN.
+     * @return the expiry, or null for a market order
+     */
+    public OffsetDateTime getExpiresAt() { return expiresAt; }
+    /**
+     * Returns when a stop order's stop price was reached.
+     * @return the trigger time, or null if not reached
+     */
+    public OffsetDateTime getTriggeredAt() { return triggeredAt; }
+    /**
+     * Returns when the order was cancelled.
+     * @return the cancellation time, or null
+     */
+    public OffsetDateTime getCancelledAt() { return cancelledAt; }
+    /**
+     * Returns when the order expired.
+     * @return the expiry time, or null
+     */
+    public OffsetDateTime getExpiredAt() { return expiredAt; }
+    /**
+     * Returns the cash an OPEN buy holds back from buying power.
+     * @return the reserved cash, or null for a sell or a market order
+     */
+    public BigDecimal getReservedCash() { return reservedCash; }
 }
 

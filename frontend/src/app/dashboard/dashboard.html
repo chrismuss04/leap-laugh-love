@@ -63,7 +63,7 @@
     <section class="stats" aria-label="Account summary">
       <div class="stat">
         <span class="stat-label">Buying power</span>
-        <span class="stat-value num" data-testid="stat-buying-power">{{ money(cash()) }}</span>
+        <span class="stat-value num" data-testid="stat-buying-power">{{ money(buyingPower()) }}</span>
       </div>
       <div class="stat">
         <span class="stat-label">Investments</span>
@@ -86,18 +86,27 @@
                            [accounts]="accounts()" [loading]="accountsLoading()"></app-accounts-overview>
 
     <app-positions-list [holdings]="holdings()" [loading]="accountsLoading() && !accountError()"
-                        [selected]="selectedSymbol()"
+                        [selected]="selectedSymbol()" [openOrders]="openOrders()"
                         (select)="selectSymbol($event)"
                         (trade)="trade($event.symbol, $event.side)"></app-positions-list>
   </div>
 
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
-                     [price]="selectedPrice()" [accounts]="tradeAccounts()"
+                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [accounts]="tradeAccounts()"
                      [preferredAccountId]="accountId()"
                      (placed)="onOrderPlaced()"
                      (unconfirmed)="onOrderPlaced()"></app-trade-panel>
+    <app-open-orders [orders]="openOrders()" [prices]="prices()" [quoteOffsets]="quoteOffsets()"
+                     [accountNumbers]="accountNumbers()"
+                     (cancelled)="onOpenOrderCancelled($event)"></app-open-orders>
     <app-account-details *ngIf="isAccountView()" [account]="selectedAccount()"></app-account-details>
     <app-recent-activity *ngIf="!isAccountView()" [orders]="orders()" [loading]="ordersLoading()" [error]="ordersError()"></app-recent-activity>
   </aside>
+</div>
+
+<div *ngIf="notice() as notice" class="toast" role="status" [attr.data-tone]="notice.tone" data-testid="order-notice">
+  <span class="toast-dot" aria-hidden="true"></span>
+  <span class="toast-text">{{ notice.text }}</span>
+  <button type="button" class="toast-close" aria-label="Dismiss" (click)="dismissNotice()">×</button>
 </div>

@@ -2,9 +2,9 @@ import { Component, DestroyRef, OnInit, ViewChild, computed, effect, inject, sig
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
-import { map } from 'rxjs';
+import { catchError, forkJoin, interval, map, of } from 'rxjs';
 import { AccountValuationService } from '../services/account-valuation';
-import { OrderHistoryItem, OrderService, OrderSide } from '../services/order';
+import { OpenOrder, OrderHistoryItem, OrderService, OrderSide } from '../services/order';
 import { PriceStreamService } from '../services/price-stream';
 import { PORTFOLIO_RANGES, PortfolioHistory, PortfolioRange, PortfolioService } from '../services/portfolio';
 import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models';
@@ -18,11 +18,23 @@ import { AccountSwitcherComponent } from './account-switcher/account-switcher';
 import { AccountsOverviewComponent } from './accounts-overview/accounts-overview';
 import { InactiveNoticeComponent } from './inactive-notice/inactive-notice';
 import { AccountDetailsComponent } from './account-details/account-details';
+import { OpenOrdersComponent } from './open-orders/open-orders';
+import { MarketDataService } from '../services/market-data';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
+import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
 
 /** Bucket size of market-data's intraday closes (see MarketDataService.getIntradayCloses). */
 const INTRADAY_INTERVAL_MS = 300_000;
+
+/**
+ * How often open orders are checked for fills while there are any, and the bid and ask of the
+ * traded symbol and open orders' symbols are refreshed.
+ */
+const OPEN_ORDERS_POLL_MS = 5_000;
+
+/** How long a notice about an open order's outcome stays up. */
+const NOTICE_MS = 6_000;
 
 /**
  * The signed-in home page. At /dashboard it shows every account combined, with a breakdown by
@@ -33,7 +45,8 @@ const INTRADAY_INTERVAL_MS = 300_000;
     imports: [
         CommonModule, TickerStripComponent, SymbolSearchComponent, LineChartComponent,
         PositionsListComponent, RecentActivityComponent, TradePanelComponent, RollingNumberComponent,
-        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent, InactiveNoticeComponent
+        AccountSwitcherComponent, AccountsOverviewComponent, AccountDetailsComponent, InactiveNoticeComponent,
+        OpenOrdersComponent
     ],
     templateUrl: './dashboard.html',
     styleUrl: './dashboard.css',
@@ -46,6 +59,7 @@ export class DashboardComponent implements OnInit {
 
   private readonly valuation = inject(AccountValuationService);
   private readonly orderService = inject(OrderService);
+  private readonly marketData = inject(MarketDataService);
   private readonly portfolioService = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
   private readonly destroyRef = inject(DestroyRef);
@@ -72,6 +86,25 @@ export class DashboardComponent implements OnInit {
 
   readonly selectedSymbol = signal<string | null>(null);
   readonly scrubIndex = signal<number | null>(null);
+
+  /** Limit and stop orders waiting for their price, across all accounts. */
+  readonly allOpenOrders = signal<OpenOrder[]>([]);
+  /**
+   * Ask and bid offsets from the last trade for the traded symbol and symbols with open orders:
+   * orders fill at those, not the last trade.
+   */
+  readonly quoteOffsets = signal<Record<string, QuoteOffset>>({});
+
+  /** The traded symbol's ask and bid offsets, for the trade panel. */
+  readonly selectedQuoteOffset = computed(() => {
+    const symbol = this.selectedSymbol();
+    return symbol ? this.quoteOffsets()[symbol] ?? null : null;
+  });
+  /** The open orders last seen, so one that has gone can be looked up in activity. */
+  private awaitingOutcome = new Map<string, OpenOrder>();
+  /** A short notice that an open order filled, was rejected or expired. */
+  readonly notice = signal<{ text: string; tone: 'gain' | 'loss' | 'flat' } | null>(null);
+  private noticeTimer?: ReturnType<typeof setTimeout>;
 
   // ---- Derived state ----
   readonly accountsLoading = this.valuation.accountsLoading;
@@ -106,6 +139,27 @@ export class DashboardComponent implements OnInit {
       .filter(a => !accountId || a.accountId === accountId)
       .reduce((sum, a) => sum + a.balance, 0) ?? null;
   });
+
+  /** Open orders in scope: one account's, or all of them. */
+  readonly openOrders = computed(() => {
+    const accountId = this.accountId();
+    return this.allOpenOrders().filter(o => !accountId || o.accountId === accountId);
+  });
+
+  private readonly holds = computed(() => holdsByAccount(this.allOpenOrders()));
+
+  /** Cash less what open buy orders hold back: what a new order can actually spend. */
+  readonly buyingPower = computed(() => {
+    const cash = this.cash();
+    if (cash === null) {
+      return null;
+    }
+    const held = this.openOrders().reduce((sum, o) => sum + (o.side === 'BUY' ? o.reservedCash ?? 0 : 0), 0);
+    return cash - held;
+  });
+
+  readonly accountNumbers = computed<Record<string, string>>(() =>
+    Object.fromEntries((this.balance()?.accounts ?? []).map(a => [a.accountId, a.accountNumber])));
 
   readonly marketValue = computed(() => this.holdings().reduce((sum, h) => sum + (h.marketValue ?? 0), 0));
 
@@ -224,12 +278,16 @@ export class DashboardComponent implements OnInit {
     const summaries = this.valuation.accountSummaries();
     return balance.accounts.map(account => {
       const positions = holdings?.accounts.find(a => a.accountId === account.accountId)?.positions ?? [];
+      const holds = this.holds()[account.accountId];
       return {
         accountId: account.accountId,
         accountNumber: account.accountNumber,
-        buyingPower: account.balance,
+        buyingPower: account.balance - (holds?.cash ?? 0),
         shares: Object.fromEntries(positions.map(p => [p.symbol, p.quantity])),
-        maxSlippagePercent: summaries.find(s => s.accountId === account.accountId)?.maxSlippagePercent ?? null
+        maxSlippagePercent: summaries.find(s => s.accountId === account.accountId)?.maxSlippagePercent ?? null,
+        sharesOnHold: holds?.shares ?? {},
+        cashOnHold: holds?.cash ?? 0,
+        averageCost: Object.fromEntries(positions.map(p => [p.symbol, p.averageCost]))
       };
     });
   });
@@ -281,6 +339,16 @@ export class DashboardComponent implements OnInit {
       this.stream.watch(symbols);
     });
 
+    // A newly traded symbol gets its bid and ask at once rather than at the next poll.
+    effect(() => {
+      const symbol = this.selectedSymbol();
+      untracked(() => {
+        if (symbol && !this.quoteOffsets()[symbol]) {
+          this.loadQuoteOffsets();
+        }
+      });
+    });
+
     // Changing scope drops any scrub and points the trade panel at something held in the new scope.
     effect(() => {
       this.accountId();
@@ -307,7 +375,115 @@ export class DashboardComponent implements OnInit {
     this.loadAccounts();
     this.loadHistory();
     this.loadOrders();
+    this.loadOpenOrders();
     this.valuation.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
+
+    // Open orders fill in the background; check on them while there are any.
+    interval(OPEN_ORDERS_POLL_MS)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.allOpenOrders().length > 0) {
+          // Refreshes the quotes too, once the open orders are in.
+          this.loadOpenOrders();
+        } else {
+          this.loadQuoteOffsets();
+        }
+      });
+    this.destroyRef.onDestroy(() => clearTimeout(this.noticeTimer));
+  }
+
+  /**
+   * Loads open orders. One that was open and isn't any more filled, was rejected or expired, so
+   * cash, positions and activity are reloaded - and the client is told how it ended.
+   */
+  loadOpenOrders(): void {
+    this.orderService.getOpenOrders()
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: orders => {
+          const open = new Set(orders.map(o => o.orderId));
+          const gone = [...this.awaitingOutcome.values()].filter(o => !open.has(o.orderId));
+          this.allOpenOrders.set(orders);
+          this.awaitingOutcome = new Map(orders.map(o => [o.orderId, o]));
+          this.loadQuoteOffsets();
+          if (gone.length) {
+            this.loadAccounts();
+            this.loadHistory();
+            this.loadOrders(gone);
+          }
+        },
+        // Open orders are extra; the rest of the dashboard works without them.
+        error: () => {}
+      });
+  }
+
+  /**
+   * Reads the quote of the traded symbol and each symbol with open orders, for how far its ask and
+   * bid sit from the streamed last trade. The spread barely changes between polls, so the trade
+   * panel and open orders add these offsets to the live price to show, tick by tick, the price an
+   * order would actually fill at.
+   */
+  private loadQuoteOffsets(): void {
+    const symbols = [...new Set([
+      ...(this.selectedSymbol() ? [this.selectedSymbol()!] : []),
+      ...this.allOpenOrders().map(o => o.symbol)
+    ])];
+    if (!symbols.length) {
+      return;
+    }
+    forkJoin(symbols.map(symbol => this.marketData.getQuote(symbol).pipe(
+      map(quote => [symbol, {
+        ask: Number(quote.askPrice) - Number(quote.lastPrice),
+        bid: Number(quote.bidPrice) - Number(quote.lastPrice)
+      }] as const),
+      // Without a quote the card falls back to the last trade.
+      catchError(() => of(null))
+    )))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(entries => {
+        const offsets: Record<string, QuoteOffset> = {};
+        for (const entry of entries) {
+          if (entry && Number.isFinite(entry[1].ask) && Number.isFinite(entry[1].bid)) {
+            offsets[entry[0]] = entry[1];
+          }
+        }
+        this.quoteOffsets.set(offsets);
+      });
+  }
+
+  /** An open order was cancelled from the card, so it holds nothing any more. */
+  onOpenOrderCancelled(order: OpenOrder): void {
+    this.awaitingOutcome.delete(order.orderId);
+    this.allOpenOrders.update(orders => orders.filter(o => o.orderId !== order.orderId));
+    this.loadOpenOrders();
+    this.loadOrders();
+  }
+
+  dismissNotice(): void {
+    clearTimeout(this.noticeTimer);
+    this.notice.set(null);
+  }
+
+  private showNotice(text: string, tone: 'gain' | 'loss' | 'flat'): void {
+    clearTimeout(this.noticeTimer);
+    this.notice.set({ text, tone });
+    this.noticeTimer = setTimeout(() => this.notice.set(null), NOTICE_MS);
+  }
+
+  /** Tells the client how open orders that just left the list ended, from their activity. */
+  private announce(gone: OpenOrder[], activity: OrderHistoryItem[]): void {
+    for (const order of gone) {
+      const outcome = activity.find(a => a.orderId === order.orderId);
+      const what = `${openOrderTitle(order)} of ${order.quantity} ${order.symbol}`;
+      if (outcome?.status === 'FILLED') {
+        const price = outcome.executions[0]?.price;
+        this.showNotice(`${what} filled${price != null ? ` at ${formatMoney(price)}` : ''}`, 'gain');
+      } else if (outcome?.status === 'REJECTED') {
+        this.showNotice(`${what} couldn’t be filled — see Recent activity`, 'loss');
+      } else if (outcome?.status === 'EXPIRED') {
+        this.showNotice(`${what} expired`, 'flat');
+      }
+    }
   }
 
   loadAccounts(): void {
@@ -343,7 +519,8 @@ export class DashboardComponent implements OnInit {
       });
   }
 
-  loadOrders(): void {
+  /** Loads recent activity, then says how any open orders that just left the list ended. */
+  loadOrders(announce: OpenOrder[] = []): void {
     this.ordersError.set(null);
     this.orderService.getOrderHistory(0, 5)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -351,6 +528,7 @@ export class DashboardComponent implements OnInit {
         next: page => {
           this.orders.set(page.content);
           this.ordersLoading.set(false);
+          this.announce(announce, page.content);
         },
         error: () => {
           this.ordersError.set('We couldn’t load your recent orders.');
@@ -385,5 +563,6 @@ export class DashboardComponent implements OnInit {
     this.loadAccounts();
     this.loadHistory();
     this.loadOrders();
+    this.loadOpenOrders();
   }
 }

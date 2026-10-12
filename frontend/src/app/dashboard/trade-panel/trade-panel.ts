@@ -1,16 +1,20 @@
-import { Component, ElementRef, EventEmitter, OnChanges, OnInit, Output, SimpleChanges, ViewChild, computed, inject, input, signal } from '@angular/core';
+import { Component, ElementRef, EventEmitter, OnChanges, OnInit, Output, SimpleChanges, ViewChild, computed, effect, inject, input, signal, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { Subscription } from 'rxjs';
 import { TradeAccount } from '../models';
-import { OrderService, OrderSide, OrderSubmissionResponse } from '../../services/order';
+import { OrderService, OrderSide, OrderSubmissionRequest, OrderSubmissionResponse, OrderType, TimeInForce } from '../../services/order';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { formatMoney } from '../../shared/format';
 import { MarketDataService } from '../../services/market-data';
 import { ProtectionPickerComponent } from '../../shared/protection-picker';
 import { formatProtection, protectionBand } from '../../shared/price-protection';
+import {
+  ORDER_TYPES, QuoteOffset, describeOrder, distanceLabel, distanceTo, orderTypeHint, orderTypeLabel,
+  reservePricePerShare, sentenceText, timeInForceLabel, toCents
+} from '../../shared/order-types';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
 
@@ -19,14 +23,34 @@ type Step = 'edit' | 'review' | 'submitting' | 'result' | 'unconfirmed';
 /** How order-app starts the reason for rejecting an order the price moved too far on. */
 const PRICE_MOVED_REASON = 'Price moved';
 
+/** A limit or stop further than this from the market may never be reached, so the ticket says so. */
+const FAR_FROM_MARKET_PERCENT = 25;
+
+/** A one-tap price for a limit or stop field. */
+export interface PriceChip {
+  label: string;
+  value: number;
+}
+
 /**
- * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side, enter whole shares, see
- * the live estimate against buying power (or shares held), review, then submit. Orders are market
- * orders - order-app fills them immediately at the live ask (buy) or bid (sell).
+ * Buy/sell ticket for one symbol, modelled on Robinhood's: pick a side and an order type, enter
+ * whole shares (and a limit or stop price), see the live estimate against buying power (or shares
+ * held), review, then submit.
  *
- * Price protection: reviewing captures the price the order is quoted at (the ask for a buy, the bid
- * for a sell), and order-app rejects the order if it would fill further than the account's saved
- * protection - or the one picked on the ticket - from that price.
+ * Order types: market orders fill immediately at the live ask (buy) or bid (sell). Limit, stop and
+ * stop limit orders wait in order-app until the market reaches their price, holding back the cash
+ * or shares they may need; the ticket explains each one as a plain-English sentence that updates
+ * as it's edited, offers one-tap prices, and warns before an order that would fill at once or may
+ * never fill.
+ *
+ * Bid and ask: the live price is the last trade, but a buy fills at the ask and a sell at the bid,
+ * a little above and below it. The ticket shows both, and measures limit and stop prices, their
+ * suggestions and its checks from the side's own price, so an order reads as reached exactly when
+ * order-app would fill it.
+ *
+ * Price protection (market orders only): reviewing captures the price the order is quoted at (the
+ * ask for a buy, the bid for a sell), and order-app rejects the order if it would fill further than
+ * the account's saved protection - or the one picked on the ticket - from that price.
  *
  * The app is zoneless, so all template state lives in signals: an HTTP callback or a parent's
  * timer that sets a plain field wouldn't schedule a refresh.
@@ -35,12 +59,15 @@ const PRICE_MOVED_REASON = 'Price moved';
     selector: 'app-trade-panel',
     imports: [CommonModule, FormsModule, RouterLink, RollingNumberComponent, ProtectionPickerComponent],
     templateUrl: './trade-panel.html',
-    styleUrl: './trade-panel.css'
+    styleUrls: ['./trade-panel.css', './order-type.css']
 })
 export class TradePanelComponent implements OnChanges, OnInit {
   readonly symbol = input<string | null>(null);
   readonly name = input<string | null>(null);
+  /** The live last-trade price. */
   readonly price = input<number | null>(null);
+  /** How far the symbol's ask and bid sit from its last trade; null until its quote is read. */
+  readonly quoteOffset = input<QuoteOffset | null>(null);
   readonly accounts = input<TradeAccount[]>([]);
   /** Account to trade in by default, e.g. the one the dashboard is scoped to. */
   readonly preferredAccountId = input<string | null>(null);
@@ -68,6 +95,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
     return level == null || level === 'NOVICE' || (this.estimate() ?? 0) >= 25_000;
   });
 
+  /** Novices get a short explanation of the order type in the confirmation. */
+  readonly novice = computed(() => this.experienceLevel() == null || this.experienceLevel() === 'NOVICE');
+
   readonly side = signal<OrderSide>('BUY');
   readonly accountId = signal<string | null>(null);
   readonly quantity = signal<number | null>(null);
@@ -76,9 +106,98 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly submitError = signal<string | null>(null);
 
   money = formatMoney;
+  typeLabel = orderTypeLabel;
+  tifLabel = timeInForceLabel;
+  readonly orderTypes = ORDER_TYPES;
 
   private readonly orders = inject(OrderService);
   private readonly marketData = inject(MarketDataService);
+
+  // ---- Order type ----
+  readonly orderType = signal<OrderType>('MARKET');
+  readonly limitPrice = signal<number | null>(null);
+  readonly stopPrice = signal<number | null>(null);
+  readonly timeInForce = signal<TimeInForce>('DAY');
+  /** Whether the client has set a price themselves; until then the ticket suggests one. */
+  private readonly pricesTouched = signal(false);
+
+  /** The live ask and bid: the last trade moved by the latest quote's offsets. */
+  readonly ask = computed(() => {
+    const price = this.price();
+    const offset = this.quoteOffset();
+    return price == null || !offset ? null : price + offset.ask;
+  });
+  readonly bid = computed(() => {
+    const price = this.price();
+    const offset = this.quoteOffset();
+    return price == null || !offset ? null : price + offset.bid;
+  });
+
+  /** The price this side fills at - the ask for a buy, the bid for a sell - or the last trade until the quote is in. */
+  readonly sidePrice = computed(() => (this.side() === 'BUY' ? this.ask() : this.bid()) ?? this.price());
+
+  /** "the ask" / "the bid", or "the current price" while there's no quote. */
+  readonly sideReference = computed(() => this.quoteOffset() == null
+    ? 'the current price'
+    : this.side() === 'BUY' ? 'the ask' : 'the bid');
+
+  readonly isMarket = computed(() => this.orderType() === 'MARKET');
+  readonly hasLimit = computed(() => this.orderType() === 'LIMIT' || this.orderType() === 'STOP_LIMIT');
+  readonly hasStop = computed(() => this.orderType() === 'STOP' || this.orderType() === 'STOP_LIMIT');
+  readonly typeHint = computed(() => orderTypeHint(this.orderType(), this.side()));
+
+  constructor() {
+    // Suggest prices for a new limit or stop once there's a live price to start from: a limit 1%
+    // better than the market (a limit at the market would just fill now), a stop 5% away in the
+    // direction it protects against. The client's own prices win.
+    effect(() => {
+      const price = this.sidePrice();
+      const type = this.orderType();
+      const side = this.side();
+      if (price == null || type === 'MARKET' || this.pricesTouched()) {
+        return;
+      }
+      untracked(() => {
+        const stop = toCents(side === 'SELL' ? price * 0.95 : price * 1.05);
+        if (this.hasStop() && this.stopPrice() == null) {
+          this.stopPrice.set(stop);
+        }
+        if (this.hasLimit() && this.limitPrice() == null) {
+          this.limitPrice.set(type === 'STOP_LIMIT'
+            ? this.stopPrice() ?? stop
+            : toCents(side === 'BUY' ? price * 0.99 : price * 1.01));
+        }
+      });
+    });
+  }
+
+  setOrderType(type: OrderType): void {
+    if (this.step() !== 'edit' || type === this.orderType()) {
+      return;
+    }
+    this.orderType.set(type);
+    if (!this.pricesTouched()) {
+      // Fresh suggestions for the new type (see the constructor's effect).
+      this.limitPrice.set(null);
+      this.stopPrice.set(null);
+    }
+  }
+
+  setLimitPrice(value: number | null): void {
+    this.pricesTouched.set(true);
+    this.limitPrice.set(value);
+  }
+
+  setStopPrice(value: number | null): void {
+    this.pricesTouched.set(true);
+    this.stopPrice.set(value);
+  }
+
+  setTimeInForce(value: TimeInForce): void {
+    if (this.step() === 'edit') {
+      this.timeInForce.set(value);
+    }
+  }
 
   // ---- Price protection ----
   /** Protection picked on the ticket for this order only, kept with the account it was picked for. */
@@ -153,16 +272,36 @@ export class TradePanelComponent implements OnChanges, OnInit {
   }
 
   setSide(side: OrderSide): void {
-    if (this.step() === 'edit') {
+    if (this.step() === 'edit' && side !== this.side()) {
       this.side.set(side);
+      if (!this.pricesTouched()) {
+        // A stop protects the other way now; suggest again.
+        this.limitPrice.set(null);
+        this.stopPrice.set(null);
+      }
     }
   }
 
   readonly account = computed(() => this.accounts().find(a => a.accountId === this.accountId()));
 
-  readonly sharesHeld = computed(() => {
+  /** Shares owned in this account. */
+  readonly sharesOwned = computed(() => {
     const symbol = this.symbol();
     return symbol ? this.account()?.shares[symbol] ?? 0 : 0;
+  });
+
+  /** Shares already promised to open sell orders. */
+  readonly sharesOnHold = computed(() => {
+    const symbol = this.symbol();
+    return symbol ? this.account()?.sharesOnHold?.[symbol] ?? 0 : 0;
+  });
+
+  /** Shares free to sell: owned, less those open sell orders hold. */
+  readonly sharesHeld = computed(() => Math.max(0, this.sharesOwned() - this.sharesOnHold()));
+
+  readonly averageCost = computed(() => {
+    const symbol = this.symbol();
+    return symbol ? this.account()?.averageCost?.[symbol] ?? null : null;
   });
 
   readonly validQuantity = computed(() => {
@@ -170,9 +309,31 @@ export class TradePanelComponent implements OnChanges, OnInit {
     return quantity != null && Number.isInteger(quantity) && quantity >= 1;
   });
 
+  private static validPrice(value: number | null): boolean {
+    return value != null && Number.isFinite(value) && value > 0;
+  }
+
+  /** The price per share the estimate is figured at: the market's, or the order's own limit or stop. */
+  readonly estimatePrice = computed(() => {
+    switch (this.orderType()) {
+      case 'MARKET': return this.sidePrice();
+      case 'STOP': return this.stopPrice();
+      default: return this.limitPrice();
+    }
+  });
+
   readonly estimate = computed(() => {
-    const price = this.price();
+    const price = this.estimatePrice();
     return price != null && this.validQuantity() ? price * this.quantity()! : null;
+  });
+
+  /** What a buy needs in buying power: the estimate, or what an open order holds back. */
+  readonly costToHold = computed(() => {
+    if (this.isMarket()) {
+      return this.estimate();
+    }
+    const perShare = reservePricePerShare(this.orderType(), this.limitPrice(), this.stopPrice());
+    return perShare != null && this.validQuantity() ? toCents(perShare * this.quantity()!) : null;
   });
 
   /** Why the order can't be reviewed yet, or null if it can. */
@@ -180,13 +341,14 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const account = this.account();
     const quantity = this.quantity();
     const sharesHeld = this.sharesHeld();
+    const price = this.sidePrice();
     if (!this.symbol()) {
       return 'Choose a symbol to trade';
     }
     if (!account) {
       return 'No active account to trade from';
     }
-    if (this.price() == null) {
+    if (price == null) {
       return 'Waiting for a live price…';
     }
     if (quantity == null) {
@@ -195,16 +357,121 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (!this.validQuantity()) {
       return 'Enter a whole number of shares';
     }
-    if (this.side() === 'BUY' && this.estimate()! > account.buyingPower) {
+    if (this.hasStop() && !TradePanelComponent.validPrice(this.stopPrice())) {
+      return 'Enter a stop price';
+    }
+    if (this.hasLimit() && !TradePanelComponent.validPrice(this.limitPrice())) {
+      return 'Enter a limit price';
+    }
+    if (this.hasStop()) {
+      const stop = this.stopPrice()!;
+      if (this.side() === 'SELL' && stop >= price) {
+        return `A sell stop must be below ${this.sideReference()} (${formatMoney(price)})`;
+      }
+      if (this.side() === 'BUY' && stop <= price) {
+        return `A buy stop must be above ${this.sideReference()} (${formatMoney(price)})`;
+      }
+    }
+    if (this.side() === 'BUY' && this.costToHold()! > account.buyingPower) {
       return `Not enough buying power (${formatMoney(account.buyingPower)} available)`;
     }
     if (this.side() === 'SELL' && quantity > sharesHeld) {
+      const onHold = this.sharesOnHold();
+      if (onHold > 0) {
+        return `Only ${sharesHeld} ${sharesHeld === 1 ? 'share is' : 'shares are'} free to sell — ${onHold} ${onHold === 1 ? 'is' : 'are'} held for open orders`;
+      }
       return sharesHeld === 0
         ? `You don't own any ${this.symbol()} in this account`
         : `You only have ${sharesHeld} ${sharesHeld === 1 ? 'share' : 'shares'} to sell`;
     }
     return null;
   });
+
+  /** Something worth knowing before placing the order, which doesn't stop it. */
+  readonly warning = computed(() => {
+    const price = this.sidePrice();
+    const limit = this.limitPrice();
+    const stop = this.stopPrice();
+    const buy = this.side() === 'BUY';
+    if (price == null || this.isMarket()) {
+      return null;
+    }
+    if (this.orderType() === 'LIMIT' && limit != null) {
+      if (buy ? limit >= price : limit <= price) {
+        return `Your limit is ${buy ? 'at or above' : 'at or below'} ${this.sideReference()}, so this will fill right away.`;
+      }
+    }
+    if (this.orderType() === 'STOP_LIMIT' && limit != null && stop != null && (buy ? limit < stop : limit > stop)) {
+      return `Your limit is ${buy ? 'below' : 'above'} your stop, so this only fills if the price ${buy ? 'falls back' : 'recovers'} after reaching your stop.`;
+    }
+    const target = this.hasStop() ? stop : limit;
+    const distance = distanceTo(target, price);
+    if (distance && distance.percent > FAR_FROM_MARKET_PERCENT) {
+      return `Your ${this.hasStop() ? 'stop' : 'limit'} is ${Math.round(distance.percent)}% from ${this.sideReference()}, so it may take a long time to reach — or never be reached.`;
+    }
+    return null;
+  });
+
+  /** "0.32% below the ask", for the limit or stop field: measured from the price this side fills at. */
+  readonly limitDistance = computed(() => distanceLabel(this.limitPrice(), this.sidePrice(), this.sideReference()));
+  readonly stopDistance = computed(() => distanceLabel(this.stopPrice(), this.sidePrice(), this.sideReference()));
+
+  /** One-tap limit prices: around the market, or around the stop for a stop limit. */
+  readonly limitChips = computed<PriceChip[]>(() => {
+    const buy = this.side() === 'BUY';
+    if (this.orderType() === 'STOP_LIMIT') {
+      const stop = this.stopPrice();
+      if (!TradePanelComponent.validPrice(stop)) {
+        return [];
+      }
+      const steps = [0, 0.5, 1, 2];
+      return steps.map(step => ({
+        label: step === 0 ? 'At stop' : `${buy ? '+' : '−'}${step}%`,
+        value: toCents(stop! * (1 + (buy ? step : -step) / 100))
+      }));
+    }
+    const price = this.sidePrice();
+    if (price == null) {
+      return [];
+    }
+    const current = this.quoteOffset() == null ? 'Current' : buy ? 'Ask' : 'Bid';
+    return [0, 1, 2, 5].map(step => ({
+      // Better than the market: lower for a buy, higher for a sell.
+      label: step === 0 ? current : `${buy ? '−' : '+'}${step}%`,
+      value: toCents(price * (1 + (buy ? -step : step) / 100))
+    }));
+  });
+
+  /** One-tap stop prices in the direction the stop protects, plus break-even on a held position. */
+  readonly stopChips = computed<PriceChip[]>(() => {
+    const price = this.sidePrice();
+    if (price == null) {
+      return [];
+    }
+    const buy = this.side() === 'BUY';
+    const chips = [2, 5, 10].map(step => ({
+      label: `${buy ? '+' : '−'}${step}%`,
+      value: toCents(price * (1 + (buy ? step : -step) / 100))
+    }));
+    const cost = this.averageCost();
+    if (!buy && cost != null && cost > 0 && cost < price && this.sharesOwned() > 0) {
+      chips.push({ label: 'Break-even', value: toCents(cost) });
+    }
+    return chips;
+  });
+
+  /** The order in plain English, rebuilt as it's edited. */
+  readonly sentence = computed(() => describeOrder({
+    side: this.side(),
+    type: this.orderType(),
+    symbol: this.symbol() ?? '',
+    quantity: this.validQuantity() ? this.quantity() : null,
+    limitPrice: this.limitPrice(),
+    stopPrice: this.stopPrice(),
+    timeInForce: this.timeInForce()
+  }));
+
+  readonly sentenceLabel = computed(() => sentenceText(this.sentence()));
 
   readonly canReview = computed(() => this.validQuantity() && this.blocker() === null);
 
@@ -218,6 +485,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   review(): void {
     if (this.canReview()) {
+      // Prices are sent in cents; show the review with what will be sent.
+      if (this.limitPrice() != null) this.limitPrice.set(toCents(this.limitPrice()!));
+      if (this.stopPrice() != null) this.stopPrice.set(toCents(this.stopPrice()!));
       this.step.set('review');
       this.quoteForReview();
     }
@@ -226,14 +496,14 @@ export class TradePanelComponent implements OnChanges, OnInit {
   /**
    * Captures the price the order is reviewed at. The streamed price stands in at once, so Submit
    * never waits; the quote's ask (buy) or bid (sell) - what the order actually fills at - replaces
-   * it when it arrives.
+   * it when it arrives. Only market orders are measured against it.
    */
   private quoteForReview(): void {
     const symbol = this.symbol();
     const side = this.side();
-    this.quotedPrice.set(this.price());
+    this.quotedPrice.set(this.sidePrice());
     this.quoteRequest?.unsubscribe();
-    if (!symbol) {
+    if (!symbol || !this.isMarket()) {
       return;
     }
     this.quoteRequest = this.marketData.getQuote(symbol).subscribe({
@@ -297,6 +567,27 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.confirmationDialog?.nativeElement.close();
   }
 
+  /** The order as order-app takes it. A market order is sent exactly as before order types. */
+  private orderRequest(accountId: string, symbol: string): OrderSubmissionRequest {
+    const base = { accountId, symbol, side: this.side(), quantity: this.quantity()! };
+    if (!this.isMarket()) {
+      return {
+        ...base,
+        orderType: this.orderType(),
+        ...(this.hasLimit() ? { limitPrice: toCents(this.limitPrice()!) } : {}),
+        ...(this.hasStop() ? { stopPrice: toCents(this.stopPrice()!) } : {}),
+        timeInForce: this.timeInForce()
+      };
+    }
+    const quotedPrice = this.quotedPrice();
+    const protection = this.protection();
+    return {
+      ...base,
+      ...(quotedPrice != null ? { quotedPrice } : {}),
+      ...(protection != null ? { maxSlippagePercent: protection } : {})
+    };
+  }
+
   // Order placement confirmation: revalidate live buying power and prevent repeat submissions.
   private placeOrder(): void {
     const symbol = this.symbol();
@@ -307,16 +598,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     this.step.set('submitting');
     this.submitError.set(null);
-    const quotedPrice = this.quotedPrice();
-    const protection = this.protection();
-    this.orders.submitOrder({
-      accountId,
-      symbol,
-      side: this.side(),
-      quantity: this.quantity()!,
-      ...(quotedPrice != null ? { quotedPrice } : {}),
-      ...(protection != null ? { maxSlippagePercent: protection } : {})
-    }).subscribe({
+    this.orders.submitOrder(this.orderRequest(accountId, symbol)).subscribe({
       next: response => {
         this.result.set(response);
         this.step.set('result');
@@ -356,7 +638,24 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.protectionOpen.set(false);
     this.quoteRequest?.unsubscribe();
     this.quotedPrice.set(null);
+    // The order type sticks between tickets; its prices are suggested afresh for the new one.
+    this.pricesTouched.set(false);
+    this.limitPrice.set(null);
+    this.stopPrice.set(null);
   }
 
   readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
+
+  /** For an OPEN result: what it's waiting for, e.g. "AAPL falls to $140.00". */
+  readonly waitingFor = computed(() => {
+    const result = this.result();
+    if (!result || result.status !== 'OPEN') {
+      return null;
+    }
+    const buy = result.side === 'BUY';
+    if (result.orderType === 'LIMIT') {
+      return `${result.symbol} ${buy ? 'falls' : 'rises'} to ${formatMoney(result.limitPrice)}`;
+    }
+    return `${result.symbol} ${buy ? 'rises' : 'falls'} to ${formatMoney(result.stopPrice)}`;
+  });
 }

@@ -106,7 +106,7 @@ public class OrderHistoryService {
         Pageable pageable = PageRequest.of(page, size);
         Page<Order> orders = range == null
                 ? orderRepository.findByClientId(clientId, pageable)
-                : orderRepository.findByClientIdSubmittedBetween(clientId, range.from(), range.to(), pageable);
+                : orderRepository.findByClientIdCompletedBetween(clientId, range.from(), range.to(), pageable);
 
         List<UUID> orderIds = orders.map(Order::getOrderId).getContent();
         Map<UUID, List<ExecutionItem>> executionsByOrderId = executionRepository
@@ -181,7 +181,11 @@ public class OrderHistoryService {
                 order.getStatus().name(),
                 order.getSubmittedAt(),
                 order.getFilledAt(),
-                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));
+                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()),
+                order.getOrderType().name(),
+                order.getLimitPrice(),
+                order.getStopPrice(),
+                order.getCompletedAt());
     }
 
     /**

@@ -29,3 +29,6 @@ trading:
   fill-recovery:
     # Tests drive PendingFillRecovery directly rather than on a schedule.
     enabled: false
+  order-triggers:
+    # Tests drive OrderTriggerEngine directly rather than on a schedule.
+    enabled: false

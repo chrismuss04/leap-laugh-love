@@ -1,5 +1,7 @@
 import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { orderTypeLabel } from '../shared/order-types';
+import { formatMoney } from '../shared/format';
 import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
 
@@ -16,6 +18,17 @@ export class OrderHistoryComponent implements OnInit {
   loading = signal(false);
   error = signal<string | null>(null);
   expandedOrderId = signal<string | null>(null);
+
+  typeLabel = orderTypeLabel;
+
+  /** The prices a limit or stop order was placed with, e.g. "stop $140.00 · limit $139.00". */
+  conditionText(order: OrderHistoryItem): string | null {
+    const parts = [
+      order.stopPrice != null ? `stop ${formatMoney(order.stopPrice)}` : null,
+      order.limitPrice != null ? `limit ${formatMoney(order.limitPrice)}` : null
+    ].filter(Boolean);
+    return parts.length ? parts.join(' · ') : null;
+  }
 
   year = signal<number | null>(null);
   month = signal<number | null>(null);

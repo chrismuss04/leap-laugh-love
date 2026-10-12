@@ -64,3 +64,11 @@ trading:
     grace-seconds: 30
     initial-delay-ms: 15000
     interval-ms: 30000
+  order-triggers:
+    # Fill limit and stop orders once the market reaches their price (see OrderTriggerEngine).
+    enabled: ${TRADING_ORDER_TRIGGERS_ENABLED:true}
+    initial-delay-ms: 10000
+    # Matches the market simulator's tick, so no price is missed.
+    interval-ms: 1000
+    # Expire DAY and GTC orders past their time in force.
+    expiry-interval-ms: 30000

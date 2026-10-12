@@ -10,15 +10,24 @@
       <div><dt>Account</dt><dd>{{ account()?.accountNumber }}</dd></div>
       <div><dt>Stock</dt><dd>{{ symbol() }}<span *ngIf="name()"> — {{ name() }}</span></dd></div>
       <div><dt>Action</dt><dd>{{ side() === 'BUY' ? 'Buy' : 'Sell' }}</dd></div>
+      <div><dt>Order type</dt><dd>{{ typeLabel(orderType()) }}</dd></div>
       <div><dt>Shares</dt><dd class="num">{{ quantity() | number }}</dd></div>
-      <div><dt>Estimated price per share</dt><dd class="num">{{ money(price()) }}</dd></div>
-      <div><dt>Price protection</dt><dd class="num">{{ protectionSummary() }}</dd></div>
+      <div *ngIf="hasStop()"><dt>Stop price</dt><dd class="num">{{ money(stopPrice()) }}</dd></div>
+      <div *ngIf="hasLimit()"><dt>Limit price</dt><dd class="num">{{ money(limitPrice()) }}</dd></div>
+      <div *ngIf="!isMarket()"><dt>Good for</dt><dd>{{ tifLabel(timeInForce()) }}</dd></div>
+      <div *ngIf="isMarket()"><dt>Estimated price per share</dt><dd class="num">{{ money(sidePrice()) }}</dd></div>
+      <div *ngIf="isMarket()"><dt>Price protection</dt><dd class="num">{{ protectionSummary() }}</dd></div>
       <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
         <dd class="num">{{ money(estimate()) }}</dd></div>
     </dl>
-    <p class="confirmation-warning">Confirming submits this market order for execution.
+    <p *ngIf="isMarket()" class="confirmation-warning">Confirming submits this market order for execution.
       The final price may differ from this live estimate<span *ngIf="protection() !== null">, but it
       won't fill outside your price protection</span>. A filled trade cannot be cancelled.</p>
+    <p *ngIf="!isMarket()" class="confirmation-warning">
+      <span class="sentence-text">{{ sentenceLabel() }}</span>
+      <span *ngIf="novice()"> {{ typeHint() }}</span>
+      It waits until then and may never fill. You can cancel it any time before it fills<span
+        *ngIf="side() === 'BUY'">; until then {{ money(costToHold()) }} of your buying power is set aside for it</span>.</p>
     <p *ngIf="blocker()" class="error" role="alert">{{ blocker() }}</p>
     <div class="confirmation-actions">
       <button type="button" class="ghost" autofocus (click)="cancelConfirmation()">Go back</button>
@@ -33,7 +42,15 @@
         <h2 id="trade-title">{{ side() === 'BUY' ? 'Buy' : 'Sell' }} {{ symbol() }}</h2>
         <p class="name" *ngIf="name()">{{ name() }}</p>
       </div>
-      <span class="live-price num" [appRollingNumber]="price()"></span>
+      <span class="prices">
+        <span class="live-price num" [appRollingNumber]="price()"></span>
+        <span *ngIf="bid() !== null && ask() !== null" class="bid-ask num" data-testid="bid-ask"
+              title="A buy fills at the ask, a sell at the bid">
+          <span [class.active]="side() === 'SELL'">Bid {{ money(bid()) }}</span>
+          <span class="sep" aria-hidden="true">&nbsp;·&nbsp;</span>
+          <span [class.active]="side() === 'BUY'">Ask {{ money(ask()) }}</span>
+        </span>
+      </span>
     </header>
 
     <!-- Result -->
@@ -43,6 +60,8 @@
         <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
           {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</p>
         <dl class="summary">
+          <div *ngIf="result.orderType && result.orderType !== 'MARKET'"><dt>Order type</dt>
+            <dd>{{ typeLabel(result.orderType) }}</dd></div>
           <div><dt>Fill price</dt><dd class="num">{{ money(fillPrice()) }}</dd></div>
           <div><dt>{{ result.side === 'BUY' ? 'Total cost' : 'Total credit' }}</dt>
             <dd class="num">{{ money(fillPrice() !== null ? fillPrice()! * result.quantity : null) }}</dd></div>
@@ -51,12 +70,30 @@
         </dl>
       </ng-container>
       <ng-template #notFilled>
-        <ng-container *ngIf="result.status === 'ACCEPTED'; else rejected">
+        <ng-container *ngIf="result.status === 'ACCEPTED'; else notAccepted">
           <div class="result-icon pending" aria-hidden="true">…</div>
           <p class="result-title">Order placed, confirming</p>
           <p class="result-text">Your order to {{ result.side === 'BUY' ? 'buy' : 'sell' }}
             {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
             went through and is still being confirmed. It will show as filled in your activity shortly.</p>
+        </ng-container>
+      </ng-template>
+      <ng-template #notAccepted>
+        <ng-container *ngIf="result.status === 'OPEN'; else rejected">
+          <div class="result-icon open" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
+              <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+            </svg>
+          </div>
+          <p class="result-title">{{ typeLabel(result.orderType) }} order placed</p>
+          <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
+            {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
+            once {{ waitingFor() }}. It's good {{ result.timeInForce === 'GTC' ? 'until you cancel it' : 'for today' }},
+            and you can cancel it any time from Open orders.</p>
+          <dl class="summary" *ngIf="result.reservedCash">
+            <div><dt>Set aside from buying power</dt><dd class="num">{{ money(result.reservedCash) }}</dd></div>
+          </dl>
         </ng-container>
       </ng-template>
       <ng-template #rejected>
@@ -81,15 +118,26 @@
 
     <!-- Review -->
     <div *ngIf="step() === 'review' || step() === 'submitting'" class="review">
-      <p class="review-text">
+      <p class="review-text" *ngIf="isMarket()">
         You're placing a <strong>market order</strong> to {{ side() === 'BUY' ? 'buy' : 'sell' }}
         <strong>{{ quantity() | number }} {{ quantity() === 1 ? 'share' : 'shares' }}</strong> of {{ symbol() }}.
         It will fill right away at the best available price, which may differ slightly from the estimate.
       </p>
+      <p class="review-text" *ngIf="!isMarket()">
+        You're placing a <strong>{{ typeLabel(orderType()) | lowercase }} order</strong>:
+        <ng-container *ngFor="let part of sentence()"><strong *ngIf="part.strong">{{ part.text }}</strong><ng-container
+          *ngIf="!part.strong">{{ part.text }}</ng-container></ng-container>
+      </p>
       <dl class="summary">
         <div><dt>Account</dt><dd>{{ account()?.accountNumber }}</dd></div>
-        <div><dt>Market price</dt><dd class="num">{{ money(price()) }}</dd></div>
-        <div><dt>Price protection</dt><dd class="num" data-testid="review-protection">{{ protectionSummary() }}</dd></div>
+        <div *ngIf="hasStop()"><dt>Stop price</dt><dd class="num">{{ money(stopPrice()) }}</dd></div>
+        <div *ngIf="hasLimit()"><dt>Limit price</dt><dd class="num">{{ money(limitPrice()) }}</dd></div>
+        <div><dt>{{ quoteOffset() ? (side() === 'BUY' ? 'Ask price' : 'Bid price') : 'Market price' }}</dt>
+          <dd class="num">{{ money(sidePrice()) }}</dd></div>
+        <div *ngIf="!isMarket()"><dt>Good for</dt><dd>{{ tifLabel(timeInForce()) }}</dd></div>
+        <div *ngIf="isMarket()"><dt>Price protection</dt><dd class="num" data-testid="review-protection">{{ protectionSummary() }}</dd></div>
+        <div *ngIf="!isMarket() && side() === 'BUY'"><dt>Set aside while open</dt>
+          <dd class="num" data-testid="review-hold">{{ money(costToHold()) }}</dd></div>
         <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
           <dd class="num">{{ money(estimate()) }}</dd></div>
       </dl>
@@ -117,9 +165,14 @@
         </select>
       </label>
 
-      <div class="field-row">
-        <span class="field-label">Order type</span>
-        <span class="field-value">Market</span>
+      <div class="order-type">
+        <span class="field-label" id="order-type-label">Order type</span>
+        <div class="types" role="radiogroup" aria-labelledby="order-type-label">
+          <button *ngFor="let t of orderTypes" type="button" role="radio" class="type"
+                  [class.on]="orderType() === t.type" [attr.aria-checked]="orderType() === t.type"
+                  (click)="setOrderType(t.type)">{{ t.label }}</button>
+        </div>
+        <p class="type-hint">{{ typeHint() }}</p>
       </div>
 
       <div class="field-row">
@@ -132,12 +185,63 @@
         </span>
       </div>
 
-      <div class="field-row">
-        <span class="field-label">Market price</span>
-        <span class="field-value num">{{ money(price()) }}</span>
+      <div *ngIf="hasStop()" class="price-field">
+        <div class="field-row">
+          <span class="price-label">
+            <label class="field-label" for="trade-stop">Stop price</label>
+            <span class="distance num" *ngIf="stopDistance()">{{ stopDistance() }}</span>
+          </span>
+          <span class="money-input">
+            <span class="currency" aria-hidden="true">$</span>
+            <input id="trade-stop" name="stopPrice" class="price-input num" type="number" inputmode="decimal"
+                   min="0.01" step="0.01" placeholder="0.00"
+                   [ngModel]="stopPrice()" (ngModelChange)="setStopPrice($event)" />
+          </span>
+        </div>
+        <div class="chips" role="group" aria-label="Suggested stop prices">
+          <button *ngFor="let chip of stopChips()" type="button" class="chip" [class.on]="chip.value === stopPrice()"
+                  [attr.aria-label]="'Stop at ' + money(chip.value) + ' (' + chip.label + ')'"
+                  [title]="money(chip.value)" (click)="setStopPrice(chip.value)">{{ chip.label }}</button>
+        </div>
       </div>
 
-      <div class="protection">
+      <div *ngIf="hasLimit()" class="price-field">
+        <div class="field-row">
+          <span class="price-label">
+            <label class="field-label" for="trade-limit">Limit price</label>
+            <span class="distance num" *ngIf="limitDistance()">{{ limitDistance() }}</span>
+          </span>
+          <span class="money-input">
+            <span class="currency" aria-hidden="true">$</span>
+            <input id="trade-limit" name="limitPrice" class="price-input num" type="number" inputmode="decimal"
+                   min="0.01" step="0.01" placeholder="0.00"
+                   [ngModel]="limitPrice()" (ngModelChange)="setLimitPrice($event)" />
+          </span>
+        </div>
+        <div class="chips" role="group" aria-label="Suggested limit prices">
+          <button *ngFor="let chip of limitChips()" type="button" class="chip" [class.on]="chip.value === limitPrice()"
+                  [attr.aria-label]="'Limit at ' + money(chip.value) + ' (' + chip.label + ')'"
+                  [title]="money(chip.value)" (click)="setLimitPrice(chip.value)">{{ chip.label }}</button>
+        </div>
+      </div>
+
+      <div class="field-row">
+        <span class="field-label">{{ quoteOffset() ? (side() === 'BUY' ? 'Ask price' : 'Bid price') : 'Market price' }}</span>
+        <span class="field-value num">{{ money(sidePrice()) }}</span>
+      </div>
+
+      <div *ngIf="!isMarket()" class="field-row">
+        <span class="field-label" id="tif-label">Good for</span>
+        <span class="tif" role="radiogroup" aria-labelledby="tif-label">
+          <button type="button" role="radio" class="tif-option" [class.on]="timeInForce() === 'DAY'"
+                  [attr.aria-checked]="timeInForce() === 'DAY'" (click)="setTimeInForce('DAY')">Today</button>
+          <button type="button" role="radio" class="tif-option" [class.on]="timeInForce() === 'GTC'"
+                  [attr.aria-checked]="timeInForce() === 'GTC'" title="Up to 90 days"
+                  (click)="setTimeInForce('GTC')">Until cancelled</button>
+        </span>
+      </div>
+
+      <div *ngIf="isMarket()" class="protection">
         <button type="button" class="field-row protection-toggle" (click)="protectionOpen.set(!protectionOpen())"
                 [attr.aria-expanded]="protectionOpen()" aria-controls="trade-protection">
           <span class="field-label">Price protection</span>
@@ -161,6 +265,19 @@
         <span class="field-label">{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</span>
         <span class="field-value num">{{ money(estimate()) }}</span>
       </div>
+
+      <p class="sentence" data-testid="order-sentence" aria-live="polite">
+        <ng-container *ngFor="let part of sentence()"><strong *ngIf="part.strong">{{ part.text }}</strong><ng-container
+          *ngIf="!part.strong">{{ part.text }}</ng-container></ng-container>
+      </p>
+
+      <p *ngIf="warning()" class="warning" role="note">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 9v4m0 4h.01M10.3 3.9 2.4 17.5A2 2 0 0 0 4.1 20.5h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
+                stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        <span>{{ warning() }}</span>
+      </p>
 
       <p class="hint" [class.error]="blocker() && quantity() !== null" aria-live="polite">
         <ng-container *ngIf="blocker() && (quantity() !== null || price() === null || !account()); else available">{{ blocker() }}</ng-container>

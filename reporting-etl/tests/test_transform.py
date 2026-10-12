@@ -27,6 +27,24 @@ def test_maps_a_filled_event_to_a_row():
     assert row.completed_at == datetime(2026, 10, 5, 14, 32, 7, 402000, tzinfo=timezone.utc)
 
 
+def test_keeps_the_order_type():
+    row = to_order_row(encode(filled_event(orderType="STOP_LIMIT")))
+
+    assert row.order_type == "STOP_LIMIT"
+
+
+def test_treats_an_event_without_an_order_type_as_a_market_order():
+    # Events published before order types existed carry none.
+    row = to_order_row(encode(filled_event()))
+
+    assert row.order_type == "MARKET"
+
+
+def test_rejects_an_unknown_order_type():
+    with pytest.raises(InvalidEvent, match="orderType"):
+        to_order_row(encode(filled_event(orderType="TRAILING")))
+
+
 def test_keeps_the_price_exact():
     row = to_order_row(b'{"orderId": "%s", "accountId": "%s", "clientId": "%s", "instrumentId": "%s",'
                        b' "symbol": "MSFT", "side": "SELL", "quantity": 3, "status": "FILLED",'
