@@ -41,7 +41,9 @@ public class OrderSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
-                        // Client-only: staff tokens are refused here (403).
+                        // Activity reports read reporting.orders, not trading data: analysts only.
+                        .requestMatchers("/api/order/reports/**").hasRole("COMMERCIAL_ANALYST")
+                        // Everything else is client-only: staff tokens are refused here (403).
                         .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->
