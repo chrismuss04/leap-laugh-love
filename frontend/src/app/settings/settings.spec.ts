@@ -143,6 +143,46 @@ describe('SettingsComponent', () => {
     expect(shell.profile()).toEqual(PROFILE);
   });
 
+  it('says so, on the field, when the new email belongs to another account', () => {
+    component.accountOpen.set(true);
+    component.form.patchValue({ email: 'bob@example.com', currentPassword: 'Password123!' });
+    component.save();
+    http.expectOne('/api/iam/v1/clients/me').flush(
+      { error: 'EMAIL_TAKEN', message: 'server wording' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    const email = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('#email')!;
+    expect(email.classList).toContain('error');
+    expect(email.parentElement!.textContent).toContain('That email is already registered to another account.');
+    expect(component.taken()).toBe('email');
+    expect(shell.profile()).toEqual(PROFILE);
+  });
+
+  it('says so, on the field, when the new phone number belongs to another account', () => {
+    component.accountOpen.set(true);
+    component.form.patchValue({ phone: '(212) 555-0199' });
+    component.save();
+    http.expectOne('/api/iam/v1/clients/me').flush(
+      { error: 'PHONE_TAKEN', message: 'server wording' }, { status: 409, statusText: 'Conflict' });
+    fixture.detectChanges();
+
+    const phone = (fixture.nativeElement as HTMLElement).querySelector<HTMLInputElement>('#phone')!;
+    expect(phone.parentElement!.textContent).toContain('That phone number is already registered to another account.');
+    expect(text()).not.toContain('That email is already registered');
+  });
+
+  it('clears the taken-detail message when the client saves again', () => {
+    component.form.patchValue({ phone: '(212) 555-0199' });
+    component.save();
+    http.expectOne('/api/iam/v1/clients/me').flush({ error: 'PHONE_TAKEN' }, { status: 409, statusText: 'Conflict' });
+    component.form.patchValue({ phone: '(212) 555-0198' });
+    component.save();
+
+    expect(component.taken()).toBeNull();
+    expect(component.error()).toBeNull();
+    http.expectOne('/api/iam/v1/clients/me').flush(PROFILE);
+  });
+
   describe('trading', () => {
     const element = () => fixture.nativeElement as HTMLElement;
     const rows = () => Array.from(element().querySelectorAll<HTMLElement>('[data-testid="protection-row"]'));
