@@ -34,6 +34,16 @@ tbody th { color: var(--foreground); font-size: 14px; }
 .banner button { background: transparent; color: inherit; font: inherit; text-decoration: underline; padding: 8px; cursor: pointer; }
 .loading { display: grid; gap: 12px; margin-top: 24px; }
 .loading .skeleton { height: 44px; }
+.list-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 16px; margin-top: 20px; }
+.list-controls label { display: grid; gap: 8px; font-size: 12px; color: var(--muted-foreground); }
+.search-control { flex: 1; min-width: 180px; }
+.list-controls input { width: 100%; box-sizing: border-box; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--foreground); font: inherit; font-size: 14px; }
+.list-controls input:focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+.list-controls select { font-size: 14px; }
+.sort-button, .clear-filters { background: transparent; color: inherit; font: inherit; padding: 8px 0; cursor: pointer; }
+.sort-button:hover, .clear-filters:hover { color: var(--primary); }
+.clear-filters { color: var(--primary); font-size: 14px; }
+.result-count { color: var(--muted-foreground); font-size: 12px; margin: 16px 0 0; }
 
 @media (max-width: 760px) {
   .instruments { padding: 24px 16px 40px; gap: 16px; }
