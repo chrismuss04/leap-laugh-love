@@ -1,17 +1,19 @@
--- IAM Schema Seed Data - 10 Client Records with Profiles and Credentials
+-- IAM Schema Seed Data - 10 Client Records with Profiles and Credentials, plus 40 mock clients
+-- for the commercial analyst's reports (see the end of this file)
 
--- Insert 10 clients
-INSERT INTO iam.clients (email, phone, status) VALUES
-    ('alice.johnson@leap.com', '(212) 555-0101', 'ACTIVE'),
-    ('bob.smith@leap.com', '(212) 555-0102', 'ACTIVE'),
-    ('carol.williams@leap.com', '(212) 555-0103', 'ACTIVE'),
-    ('david.brown@leap.com', '(212) 555-0104', 'ACTIVE'),
-    ('emma.davis@leap.com', '(212) 555-0105', 'ACTIVE'),
-    ('frank.miller@leap.com', '(212) 555-0106', 'ACTIVE'),
-    ('grace.wilson@leap.com', '(212) 555-0107', 'LOCKED'),
-    ('henry.taylor@leap.com', '(212) 555-0108', 'ACTIVE'),
-    ('iris.anderson@leap.com', '(212) 555-0109', 'ACTIVE'),
-    ('jack.thomas@leap.com', '(212) 555-0110', 'ACTIVE')
+-- Insert 10 clients. Each registers shortly before its first account opens (seed_trading.sql), so
+-- registration reports see when they signed up rather than when the database was created.
+INSERT INTO iam.clients (email, phone, status, created_at) VALUES
+    ('alice.johnson@leap.com', '(212) 555-0101', 'ACTIVE', date_trunc('day', NOW()) - INTERVAL '205 days' + TIME '10:00'),
+    ('bob.smith@leap.com', '(212) 555-0102', 'ACTIVE', '2025-04-04 10:00:00+00'),
+    ('carol.williams@leap.com', '(212) 555-0103', 'ACTIVE', '2025-04-11 10:00:00+00'),
+    ('david.brown@leap.com', '(212) 555-0104', 'ACTIVE', '2025-05-02 10:00:00+00'),
+    ('emma.davis@leap.com', '(212) 555-0105', 'ACTIVE', '2025-05-09 10:00:00+00'),
+    ('frank.miller@leap.com', '(212) 555-0106', 'ACTIVE', '2025-05-16 10:00:00+00'),
+    ('grace.wilson@leap.com', '(212) 555-0107', 'LOCKED', '2025-05-30 10:00:00+00'),
+    ('henry.taylor@leap.com', '(212) 555-0108', 'ACTIVE', '2025-06-06 10:00:00+00'),
+    ('iris.anderson@leap.com', '(212) 555-0109', 'ACTIVE', '2025-06-13 10:00:00+00'),
+    ('jack.thomas@leap.com', '(212) 555-0110', 'ACTIVE', '2025-07-04 10:00:00+00')
 ON CONFLICT (email) DO NOTHING;
 
 -- Insert client profiles (one per client)
@@ -72,6 +74,50 @@ SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0 FROM iam.clients c 
 ON CONFLICT (client_id) DO UPDATE SET
     password_hash = EXCLUDED.password_hash,
     failed_attempts = EXCLUDED.failed_attempts;
+
+-- Analytics mock clients: 40 more clients so the commercial analyst's reports have realistic
+-- data before launch. They registered one every 8 days, from 352 days ago to 40 days ago, so
+-- registrations spread across the reporting periods. Mock client NN has phone (646) 555-02NN,
+-- which seed_trading.sql reads to give each one an account and an order history. Names are
+-- fictional; SSNs are in the never-issued 900 range, like the E2E seed's.
+CREATE TEMP TABLE mock_client AS
+SELECT n,
+       (ARRAY['Liam', 'Olivia', 'Noah', 'Ava', 'Ethan', 'Sophia', 'Mason', 'Mia', 'Lucas', 'Amelia',
+              'Logan', 'Harper', 'Elijah', 'Evelyn', 'James', 'Abigail', 'Benjamin', 'Ella', 'Alexander', 'Scarlett',
+              'Daniel', 'Chloe', 'Matthew', 'Lily', 'Samuel', 'Zoe', 'Owen', 'Nora', 'Caleb', 'Hazel',
+              'Isaac', 'Aria', 'Nathan', 'Layla', 'Ryan', 'Riley', 'Dylan', 'Stella', 'Leo', 'Maya'])[n] AS first_name,
+       (ARRAY['Garcia', 'Martinez', 'Robinson', 'Clark', 'Rodriguez', 'Lewis', 'Lee', 'Walker', 'Hall', 'Allen',
+              'Young', 'Hernandez', 'King', 'Wright', 'Lopez', 'Hill', 'Scott', 'Green', 'Adams', 'Baker',
+              'Gonzalez', 'Nelson', 'Carter', 'Mitchell', 'Perez', 'Roberts', 'Turner', 'Phillips', 'Campbell', 'Parker',
+              'Evans', 'Edwards', 'Collins', 'Stewart', 'Sanchez', 'Morris', 'Rogers', 'Reed', 'Cook', 'Morgan'])[n] AS last_name,
+       (ARRAY['New York', 'Boston', 'Chicago', 'Seattle', 'Austin', 'Denver', 'Atlanta', 'Miami', 'Portland', 'Minneapolis'])[1 + n % 10] AS city,
+       (ARRAY['NY', 'MA', 'IL', 'WA', 'TX', 'CO', 'GA', 'FL', 'OR', 'MN'])[1 + n % 10] AS state_region,
+       (ARRAY['10001', '02108', '60601', '98101', '78701', '80202', '30303', '33131', '97201', '55401'])[1 + n % 10] AS postal_code,
+       (ARRAY['NOVICE', 'INTERMEDIATE', 'ADVANCED'])[1 + n % 3] AS experience_level,
+       100000.00 + (n % 4) * 50000.00 AS initial_deposit_amount,
+       date_trunc('day', NOW()) - make_interval(days => 352 - (n - 1) * 8)
+           + make_interval(hours => 9 + n % 8, mins => (n * 13) % 60) AS registered_at
+FROM generate_series(1, 40) AS n;
+
+INSERT INTO iam.clients (email, phone, status, created_at)
+SELECT lower(first_name || '.' || last_name) || '@leap.com', format('(646) 555-%s', lpad((200 + n)::text, 4, '0')), 'ACTIVE', registered_at
+FROM mock_client
+ON CONFLICT (email) DO NOTHING;
+
+INSERT INTO iam.client_profile (client_id, full_name, date_of_birth, ssn, address_line1, city, state_region, postal_code, country_code, experience_level, initial_deposit_amount)
+SELECT c.client_id, m.first_name || ' ' || m.last_name, DATE '1970-01-01' + (n * 263) % 10000, format('900-20-%s', lpad(n::text, 4, '0')),
+       format('%s Market Street', 100 + n), m.city, m.state_region, m.postal_code, 'US', m.experience_level, m.initial_deposit_amount
+FROM mock_client m
+JOIN iam.clients c ON c.email = lower(m.first_name || '.' || m.last_name) || '@leap.com'
+ON CONFLICT (client_id) DO NOTHING;
+
+INSERT INTO iam.client_credentials (client_id, password_hash, failed_attempts)
+SELECT c.client_id, crypt('Password123!', gen_salt('bf')), 0
+FROM mock_client m
+JOIN iam.clients c ON c.email = lower(m.first_name || '.' || m.last_name) || '@leap.com'
+ON CONFLICT (client_id) DO NOTHING;
+
+DROP TABLE mock_client;
 
 -- Staff roles: one staff account per role, for local use and tests. Staff emails must not match
 -- any client's: sign-in looks clients up first.
