@@ -118,6 +118,8 @@ pipeline {
                         def unaffected = [
                             ~/frontend\/.*/,
                             ~/reporting-etl\/.*/,
+                            // Only reads the reporting schema; nothing trade recovery runs calls it.
+                            ~/reporting-app\/.*/,
                             ~/docs\/.*/,
                             ~/.*\.(md|mmd)/,
                             ~/sonar-project\.properties/,
@@ -242,7 +244,7 @@ pipeline {
             }
         }
         // Run on their own, ahead of the image builds and the frontend, rather than beside them.
-        // Maven's test JVMs, Postgres, npm, Chromium and five image builds at once is more than a
+        // Maven's test JVMs, Postgres, npm, Chromium and six image builds at once is more than a
         // small or shared agent can hold; on one without a container memory cap it swaps until
         // everything looks hung. Sequential costs wall-clock time, not correctness.
         stage('Unit Tests') {
@@ -492,7 +494,7 @@ pipeline {
                             steps {
                                 sh '''
                                     set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app reporting-etl
+                                    $COMPOSE -p "$COMPOSE_PROJECT" build iam-app account-app order-app market-data-app reporting-app reporting-etl
                                     echo "Built service images tagged $IMAGE_TAG"
                                 '''
                             }
@@ -528,7 +530,7 @@ pipeline {
                                 sh '''
                                     set -eu 
                                     # mailpit: the E2E suite registers users by following the link iam-app emails them.
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl mailpit
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app reporting-app kafka kafka-init reporting-etl mailpit
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -547,6 +549,7 @@ pipeline {
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T account-app wget -q -O /dev/null http://localhost:8082/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T order-app wget -q -O /dev/null http://localhost:8084/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T market-data-app wget -q -O /dev/null http://localhost:8083/actuator/health && \
+                                           $COMPOSE -p "$COMPOSE_PROJECT" exec -T reporting-app wget -q -O /dev/null http://localhost:8085/actuator/health && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --describe --topic order-events >/dev/null && \
                                            $COMPOSE -p "$COMPOSE_PROJECT" exec -T kafka /opt/kafka/bin/kafka-consumer-groups.sh --bootstrap-server localhost:9092 --describe --group reporting-etl --members 2>/dev/null | grep -q reporting-etl-consumer; then
                                             echo "All services are healthy"
@@ -736,7 +739,7 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
                     $COMPOSE -p "$COMPOSE_PROJECT" ps -a || true
-                    for service in db kafka kafka-init iam-app account-app order-app market-data-app reporting-etl frontend; do
+                    for service in db kafka kafka-init iam-app account-app order-app market-data-app reporting-app reporting-etl frontend; do
                         echo "========== $service LOGS (LAST 100 LINES) =========="
                         $COMPOSE -p "$COMPOSE_PROJECT" logs --tail=100 "$service" || true
                     done
@@ -755,7 +758,7 @@ pipeline {
                 # accumulates one set per build until the disk fills.
                 if [ -n "${IMAGE_TAG:-}" ]; then
                     docker image rm -f "iam-app:$IMAGE_TAG" "account-app:$IMAGE_TAG" "order-app:$IMAGE_TAG" \
-                        "market-data-app:$IMAGE_TAG" "reporting-etl:$IMAGE_TAG" >/dev/null 2>&1 || true
+                        "market-data-app:$IMAGE_TAG" "reporting-app:$IMAGE_TAG" "reporting-etl:$IMAGE_TAG" >/dev/null 2>&1 || true
                 fi
                 # Keep only the current E2E runner; older tags are from superseded lockfiles. (An
                 # image another build is using right now refuses removal, hence "|| true".) Also
