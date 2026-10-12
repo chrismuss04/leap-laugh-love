@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InactiveAccountNotifier.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.inactivity</a> &gt; <span class="el_source">InactiveAccountNotifier.java</span></div><h1>InactiveAccountNotifier.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.inactivity;
+
+import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.account.AccountRepository;
+import com.leap.leaplaughlove.account.client.ClientStatus;
+import com.leap.leaplaughlove.account.client.ClientStatusRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * Emails a client about each of their accounts the nightly check has flagged inactive, once that
+ * check has committed, so an email never goes out for a flag that rolled back.
+ *
+ * Works through every flagged account not yet notified, not only those flagged this run, so a send
+ * that failed is retried the next night. An account is marked notified only after the mail server
+ * accepts its email, each mark committing on its own, so a crash part-way through re-sends nothing
+ * already sent. Clients who are not ACTIVE are skipped and stay un-notified. Nothing here throws:
+ * the flags are already committed, so a mail failure is logged and must not fail the job.
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;account.inactivity.email&quot;, name = &quot;enabled&quot;, havingValue = &quot;true&quot;, matchIfMissing = true)
+public class InactiveAccountNotifier {
+
+<span class="fc" id="L46">    private static final Logger log = LoggerFactory.getLogger(InactiveAccountNotifier.class);</span>
+    private static final String ACTIVE = &quot;ACTIVE&quot;;
+    // Matches the &quot;Inactive since&quot; date on the dashboard.
+<span class="fc" id="L49">    private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern(&quot;MMM d, yyyy&quot;, Locale.US);</span>
+
+    private final AccountRepository accountRepository;
+    private final ClientStatusRepository clientStatusRepository;
+    private final JavaMailSender mailSender;
+    private final TransactionTemplate newTransaction;
+    private final String from;
+    private final Clock clock;
+
+    /** Creates the notifier on the system clock. */
+    @Autowired
+    public InactiveAccountNotifier(AccountRepository accountRepository,
+                                   ClientStatusRepository clientStatusRepository,
+                                   JavaMailSender mailSender,
+                                   PlatformTransactionManager transactionManager,
+                                   @Value(&quot;${account.inactivity.email.from:no-reply@example.com}&quot;) String from) {
+<span class="fc" id="L65">        this(accountRepository, clientStatusRepository, mailSender, transactionManager, from, Clock.systemUTC());</span>
+<span class="fc" id="L66">    }</span>
+
+    InactiveAccountNotifier(AccountRepository accountRepository, ClientStatusRepository clientStatusRepository,
+                            JavaMailSender mailSender, PlatformTransactionManager transactionManager,
+<span class="fc" id="L70">                            String from, Clock clock) {</span>
+<span class="fc" id="L71">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L72">        this.clientStatusRepository = clientStatusRepository;</span>
+<span class="fc" id="L73">        this.mailSender = mailSender;</span>
+        // After commit the check's transaction is finished but still bound, and a write that joined
+        // it would never commit, so each mark runs in a transaction of its own.
+<span class="fc" id="L76">        this.newTransaction = new TransactionTemplate(transactionManager);</span>
+<span class="fc" id="L77">        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);</span>
+<span class="fc" id="L78">        this.from = from;</span>
+<span class="fc" id="L79">        this.clock = clock;</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Emails the clients of newly inactive accounts once the nightly check has committed.
+     * @param event the check that just committed
+     */
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void onInactivityChecked(InactivityCheckedEvent event) {
+<span class="fc" id="L88">        notifyClients();</span>
+<span class="fc" id="L89">    }</span>
+
+    /**
+     * Emails the client of every flagged account not yet notified, and marks each one sent.
+     * @return the number of emails sent
+     */
+    public int notifyClients() {
+<span class="fc" id="L96">        List&lt;Account&gt; pending = accountRepository.findByInactiveSinceIsNotNullAndInactiveNotifiedAtIsNull();</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (pending.isEmpty()) {</span>
+<span class="fc" id="L98">            return 0;</span>
+        }
+<span class="fc" id="L100">        Map&lt;UUID, ClientStatus&gt; clients = clientStatusRepository</span>
+<span class="fc" id="L101">                .findByClientIdIn(pending.stream().map(Account::getClientId).collect(Collectors.toSet())).stream()</span>
+<span class="fc" id="L102">                .collect(Collectors.toMap(ClientStatus::getClientId, Function.identity()));</span>
+
+<span class="fc" id="L104">        int sent = 0;</span>
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        for (Account account : pending) {</span>
+<span class="fc" id="L106">            ClientStatus client = clients.get(account.getClientId());</span>
+<span class="pc bpc" id="L107" title="1 of 4 branches missed.">            if (client == null || !ACTIVE.equals(client.getStatus())) {</span>
+<span class="fc" id="L108">                continue;</span>
+            }
+            try {
+<span class="fc" id="L111">                mailSender.send(message(client.getEmail(), account));</span>
+<span class="fc" id="L112">                OffsetDateTime notifiedAt = OffsetDateTime.now(clock);</span>
+<span class="fc" id="L113">                newTransaction.executeWithoutResult(</span>
+<span class="fc" id="L114">                        status -&gt; accountRepository.markInactiveNotified(account.getAccountId(), notifiedAt));</span>
+<span class="fc" id="L115">                sent++;</span>
+<span class="fc" id="L116">            } catch (RuntimeException e) {</span>
+<span class="fc" id="L117">                log.warn(&quot;Could not email client {} about inactive account {}; retrying next run: {}&quot;,</span>
+<span class="fc" id="L118">                        client.getClientId(), account.getAccountId(), e.getMessage());</span>
+<span class="fc" id="L119">            }</span>
+<span class="fc" id="L120">        }</span>
+<span class="fc" id="L121">        log.info(&quot;Inactive account emails sent for {} of {} un-notified account(s)&quot;, sent, pending.size());</span>
+<span class="fc" id="L122">        return sent;</span>
+    }
+
+    private SimpleMailMessage message(String to, Account account) {
+<span class="fc" id="L126">        String accountName = maskedName(account.getAccountNumber());</span>
+<span class="fc" id="L127">        SimpleMailMessage message = new SimpleMailMessage();</span>
+<span class="fc" id="L128">        message.setFrom(from);</span>
+<span class="fc" id="L129">        message.setTo(to);</span>
+<span class="fc" id="L130">        message.setSubject(&quot;Your Leapfolio account &quot; + accountName + &quot; is inactive&quot;);</span>
+<span class="fc" id="L131">        message.setText(&quot;Hello,\n\n&quot;</span>
+                + &quot;Your account &quot; + accountName + &quot; has held no cash or shares since &quot;
+<span class="fc" id="L133">                + account.getInactiveSince().atZoneSameInstant(ZoneOffset.UTC).format(DATE)</span>
+                + &quot;, so it has been marked inactive.\n\n&quot;
+                + &quot;Deposit funds to reactivate it.\n\n&quot;
+                + &quot;Leapfolio\n&quot;);
+<span class="fc" id="L137">        return message;</span>
+    }
+
+    /**
+     * Names the account the way the dashboard does, showing only its last four characters, so the
+     * full account number never goes out by email.
+     */
+    static String maskedName(String accountNumber) {
+<span class="fc" id="L145">        return &quot;Brokerage ··&quot; + accountNumber.substring(Math.max(0, accountNumber.length() - 4));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

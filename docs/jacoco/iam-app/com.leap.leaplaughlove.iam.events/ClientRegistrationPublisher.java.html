@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientRegistrationPublisher.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.events</a> &gt; <span class="el_source">ClientRegistrationPublisher.java</span></div><h1>ClientRegistrationPublisher.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.events;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
+
+/**
+ * Publishes committed registrations using the order publisher's best-effort convention.
+ * Delivery failures are logged, not propagated to the already-committed registration.
+ * There is no durable outbox: failures after Kafka retries can lose an event.
+ */
+@Component
+public class ClientRegistrationPublisher {
+<span class="fc" id="L18">    private static final Logger log = LoggerFactory.getLogger(ClientRegistrationPublisher.class);</span>
+    private final KafkaTemplate&lt;String, ClientRegistrationEvent&gt; kafka;
+    private final boolean enabled;
+    private final String topic;
+
+    public ClientRegistrationPublisher(KafkaTemplate&lt;String, ClientRegistrationEvent&gt; kafka,
+            @Value(&quot;${reporting.registrations.enabled:false}&quot;) boolean enabled,
+<span class="fc" id="L25">            @Value(&quot;${reporting.registrations.topic:client-register}&quot;) String topic) {</span>
+<span class="fc" id="L26">        this.kafka = kafka;</span>
+<span class="fc" id="L27">        this.enabled = enabled;</span>
+<span class="fc" id="L28">        this.topic = topic;</span>
+<span class="fc" id="L29">    }</span>
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void publish(ClientRegistrationEvent event) {
+<span class="fc bfc" id="L33" title="All 2 branches covered.">        if (!enabled) return;</span>
+        try {
+<span class="fc" id="L35">            kafka.send(topic, event.clientId().toString(), event).whenComplete((result, failure) -&gt; {</span>
+<span class="fc bfc" id="L36" title="All 2 branches covered.">                if (failure != null) {</span>
+<span class="fc" id="L37">                    log.warn(&quot;Registration event for client {} was not delivered: {}&quot;,</span>
+<span class="fc" id="L38">                            event.clientId(), failure.getMessage());</span>
+                }
+<span class="fc" id="L40">            });</span>
+<span class="fc" id="L41">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L42">            log.warn(&quot;Could not publish registration for client {}: {}&quot;, event.clientId(), ex.getMessage());</span>
+<span class="fc" id="L43">        }</span>
+<span class="fc" id="L44">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

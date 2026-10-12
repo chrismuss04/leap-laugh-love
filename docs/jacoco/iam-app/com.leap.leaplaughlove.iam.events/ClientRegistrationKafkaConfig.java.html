@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientRegistrationKafkaConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.events</a> &gt; <span class="el_source">ClientRegistrationKafkaConfig.java</span></div><h1>ClientRegistrationKafkaConfig.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.events;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import org.apache.kafka.common.serialization.StringSerializer;
+import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.core.DefaultKafkaProducerFactory;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.kafka.core.ProducerFactory;
+import org.springframework.kafka.support.serializer.JsonSerializer;
+
+/** Uses ISO-8601 timestamps and no Java type headers for the Python ETL consumer. */
+@Configuration
+<span class="fc" id="L16">public class ClientRegistrationKafkaConfig {</span>
+    @Bean
+    public ProducerFactory&lt;String, ClientRegistrationEvent&gt; registrationProducerFactory(
+            KafkaProperties properties, ObjectMapper mapper) {
+<span class="fc" id="L20">        return new DefaultKafkaProducerFactory&lt;&gt;(properties.buildProducerProperties(null),</span>
+<span class="fc" id="L21">                new StringSerializer(), valueSerializer(mapper));</span>
+    }
+
+    @Bean
+    public KafkaTemplate&lt;String, ClientRegistrationEvent&gt; registrationKafkaTemplate(
+            ProducerFactory&lt;String, ClientRegistrationEvent&gt; registrationProducerFactory) {
+<span class="fc" id="L27">        return new KafkaTemplate&lt;&gt;(registrationProducerFactory);</span>
+    }
+
+    static JsonSerializer&lt;ClientRegistrationEvent&gt; valueSerializer(ObjectMapper mapper) {
+<span class="fc" id="L31">        return new JsonSerializer&lt;ClientRegistrationEvent&gt;(mapper.copy().findAndRegisterModules()</span>
+<span class="fc" id="L32">                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS)).noTypeInfo();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Role.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common-security</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.security</a> &gt; <span class="el_source">Role.java</span></div><h1>Role.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.common.security;
+
+/**
+ * Who a session token belongs to, carried in its {@code role} claim and granted to the request as
+ * {@code ROLE_&lt;name&gt;}. Clients use the trading app; the two staff roles each have their own
+ * dashboard and no access to the trading APIs or to each other's data.
+ */
+<span class="fc" id="L8">public enum Role {</span>
+    /** A customer, signed in with iam.client_credentials; sessions in iam.client_sessions. */
+<span class="fc" id="L10">    CLIENT,</span>
+    /** Staff who audit trades and reconstruct order lifecycles; sessions in iam.staff_sessions. */
+<span class="fc" id="L12">    TRADING_OPERATIONS,</span>
+    /** Staff who analyse trading activity, trends and clients; sessions in iam.staff_sessions. */
+<span class="fc" id="L14">    COMMERCIAL_ANALYST;</span>
+
+    /**
+     * The Spring Security authority this role grants.
+     * @return ROLE_ followed by the role's name
+     */
+    public String authority() {
+<span class="fc" id="L21">        return &quot;ROLE_&quot; + name();</span>
+    }
+
+    /**
+     * Whether this is one of the staff roles, whose sessions live in iam.staff_sessions.
+     * @return true for TRADING_OPERATIONS and COMMERCIAL_ANALYST
+     */
+    public boolean isStaff() {
+<span class="fc bfc" id="L29" title="All 2 branches covered.">        return this != CLIENT;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

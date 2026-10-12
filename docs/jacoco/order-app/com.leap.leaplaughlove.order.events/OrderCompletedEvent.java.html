@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderCompletedEvent.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.events</a> &gt; <span class="el_source">OrderCompletedEvent.java</span></div><h1>OrderCompletedEvent.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.events;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * The order-events message for an order whose lifecycle is complete, consumed by reporting-etl
+ * into reporting.orders. Published once per order: FILLED, or REJECTED after its execution was
+ * refused at settlement. Serialized as plain JSON with no Java type headers, so it is read
+ * without any knowledge of this class.
+ *
+ * @param eventId unique per message
+ * @param orderId the order, also the message key
+ * @param accountId the account the order was placed on
+ * @param clientId the client who owns that account
+ * @param instrumentId the instrument traded
+ * @param symbol the instrument's symbol
+ * @param side BUY or SELL
+ * @param quantity whole shares ordered; a fill is always for the whole quantity
+ * @param status FILLED or REJECTED
+ * @param fillPrice price per share, or null when rejected
+ * @param rejectionReason why it was rejected, or null when filled
+ * @param submittedAt when the order was submitted
+ * @param completedAt when it was filled or rejected
+ */
+<span class="fc" id="L27">public record OrderCompletedEvent(</span>
+        UUID eventId,
+        UUID orderId,
+        UUID accountId,
+        UUID clientId,
+        UUID instrumentId,
+        String symbol,
+        String side,
+        long quantity,
+        String status,
+        BigDecimal fillPrice,
+        String rejectionReason,
+        OffsetDateTime submittedAt,
+        OffsetDateTime completedAt) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
