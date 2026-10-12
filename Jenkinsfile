@@ -317,6 +317,10 @@ pipeline {
                     # Set through the environment so Maven's forked test JVMs inherit it too.
                     # -Xmx768m caps every JVM here: without it each sizes its heap from the host's RAM
                     # (a quarter of it), which on a native Linux agent with no container limit adds up.
+                    #
+                    # dependency:build-classpath writes each module's resolved jars to
+                    # target/sonar-classpath.txt for SonarQube's sonar.java.libraries; it reuses this
+                    # run's dependency resolution, so it costs next to nothing here.
                     docker run --rm \
                         --network "container:${PG_CONTAINER}" \
                         --user "$(id -u):$(id -g)" \
@@ -327,7 +331,9 @@ pipeline {
                         -e MAVEN_CONFIG=/tmp/.m2 \
                         -e JAVA_TOOL_OPTIONS="-XX:TieredStopAtLevel=1 -Xmx768m" \
                         maven:3.9.9-eclipse-temurin-21-alpine \
-                        mvn -B -T 1 -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
+                        mvn -B -T 1 -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test \
+                            dependency:build-classpath -Dmdep.outputFile=target/sonar-classpath.txt \
+                            -Dmdep.pathSeparator=, -Dmdep.includeScope=test
                 '''
                 // Order Reporting ETL (Python). Same throwaway database, which the schema
                 // file gave a reporting schema, so the loader's SQL runs for real; the
@@ -579,9 +585,20 @@ pipeline {
                                 script {
                                     def scannerHome = tool 'SonarScanner'
                                     withSonarQubeEnv('SonarQube') {
+                                        // The Java analyser resolves library types from the jars the modules
+                                        // build against (the classpath files Unit Tests wrote). Those name the
+                                        // Maven container's repository path, so point them at the agent's copy;
+                                        // sibling modules appear as target/classes and are already binaries.
+                                        // One list serves main and test code: the extra test jars only add
+                                        // types main code never references.
                                         sh """
+                                            set -eu
+                                            libraries=\$(cat */target/sonar-classpath.txt 2>/dev/null | tr ',' '\\n' \\
+                                                | grep '\\.jar\$' | sed "s|^/tmp/.m2/repository/|\$HOME/.m2-ci/repository/|" \\
+                                                | sort -u | paste -sd, - || true)
                                             ${scannerHome}/bin/sonar-scanner --version
-                                            ${scannerHome}/bin/sonar-scanner
+                                            ${scannerHome}/bin/sonar-scanner \\
+                                                -Dsonar.java.libraries="\$libraries" -Dsonar.java.test.libraries="\$libraries"
                                         """
                                     }
                                 }

@@ -279,7 +279,7 @@ export class DashboardComponent implements OnInit {
         ...(this.selectedSymbol() ? [this.selectedSymbol()!] : [])
       ];
       this.stream.watch(symbols);
-    }, { allowSignalWrites: true });
+    });
 
     // Changing scope drops any scrub and points the trade panel at something held in the new scope.
     effect(() => {
