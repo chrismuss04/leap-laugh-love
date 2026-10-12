@@ -590,10 +590,12 @@ pipeline {
                                         // Maven container's repository path, so point them at the agent's copy;
                                         // sibling modules appear as target/classes and are already binaries.
                                         // One list serves main and test code: the extra test jars only add
-                                        // types main code never references.
+                                        // types main code never references. awk, not cat: Maven writes the files
+                                        // without a final newline, so cat glued one module's last jar onto the
+                                        // next module's first.
                                         sh """
                                             set -eu
-                                            libraries=\$(cat */target/sonar-classpath.txt 2>/dev/null | tr ',' '\\n' \\
+                                            libraries=\$(awk 1 */target/sonar-classpath.txt 2>/dev/null | tr ',' '\\n' \\
                                                 | grep '\\.jar\$' | sed "s|^/tmp/.m2/repository/|\$HOME/.m2-ci/repository/|" \\
                                                 | sort -u | paste -sd, - || true)
                                             ${scannerHome}/bin/sonar-scanner --version
