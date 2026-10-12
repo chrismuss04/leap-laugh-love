@@ -3,17 +3,19 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { AuthService } from '../services/auth.service';
 import { OrderHistoryComponent } from './order-history';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('OrderHistoryComponent', () => {
   let fixture: ComponentFixture<OrderHistoryComponent>;
   let http: HttpTestingController;
-  let auth: jasmine.SpyObj<AuthService>;
+  let auth: MockedObject<AuthService>;
   const url = '/api/order/orders/history';
   const emptyPage = { content: [], number: 0, totalPages: 0, size: 20, totalElements: 0, first: true, last: true };
 
   beforeEach(() => {
-    auth = jasmine.createSpyObj<AuthService>('AuthService', ['isAuthenticated', 'logout']);
-    auth.isAuthenticated.and.returnValue(true);
+    auth = createSpyObj<AuthService>('AuthService', ['isAuthenticated', 'logout']);
+    auth.isAuthenticated.mockReturnValue(true);
     TestBed.configureTestingModule({
       imports: [OrderHistoryComponent],
       providers: [provideHttpClient(), provideHttpClientTesting(), { provide: AuthService, useValue: auth }]
@@ -30,7 +32,7 @@ describe('OrderHistoryComponent', () => {
 
   // Verify signed-out visitors do not trigger an order-history request.
   it('skips signed-out loading', () => {
-    auth.isAuthenticated.and.returnValue(false);
+    auth.isAuthenticated.mockReturnValue(false);
     fixture.detectChanges();
     http.expectNone(r => r.url === url);
   });
@@ -65,7 +67,7 @@ describe('OrderHistoryComponent', () => {
     fixture.nativeElement.querySelector('.filter-bar button').click();
     const request = http.expectOne(r => r.url === url);
     expect(request.request.params.get('page')).toBe('0');
-    expect(request.request.params.has('year')).toBeFalse();
+    expect(request.request.params.has('year')).toBe(false);
     expect(component.month()).toBeNull();
     expect(component.day()).toBeNull();
     request.flush(emptyPage);

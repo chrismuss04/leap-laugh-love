@@ -92,7 +92,7 @@ describe('AuthService', () => {
       expect(localStorage.getItem('current_user')).toBe(JSON.stringify(mockUser));
     });
 
-    it('should update isAuthenticated$ observable to true after successful login', (done) => {
+    it('should update isAuthenticated$ observable to true after successful login', () => new Promise<void>(done => {
       const mockResponse: LoginResponse = {
         accessToken: 'test-token',
         user: { id: '1', email: 'test@example.com', name: 'Test User' }
@@ -109,9 +109,9 @@ describe('AuthService', () => {
 
       const req = httpMock.expectOne(`${apiUrl}/login`);
       req.flush(mockResponse);
-    });
+    }));
 
-    it('should update currentUser$ observable after successful login', (done) => {
+    it('should update currentUser$ observable after successful login', () => new Promise<void>(done => {
       const mockUser = { id: '1', email: 'test@example.com', name: 'Test User' };
       const mockResponse: LoginResponse = {
         accessToken: 'test-token',
@@ -129,7 +129,7 @@ describe('AuthService', () => {
 
       const req = httpMock.expectOne(`${apiUrl}/login`);
       req.flush(mockResponse);
-    });
+    }));
   });
 
   // ==================== Logout ====================
@@ -158,7 +158,7 @@ describe('AuthService', () => {
       expect(localStorage.getItem('rememberMe')).toBeNull();
     });
 
-    it('should update isAuthenticated$ observable to false', (done) => {
+    it('should update isAuthenticated$ observable to false', () => new Promise<void>(done => {
       localStorage.setItem('auth_token', 'test-token');
       
       service.logout();
@@ -167,9 +167,9 @@ describe('AuthService', () => {
         expect(isAuthenticated).toBe(false);
         done();
       });
-    });
+    }));
 
-    it('should update currentUser$ observable to null', (done) => {
+    it('should update currentUser$ observable to null', () => new Promise<void>(done => {
       localStorage.setItem('current_user', JSON.stringify({ id: '1', email: 'test@example.com' }));
       
       service.logout();
@@ -178,7 +178,7 @@ describe('AuthService', () => {
         expect(user).toBeNull();
         done();
       });
-    });
+    }));
   });
 
   // ==================== Get Token ====================
@@ -257,7 +257,7 @@ describe('AuthService', () => {
 
     it('should handle verify token failure', () => {
       service.verifyToken().subscribe(
-        () => fail('should have failed with 401 error'),
+        () => expect.fail('should have failed with 401 error'),
         (error) => {
           expect(error.status).toBe(401);
         }
@@ -294,7 +294,7 @@ describe('AuthService', () => {
 
     it('should handle refresh token failure', () => {
       service.refreshToken().subscribe(
-        () => fail('should have failed with 401 error'),
+        () => expect.fail('should have failed with 401 error'),
         (error) => {
           expect(error.status).toBe(401);
         }
@@ -338,12 +338,12 @@ describe('AuthService', () => {
       service.resetPassword('reset-token', 'NewPassword123').subscribe();
       httpMock.expectOne(`${apiUrl}/reset-password`).flush(null);
 
-      expect(service.isAuthenticated()).toBeFalse();
+      expect(service.isAuthenticated()).toBe(false);
     });
 
     it('should handle an expired reset token', () => {
       service.resetPassword('expired-token', 'NewPassword123').subscribe(
-        () => fail('should have failed with 400 error'),
+        () => expect.fail('should have failed with 400 error'),
         (error) => {
           expect(error.status).toBe(400);
         }
@@ -362,20 +362,20 @@ describe('AuthService', () => {
 
     it('has no role when signed out', () => {
       expect(service.getRole()).toBeNull();
-      expect(service.isStaff()).toBeFalse();
+      expect(service.isStaff()).toBe(false);
     });
 
     it('reads a commercial analyst from the token and sends them to reporting', () => {
       localStorage.setItem('auth_token', tokenWith({ role: 'COMMERCIAL_ANALYST', email: 'analyst@leap.com' }));
       expect(service.getRole()).toBe('COMMERCIAL_ANALYST');
-      expect(service.isStaff()).toBeTrue();
+      expect(service.isStaff()).toBe(true);
       expect(service.homeUrl()).toBe('/reporting');
       expect(service.getEmail()).toBe('analyst@leap.com');
     });
 
     it('treats trading operations as staff', () => {
       localStorage.setItem('auth_token', tokenWith({ role: 'TRADING_OPERATIONS' }));
-      expect(service.isStaff()).toBeTrue();
+      expect(service.isStaff()).toBe(true);
       expect(service.homeUrl()).toBe('/reporting');
     });
 
@@ -385,12 +385,12 @@ describe('AuthService', () => {
       expect(service.homeUrl()).toBe('/dashboard');
       localStorage.setItem('auth_token', tokenWith({ sid: 's' }));
       expect(service.getRole()).toBe('CLIENT');
-      expect(service.isStaff()).toBeFalse();
+      expect(service.isStaff()).toBe(false);
     });
 
     it('never treats an unknown role claim as staff', () => {
       localStorage.setItem('auth_token', tokenWith({ role: 'ADMIN' }));
-      expect(service.isStaff()).toBeFalse();
+      expect(service.isStaff()).toBe(false);
     });
 
     it('has no role for an unreadable token', () => {

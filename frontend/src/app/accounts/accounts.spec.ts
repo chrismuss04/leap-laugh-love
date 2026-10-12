@@ -7,6 +7,8 @@ import { HoldingsService } from '../services/holdings';
 import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
 import { AccountsComponent } from './accounts';
+import type { Mock, MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('AccountsComponent', () => {
   const holdings = {
@@ -27,8 +29,8 @@ describe('AccountsComponent', () => {
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let fixture: ComponentFixture<AccountsComponent>;
   let page: AccountsComponent;
-  let holdingsApi: jasmine.SpyObj<HoldingsService>;
-  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: jasmine.Spy };
+  let holdingsApi: MockedObject<HoldingsService>;
+  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: Mock };
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -39,17 +41,17 @@ describe('AccountsComponent', () => {
 
   beforeEach(() => {
     params = new BehaviorSubject(convertToParamMap({}));
-    holdingsApi = jasmine.createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
-    const balanceApi = jasmine.createSpyObj('BalanceService', ['getBalance']);
-    const marketApi = jasmine.createSpyObj('MarketDataService',
+    holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
+    const balanceApi = createSpyObj('BalanceService', ['getBalance']);
+    const marketApi = createSpyObj('MarketDataService',
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    stream = { prices: signal<Record<string, number>>({}), watch: jasmine.createSpy('watch') };
-    holdingsApi.getHoldings.and.returnValue(of(holdings));
-    holdingsApi.getAccounts.and.returnValue(of([]));
-    balanceApi.getBalance.and.returnValue(of(balance));
-    marketApi.getAllLatestPrices.and.returnValue(of([{ symbol: 'AAPL', name: 'Apple', price: 150, asOf: '' }]));
-    marketApi.getPreviousClose.and.returnValue(of(140));
-    marketApi.getIntradayCloses.and.returnValue(of([145, 150]));
+    stream = { prices: signal<Record<string, number>>({}), watch: vi.fn().mockName('watch') };
+    holdingsApi.getHoldings.mockReturnValue(of(holdings));
+    holdingsApi.getAccounts.mockReturnValue(of([]));
+    balanceApi.getBalance.mockReturnValue(of(balance));
+    marketApi.getAllLatestPrices.mockReturnValue(of([{ symbol: 'AAPL', name: 'Apple', price: 150, asOf: '' }]));
+    marketApi.getPreviousClose.mockReturnValue(of(140));
+    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
 
     TestBed.configureTestingModule({
       providers: [
@@ -67,10 +69,10 @@ describe('AccountsComponent', () => {
 
   it('loads the accounts and totals their cash', () => {
     create();
-    expect(page.loading()).toBeFalse();
+    expect(page.loading()).toBe(false);
     expect(page.accounts().length).toBe(2);
     expect(page.totalCash()).toBe(1500);
-    expect(page.multiAccount()).toBeTrue();
+    expect(page.multiAccount()).toBe(true);
     expect(page.cashAccounts()).toEqual([
       { accountId: 'a1', name: 'Brokerage ··0001', cash: 1000 },
       { accountId: 'a2', name: 'Brokerage ··0002', cash: 500 }
@@ -90,21 +92,21 @@ describe('AccountsComponent', () => {
   });
 
   it('falls back to the list for an account that is not the client\'s', () => {
-    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     create('someone-elses');
     expect(navigate).toHaveBeenCalledWith(['/accounts'], { replaceUrl: true });
   });
 
   it('shows a load failure from the shared valuation', () => {
-    holdingsApi.getHoldings.and.returnValue(throwError(() => ({ error: { message: 'Down' } })));
+    holdingsApi.getHoldings.mockReturnValue(throwError(() => ({ error: { message: 'Down' } })));
     create();
     expect(page.error()).toBe('Down');
-    expect(page.loading()).toBeTrue();
+    expect(page.loading()).toBe(true);
   });
 
   it('reloads on demand and after an account is opened', () => {
     create();
-    holdingsApi.getHoldings.calls.reset();
+    holdingsApi.getHoldings.mockClear();
     page.load();
     page.onOpened({} as never);
     expect(holdingsApi.getHoldings).toHaveBeenCalledTimes(2);
@@ -118,7 +120,7 @@ describe('AccountsComponent', () => {
 
   it('starts a transfer or a deposit on the cash panel', fakeAsync(() => {
     create();
-    const panel = jasmine.createSpyObj('CashPanelComponent', ['startTransfer', 'startDeposit']);
+    const panel = createSpyObj('CashPanelComponent', ['startTransfer', 'startDeposit']);
     page.cashPanel = panel;
     page.rail.set('open');
 
@@ -147,7 +149,7 @@ describe('AccountsComponent', () => {
   });
 
   it('goes to a new account to fund it', () => {
-    const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     create();
     page.fund('new');
     expect(navigate).toHaveBeenCalledWith(['/accounts', 'new']);

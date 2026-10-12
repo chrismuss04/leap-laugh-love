@@ -60,11 +60,11 @@ describe('format helpers', () => {
   });
 
   it('accepts only whole-cent cash amounts of at least one cent', () => {
-    expect(isCashAmount(0.29)).toBeTrue();
-    expect(isCashAmount(100)).toBeTrue();
-    expect(isCashAmount(0.001)).toBeFalse();
-    expect(isCashAmount(1.234)).toBeFalse();
-    expect(isCashAmount(0)).toBeFalse();
-    expect(isCashAmount(null)).toBeFalse();
+    expect(isCashAmount(0.29)).toBe(true);
+    expect(isCashAmount(100)).toBe(true);
+    expect(isCashAmount(0.001)).toBe(false);
+    expect(isCashAmount(1.234)).toBe(false);
+    expect(isCashAmount(0)).toBe(false);
+    expect(isCashAmount(null)).toBe(false);
   });
 });

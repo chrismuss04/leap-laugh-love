@@ -65,6 +65,6 @@ describe('ForgotPasswordComponent', () => {
 
     expect(text()).toContain('We couldn\'t send the reset link. Please try again.');
     expect(fixture.nativeElement.querySelector('form')).not.toBeNull();
-    expect(component.isLoading()).toBeFalse();
+    expect(component.isLoading()).toBe(false);
   });
 });

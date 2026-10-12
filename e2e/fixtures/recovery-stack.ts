@@ -78,6 +78,28 @@ export class RecoveryStack {
     return response.accessToken;
   }
 
+  /**
+   * Waits until market-data holds a current quote for the symbol, so an order placed next is
+   * priced rather than rejected. order-app refuses quotes older than 5 seconds, and after a
+   * restart market-data can serve its in-memory price (/prices) while its quote ingestion is
+   * still catching up - with the recovery stack's durable Postgres every quote is its own
+   * synced commit. This reads /quotes, the endpoint order-app prices from, and wants a quote
+   * well inside that limit.
+   */
+  async freshQuote(symbol: string, token: string): Promise<void> {
+    const url = `${await this.url('market-data-app')}/api/marketdata/quotes/${symbol}`;
+    await expect.poll(async () => {
+      try {
+        const response = await this.request.get(url, { headers: { Authorization: `Bearer ${token}` }, timeout: 5_000 });
+        if (!response.ok()) return `HTTP ${response.status()}`;
+        const { quoteTimestamp } = await response.json() as { quoteTimestamp: string };
+        return Date.now() - Date.parse(quoteTimestamp) < 2_000 ? 'fresh' : `quote from ${quoteTimestamp}`;
+      } catch (error) {
+        return String(error);
+      }
+    }, { message: `market-data has a current ${symbol} quote`, intervals: [250, 500, 1000] }).toBe('fresh');
+  }
+
   async healthy(): Promise<void> {
     for (const service of apps) {
       await expect.poll(async () => {
@@ -116,18 +138,30 @@ export class RecoveryStack {
     expect((await execute('docker', ['inspect', '--format', '{{.Image}}', restoredId])).stdout.trim()).toBe(image);
   }
 
+  /**
+   * Routes order-app's settlement calls through the fault proxy, in pass mode. Safe to call
+   * again while the proxy is up: it reuses the running proxy, and order-app is only recreated
+   * when its route actually changes (or started if a failed test left it stopped), so tests
+   * sharing one proxy don't each pay for an order-app restart.
+   */
   async startProxy(): Promise<void> {
     if (!this.checked) throw new Error('Isolation must be verified before injecting faults.');
     const project = process.env.RECOVERY_PROJECT!;
     const name = `${project}-fault-proxy`;
-    await execute('docker', ['run', '-d', '--name', name, '--network', `${project}_default`,
-      '--mount', `type=bind,source=${path.join(process.env.RECOVERY_REPO_ROOT!, 'e2e/fixtures/settlement-proxy.mjs')},target=/proxy.mjs,readonly`,
-      'node:24-alpine', 'node', '/proxy.mjs'], { timeout: 180_000 });
+    const running = await execute('docker', ['inspect', '--format', '{{.State.Running}}', name])
+      .then(result => result.stdout.trim() === 'true', () => false);
+    if (!running) {
+      await execute('docker', ['rm', '-f', name]).catch(() => undefined);
+      await execute('docker', ['run', '-d', '--name', name, '--network', `${project}_default`,
+        '--mount', `type=bind,source=${path.join(process.env.RECOVERY_REPO_ROOT!, 'e2e/fixtures/settlement-proxy.mjs')},target=/proxy.mjs,readonly`,
+        'node:24-alpine', 'node', '/proxy.mjs'], { timeout: 180_000 });
+    }
     await expect.poll(async () => {
       try { await this.proxyMode('pass'); return true; } catch { return false; }
     }, { timeout: 30_000 }).toBe(true);
     this.accountRoute = `http://${name}:8080`;
-    await this.compose('up', '-d', '--no-deps', '--no-build', '--force-recreate', 'order-app');
+    // Compose recreates order-app only if its configuration (the route) differs.
+    await this.compose('up', '-d', '--no-deps', '--no-build', 'order-app');
     await this.healthy();
   }
 

@@ -1,0 +1,39 @@
+<a class="back-link" routerLink="/reporting" queryParamsHandling="preserve">
+  <span aria-hidden="true">←</span> Back to order audit
+</a>
+
+<div class="page-header">
+  <p class="eyebrow">Order lifecycle</p>
+  <h1 class="font-display headline-page">Trace <em>order</em></h1>
+  <p class="order-id" data-testid="lifecycle-order-id"><code>{{ orderId() }}</code></p>
+</div>
+
+<div *ngIf="!validId(); else trace" class="notice" role="alert">
+  That isn't an order id. Order ids are UUIDs, e.g. 3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21. Go back to
+  the order audit to look one up.
+</div>
+
+<ng-template #trace>
+  <section class="section grid" aria-label="Order lifecycle">
+    <app-report-panel class="span-all" eyebrow="Who and what" heading="Order summary"
+                      description="The client and account that placed the order, the instrument, side, quantity and fill price, and its current status."
+                      source="trading.orders · trading.accounts · iam.clients"></app-report-panel>
+
+    <app-report-panel class="span-all" eyebrow="End to end, with timestamps" heading="Lifecycle timeline" state="ready"
+                      description="Each step from submission to the reporting store, when it happened, and how long after the step before.">
+      <app-lifecycle-timeline [lifecycle]="stages()"></app-lifecycle-timeline>
+    </app-report-panel>
+
+    <app-report-panel class="span-all" eyebrow="Order and executions" heading="Executions"
+                      description="Each fill or rejection the execution engine recorded for this order, with its time and reason."
+                      source="trading.executions"></app-report-panel>
+
+    <app-report-panel eyebrow="Cash ledger" heading="Cash entries"
+                      description="Buy and sell settlements this order posted to the account's cash ledger, with amounts and times."
+                      source="trading.cash_ledger"></app-report-panel>
+
+    <app-report-panel eyebrow="Holdings ledger" heading="Position movements"
+                      description="Fills this order moved into or out of the account's holdings, with quantities and times."
+                      source="trading.position_movements"></app-report-panel>
+  </section>
+</ng-template>

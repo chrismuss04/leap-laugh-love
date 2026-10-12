@@ -46,8 +46,8 @@ describe('ActivityReportComponent', () => {
 
   beforeEach(() => {
     // Thursday 8 October 2026, 22:00 UTC: late enough that a local-time "today" could differ.
-    jasmine.clock().install();
-    jasmine.clock().mockDate(new Date('2026-10-08T22:00:00Z'));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-08T22:00:00Z'));
     TestBed.configureTestingModule({
       imports: [ActivityReportComponent],
       providers: [provideHttpClient(), provideHttpClientTesting()]
@@ -55,7 +55,7 @@ describe('ActivityReportComponent', () => {
     http = TestBed.inject(HttpTestingController);
     fixture = TestBed.createComponent(ActivityReportComponent);
   });
-  afterEach(() => { http.verify(); fixture.destroy(); jasmine.clock().uninstall(); });
+  afterEach(() => { http.verify(); fixture.destroy(); vi.useRealTimers(); });
 
   // Verify the page opens on a daily report for the last 7 UTC days across all instruments.
   it('loads a default report for the last 7 days', () => {
@@ -63,7 +63,7 @@ describe('ActivityReportComponent', () => {
     expect(request.request.params.get('from')).toBe('2026-10-02');
     expect(request.request.params.get('to')).toBe('2026-10-08');
     expect(request.request.params.get('granularity')).toBe('DAILY');
-    expect(request.request.params.has('instrumentId')).toBeFalse();
+    expect(request.request.params.has('instrumentId')).toBe(false);
     expect(el('.loading')).not.toBeNull();
     respond(request, report());
     expect(el('.loading')).toBeNull();
@@ -151,8 +151,8 @@ describe('ActivityReportComponent', () => {
   it('disables generate while loading', () => {
     const request = start();
     fixture.detectChanges();
-    expect((el('[data-testid="report-generate"]') as HTMLButtonElement).disabled).toBeTrue();
+    expect((el('[data-testid="report-generate"]') as HTMLButtonElement).disabled).toBe(true);
     respond(request, report());
-    expect((el('[data-testid="report-generate"]') as HTMLButtonElement).disabled).toBeFalse();
+    expect((el('[data-testid="report-generate"]') as HTMLButtonElement).disabled).toBe(false);
   });
 });

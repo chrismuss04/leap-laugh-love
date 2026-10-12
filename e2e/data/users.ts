@@ -45,8 +45,8 @@ export type PersonaName = keyof typeof personas;
  * login against one counts toward its lockout, so tests must only sign them in successfully.
  */
 export const staff = {
-  analyst: { email: 'commercial.analyst@leap.com', roleLabel: 'Commercial analyst' },
-  tradingOps: { email: 'trading.ops@leap.com', roleLabel: 'Trading operations' }
+  analyst: { email: 'commercial.analyst@leap.com', roleLabel: 'Commercial analyst', dashboardHeading: 'Trading Activity' },
+  tradingOps: { email: 'trading.ops@leap.com', roleLabel: 'Trading operations', dashboardHeading: 'Order Audit' }
 } as const;
 
 export const TRADER_COUNT = 16;

@@ -38,7 +38,7 @@ describe('ReportsService', () => {
     service.getActivityReport({ from: '2026-10-01', to: '2026-10-07', granularity: 'DAILY', instrumentId: null })
       .subscribe();
     const all = http.expectOne(r => r.url === '/api/order/reports/activity');
-    expect(all.request.params.has('instrumentId')).toBeFalse();
+    expect(all.request.params.has('instrumentId')).toBe(false);
     all.flush({});
   });
 
@@ -60,7 +60,7 @@ describe('ReportsService', () => {
   it('surfaces a bad request', () => {
     let error: { status: number; error: { message: string } } | undefined;
     service.getActivityReport({ from: '2026-10-07', to: '2026-10-01', granularity: 'DAILY' })
-      .subscribe({ next: () => fail('Expected an error'), error: e => error = e });
+      .subscribe({ next: () => expect.fail('Expected an error'), error: e => error = e });
     http.expectOne(r => r.url === '/api/order/reports/activity')
       .flush({ error: 'BAD_REQUEST', message: 'from must be on or before to' }, { status: 400, statusText: 'Bad Request' });
     expect(error?.status).toBe(400);

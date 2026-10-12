@@ -1,16 +1,16 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
 import { ReportingComponent } from './reporting';
 import { AuthService } from '../services/auth.service';
 import { SessionActivityService } from '../services/session-activity';
 
 describe('ReportingComponent', () => {
   const now = Math.floor(Date.now() / 1000);
-  const tokenFor = (role: string, email: string) => 'header.' + btoa(JSON.stringify({
-    role, email, sid: 'staff-session', iat: now, exp: now + 3600
+  const token = 'header.' + btoa(JSON.stringify({
+    role: 'COMMERCIAL_ANALYST', email: 'analyst@leap.com', sid: 'staff-session', iat: now, exp: now + 3600
   })).replace(/=+$/, '') + '.signature';
-  const token = tokenFor('COMMERCIAL_ANALYST', 'analyst@leap.com');
 
   let http: HttpTestingController;
 
@@ -19,7 +19,7 @@ describe('ReportingComponent', () => {
     localStorage.setItem('auth_token', token);
     TestBed.configureTestingModule({
       imports: [ReportingComponent],
-      providers: [provideHttpClient(), provideHttpClientTesting()]
+      providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting()]
     });
     http = TestBed.inject(HttpTestingController);
   });
@@ -34,35 +34,27 @@ describe('ReportingComponent', () => {
     fixture.detectChanges();
     const text = fixture.nativeElement.textContent as string;
 
-    expect(text).toContain('Reporting dashboard');
     expect(text).toContain('analyst@leap.com');
     expect(text).toContain('Commercial analyst');
     // The trading shell loads the client profile and price stream; staff tokens can't read either.
-    http.expectNone(request => !request.url.startsWith('/api/order/reports/'));
-    fixture.destroy();
-  });
-
-  it('shows analysts the activity report', () => {
-    const fixture = TestBed.createComponent(ReportingComponent);
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-activity-report')).not.toBeNull();
-    http.expectOne('/api/order/reports/instruments');
-    fixture.destroy();
-  });
-
-  it('shows Trading Operations no activity report, and calls no API', () => {
-    localStorage.setItem('auth_token', tokenFor('TRADING_OPERATIONS', 'ops@leap.com'));
-    const fixture = TestBed.createComponent(ReportingComponent);
-    fixture.detectChanges();
-    expect(fixture.nativeElement.querySelector('app-activity-report')).toBeNull();
     http.expectNone(() => true);
+    fixture.destroy();
+  });
+
+  // Staff Dashboards: each role's dashboard renders inside the shell; see dashboards.spec.ts.
+  it('renders the role dashboard in its outlet, under a link home', () => {
+    const fixture = TestBed.createComponent(ReportingComponent);
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('main router-outlet')).not.toBeNull();
+    expect(el.querySelector('a.brand')!.getAttribute('href')).toBe('/reporting');
     fixture.destroy();
   });
 
   it('tracks session activity while open', () => {
     const activity = TestBed.inject(SessionActivityService);
-    spyOn(activity, 'start');
-    spyOn(activity, 'stop');
+    vi.spyOn(activity, 'start').mockImplementation(() => {});
+    vi.spyOn(activity, 'stop').mockImplementation(() => {});
     const fixture = TestBed.createComponent(ReportingComponent);
     fixture.detectChanges();
     expect(activity.start).toHaveBeenCalled();
@@ -77,7 +69,7 @@ describe('ReportingComponent', () => {
 
     const logout = http.expectOne('/api/iam/session/logout');
     expect(logout.request.headers.get('Authorization')).toBe(`Bearer ${token}`);
-    expect(TestBed.inject(AuthService).isAuthenticated()).toBeFalse();
+    expect(TestBed.inject(AuthService).isAuthenticated()).toBe(false);
     fixture.destroy();
   });
 });

@@ -3,11 +3,13 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
 import { ClientRegistrationService } from '../services/client-registration.service';
 import { CreateAccountComponent } from './create-account.component';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../testing/create-spy-obj';
 
 describe('CreateAccountComponent', () => {
   let fixture: ComponentFixture<CreateAccountComponent>;
   let component: CreateAccountComponent;
-  let registration: jasmine.SpyObj<ClientRegistrationService>;
+  let registration: MockedObject<ClientRegistrationService>;
 
   const valid = {
     firstName: 'Ada', lastName: 'Lovelace', dateOfBirth: '1990-01-01', email: 'ada@example.com',
@@ -19,7 +21,7 @@ describe('CreateAccountComponent', () => {
   const inputEvent = (value: string) => ({ target: { value } }) as unknown as Event;
 
   beforeEach(() => {
-    registration = jasmine.createSpyObj('ClientRegistrationService', ['register']);
+    registration = createSpyObj('ClientRegistrationService', ['register']);
     TestBed.configureTestingModule({
       declarations: [CreateAccountComponent],
       imports: [ReactiveFormsModule],
@@ -31,14 +33,14 @@ describe('CreateAccountComponent', () => {
   });
 
   it('starts invalid', () => {
-    expect(component.registrationForm.valid).toBeFalse();
+    expect(component.registrationForm.valid).toBe(false);
   });
 
   it('toggles password visibility', () => {
     component.togglePasswordVisibility();
     component.toggleConfirmPasswordVisibility();
-    expect(component.showPassword).toBeTrue();
-    expect(component.showConfirmPassword).toBeTrue();
+    expect(component.showPassword).toBe(true);
+    expect(component.showConfirmPassword).toBe(true);
   });
 
   it('formats the SSN as it is typed', () => {
@@ -58,9 +60,9 @@ describe('CreateAccountComponent', () => {
 
   it('selects an experience level and marks it touched', () => {
     component.selectExperience('Advanced');
-    expect(component.isExperienceSelected('Advanced')).toBeTrue();
-    expect(component.isExperienceSelected('Beginner')).toBeFalse();
-    expect(component.registrationForm.get('experienceLevel')!.touched).toBeTrue();
+    expect(component.isExperienceSelected('Advanced')).toBe(true);
+    expect(component.isExperienceSelected('Beginner')).toBe(false);
+    expect(component.registrationForm.get('experienceLevel')!.touched).toBe(true);
   });
 
   describe('validation messages', () => {
@@ -104,16 +106,16 @@ describe('CreateAccountComponent', () => {
       set('password', 'password1');
       set('confirmPassword', 'different');
       expect(message('confirmPassword')).toBe('Passwords do not match');
-      expect(component.isFieldInvalid('confirmPassword')).toBeTrue();
+      expect(component.isFieldInvalid('confirmPassword')).toBe(true);
       set('confirmPassword', 'password1');
-      expect(component.isFieldInvalid('confirmPassword')).toBeFalse();
+      expect(component.isFieldInvalid('confirmPassword')).toBe(false);
     });
 
     it('flags only touched or dirty invalid fields', () => {
-      expect(component.isFieldInvalid('city')).toBeFalse();
+      expect(component.isFieldInvalid('city')).toBe(false);
       component.registrationForm.get('city')!.markAsTouched();
-      expect(component.isFieldInvalid('city')).toBeTrue();
-      expect(component.isFieldInvalid('nope')).toBeFalse();
+      expect(component.isFieldInvalid('city')).toBe(true);
+      expect(component.isFieldInvalid('nope')).toBe(false);
     });
   });
 
@@ -125,16 +127,16 @@ describe('CreateAccountComponent', () => {
     });
 
     it('sends the application then returns to sign in', fakeAsync(() => {
-      registration.register.and.returnValue(of({ clientId: 'c', email: valid.email, status: 'ACTIVE' }));
-      spyOn(component.switchToSignIn, 'emit');
+      registration.register.mockReturnValue(of({ clientId: 'c', email: valid.email, status: 'ACTIVE' }));
+      vi.spyOn(component.switchToSignIn, 'emit').mockImplementation(() => {});
       component.registrationForm.setValue(valid);
       component.onSubmit();
 
-      expect(registration.register).toHaveBeenCalledWith(jasmine.objectContaining({
+      expect(registration.register).toHaveBeenCalledWith(expect.objectContaining({
         fullName: 'Ada Lovelace', addressLine1: '1 Main St', addressLine2: undefined, countryCode: 'GB',
         experienceLevel: 'INTERMEDIATE', initialDepositAmount: 5000
       }));
-      expect(component.isLoading()).toBeFalse();
+      expect(component.isLoading()).toBe(false);
       expect(component.successMessage()).toContain('Application submitted');
       tick(1500);
       expect(component.switchToSignIn.emit).toHaveBeenCalled();
@@ -142,16 +144,16 @@ describe('CreateAccountComponent', () => {
 
     it('shows the server message, then a plain-text error, then a fallback', () => {
       component.registrationForm.setValue(valid);
-      registration.register.and.returnValue(throwError(() => ({ error: { message: 'Email taken' } })));
+      registration.register.mockReturnValue(throwError(() => ({ error: { message: 'Email taken' } })));
       component.onSubmit();
       expect(component.errorMessage()).toBe('Email taken');
-      expect(component.isLoading()).toBeFalse();
+      expect(component.isLoading()).toBe(false);
 
-      registration.register.and.returnValue(throwError(() => ({ error: 'Plain text' })));
+      registration.register.mockReturnValue(throwError(() => ({ error: 'Plain text' })));
       component.onSubmit();
       expect(component.errorMessage()).toBe('Plain text');
 
-      registration.register.and.returnValue(throwError(() => ({})));
+      registration.register.mockReturnValue(throwError(() => ({})));
       component.onSubmit();
       expect(component.errorMessage()).toBe('Submission failed. Please try again.');
     });

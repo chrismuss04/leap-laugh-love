@@ -1,9 +1,9 @@
 import { Component, OnDestroy, OnInit, inject } from '@angular/core';
+import { RouterLink, RouterOutlet } from '@angular/router';
 import { AuthService, Role } from '../services/auth.service';
 // Session Timeout & Revocation: staff sessions have the same idle timeout as clients'.
 import { SessionActivityService } from '../services/session-activity';
 import { Subscription, asapScheduler, observeOn } from 'rxjs';
-import { ActivityReportComponent } from './activity-report';
 
 const ROLE_LABELS: Record<Role, string> = {
   CLIENT: 'Client',
@@ -12,12 +12,13 @@ const ROLE_LABELS: Record<Role, string> = {
 };
 
 /**
- * Activity Reporting: the staff dashboard. It has its own layout rather than the trading shell,
+ * Activity Reporting: the staff shell. It has its own layout rather than the trading shell,
  * which loads the client profile and live prices - neither of which a staff token can read.
+ * Staff Dashboards: each role's dashboard renders in its router outlet (see app.module.ts).
  */
 @Component({
     selector: 'app-reporting',
-    imports: [ActivityReportComponent],
+    imports: [RouterOutlet, RouterLink],
     templateUrl: './reporting.html',
     styleUrl: './reporting.css'
 })
@@ -28,8 +29,6 @@ export class ReportingComponent implements OnInit, OnDestroy {
 
   readonly email = this.auth.getEmail();
   readonly roleLabel = ROLE_LABELS[this.auth.getRole() ?? 'CLIENT'];
-  // Activity reports are for commercial analysts; order-app refuses Trading Operations.
-  readonly isAnalyst = this.auth.getRole() === 'COMMERCIAL_ANALYST';
 
   ngOnInit(): void {
     const token = this.auth.getToken();
