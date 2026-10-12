@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.reporting.security;
 
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.common.security.Role;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -9,6 +10,7 @@ import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -17,7 +19,6 @@ import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -30,10 +31,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @DisplayName("reporting-app role access")
 class RoleAccessTest {
 
-    // No report is mapped yet: an analyst gets past security to a 404, everyone else stops at it.
     private static final String REPORT = "/api/reporting/analyst/scorecard";
 
     @Autowired private MockMvc mockMvc;
+    // The reports' SQL is Postgres-only; here only who may reach them matters.
+    @MockBean private AnalystReportService reports;
     @Autowired private JwtService jwtService;
     @Autowired private JdbcTemplate jdbc;
 
@@ -56,12 +58,10 @@ class RoleAccessTest {
     }
 
     @Test
-    @DisplayName("a commercial analyst gets past security")
+    @DisplayName("a commercial analyst can read analyst reports")
     void analystIsAllowed() throws Exception {
-        int status = mockMvc.perform(get(REPORT).header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST)))
-                .andReturn().getResponse().getStatus();
-        assertNotEquals(401, status);
-        assertNotEquals(403, status);
+        mockMvc.perform(get(REPORT).header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST)))
+                .andExpect(status().isOk());
     }
 
     @ParameterizedTest
