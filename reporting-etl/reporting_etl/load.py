@@ -4,6 +4,10 @@ Writes reporting rows using shared connection and error handling.
 The insert ignores an order that is already there. Kafka delivers at least once - a message is
 re-read if the ETL stops after loading it but before committing its offset - and each order
 publishes once, at its final status, so a repeat is always the same row.
+
+A new order also adds itself to its client's month in reporting.client_months, in the same
+statement: the rollup only sees the orders the insert actually stored, so a repeat that the
+insert ignores never counts twice, and the two tables can't disagree after a failure.
 """
 
 import logging
@@ -19,15 +23,31 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# RETURNING yields a row only when the order was new, so the rollup insert below adds nothing for
+# a repeat, and the statement's row count is 1 for a new order and 0 for one already loaded.
 INSERT_ORDER = """
-INSERT INTO reporting.orders (
-    order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
-    fill_price, rejection_reason, submitted_at, completed_at)
-VALUES (
-    %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
-    %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
-    %(completed_at)s)
-ON CONFLICT (order_id) DO NOTHING
+WITH inserted AS (
+    INSERT INTO reporting.orders (
+        order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
+        fill_price, rejection_reason, submitted_at, completed_at)
+    VALUES (
+        %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
+        %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
+        %(completed_at)s)
+    ON CONFLICT (order_id) DO NOTHING
+    RETURNING client_id, status, quantity, fill_price, completed_at
+)
+INSERT INTO reporting.client_months AS cm (client_id, month, order_count, filled_count, filled_value)
+SELECT client_id,
+       date_trunc('month', completed_at AT TIME ZONE 'UTC')::date,
+       1,
+       CASE WHEN status = 'FILLED' THEN 1 ELSE 0 END,
+       CASE WHEN status = 'FILLED' THEN quantity * fill_price ELSE 0 END
+FROM inserted
+ON CONFLICT (client_id, month) DO UPDATE SET
+    order_count = cm.order_count + EXCLUDED.order_count,
+    filled_count = cm.filled_count + EXCLUDED.filled_count,
+    filled_value = cm.filled_value + EXCLUDED.filled_value
 """
 
 
