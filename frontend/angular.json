@@ -81,7 +81,6 @@
           "options": {
             "runner": "vitest",
             "browsers": ["chromium"],
-            "headless": true,
             "buildTarget": "leap-laugh-love-frontend:build:development",
             "tsConfig": "tsconfig.spec.json",
             "setupFiles": ["src/testing/test-setup.ts"],
