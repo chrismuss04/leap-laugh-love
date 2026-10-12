@@ -107,6 +107,51 @@ pipeline {
                     // main's results; only main and pull requests are analysed.
                     env.RUN_SONAR = env.RUN_E2E
 
+                    // The trade recovery suite is the slowest stage, so it runs on pull requests
+                    // only - a merge to main has already passed it as a PR - and is skipped when
+                    // every file the PR changes is in an area the suite cannot be affected by.
+                    // The list names what is safe rather than what is relevant, so a path nobody
+                    // thought about runs the suite instead of silently skipping it. A plain
+                    // Pipeline job (no BRANCH_NAME) still always runs it, as with E2E.
+                    env.RUN_RECOVERY = env.BRANCH_NAME ? 'false' : 'true'
+                    if (env.CHANGE_ID) {
+                        def unaffected = [
+                            ~/frontend\/.*/,
+                            ~/reporting-etl\/.*/,
+                            ~/docs\/.*/,
+                            ~/.*\.(md|mmd)/,
+                            ~/sonar-project\.properties/,
+                            ~/docker-compose\.external-db\.yml/,
+                            ~/\.(env\.example|gitignore|gitattributes)/,
+                            // The rest of the E2E suite; recovery shares fixtures/, data/, seed/
+                            // and the npm dependencies with it, so those still count.
+                            ~/e2e\/tests\/(?!recovery\/).*/,
+                            ~/e2e\/(pages|scripts)\/.*/,
+                            ~/e2e\/(Dockerfile|playwright\.config\.ts|eslint\.config\.mjs|\.env\.example)/,
+                        ]
+                        try {
+                            // Diff against the target branch, not the previous build: "changeset"
+                            // only sees commits since the last build of this PR. A PR checkout
+                            // doesn't always carry the target branch, so fetch it first.
+                            def changed = sh(script: '''
+                                set -eu
+                                git fetch --no-tags --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
+                                git diff --name-only "origin/$CHANGE_TARGET...HEAD"
+                            ''', returnStdout: true).trim().readLines()
+                            def relevant = changed.findAll { file -> !unaffected.any { file ==~ it } }
+                            if (relevant) {
+                                env.RUN_RECOVERY = 'true'
+                                echo "Trade recovery tests will run; affected by: ${relevant.take(10).join(', ')}${relevant.size() > 10 ? ', ...' : ''}"
+                            } else {
+                                echo "Trade recovery tests skipped: no changed file can affect them."
+                            }
+                        } catch (err) {
+                            // Unable to tell what changed (fetch failed, shallow history): run it.
+                            env.RUN_RECOVERY = 'true'
+                            echo "Trade recovery tests will run; could not diff against ${env.CHANGE_TARGET}: ${err}"
+                        }
+                    }
+
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
                     // "docker-compose"; older agents have only the standalone one. Use whichever
@@ -615,7 +660,8 @@ pipeline {
                     }
                     stage('Trade Recovery Tests') {
                         when {
-                            environment name: 'RUN_E2E', value: 'true'
+                            // RUN_RECOVERY is set in Configure Pipeline.
+                            environment name: 'RUN_RECOVERY', value: 'true'
                         }
                         options {
                             timeout(time: 30, unit: 'MINUTES')
