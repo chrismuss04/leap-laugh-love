@@ -6,7 +6,8 @@ export const ORDER_TYPES: { type: OrderType; label: string }[] = [
   { type: 'MARKET', label: 'Market' },
   { type: 'LIMIT', label: 'Limit' },
   { type: 'STOP', label: 'Stop' },
-  { type: 'STOP_LIMIT', label: 'Stop limit' }
+  { type: 'STOP_LIMIT', label: 'Stop limit' },
+  { type: 'TRAILING_STOP', label: 'Trailing stop' }
 ];
 
 /**
@@ -36,6 +37,10 @@ export function orderTypeHint(type: OrderType, side: OrderSide): string {
       return buy
         ? 'Once the price rises to your stop, buys at your limit price or lower.'
         : 'Once the price falls to your stop, sells at your limit price or higher.';
+    case 'TRAILING_STOP':
+      return buy
+        ? 'A stop that follows the price down: buys if it rises your trail off its low.'
+        : 'A stop that rises with the price: sells if it falls your trail from its high, locking in gains.';
   }
 }
 
@@ -48,7 +53,8 @@ export function reservePricePerShare(type: OrderType, limitPrice: number | null,
   if (type === 'LIMIT' || type === 'STOP_LIMIT') {
     return limitPrice;
   }
-  if (type === 'STOP') {
+  // A trailing stop holds what it would at its starting stop; the stop only moves in its favour.
+  if (type === 'STOP' || type === 'TRAILING_STOP') {
     return stopPrice == null ? null : stopPrice * STOP_BUY_BUFFER;
   }
   return null;
@@ -74,6 +80,17 @@ export interface OrderDescription {
   limitPrice: number | null;
   stopPrice: number | null;
   timeInForce: TimeInForce;
+  /** For a trailing stop: the trail, in dollars or percent. */
+  trailAmount?: number | null;
+  trailPercent?: number | null;
+}
+
+/** "$5.00" or "2%": how far a trailing stop trails, or "$—" before it's entered. */
+export function trailText(amount: number | null | undefined, percent: number | null | undefined): string {
+  if (percent != null) {
+    return `${+percent.toFixed(2)}%`;
+  }
+  return amount != null ? formatMoney(amount) : '$—';
 }
 
 /**
@@ -116,6 +133,12 @@ export function describeOrder(order: OrderDescription): SentencePart[] {
         { text: shares, strong: true }, { text: ' at ' }, { text: limit, strong: true },
         { text: ` ${orBetter}` }, until
       ];
+    case 'TRAILING_STOP':
+      return [
+        { text: `If ${order.symbol} ${moves} ` }, { text: trailText(order.trailAmount, order.trailPercent), strong: true },
+        { text: ` from its ${order.side === 'BUY' ? 'low' : 'high'}, ${verb} ` },
+        { text: shares, strong: true }, { text: ' at the market price' }, until
+      ];
   }
 }
 
@@ -125,7 +148,8 @@ export function sentenceText(parts: SentencePart[]): string {
 
 /** The price an open order is waiting for: its stop until that's reached, then its limit. */
 export function waitingPrice(order: Pick<OpenOrder, 'orderType' | 'limitPrice' | 'stopPrice' | 'triggeredAt'>): number | null {
-  if (order.orderType === 'STOP' || (order.orderType === 'STOP_LIMIT' && !order.triggeredAt)) {
+  if (order.orderType === 'STOP' || order.orderType === 'TRAILING_STOP'
+      || (order.orderType === 'STOP_LIMIT' && !order.triggeredAt)) {
     return order.stopPrice;
   }
   return order.limitPrice;
@@ -136,7 +160,8 @@ export function waitingPrice(order: Pick<OpenOrder, 'orderType' | 'limitPrice' |
  * limit (or a triggered buy stop limit) and a sell stop wait for it to fall, the others to rise.
  */
 export function requiredMove(order: Pick<OpenOrder, 'orderType' | 'side' | 'triggeredAt'>): 'rise' | 'fall' {
-  const onStop = order.orderType === 'STOP' || (order.orderType === 'STOP_LIMIT' && !order.triggeredAt);
+  const onStop = order.orderType === 'STOP' || order.orderType === 'TRAILING_STOP'
+    || (order.orderType === 'STOP_LIMIT' && !order.triggeredAt);
   const buy = order.side === 'BUY';
   return onStop === buy ? 'rise' : 'fall';
 }

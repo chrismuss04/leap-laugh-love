@@ -46,6 +46,7 @@ public class OrderTriggerEngine {
     private final OpenOrderService openOrderService;
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
+    private final OrderUpdateBroadcaster broadcaster;
 
     /**
      * Constructs an OrderTriggerEngine.
@@ -55,7 +56,8 @@ public class OrderTriggerEngine {
      * @param orderSubmissionService fills an order whose price was reached
      * @param openOrderService expires orders past their time in force
      * @param jwtService issues the service tokens the engine calls other apps with
-     * @param transactionTemplate marks stop-limit orders triggered
+     * @param transactionTemplate marks stop-limit orders triggered and moves trailing stops
+     * @param broadcaster tells clients, as it happens, that an order of theirs ended
      */
     public OrderTriggerEngine(OrderRepository orderRepository,
                               AccountRepository accountRepository,
@@ -63,7 +65,8 @@ public class OrderTriggerEngine {
                               OrderSubmissionService orderSubmissionService,
                               OpenOrderService openOrderService,
                               JwtService jwtService,
-                              TransactionTemplate transactionTemplate) {
+                              TransactionTemplate transactionTemplate,
+                              OrderUpdateBroadcaster broadcaster) {
         this.orderRepository = orderRepository;
         this.accountRepository = accountRepository;
         this.currentQuoteService = currentQuoteService;
@@ -71,6 +74,7 @@ public class OrderTriggerEngine {
         this.openOrderService = openOrderService;
         this.jwtService = jwtService;
         this.transactionTemplate = transactionTemplate;
+        this.broadcaster = broadcaster;
     }
 
     /**
@@ -134,18 +138,69 @@ public class OrderTriggerEngine {
         if (price == null) {
             return false;
         }
+        if (order.getOrderType().hasTrail() && !trail(order, price)) {
+            return false;
+        }
         TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, price);
         if (evaluation.fills()) {
             Order.Status status = orderSubmissionService.fillOpenOrder(order.getOrderId(), evaluation.fillPrice(),
                     evaluation.stopReached(), jwtService.generateSettlementToken(clientIdOf(order)));
             log.info("Open {} {} order {} reached its price at {}; now {}", order.getOrderType(), order.getSide(),
                     order.getOrderId(), evaluation.fillPrice(), status);
+            if (status != null) {
+                notifyClient(order, status, evaluation.fillPrice());
+            }
             return status != null;
         }
         if (evaluation.stopReached() && order.getTriggeredAt() == null) {
             markTriggered(order.getOrderId());
         }
         return false;
+    }
+
+    /**
+     * Tells the client their order ended, if they have the order stream open. Never fails the
+     * fill: the order has already been decided.
+     * @param order the order, with its instrument loaded
+     * @param status how it ended
+     * @param fillPrice the price it executed at
+     */
+    private void notifyClient(Order order, Order.Status status, BigDecimal fillPrice) {
+        try {
+            String reason = status == Order.Status.REJECTED
+                    ? orderRepository.findById(order.getOrderId()).map(Order::getRejectionReason).orElse(null)
+                    : null;
+            broadcaster.publish(clientIdOf(order), OrderUpdate.of(order, status,
+                    status == Order.Status.REJECTED ? null : fillPrice, reason));
+        } catch (RuntimeException ex) {
+            log.warn("Could not tell the client about order {}: {}", order.getOrderId(), ex.getMessage());
+        }
+    }
+
+    /**
+     * Moves a trailing stop behind a new best price, saving it under the order's row lock so a
+     * cancel or edit can't be overwritten. The in-memory order is moved too, for the evaluation
+     * that follows.
+     * @param order the open trailing order
+     * @param price the side's executable price now
+     * @return false if the order is no longer OPEN, so there is nothing to evaluate
+     */
+    private boolean trail(Order order, BigDecimal price) {
+        TrailingStop.Move move = TrailingStop.ratchet(order, price);
+        if (move == null) {
+            return true;
+        }
+        Boolean moved = transactionTemplate.execute(status -> orderRepository.findByIdForUpdate(order.getOrderId())
+                .filter(locked -> locked.getStatus() == Order.Status.OPEN)
+                .map(locked -> {
+                    locked.moveTrail(move.best(), move.stop());
+                    return true;
+                })
+                .orElse(false));
+        if (Boolean.TRUE.equals(moved)) {
+            order.moveTrail(move.best(), move.stop());
+        }
+        return Boolean.TRUE.equals(moved);
     }
 
     /**

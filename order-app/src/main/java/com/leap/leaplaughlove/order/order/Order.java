@@ -34,10 +34,11 @@ public class Order {
     /**
      * How the order is priced. MARKET fills at once at the live quote. LIMIT fills only at its
      * limit price or better. STOP becomes a market order once the price reaches its stop price,
-     * and STOP_LIMIT becomes a limit order then.
+     * and STOP_LIMIT becomes a limit order then. TRAILING_STOP is a stop whose stop price follows
+     * the market in the order's favour, a fixed amount or percent behind the best price seen.
      */
     public enum OrderType {
-        MARKET, LIMIT, STOP, STOP_LIMIT;
+        MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP;
 
         /**
          * Returns whether this type carries a limit price.
@@ -46,10 +47,23 @@ public class Order {
         public boolean hasLimit() { return this == LIMIT || this == STOP_LIMIT; }
 
         /**
-         * Returns whether this type carries a stop price.
+         * Returns whether this type waits for a stop price to be reached. A trailing stop's is set
+         * by order-app and moves, rather than being entered.
+         * @return true for STOP, STOP_LIMIT and TRAILING_STOP
+         */
+        public boolean hasStop() { return this == STOP || this == STOP_LIMIT || this == TRAILING_STOP; }
+
+        /**
+         * Returns whether the client enters this type's stop price.
          * @return true for STOP and STOP_LIMIT
          */
-        public boolean hasStop() { return this == STOP || this == STOP_LIMIT; }
+        public boolean takesStopPrice() { return this == STOP || this == STOP_LIMIT; }
+
+        /**
+         * Returns whether this type trails the market by an amount or percent.
+         * @return true for TRAILING_STOP
+         */
+        public boolean hasTrail() { return this == TRAILING_STOP; }
     }
 
     /**
@@ -134,6 +148,15 @@ public class Order {
     @Column(name = "reserved_cash", precision = 18, scale = 2)
     private BigDecimal reservedCash;
 
+    @Column(name = "trail_amount", precision = 18, scale = 6)
+    private BigDecimal trailAmount;
+
+    @Column(name = "trail_percent", precision = 5, scale = 2)
+    private BigDecimal trailPercent;
+
+    @Column(name = "trail_peak", precision = 18, scale = 6)
+    private BigDecimal trailPeak;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -215,6 +238,51 @@ public class Order {
         this.stopPrice = stopPrice;
         this.timeInForce = timeInForce;
         this.expiresAt = expiresAt;
+    }
+
+    /**
+     * Sets how far a trailing stop trails the market: an amount, or a percent of the best price.
+     * Exactly one is set. Called once, before the order is first stored.
+     * @param trailAmount the trail in dollars, or null
+     * @param trailPercent the trail in percent, or null
+     */
+    public void setTrailing(BigDecimal trailAmount, BigDecimal trailPercent) {
+        this.trailAmount = trailAmount;
+        this.trailPercent = trailPercent;
+    }
+
+    /**
+     * Starts or moves a trailing stop: records the best price seen and the stop it sets.
+     * @param trailPeak the best price seen: the high for a sell, the low for a buy
+     * @param stopPrice the stop price that follows from it
+     */
+    public void moveTrail(BigDecimal trailPeak, BigDecimal stopPrice) {
+        this.trailPeak = trailPeak;
+        this.stopPrice = stopPrice;
+    }
+
+    /**
+     * Applies an edit to a working order. The caller has validated it.
+     * @param quantity the new quantity
+     * @param limitPrice the new limit price, for LIMIT and STOP_LIMIT
+     * @param stopPrice the new stop price, for STOP, STOP_LIMIT and TRAILING_STOP
+     * @param trailAmount the new trail in dollars, for TRAILING_STOP, or null
+     * @param trailPercent the new trail in percent, for TRAILING_STOP, or null
+     * @param timeInForce the new time in force
+     * @param expiresAt the new expiry
+     * @param reservedCash the cash a buy now holds back, null for a sell
+     */
+    public void modify(long quantity, BigDecimal limitPrice, BigDecimal stopPrice, BigDecimal trailAmount,
+                       BigDecimal trailPercent, TimeInForce timeInForce, OffsetDateTime expiresAt,
+                       BigDecimal reservedCash) {
+        this.quantity = quantity;
+        this.limitPrice = limitPrice;
+        this.stopPrice = stopPrice;
+        this.trailAmount = trailAmount;
+        this.trailPercent = trailPercent;
+        this.timeInForce = timeInForce;
+        this.expiresAt = expiresAt;
+        this.reservedCash = reservedCash;
     }
 
     /**
@@ -443,6 +511,21 @@ public class Order {
      * @return the expiry time, or null
      */
     public OffsetDateTime getExpiredAt() { return expiredAt; }
+    /**
+     * Returns the dollars a trailing stop trails the best price by.
+     * @return the trail amount, or null
+     */
+    public BigDecimal getTrailAmount() { return trailAmount; }
+    /**
+     * Returns the percent of the best price a trailing stop trails it by.
+     * @return the trail percent, or null
+     */
+    public BigDecimal getTrailPercent() { return trailPercent; }
+    /**
+     * Returns the best price a trailing stop has seen: the high for a sell, the low for a buy.
+     * @return the best price, or null before it starts
+     */
+    public BigDecimal getTrailPeak() { return trailPeak; }
     /**
      * Returns the cash an OPEN buy holds back from buying power.
      * @return the reserved cash, or null for a sell or a market order

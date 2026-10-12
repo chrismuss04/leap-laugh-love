@@ -1241,6 +1241,8 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-password-reset-tokens.sql` | `iam.password_reset_tokens` (password reset links) |
 | `migrate-notification-preferences.sql` | Client notification preferences (`notify_order_fills`, `notify_price_alerts`) |
 | `migrate-price-tolerance.sql` | Saved `max_slippage_pct` on accounts and the quoted price and tolerance on orders |
+| `migrate-order-types.sql` | Limit, stop and stop-limit orders: new order columns and statuses (`OPEN`, `CANCELLED`, `EXPIRED`) |
+| `migrate-trailing-stops.sql` | Trailing stop orders: `trail_amount`, `trail_percent`, `trail_peak`; run after `migrate-order-types.sql` |
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |

@@ -25,6 +25,8 @@ import com.leap.leaplaughlove.order.execution.ExecutionItem;
  * @param stopPrice the stop price, for STOP and STOP_LIMIT orders
  * @param completedAt when the order filled, was rejected, cancelled or expired - or was
  *                    submitted, while it is still working; history is listed newest first by this
+ * @param trailAmount for a trailing stop, the dollars its stop trails the best price by
+ * @param trailPercent for a trailing stop, the percent its stop trails the best price by
  */
 public record OrderHistoryItem(
         UUID orderId,
@@ -38,7 +40,9 @@ public record OrderHistoryItem(
         String orderType,
         BigDecimal limitPrice,
         BigDecimal stopPrice,
-        OffsetDateTime completedAt
+        OffsetDateTime completedAt,
+        BigDecimal trailAmount,
+        BigDecimal trailPercent
 ) {
     /**
      * Compact constructor ensuring an unmodifiable list of executions.
@@ -62,7 +66,7 @@ public record OrderHistoryItem(
      */
     public OrderHistoryItem(UUID orderId, String symbol, String side, Long quantity, String status,
                             OffsetDateTime submittedAt, OffsetDateTime filledAt, List<ExecutionItem> executions) {
-        this(orderId, symbol, side, quantity, status, submittedAt, filledAt, executions, "MARKET", null, null, null);
+        this(orderId, symbol, side, quantity, status, submittedAt, filledAt, executions, "MARKET", null, null, null, null, null);
     }
 
     /**

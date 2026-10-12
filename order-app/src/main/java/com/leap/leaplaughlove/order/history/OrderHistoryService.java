@@ -185,7 +185,9 @@ public class OrderHistoryService {
                 order.getOrderType().name(),
                 order.getLimitPrice(),
                 order.getStopPrice(),
-                order.getCompletedAt());
+                order.getCompletedAt(),
+                order.getTrailAmount(),
+                order.getTrailPercent());
     }
 
     /**

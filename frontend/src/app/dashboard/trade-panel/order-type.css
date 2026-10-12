@@ -11,12 +11,16 @@
 
 .types {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 2px;
   padding: 3px;
   background: var(--muted);
   border-radius: var(--radius-md);
 }
+
+/* Five types in two rows: Market, Limit and Stop above; Stop limit and Trailing stop below. */
+.type { grid-column: span 2; }
+.type:nth-child(n + 4) { grid-column: span 3; }
 
 .type {
   padding: 7px 4px;
@@ -160,6 +164,50 @@
   background: var(--surface-hover);
   color: var(--foreground);
 }
+
+/* A trailing stop's trail: a number with a % / $ switch. */
+.trail-entry {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.units {
+  display: inline-flex;
+  padding: 2px;
+  background: var(--muted);
+  border-radius: 999px;
+}
+
+.unit {
+  width: 26px;
+  height: 24px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.unit.on { background: var(--surface-hover); color: var(--foreground); }
+.unit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.trail-note,
+.chart-hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted-foreground);
+}
+
+.trail-note { margin-top: 8px; }
+
+/* The chart with draggable price lines, under the order type. */
+.order-chart {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.chart-hint { margin-top: 6px; text-align: center; }
 
 /* The order in plain English, updated as it's edited. */
 .sentence {

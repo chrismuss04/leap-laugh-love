@@ -23,6 +23,8 @@ export interface OrderHistoryItem {
   orderType?: OrderType;
   limitPrice?: number | null;
   stopPrice?: number | null;
+  trailAmount?: number | null;
+  trailPercent?: number | null;
   /**
    * When the order filled, was rejected, cancelled or expired - or was submitted, while it's still
    * open. History is listed newest first by this.
@@ -44,9 +46,10 @@ export type OrderSide = 'BUY' | 'SELL';
 
 /**
  * MARKET fills at once. LIMIT fills only at its limit price or better. STOP becomes a market order
- * once the price reaches its stop price, and STOP_LIMIT becomes a limit order then.
+ * once the price reaches its stop price, and STOP_LIMIT becomes a limit order then. TRAILING_STOP is
+ * a stop that follows the price in your favour, a set amount or percent behind the best price seen.
  */
-export type OrderType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT';
+export type OrderType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT' | 'TRAILING_STOP';
 
 /** How long an order that hasn't filled keeps working: today, or until cancelled (up to 90 days). */
 export type TimeInForce = 'DAY' | 'GTC';
@@ -70,6 +73,34 @@ export interface OrderSubmissionRequest {
   limitPrice?: number;
   stopPrice?: number;
   timeInForce?: TimeInForce;
+  /** For TRAILING_STOP: how many dollars behind the best price the stop trails. */
+  trailAmount?: number;
+  /** For TRAILING_STOP: how many percent behind the best price the stop trails. Give this or trailAmount. */
+  trailPercent?: number;
+}
+
+/** A change to an open order. Only the fields given change; each must apply to the order's type. */
+export interface OrderModification {
+  quantity?: number;
+  limitPrice?: number;
+  stopPrice?: number;
+  trailAmount?: number;
+  trailPercent?: number;
+  timeInForce?: TimeInForce;
+}
+
+/** An order ending without the client doing anything, pushed on the order stream. */
+export interface OrderUpdate {
+  orderId: string;
+  symbol: string;
+  side: OrderSide;
+  quantity: number;
+  orderType: OrderType;
+  /** FILLED, ACCEPTED (executed, still being confirmed), REJECTED or EXPIRED. */
+  status: OrderStatus;
+  fillPrice: number | null;
+  reason: string | null;
+  at: string;
 }
 
 export interface OrderSubmissionResponse {
@@ -99,6 +130,8 @@ export interface OrderSubmissionResponse {
   expiresAt?: string | null;
   /** Cash an OPEN buy holds back from buying power. */
   reservedCash?: number | null;
+  trailAmount?: number | null;
+  trailPercent?: number | null;
 }
 
 /** An order waiting for the market to reach its price. */
@@ -119,6 +152,11 @@ export interface OpenOrder {
   triggeredAt: string | null;
   /** Cash a buy holds back from buying power; null for a sell. */
   reservedCash: number | null;
+  /** For a trailing stop: the dollars or percent its stop trails the best price by. */
+  trailAmount?: number | null;
+  trailPercent?: number | null;
+  /** For a trailing stop: the best price seen, the high for a sell and the low for a buy. */
+  trailPeak?: number | null;
 }
 
 @Injectable({
@@ -156,6 +194,11 @@ export class OrderService {
   /** The client's open orders across all accounts, newest first. */
   getOpenOrders(): Observable<OpenOrder[]> {
     return this.http.get<OpenOrder[]>(`${this.API_URL}/orders/open`);
+  }
+
+  /** Changes an open order in place; fails with 409 if it is no longer open. */
+  modifyOrder(orderId: string, changes: OrderModification): Observable<OpenOrder> {
+    return this.http.patch<OpenOrder>(`${this.API_URL}/orders/${encodeURIComponent(orderId)}`, changes);
   }
 
   /** Cancels an open order; fails with 409 if it already filled. */

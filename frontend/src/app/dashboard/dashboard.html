@@ -93,13 +93,15 @@
 
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
-                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [accounts]="tradeAccounts()"
+                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [priceHistory]="selectedHistory()"
+                     [accounts]="tradeAccounts()"
                      [preferredAccountId]="accountId()"
                      (placed)="onOrderPlaced()"
                      (unconfirmed)="onOrderPlaced()"></app-trade-panel>
     <app-open-orders [orders]="openOrders()" [prices]="prices()" [quoteOffsets]="quoteOffsets()"
                      [accountNumbers]="accountNumbers()"
-                     (cancelled)="onOpenOrderCancelled($event)"></app-open-orders>
+                     (cancelled)="onOpenOrderCancelled($event)"
+                     (changed)="onOpenOrderChanged()"></app-open-orders>
     <app-account-details *ngIf="isAccountView()" [account]="selectedAccount()"></app-account-details>
     <app-recent-activity *ngIf="!isAccountView()" [orders]="orders()" [loading]="ordersLoading()" [error]="ordersError()"></app-recent-activity>
   </aside>

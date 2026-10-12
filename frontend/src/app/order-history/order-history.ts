@@ -1,6 +1,6 @@
 import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { orderTypeLabel } from '../shared/order-types';
+import { orderTypeLabel, trailText } from '../shared/order-types';
 import { formatMoney } from '../shared/format';
 import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
@@ -23,8 +23,11 @@ export class OrderHistoryComponent implements OnInit {
 
   /** The prices a limit or stop order was placed with, e.g. "stop $140.00 · limit $139.00". */
   conditionText(order: OrderHistoryItem): string | null {
+    // A trailing stop's stop price is wherever it has followed the market to; what was chosen is the trail.
+    const trailing = order.orderType === 'TRAILING_STOP';
     const parts = [
-      order.stopPrice != null ? `stop ${formatMoney(order.stopPrice)}` : null,
+      trailing ? `trails ${trailText(order.trailAmount, order.trailPercent)}` : null,
+      !trailing && order.stopPrice != null ? `stop ${formatMoney(order.stopPrice)}` : null,
       order.limitPrice != null ? `limit ${formatMoney(order.limitPrice)}` : null
     ].filter(Boolean);
     return parts.length ? parts.join(' · ') : null;

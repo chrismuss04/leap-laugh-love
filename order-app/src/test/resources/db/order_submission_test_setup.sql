@@ -53,7 +53,7 @@ CREATE TABLE trading.orders (
     rejection_reason VARCHAR(500),
     quoted_price NUMERIC(18,6),
     max_slippage_pct NUMERIC(5,2),
-    order_type VARCHAR(20) NOT NULL DEFAULT 'MARKET' CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT')),
+    order_type VARCHAR(20) NOT NULL DEFAULT 'MARKET' CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP')),
     limit_price NUMERIC(18,6),
     stop_price NUMERIC(18,6),
     time_in_force VARCHAR(10),
@@ -62,6 +62,9 @@ CREATE TABLE trading.orders (
     cancelled_at TIMESTAMP WITH TIME ZONE,
     expired_at TIMESTAMP WITH TIME ZONE,
     reserved_cash NUMERIC(18,2),
+    trail_amount NUMERIC(18,6),
+    trail_percent NUMERIC(5,2),
+    trail_peak NUMERIC(18,6),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );

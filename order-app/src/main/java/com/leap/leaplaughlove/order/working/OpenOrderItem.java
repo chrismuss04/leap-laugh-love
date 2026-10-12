@@ -15,14 +15,17 @@ import java.util.UUID;
  * @param side BUY or SELL
  * @param quantity whole shares ordered
  * @param status OPEN, or the status a cancel just moved it to
- * @param orderType LIMIT, STOP or STOP_LIMIT
+ * @param orderType LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
  * @param limitPrice the limit price, for LIMIT and STOP_LIMIT
- * @param stopPrice the stop price, for STOP and STOP_LIMIT
+ * @param stopPrice the stop price, for STOP and STOP_LIMIT; a trailing stop's current stop
  * @param timeInForce DAY or GTC
  * @param submittedAt when it was placed
  * @param expiresAt when it expires if it hasn't filled
  * @param triggeredAt when a stop-limit's stop price was reached, so it now works as a limit
  * @param reservedCash the cash a buy holds back from buying power, null for a sell
+ * @param trailAmount for a TRAILING_STOP, the dollars its stop trails the best price by
+ * @param trailPercent for a TRAILING_STOP, the percent its stop trails the best price by
+ * @param trailPeak for a TRAILING_STOP, the best price seen: the high for a sell, the low for a buy
  */
 public record OpenOrderItem(
         UUID orderId,
@@ -38,7 +41,10 @@ public record OpenOrderItem(
         OffsetDateTime submittedAt,
         OffsetDateTime expiresAt,
         OffsetDateTime triggeredAt,
-        BigDecimal reservedCash
+        BigDecimal reservedCash,
+        BigDecimal trailAmount,
+        BigDecimal trailPercent,
+        BigDecimal trailPeak
 ) {
     /**
      * Describes an order, whose instrument must be loaded.
@@ -60,6 +66,9 @@ public record OpenOrderItem(
                 order.getSubmittedAt(),
                 order.getExpiresAt(),
                 order.getTriggeredAt(),
-                order.getReservedCash());
+                order.getReservedCash(),
+                order.getTrailAmount(),
+                order.getTrailPercent(),
+                order.getTrailPeak());
     }
 }

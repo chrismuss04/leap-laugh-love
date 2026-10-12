@@ -13,6 +13,8 @@
       <div><dt>Order type</dt><dd>{{ typeLabel(orderType()) }}</dd></div>
       <div><dt>Shares</dt><dd class="num">{{ quantity() | number }}</dd></div>
       <div *ngIf="hasStop()"><dt>Stop price</dt><dd class="num">{{ money(stopPrice()) }}</dd></div>
+      <div *ngIf="hasTrail()"><dt>Trail</dt><dd class="num">{{ trailLabel() }}</dd></div>
+      <div *ngIf="hasTrail()"><dt>Stop starts at</dt><dd class="num">{{ money(initialStop()) }}</dd></div>
       <div *ngIf="hasLimit()"><dt>Limit price</dt><dd class="num">{{ money(limitPrice()) }}</dd></div>
       <div *ngIf="!isMarket()"><dt>Good for</dt><dd>{{ tifLabel(timeInForce()) }}</dd></div>
       <div *ngIf="isMarket()"><dt>Estimated price per share</dt><dd class="num">{{ money(sidePrice()) }}</dd></div>
@@ -131,6 +133,8 @@
       <dl class="summary">
         <div><dt>Account</dt><dd>{{ account()?.accountNumber }}</dd></div>
         <div *ngIf="hasStop()"><dt>Stop price</dt><dd class="num">{{ money(stopPrice()) }}</dd></div>
+        <div *ngIf="hasTrail()"><dt>Trail</dt><dd class="num">{{ trailLabel() }}</dd></div>
+        <div *ngIf="hasTrail()"><dt>Stop starts at</dt><dd class="num">{{ money(initialStop()) }}</dd></div>
         <div *ngIf="hasLimit()"><dt>Limit price</dt><dd class="num">{{ money(limitPrice()) }}</dd></div>
         <div><dt>{{ quoteOffset() ? (side() === 'BUY' ? 'Ask price' : 'Bid price') : 'Market price' }}</dt>
           <dd class="num">{{ money(sidePrice()) }}</dd></div>
@@ -175,6 +179,11 @@
         <p class="type-hint">{{ typeHint() }}</p>
       </div>
 
+      <div *ngIf="!isMarket() && priceHistory().length > 1" class="order-chart">
+        <app-order-chart [points]="priceHistory()" [lines]="chartLines()" (lineMove)="onChartLine($event)" />
+        <p class="chart-hint">Drag a line to set its price, or type it below.</p>
+      </div>
+
       <div class="field-row">
         <label class="field-label" for="trade-quantity">Shares</label>
         <span class="stepper">
@@ -183,6 +192,35 @@
                  inputmode="numeric" min="1" step="1" placeholder="0" [(ngModel)]="quantity" />
           <button type="button" class="step-btn" (click)="adjust(1)" aria-label="One more share">+</button>
         </span>
+      </div>
+
+      <div *ngIf="hasTrail()" class="price-field">
+        <div class="field-row">
+          <span class="price-label">
+            <label class="field-label" for="trade-trail">Trail by</label>
+            <span class="distance num" *ngIf="initialStop() !== null">Stop starts at {{ money(initialStop()) }}</span>
+          </span>
+          <span class="trail-entry">
+            <span class="money-input">
+              <span class="currency" *ngIf="trailUnit() === 'AMOUNT'" aria-hidden="true">$</span>
+              <input id="trade-trail" name="trail" class="price-input num" type="number" inputmode="decimal"
+                     min="0.01" step="0.01" placeholder="0" [ngModel]="trailValue()" (ngModelChange)="setTrailValue($event)" />
+              <span class="currency" *ngIf="trailUnit() === 'PERCENT'" aria-hidden="true">%</span>
+            </span>
+            <span class="units" role="radiogroup" aria-label="Trail unit">
+              <button type="button" role="radio" class="unit" [class.on]="trailUnit() === 'PERCENT'"
+                      [attr.aria-checked]="trailUnit() === 'PERCENT'" aria-label="Percent" (click)="setTrailUnit('PERCENT')">%</button>
+              <button type="button" role="radio" class="unit" [class.on]="trailUnit() === 'AMOUNT'"
+                      [attr.aria-checked]="trailUnit() === 'AMOUNT'" aria-label="Dollars" (click)="setTrailUnit('AMOUNT')">$</button>
+            </span>
+          </span>
+        </div>
+        <div class="chips" role="group" aria-label="Suggested trails">
+          <button *ngFor="let chip of trailChips()" type="button" class="chip" [class.on]="chip.value === trailValue()"
+                  (click)="setTrailValue(chip.value)">{{ chip.label }}</button>
+        </div>
+        <p class="trail-note">The stop follows the {{ side() === 'SELL' ? 'highest' : 'lowest' }} price
+          {{ symbol() }} reaches, {{ side() === 'SELL' ? 'rising with it but never falling' : 'falling with it but never rising' }}.</p>
       </div>
 
       <div *ngIf="hasStop()" class="price-field">

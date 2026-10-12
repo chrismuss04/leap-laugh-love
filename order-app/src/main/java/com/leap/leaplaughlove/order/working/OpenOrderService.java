@@ -13,7 +13,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -29,18 +31,21 @@ public class OpenOrderService {
     private final OrderRepository orderRepository;
     private final AccountRepository accountRepository;
     private final TransactionTemplate transactionTemplate;
+    private final OrderUpdateBroadcaster broadcaster;
 
     /**
      * Constructs an OpenOrderService.
      * @param orderRepository loads and locks orders
      * @param accountRepository checks an order's account belongs to the client
      * @param transactionTemplate runs each expiry in its own transaction
+     * @param broadcaster tells clients, as it happens, that an order of theirs expired
      */
     public OpenOrderService(OrderRepository orderRepository, AccountRepository accountRepository,
-                            TransactionTemplate transactionTemplate) {
+                            TransactionTemplate transactionTemplate, OrderUpdateBroadcaster broadcaster) {
         this.orderRepository = orderRepository;
         this.accountRepository = accountRepository;
         this.transactionTemplate = transactionTemplate;
+        this.broadcaster = broadcaster;
     }
 
     /**
@@ -63,22 +68,44 @@ public class OpenOrderService {
      */
     @Transactional
     public OpenOrderItem cancel(UUID clientId, UUID orderId) {
-        Order order = orderRepository.findByIdForUpdate(orderId)
+        Order order = lockOwned(clientId, orderId);
+        requireOpen(order, "cancelled");
+        order.markCancelled(OffsetDateTime.now());
+        return OpenOrderItem.of(order);
+    }
+
+    /**
+     * Loads one of the client's orders with its row lock, in the caller's transaction.
+     * @param clientId the authenticated client
+     * @param orderId the order
+     * @return the locked order
+     * @throws ResponseStatusException not found (404) if the client has no such order
+     */
+    Order lockOwned(UUID clientId, UUID orderId) {
+        return orderRepository.findByIdForUpdate(orderId)
                 .filter(found -> accountRepository.findById(found.getAccountId())
                         .map(Account::getClientId)
                         .filter(clientId::equals)
                         .isPresent())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found"));
-        if (order.getStatus() != Order.Status.OPEN) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, switch (order.getStatus()) {
-                case ACCEPTED, FILLED -> "This order has already executed and can no longer be cancelled";
-                case CANCELLED -> "This order is already cancelled";
-                case EXPIRED -> "This order has already expired";
-                default -> "This order is no longer open";
-            });
+    }
+
+    /**
+     * Refuses an order that isn't working any more, saying where it went.
+     * @param order the locked order
+     * @param action what was asked of it, in the past tense: "cancelled" or "changed"
+     * @throws ResponseStatusException conflict (409) if the order is not OPEN
+     */
+    static void requireOpen(Order order, String action) {
+        if (order.getStatus() == Order.Status.OPEN) {
+            return;
         }
-        order.markCancelled(OffsetDateTime.now());
-        return OpenOrderItem.of(order);
+        throw new ResponseStatusException(HttpStatus.CONFLICT, switch (order.getStatus()) {
+            case ACCEPTED, FILLED -> "This order has already executed and can no longer be " + action;
+            case CANCELLED -> "This order is already cancelled";
+            case EXPIRED -> "This order has already expired";
+            default -> "This order is no longer open";
+        });
     }
 
     /**
@@ -89,25 +116,38 @@ public class OpenOrderService {
     public int expireDue() {
         OffsetDateTime now = OffsetDateTime.now();
         int expired = 0;
+        List<Map.Entry<UUID, OrderUpdate>> pending = new ArrayList<>();
         for (UUID orderId : orderRepository.findOpenExpiredBy(now)) {
             try {
-                Boolean expiredHere = transactionTemplate.execute(status -> orderRepository.findByIdForUpdate(orderId)
+                OrderUpdate update = transactionTemplate.execute(status -> orderRepository.findByIdForUpdate(orderId)
                         .filter(order -> order.getStatus() == Order.Status.OPEN)
                         .map(order -> {
                             order.markExpired(now);
-                            return true;
+                            return new Expired(OrderUpdate.of(order, Order.Status.EXPIRED, null, null),
+                                    order.getAccountId());
                         })
-                        .orElse(false));
-                if (Boolean.TRUE.equals(expiredHere)) {
+                        .map(expiredOrder -> {
+                            accountRepository.findById(expiredOrder.accountId()).map(Account::getClientId)
+                                    .ifPresent(client -> pending.add(Map.entry(client, expiredOrder.update())));
+                            return expiredOrder.update();
+                        })
+                        .orElse(null));
+                if (update != null) {
                     expired++;
                 }
             } catch (RuntimeException ex) {
                 log.warn("Could not expire order {}; will retry: {}", orderId, ex.getMessage());
             }
         }
+        // Told after each expiry has committed, never from inside its transaction.
+        pending.forEach(entry -> broadcaster.publish(entry.getKey(), entry.getValue()));
         if (expired > 0) {
             log.info("Expired {} open order(s) past their time in force", expired);
         }
         return expired;
+    }
+
+    /** An order that has just expired, and the account it belongs to. */
+    private record Expired(OrderUpdate update, UUID accountId) {
     }
 }

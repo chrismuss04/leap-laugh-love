@@ -7,6 +7,8 @@ import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
 // Session Timeout & Revocation
 import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -41,6 +43,9 @@ public class OrderSecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/actuator/health").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
+                        // the original REQUEST dispatch was already authenticated
+                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
                         // Client-only: staff tokens are refused here (403).
                         .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling

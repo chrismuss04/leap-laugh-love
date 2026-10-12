@@ -1,7 +1,7 @@
 import { OpenOrder } from '../services/order';
 import {
-  describeOrder, distanceLabel, distanceTo, holdsByAccount, orderTypeHint, orderTypeLabel, reservePricePerShare,
-  sentenceText, waitingPrice
+  describeOrder, distanceLabel, distanceTo, holdsByAccount, orderTypeHint, orderTypeLabel, requiredMove,
+  reservePricePerShare, sentenceText, trailText, waitingPrice
 } from './order-types';
 
 describe('order types', () => {
@@ -19,6 +19,18 @@ describe('order types', () => {
       .toBe('If AAPL falls to $140.00, sell 1 share at the market price, good for today.');
     expect(describe_({ type: 'STOP_LIMIT', stopPrice: 160, limitPrice: 161 }))
       .toBe('If AAPL rises to $160.00, buy 10 shares at $161.00 or lower, good for today.');
+  });
+
+  it('says a trailing stop in plain English, by percent or by dollars', () => {
+    expect(describe_({ type: 'TRAILING_STOP', side: 'SELL', trailPercent: 2.5, quantity: 4 }))
+      .toBe('If AAPL falls 2.5% from its high, sell 4 shares at the market price, good for today.');
+    expect(describe_({ type: 'TRAILING_STOP', side: 'BUY', trailAmount: 3, timeInForce: 'GTC' }))
+      .toBe('If AAPL rises $3.00 from its low, buy 10 shares at the market price, good until cancelled.');
+    expect(trailText(null, 5)).toBe('5%');
+    expect(trailText(2, null)).toBe('$2.00');
+    expect(trailText(null, null)).toBe('$—');
+    expect(orderTypeLabel('TRAILING_STOP')).toBe('Trailing stop');
+    expect(orderTypeHint('TRAILING_STOP', 'SELL')).toContain('locking in gains');
   });
 
   it('marks the numbers that matter, and copes with blanks while editing', () => {
@@ -64,6 +76,14 @@ describe('order types', () => {
     expect(waitingPrice(stopLimit)).toBe(150);
     expect(waitingPrice({ ...stopLimit, triggeredAt: '2026-10-12T12:00:00Z' })).toBe(151);
     expect(waitingPrice(open({}))).toBe(140);
+  });
+
+  it('waits on a trailing stop at its current stop, falling for a sell and rising for a buy', () => {
+    const trailing = open({ orderType: 'TRAILING_STOP', side: 'SELL', stopPrice: 148.5, limitPrice: null });
+    expect(waitingPrice(trailing)).toBe(148.5);
+    expect(requiredMove(trailing)).toBe('fall');
+    expect(requiredMove({ ...trailing, side: 'BUY' })).toBe('rise');
+    expect(reservePricePerShare('TRAILING_STOP', null, 100)).toBeCloseTo(105);
   });
 
   it('adds up holds per account', () => {

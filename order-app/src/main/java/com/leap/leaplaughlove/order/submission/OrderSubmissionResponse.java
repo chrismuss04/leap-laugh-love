@@ -27,6 +27,8 @@ import java.util.UUID;
  * @param timeInForce DAY or GTC; null for a market order
  * @param expiresAt when an OPEN order expires if it hasn't filled
  * @param reservedCash the cash an OPEN buy holds back from buying power
+ * @param trailAmount for a TRAILING_STOP, the dollars its stop trails the best price by
+ * @param trailPercent for a TRAILING_STOP, the percent its stop trails the best price by
  */
 public record OrderSubmissionResponse(
         UUID orderId,
@@ -49,7 +51,9 @@ public record OrderSubmissionResponse(
         BigDecimal stopPrice,
         String timeInForce,
         OffsetDateTime expiresAt,
-        BigDecimal reservedCash
+        BigDecimal reservedCash,
+        BigDecimal trailAmount,
+        BigDecimal trailPercent
 ) {
     /**
      * A market order's response, as returned before order types existed.
@@ -76,7 +80,7 @@ public record OrderSubmissionResponse(
                                    ExecutionDto execution, BigDecimal accountBalanceAfter) {
         this(orderId, accountId, accountNumber, instrumentId, symbol, side, quantity, status, submittedAt,
                 acceptedAt, rejectedAt, filledAt, rejectionReason, execution, accountBalanceAfter,
-                "MARKET", null, null, null, null, null);
+                "MARKET", null, null, null, null, null, null, null);
     }
 
         /**

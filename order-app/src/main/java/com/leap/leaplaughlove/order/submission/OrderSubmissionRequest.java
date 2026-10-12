@@ -34,10 +34,13 @@ import com.leap.leaplaughlove.order.order.Order;
  * @param quotedPrice the price the client was quoted when placing the order
  * @param maxSlippagePercent the price tolerance in percent for this order, overriding the
  *                           account's saved one; requires quotedPrice
- * @param orderType MARKET (when null), LIMIT, STOP or STOP_LIMIT
+ * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
  * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
  * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
  * @param timeInForce DAY (when null) or GTC, for orders other than MARKET
+ * @param trailAmount for TRAILING_STOP: how many dollars behind the best price the stop trails
+ * @param trailPercent for TRAILING_STOP: how many percent behind the best price the stop trails;
+ *                     give this or trailAmount
  */
 public record OrderSubmissionRequest(
         @NotNull(message = "accountId is required")
@@ -71,7 +74,16 @@ public record OrderSubmissionRequest(
         @Digits(integer = 12, fraction = 2, message = "stopPrice may have at most two decimal places")
         BigDecimal stopPrice,
 
-        Order.TimeInForce timeInForce
+        Order.TimeInForce timeInForce,
+
+        @Positive(message = "trailAmount must be greater than zero")
+        @Digits(integer = 12, fraction = 2, message = "trailAmount may have at most two decimal places")
+        BigDecimal trailAmount,
+
+        @DecimalMin(value = "0.10", message = "trailPercent must be between 0.1 and 50")
+        @DecimalMax(value = "50.00", message = "trailPercent must be between 0.1 and 50")
+        @Digits(integer = 2, fraction = 2, message = "trailPercent may have at most two decimal places")
+        BigDecimal trailPercent
 ) {
 
     /**
@@ -87,7 +99,29 @@ public record OrderSubmissionRequest(
     public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,
-                null, null, null, null);
+                null, null, null, null, null, null);
+    }
+
+    /**
+     * An order placed before trailing stops existed.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP or STOP_LIMIT
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce) {
+        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
+                limitPrice, stopPrice, timeInForce, null, null);
     }
 
     /**
@@ -126,7 +160,21 @@ public record OrderSubmissionRequest(
     @JsonIgnore
     @AssertTrue(message = "stopPrice is required for STOP and STOP_LIMIT orders, and only for them")
     public boolean isStopPriceMatchingType() {
-        return effectiveOrderType().hasStop() == (stopPrice != null);
+        return effectiveOrderType().takesStopPrice() == (stopPrice != null);
+    }
+
+    /**
+     * A TRAILING_STOP needs a trail as an amount or a percent - not both - and no other type takes one.
+     * @return false when the trail doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = "TRAILING_STOP orders need exactly one of trailAmount and trailPercent, and only they take them")
+    public boolean isTrailMatchingType() {
+        boolean hasTrail = trailAmount != null || trailPercent != null;
+        if (!effectiveOrderType().hasTrail()) {
+            return !hasTrail;
+        }
+        return (trailAmount != null) != (trailPercent != null);
     }
 
     /**

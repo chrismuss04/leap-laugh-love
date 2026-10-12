@@ -1,9 +1,21 @@
 import { Component, EventEmitter, Output, computed, inject, input, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { OpenOrder, OrderService } from '../../services/order';
+import { FormsModule } from '@angular/forms';
+import { OpenOrder, OrderModification, OrderService, TimeInForce } from '../../services/order';
 import { formatMoney } from '../../shared/format';
-import { QuoteOffset, distanceTo, openOrderTitle, quoteSide, requiredMove, waitingPrice } from '../../shared/order-types';
+import {
+  QuoteOffset, distanceTo, openOrderTitle, quoteSide, requiredMove, trailText, waitingPrice
+} from '../../shared/order-types';
+
+/** What the edit form shows for one order while it is being changed. */
+interface Draft {
+  quantity: number | null;
+  limit: number | null;
+  stop: number | null;
+  trail: number | null;
+  tif: TimeInForce;
+}
 
 /** The price is "near" its trigger inside this distance; the bar fills as it closes in. */
 const NEAR_PERCENT = 10;
@@ -17,6 +29,8 @@ interface OpenOrderRow {
   /** 0 (far) to 1 (at the price), for the proximity bar. */
   proximity: number;
   account: string | null;
+  /** "Trails 2% from its high $152.00", for a trailing stop. */
+  trail: string | null;
 }
 
 /**
@@ -25,7 +39,7 @@ interface OpenOrderRow {
  */
 @Component({
   selector: 'app-open-orders',
-  imports: [CommonModule],
+  imports: [CommonModule, FormsModule],
   template: `
     <section *ngIf="rows().length > 0" class="card fade-in" aria-labelledby="open-orders-title" data-testid="open-orders">
       <header class="card-header">
@@ -55,9 +69,15 @@ interface OpenOrderRow {
           <div class="bottom">
             <span class="sub num">{{ row.status }}</span>
             <ng-container *ngIf="confirming() !== row.order.orderId; else confirm">
-              <button type="button" class="cancel" (click)="confirming.set(row.order.orderId)"
-                      [disabled]="cancelling() === row.order.orderId"
-                      [attr.aria-label]="'Cancel ' + row.title + ' for ' + row.order.symbol">Cancel</button>
+              <span class="actions">
+                <button type="button" class="cancel" (click)="startEdit(row.order)"
+                        [attr.aria-expanded]="editing() === row.order.orderId"
+                        [attr.aria-label]="'Edit ' + row.title + ' for ' + row.order.symbol">
+                  {{ editing() === row.order.orderId ? 'Close' : 'Edit' }}</button>
+                <button type="button" class="cancel" (click)="confirming.set(row.order.orderId)"
+                        [disabled]="cancelling() === row.order.orderId"
+                        [attr.aria-label]="'Cancel ' + row.title + ' for ' + row.order.symbol">Cancel</button>
+              </span>
             </ng-container>
             <ng-template #confirm>
               <span class="confirm">
@@ -73,8 +93,38 @@ interface OpenOrderRow {
           <div class="meta">
             <span>{{ row.order.timeInForce === 'GTC' ? 'Until cancelled' : 'Good for today' }}</span>
             <span *ngIf="row.order.reservedCash"> · {{ money(row.order.reservedCash) }} set aside</span>
+            <span *ngIf="row.trail"> · {{ row.trail }}</span>
             <span *ngIf="row.account"> · {{ row.account }}</span>
           </div>
+
+          <form *ngIf="editing() === row.order.orderId" class="edit" (ngSubmit)="save(row.order)" data-testid="edit-order">
+            <label class="edit-field"><span>Shares</span>
+              <input name="quantity" class="num" type="number" min="1" step="1" inputmode="numeric"
+                     [ngModel]="draft().quantity" (ngModelChange)="patch('quantity', $event)" /></label>
+            <label *ngIf="hasLimit(row.order)" class="edit-field"><span>Limit price</span>
+              <input name="limit" class="num" type="number" min="0.01" step="0.01" inputmode="decimal"
+                     [ngModel]="draft().limit" (ngModelChange)="patch('limit', $event)" /></label>
+            <label *ngIf="hasStop(row.order)" class="edit-field"><span>Stop price</span>
+              <input name="stop" class="num" type="number" min="0.01" step="0.01" inputmode="decimal"
+                     [ngModel]="draft().stop" (ngModelChange)="patch('stop', $event)" /></label>
+            <label *ngIf="isTrailing(row.order)" class="edit-field">
+              <span>Trail ({{ row.order.trailPercent != null ? '%' : '$' }})</span>
+              <input name="trail" class="num" type="number" min="0.01" step="0.01" inputmode="decimal"
+                     [ngModel]="draft().trail" (ngModelChange)="patch('trail', $event)" /></label>
+            <div class="edit-field"><span>Good for</span>
+              <span class="tif" role="radiogroup" aria-label="Time in force">
+                <button type="button" role="radio" [class.on]="draft().tif === 'DAY'" [attr.aria-checked]="draft().tif === 'DAY'"
+                        (click)="patch('tif', 'DAY')">Today</button>
+                <button type="button" role="radio" [class.on]="draft().tif === 'GTC'" [attr.aria-checked]="draft().tif === 'GTC'"
+                        (click)="patch('tif', 'GTC')">Until cancelled</button>
+              </span>
+            </div>
+            <p *ngIf="editError()" class="error" role="alert">{{ editError() }}</p>
+            <div class="edit-actions">
+              <button type="button" class="keep" (click)="editing.set(null)">Discard</button>
+              <button type="submit" class="save" [disabled]="saving()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
+            </div>
+          </form>
         </li>
       </ol>
     </section>
@@ -104,7 +154,31 @@ interface OpenOrderRow {
     .bar.near { background: var(--primary); }
     .sub { font-size: 12px; color: var(--muted-foreground); }
     .meta { font-size: 11.5px; color: var(--muted-foreground); }
-    .confirm { display: inline-flex; gap: 6px; }
+    .confirm, .actions { display: inline-flex; gap: 6px; }
+    .edit {
+      display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--radius-md);
+      background: var(--muted);
+    }
+    .edit-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+    .edit-field > span:first-child { color: var(--muted-foreground); }
+    .edit input {
+      width: 110px; padding: 6px 8px; text-align: right; font-size: 14px; font-weight: 600;
+      background: var(--surface); color: var(--foreground); border: 1px solid var(--border); border-radius: 6px;
+    }
+    .edit input:focus { outline: none; border-color: var(--primary); }
+    .tif { display: inline-flex; gap: 2px; padding: 2px; background: var(--surface); border-radius: 999px; }
+    .tif button {
+      padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: transparent; color: var(--muted-foreground);
+    }
+    .tif button.on { background: var(--surface-hover); color: var(--foreground); }
+    .edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
+    .save {
+      padding: 5px 14px; border-radius: 999px; font-size: 12px; font-weight: 700;
+      background: var(--primary); color: var(--primary-foreground);
+    }
+    .save:disabled { opacity: 0.6; cursor: progress; }
+    .edit .error { margin: 0; }
     .cancel, .keep {
       padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
       background: transparent; color: var(--muted-foreground); border: 1px solid var(--border);
@@ -129,12 +203,20 @@ export class OpenOrdersComponent {
   /** Account numbers by account ID, shown when the client has more than one account. */
   readonly accountNumbers = input<Record<string, string>>({});
   @Output() cancelled = new EventEmitter<OpenOrder>();
+  /** An order was edited, so what it holds and where it waits have changed. */
+  @Output() changed = new EventEmitter<OpenOrder>();
 
   private readonly orderService = inject(OrderService);
 
   readonly confirming = signal<string | null>(null);
   readonly cancelling = signal<string | null>(null);
   readonly error = signal<string | null>(null);
+
+  /** The order being edited, its form, and how saving it is going. */
+  readonly editing = signal<string | null>(null);
+  readonly draft = signal<Draft>({ quantity: null, limit: null, stop: null, trail: null, tif: 'DAY' });
+  readonly saving = signal(false);
+  readonly editError = signal<string | null>(null);
 
   money = formatMoney;
   round = Math.round;
@@ -175,10 +257,102 @@ export class OpenOrdersComponent {
         target,
         status,
         proximity: !distance ? 0 : reached ? 1 : Math.max(0, 1 - distance.percent / NEAR_PERCENT),
-        account: multiAccount ? accounts[order.accountId] ?? null : null
+        account: multiAccount ? accounts[order.accountId] ?? null : null,
+        trail: order.orderType === 'TRAILING_STOP'
+          ? `Trails ${trailText(order.trailAmount, order.trailPercent)} from its ${order.side === 'BUY' ? 'low' : 'high'}`
+            + (order.trailPeak != null ? ` ${formatMoney(order.trailPeak)}` : '')
+          : null
       };
     });
   });
+
+  /** Which fields the edit form offers for an order's type. A reached stop-limit's stop is fixed. */
+  hasLimit(order: OpenOrder): boolean {
+    return order.orderType === 'LIMIT' || order.orderType === 'STOP_LIMIT';
+  }
+
+  hasStop(order: OpenOrder): boolean {
+    return (order.orderType === 'STOP' || order.orderType === 'STOP_LIMIT') && !order.triggeredAt;
+  }
+
+  isTrailing(order: OpenOrder): boolean {
+    return order.orderType === 'TRAILING_STOP';
+  }
+
+  /** Opens the edit form on an order, or closes it if it is already open. */
+  startEdit(order: OpenOrder): void {
+    if (this.editing() === order.orderId) {
+      this.editing.set(null);
+      return;
+    }
+    this.draft.set({
+      quantity: order.quantity,
+      limit: order.limitPrice,
+      stop: order.orderType === 'TRAILING_STOP' ? null : order.stopPrice,
+      trail: order.trailPercent ?? order.trailAmount ?? null,
+      tif: order.timeInForce
+    });
+    this.editError.set(null);
+    this.error.set(null);
+    this.confirming.set(null);
+    this.editing.set(order.orderId);
+  }
+
+  patch<K extends keyof Draft>(key: K, value: Draft[K]): void {
+    this.draft.update(draft => ({ ...draft, [key]: value }));
+  }
+
+  /** Sends only what was changed. */
+  save(order: OpenOrder): void {
+    const draft = this.draft();
+    const changes: OrderModification = {};
+    if (draft.quantity == null || !Number.isInteger(draft.quantity) || draft.quantity < 1) {
+      this.editError.set('Enter a whole number of shares');
+      return;
+    }
+    if (draft.quantity !== order.quantity) {
+      changes.quantity = draft.quantity;
+    }
+    if (this.hasLimit(order) && draft.limit != null && draft.limit !== order.limitPrice) {
+      changes.limitPrice = draft.limit;
+    }
+    if (this.hasStop(order) && draft.stop != null && draft.stop !== order.stopPrice) {
+      changes.stopPrice = draft.stop;
+    }
+    if (this.isTrailing(order) && draft.trail != null && draft.trail !== (order.trailPercent ?? order.trailAmount)) {
+      // The unit stays as the order was placed in.
+      if (order.trailPercent != null) {
+        changes.trailPercent = draft.trail;
+      } else {
+        changes.trailAmount = draft.trail;
+      }
+    }
+    if (draft.tif !== order.timeInForce) {
+      changes.timeInForce = draft.tif;
+    }
+    if (!Object.keys(changes).length) {
+      this.editing.set(null);
+      return;
+    }
+    this.saving.set(true);
+    this.editError.set(null);
+    this.orderService.modifyOrder(order.orderId, changes).subscribe({
+      next: () => {
+        this.saving.set(false);
+        this.editing.set(null);
+        this.changed.emit(order);
+      },
+      error: (err: HttpErrorResponse) => {
+        this.saving.set(false);
+        this.editError.set(err.error?.message
+          || (err.status === 400 ? 'That change isn’t allowed for this order.' : 'We couldn’t save your changes. Please try again.'));
+        if (err.status === 409) {
+          // It filled, was cancelled or expired first; reload to show where it went.
+          this.changed.emit(order);
+        }
+      }
+    });
+  }
 
   cancel(order: OpenOrder): void {
     this.cancelling.set(order.orderId);

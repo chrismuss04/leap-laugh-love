@@ -32,7 +32,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -48,8 +50,10 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.request;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -74,6 +78,7 @@ class OrderTypesIntegrationTest {
     @Autowired private AccountRepository accountRepository;
     @Autowired private OrderSubmissionService orderSubmissionService;
     @Autowired private OpenOrderService openOrderService;
+    @Autowired private OrderUpdateBroadcaster broadcaster;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
 
@@ -90,7 +95,7 @@ class OrderTypesIntegrationTest {
         otherToken = sessionToken(OTHER, "other@example.com");
         // Disabled on a schedule in tests, so driven directly.
         engine = new OrderTriggerEngine(orderRepository, accountRepository, currentQuoteService,
-                orderSubmissionService, openOrderService, jwtService, transactionTemplate);
+                orderSubmissionService, openOrderService, jwtService, transactionTemplate, broadcaster);
 
         // AAPL: bid 149.50, ask 150.00. The owner has $10,000 and 25 shares.
         when(currentQuoteService.getCurrentQuote(eq("AAPL"))).thenReturn(aaplQuote("149.50", "150.00"));
@@ -356,6 +361,205 @@ class OrderTypesIntegrationTest {
                 .andExpect(jsonPath("$.content[0].orderId").value(limitId.toString()))
                 .andExpect(jsonPath("$.content[0].completedAt").exists())
                 .andExpect(jsonPath("$.content[1].orderId").value(marketId));
+    }
+
+    // ---- Trailing stops ----
+
+    @Test
+    @DisplayName("a trailing sell starts its stop the trail below the bid, raises it behind new highs, and sells on a fall")
+    void trailingStopSell() throws Exception {
+        UUID orderId = openOrder("TRAILING_STOP", "SELL", 5, "\"trailPercent\":2");
+        Order placed = reload(orderId);
+        assertEquals(0, new BigDecimal("149.50").compareTo(placed.getTrailPeak()));
+        assertEquals(0, new BigDecimal("146.51").compareTo(placed.getStopPrice()), "2% below the 149.50 bid");
+
+        // A new high raises the stop.
+        quotes("152.00", "152.50");
+        assertEquals(0, engine.evaluateOpenOrders());
+        Order raised = reload(orderId);
+        assertEquals(0, new BigDecimal("152.00").compareTo(raised.getTrailPeak()));
+        assertEquals(0, new BigDecimal("148.96").compareTo(raised.getStopPrice()));
+
+        // A dip that stays above the stop leaves it where it was.
+        quotes("150.00", "150.50");
+        assertEquals(0, engine.evaluateOpenOrders());
+        Order held = reload(orderId);
+        assertEquals(0, new BigDecimal("148.96").compareTo(held.getStopPrice()), "never moves down");
+        assertEquals(Order.Status.OPEN, held.getStatus());
+
+        // Falling to the stop sells at the market.
+        quotes("148.90", "149.40");
+        assertEquals(1, engine.evaluateOpenOrders());
+        Order sold = reload(orderId);
+        assertEquals(Order.Status.FILLED, sold.getStatus());
+        Execution fill = executionRepository.findFirstByOrder_OrderIdAndStatus(orderId, Execution.Status.FILLED).orElseThrow();
+        assertEquals(0, new BigDecimal("148.90").compareTo(fill.getFillPrice()));
+        assertEquals("Trailing stop reached; executed at market price", fill.getReason());
+    }
+
+    @Test
+    @DisplayName("a trailing buy's stop follows the ask down, by a dollar amount")
+    void trailingStopBuy() throws Exception {
+        UUID orderId = openOrder("TRAILING_STOP", "BUY", 2, "\"trailAmount\":3.00");
+        assertEquals(0, new BigDecimal("153.00").compareTo(reload(orderId).getStopPrice()), "$3 above the 150.00 ask");
+
+        quotes("139.50", "140.00");
+        engine.evaluateOpenOrders();
+        assertEquals(0, new BigDecimal("143.00").compareTo(reload(orderId).getStopPrice()));
+
+        quotes("142.50", "143.00");
+        assertEquals(1, engine.evaluateOpenOrders(), "the ask rose back to the stop");
+        assertEquals(Order.Status.FILLED, reload(orderId).getStatus());
+    }
+
+    @Test
+    @DisplayName("a trail wider than the price is rejected")
+    void oversizedTrailIsRejected() throws Exception {
+        place("TRAILING_STOP", "SELL", 5, "\"trailAmount\":200")
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason").value(
+                        "Trail of $200.00 must be smaller than the current bid of $149.50 - order rejected"));
+    }
+
+    @Test
+    @DisplayName("a trailing stop needs exactly one trail, and takes no stop price")
+    void trailingStopRequestRules() throws Exception {
+        place("TRAILING_STOP", "SELL", 5, "\"limitPrice\":null").andExpect(status().isBadRequest());
+        place("TRAILING_STOP", "SELL", 5, "\"trailAmount\":2,\"trailPercent\":2").andExpect(status().isBadRequest());
+        place("TRAILING_STOP", "SELL", 5, "\"trailPercent\":2,\"stopPrice\":140").andExpect(status().isBadRequest());
+        place("TRAILING_STOP", "SELL", 5, "\"trailPercent\":60").andExpect(status().isBadRequest());
+        place("STOP", "SELL", 5, "\"stopPrice\":140,\"trailPercent\":2").andExpect(status().isBadRequest());
+    }
+
+    // ---- Editing open orders ----
+
+    private ResultActions modify(UUID orderId, String body, String token) throws Exception {
+        return mockMvc.perform(patch("/api/order/orders/" + orderId).header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content(body));
+    }
+
+    @Test
+    @DisplayName("editing a limit order changes its price and quantity in place, and what it holds")
+    void editsALimitOrder() throws Exception {
+        UUID orderId = openOrder("LIMIT", "BUY", 10, "\"limitPrice\":145.00");
+
+        modify(orderId, "{\"limitPrice\":140.00,\"quantity\":5,\"timeInForce\":\"GTC\"}", ownerToken)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.orderId").value(orderId.toString()))
+                .andExpect(jsonPath("$.limitPrice").value(140.00))
+                .andExpect(jsonPath("$.quantity").value(5))
+                .andExpect(jsonPath("$.timeInForce").value("GTC"))
+                .andExpect(jsonPath("$.reservedCash").value(700.00));
+
+        Order edited = reload(orderId);
+        assertEquals(Order.Status.OPEN, edited.getStatus());
+        assertEquals(5L, edited.getQuantity());
+        assertTrue(edited.getExpiresAt().isAfter(OffsetDateTime.now().plusDays(80)), "GTC works for up to 90 days");
+    }
+
+    @Test
+    @DisplayName("an edited order fills at its new price")
+    void editedOrderFillsAtTheNewPrice() throws Exception {
+        UUID orderId = openOrder("LIMIT", "BUY", 1, "\"limitPrice\":145.00");
+        modify(orderId, "{\"limitPrice\":148.00}", ownerToken).andExpect(status().isOk());
+
+        quotes("147.40", "147.90");
+        assertEquals(1, engine.evaluateOpenOrders());
+        assertEquals(Order.Status.FILLED, reload(orderId).getStatus());
+    }
+
+    @Test
+    @DisplayName("a larger order the account cannot cover is refused, and the order is unchanged")
+    void editBeyondTheAccountIsRefused() throws Exception {
+        UUID orderId = openOrder("LIMIT", "BUY", 10, "\"limitPrice\":145.00");
+
+        modify(orderId, "{\"quantity\":100}", ownerToken)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Insufficient funds - order rejected"));
+        assertEquals(10L, reload(orderId).getQuantity());
+    }
+
+    @Test
+    @DisplayName("a stop cannot be moved to a price the market has already passed")
+    void editedStopMustNotTriggerAtOnce() throws Exception {
+        UUID orderId = openOrder("STOP", "SELL", 5, "\"stopPrice\":140.00");
+
+        modify(orderId, "{\"stopPrice\":152.00}", ownerToken)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value(
+                        "A stop of $152.00 must be below the current bid of $149.50, or the order would trigger at once"));
+        modify(orderId, "{\"stopPrice\":145.00}", ownerToken).andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("a field that does not apply to the order's type is refused")
+    void editMustFitTheType() throws Exception {
+        UUID orderId = openOrder("STOP", "SELL", 5, "\"stopPrice\":140.00");
+
+        modify(orderId, "{\"limitPrice\":139.00}", ownerToken).andExpect(status().isBadRequest());
+        modify(orderId, "{\"trailPercent\":3}", ownerToken).andExpect(status().isBadRequest());
+        modify(orderId, "{}", ownerToken).andExpect(status().isBadRequest());
+        modify(orderId, "{\"trailAmount\":1,\"trailPercent\":3}", ownerToken).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("editing a trailing stop's trail sets its stop afresh from the best price seen")
+    void editsATrail() throws Exception {
+        UUID orderId = openOrder("TRAILING_STOP", "SELL", 5, "\"trailPercent\":2");
+        quotes("152.00", "152.50");
+        engine.evaluateOpenOrders();
+
+        modify(orderId, "{\"trailAmount\":4.00}", ownerToken)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.trailAmount").value(4.00))
+                .andExpect(jsonPath("$.trailPercent").doesNotExist())
+                .andExpect(jsonPath("$.stopPrice").value(148.00));
+        // A trailing stop's stop price belongs to the engine.
+        modify(orderId, "{\"stopPrice\":140}", ownerToken).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @DisplayName("only the owner can edit an open order, and only while it is open")
+    void editAccessAndState() throws Exception {
+        UUID orderId = openOrder("LIMIT", "BUY", 10, "\"limitPrice\":145.00");
+
+        modify(orderId, "{\"quantity\":2}", otherToken).andExpect(status().isNotFound());
+        mockMvc.perform(post("/api/order/orders/" + orderId + "/cancel").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk());
+        modify(orderId, "{\"quantity\":2}", ownerToken)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("This order is already cancelled"));
+    }
+
+    // ---- Order stream ----
+
+    @Test
+    @DisplayName("the order stream is open to the signed-in client only")
+    void streamNeedsASession() throws Exception {
+        mockMvc.perform(get("/api/order/orders/stream")).andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/orders/stream").header("Authorization", "Bearer " + ownerToken))
+                .andExpect(request().asyncStarted());
+    }
+
+    @Test
+    @DisplayName("the engine tells the client's open streams when their order fills")
+    void engineBroadcastsAFill() throws Exception {
+        SseEmitter emitter = mock(SseEmitter.class);
+        broadcaster.register(emitter, OWNER, () -> true);
+        UUID orderId = openOrder("LIMIT", "BUY", 1, "\"limitPrice\":145.00");
+
+        quotes("144.40", "144.90");
+        engine.evaluateOpenOrders();
+
+        ArgumentCaptor<SseEmitter.SseEventBuilder> events = ArgumentCaptor.forClass(SseEmitter.SseEventBuilder.class);
+        // Sends run on another thread: the ready event, then the fill.
+        verify(emitter, timeout(5000).atLeast(2)).send(events.capture());
+        String sent = events.getAllValues().stream()
+                .flatMap(event -> event.build().stream()).map(part -> String.valueOf(part.getData()))
+                .reduce("", String::concat);
+        assertTrue(sent.contains("event:order"));
+        assertTrue(sent.contains(orderId.toString()));
+        assertTrue(sent.contains("FILLED"));
     }
 
     // ---- Helpers ----

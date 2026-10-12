@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     -- price (see OrderTriggerEngine). A limit caps the fill price; a stop sets when the order
     -- starts working.
     order_type TEXT NOT NULL DEFAULT 'MARKET'
-        CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT')),
+        CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP')),
     limit_price NUMERIC(18,6) CHECK (limit_price IS NULL OR limit_price > 0),
     stop_price NUMERIC(18,6) CHECK (stop_price IS NULL OR stop_price > 0),
     -- NULL for a market order, which never waits.
@@ -113,10 +113,21 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     expired_at TIMESTAMPTZ,
     -- Cash an OPEN buy holds back from buying power, so open orders can't spend it twice.
     reserved_cash NUMERIC(18,2) CHECK (reserved_cash IS NULL OR reserved_cash >= 0),
+    -- Trailing stops: the stop follows the best price seen at a fixed amount or percent away.
+    -- trail_peak is that best price (the high for a sell, the low for a buy) and stop_price is the
+    -- stop it sets, which only ever moves in the order's favour (see OrderTriggerEngine).
+    trail_amount NUMERIC(18,6) CHECK (trail_amount IS NULL OR trail_amount > 0),
+    trail_percent NUMERIC(5,2) CHECK (trail_percent IS NULL OR (trail_percent > 0 AND trail_percent <= 50)),
+    trail_peak NUMERIC(18,6) CHECK (trail_peak IS NULL OR trail_peak > 0),
     CONSTRAINT orders_limit_price_by_type
         CHECK ((order_type IN ('LIMIT', 'STOP_LIMIT')) = (limit_price IS NOT NULL)),
+    -- A trailing stop's stop is set once the market price is known, after the order is stored.
     CONSTRAINT orders_stop_price_by_type
-        CHECK ((order_type IN ('STOP', 'STOP_LIMIT')) = (stop_price IS NOT NULL))
+        CHECK ((order_type IN ('STOP', 'STOP_LIMIT')) = (stop_price IS NOT NULL) OR order_type = 'TRAILING_STOP'),
+    CONSTRAINT orders_trail_by_type
+        CHECK ((order_type = 'TRAILING_STOP') = (trail_amount IS NOT NULL OR trail_percent IS NOT NULL)
+               AND NOT (trail_amount IS NOT NULL AND trail_percent IS NOT NULL)
+               AND (trail_peak IS NULL OR order_type = 'TRAILING_STOP'))
 );
 
 -- Backs OrderTriggerEngine's scan and the per-account holds on cash and shares.

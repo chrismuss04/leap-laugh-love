@@ -86,6 +86,109 @@ describe('OpenOrdersComponent', () => {
     expect(text()).toContain('Bid $99.95 · needs to fall 0.05%');
   });
 
+  it('shows what a trailing stop trails and the best price it has followed', () => {
+    fixture.componentRef.setInput('orders', [order({
+      side: 'SELL', orderType: 'TRAILING_STOP', stopPrice: 146.5, limitPrice: null, reservedCash: null,
+      trailPercent: 2, trailPeak: 149.5
+    })]);
+    fixture.detectChanges();
+    expect(component.rows()[0].target).toBe(146.5);
+    expect(text()).toContain('Trailing stop sell');
+    expect(text()).toContain('Trails 2% from its high $149.50');
+  });
+
+  describe('editing', () => {
+    const url = '/api/order/orders/o1';
+
+    function open(): void {
+      click('Edit');
+    }
+
+    it('opens a form with the order values, and closes it again', () => {
+      open();
+      expect(fixture.nativeElement.querySelector('[data-testid="edit-order"]')).not.toBeNull();
+      expect(component.draft()).toEqual({ quantity: 2, limit: 95, stop: null, trail: null, tif: 'GTC' });
+      click('Close');
+      expect(fixture.nativeElement.querySelector('[data-testid="edit-order"]')).toBeNull();
+    });
+
+    it('sends only what changed, then reports it', () => {
+      const changed: OpenOrder[] = [];
+      component.changed.subscribe(o => changed.push(o));
+      open();
+      component.patch('quantity', 3);
+      component.patch('limit', 90);
+      component.save(order());
+
+      const request = http.expectOne(url);
+      expect(request.request.method).toBe('PATCH');
+      expect(request.request.body).toEqual({ quantity: 3, limitPrice: 90 });
+      request.flush(order({ quantity: 3, limitPrice: 90 }));
+      fixture.detectChanges();
+      expect(changed.length).toBe(1);
+      expect(component.editing()).toBeNull();
+    });
+
+    it('sends nothing when nothing changed', () => {
+      open();
+      component.save(order());
+      http.expectNone(url);
+      expect(component.editing()).toBeNull();
+    });
+
+    it('wants a whole number of shares', () => {
+      open();
+      component.patch('quantity', 1.5);
+      component.save(order());
+      http.expectNone(url);
+      expect(component.editError()).toBe('Enter a whole number of shares');
+    });
+
+    it('edits a trailing stop in the unit it was placed in, and not its stop price', () => {
+      const trailing = order({
+        side: 'SELL', orderType: 'TRAILING_STOP', stopPrice: 146.5, limitPrice: null, reservedCash: null, trailPercent: 2
+      });
+      fixture.componentRef.setInput('orders', [trailing]);
+      fixture.detectChanges();
+      open();
+      expect(component.draft().stop).toBeNull();
+      component.patch('trail', 3);
+      component.patch('tif', 'DAY');
+      component.save(trailing);
+      expect(http.expectOne(url).request.body).toEqual({ trailPercent: 3, timeInForce: 'DAY' });
+    });
+
+    it('shows why a change was refused and keeps the form open', () => {
+      open();
+      component.patch('limit', 99);
+      component.save(order());
+      http.expectOne(url).flush({ message: 'Insufficient funds - order rejected' }, { status: 400, statusText: 'Bad Request' });
+      fixture.detectChanges();
+      expect(text()).toContain('Insufficient funds - order rejected');
+      expect(component.editing()).toBe('o1');
+    });
+
+    it('reloads when the order had already filled', () => {
+      const changed: OpenOrder[] = [];
+      component.changed.subscribe(o => changed.push(o));
+      open();
+      component.patch('limit', 99);
+      component.save(order());
+      http.expectOne(url).flush({ message: 'This order has already executed and can no longer be changed' },
+        { status: 409, statusText: 'Conflict' });
+      fixture.detectChanges();
+      expect(text()).toContain('already executed');
+      expect(changed.length).toBe(1);
+    });
+
+    it('does not offer a reached stop-limit\'s stop price for editing', () => {
+      const reached = order({ side: 'SELL', orderType: 'STOP_LIMIT', stopPrice: 101, limitPrice: 100,
+        triggeredAt: '2026-10-12T12:00:00Z', reservedCash: null });
+      expect(component.hasStop(reached)).toBe(false);
+      expect(component.hasLimit(reached)).toBe(true);
+    });
+  });
+
   it('is hidden with no open orders', () => {
     fixture.componentRef.setInput('orders', []);
     fixture.detectChanges();

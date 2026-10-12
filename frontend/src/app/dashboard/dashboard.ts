@@ -4,7 +4,8 @@ import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { catchError, forkJoin, interval, map, of } from 'rxjs';
 import { AccountValuationService } from '../services/account-valuation';
-import { OpenOrder, OrderHistoryItem, OrderService, OrderSide } from '../services/order';
+import { OpenOrder, OrderHistoryItem, OrderService, OrderSide, OrderUpdate } from '../services/order';
+import { OrderStreamService } from '../services/order-stream';
 import { PriceStreamService } from '../services/price-stream';
 import { PORTFOLIO_RANGES, PortfolioHistory, PortfolioRange, PortfolioService } from '../services/portfolio';
 import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models';
@@ -60,6 +61,7 @@ export class DashboardComponent implements OnInit {
   private readonly valuation = inject(AccountValuationService);
   private readonly orderService = inject(OrderService);
   private readonly marketData = inject(MarketDataService);
+  private readonly orderStream = inject(OrderStreamService);
   private readonly portfolioService = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
   private readonly destroyRef = inject(DestroyRef);
@@ -94,6 +96,9 @@ export class DashboardComponent implements OnInit {
    * orders fill at those, not the last trade.
    */
   readonly quoteOffsets = signal<Record<string, QuoteOffset>>({});
+
+  /** The traded symbol's recent closes, drawn behind the price lines of a limit or stop order. */
+  readonly selectedHistory = signal<number[]>([]);
 
   /** The traded symbol's ask and bid offsets, for the trade panel. */
   readonly selectedQuoteOffset = computed(() => {
@@ -339,6 +344,23 @@ export class DashboardComponent implements OnInit {
       this.stream.watch(symbols);
     });
 
+    // The traded symbol's recent closes, for the order chart.
+    effect(() => {
+      const symbol = this.selectedSymbol();
+      untracked(() => {
+        this.selectedHistory.set([]);
+        if (symbol) {
+          this.marketData.getIntradayCloses(symbol)
+            .pipe(takeUntilDestroyed(this.destroyRef))
+            .subscribe(closes => {
+              if (this.selectedSymbol() === symbol) {
+                this.selectedHistory.set(closes);
+              }
+            });
+        }
+      });
+    });
+
     // A newly traded symbol gets its bid and ask at once rather than at the next poll.
     effect(() => {
       const symbol = this.selectedSymbol();
@@ -390,6 +412,43 @@ export class DashboardComponent implements OnInit {
         }
       });
     this.destroyRef.onDestroy(() => clearTimeout(this.noticeTimer));
+
+    // Orders that end in the background are pushed as they happen; the poll above catches up on
+    // anything missed while the stream was down.
+    this.orderStream.start();
+    this.orderStream.updates
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(update => this.onOrderUpdate(update));
+    this.destroyRef.onDestroy(() => this.orderStream.stop());
+  }
+
+  /** An open order ended while the client watched: say how, and bring the page up to date. */
+  private onOrderUpdate(update: OrderUpdate): void {
+    // Announced here, so the next poll of open orders doesn't announce it again.
+    this.awaitingOutcome.delete(update.orderId);
+    const what = `${openOrderTitle({ orderType: update.orderType as OpenOrder['orderType'], side: update.side })}`
+      + ` of ${update.quantity} ${update.symbol}`;
+    switch (update.status) {
+      case 'FILLED':
+        this.showNotice(`${what} filled${update.fillPrice != null ? ` at ${formatMoney(update.fillPrice)}` : ''}`, 'gain');
+        break;
+      case 'ACCEPTED':
+        this.showNotice(`${what} went through and is being confirmed`, 'gain');
+        break;
+      case 'REJECTED':
+        this.showNotice(`${what} couldn\u2019t be filled${update.reason ? ` \u2014 ${update.reason}` : ''}`, 'loss');
+        break;
+      case 'EXPIRED':
+        this.showNotice(`${what} expired`, 'flat');
+        break;
+    }
+    this.onOrderPlaced();
+  }
+
+  /** An open order was edited, so what it holds back and where it waits have changed. */
+  onOpenOrderChanged(): void {
+    this.loadOpenOrders();
+    this.loadAccounts();
   }
 
   /**

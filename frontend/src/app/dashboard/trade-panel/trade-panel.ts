@@ -13,8 +13,9 @@ import { ProtectionPickerComponent } from '../../shared/protection-picker';
 import { formatProtection, protectionBand } from '../../shared/price-protection';
 import {
   ORDER_TYPES, QuoteOffset, describeOrder, distanceLabel, distanceTo, orderTypeHint, orderTypeLabel,
-  reservePricePerShare, sentenceText, timeInForceLabel, toCents
+  reservePricePerShare, sentenceText, timeInForceLabel, toCents, trailText
 } from '../../shared/order-types';
+import { ChartLine, OrderChartComponent } from '../order-chart/order-chart';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
 
@@ -57,7 +58,7 @@ export interface PriceChip {
  */
 @Component({
     selector: 'app-trade-panel',
-    imports: [CommonModule, FormsModule, RouterLink, RollingNumberComponent, ProtectionPickerComponent],
+    imports: [CommonModule, FormsModule, RouterLink, RollingNumberComponent, ProtectionPickerComponent, OrderChartComponent],
     templateUrl: './trade-panel.html',
     styleUrls: ['./trade-panel.css', './order-type.css']
 })
@@ -68,6 +69,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly price = input<number | null>(null);
   /** How far the symbol's ask and bid sit from its last trade; null until its quote is read. */
   readonly quoteOffset = input<QuoteOffset | null>(null);
+  /** The symbol's recent closes, drawn behind the price lines of a limit or stop order. */
+  readonly priceHistory = input<number[]>([]);
   readonly accounts = input<TradeAccount[]>([]);
   /** Account to trade in by default, e.g. the one the dashboard is scoped to. */
   readonly preferredAccountId = input<string | null>(null);
@@ -118,6 +121,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly limitPrice = signal<number | null>(null);
   readonly stopPrice = signal<number | null>(null);
   readonly timeInForce = signal<TimeInForce>('DAY');
+  /** A trailing stop's trail, in percent of the best price or in dollars. */
+  readonly trailUnit = signal<'PERCENT' | 'AMOUNT'>('PERCENT');
+  readonly trailValue = signal<number | null>(null);
   /** Whether the client has set a price themselves; until then the ticket suggests one. */
   private readonly pricesTouched = signal(false);
 
@@ -144,6 +150,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly isMarket = computed(() => this.orderType() === 'MARKET');
   readonly hasLimit = computed(() => this.orderType() === 'LIMIT' || this.orderType() === 'STOP_LIMIT');
   readonly hasStop = computed(() => this.orderType() === 'STOP' || this.orderType() === 'STOP_LIMIT');
+  readonly hasTrail = computed(() => this.orderType() === 'TRAILING_STOP');
   readonly typeHint = computed(() => orderTypeHint(this.orderType(), this.side()));
 
   constructor() {
@@ -180,6 +187,37 @@ export class TradePanelComponent implements OnChanges, OnInit {
       // Fresh suggestions for the new type (see the constructor's effect).
       this.limitPrice.set(null);
       this.stopPrice.set(null);
+    }
+    if (type === 'TRAILING_STOP' && this.trailValue() == null) {
+      this.trailValue.set(this.defaultTrail());
+    }
+  }
+
+  /** 5% to start with, or the dollar equivalent. */
+  private defaultTrail(): number | null {
+    if (this.trailUnit() === 'PERCENT') {
+      return 5;
+    }
+    const price = this.sidePrice();
+    return price == null ? null : toCents(price * 0.05);
+  }
+
+  setTrailValue(value: number | null): void {
+    this.trailValue.set(value);
+  }
+
+  /** Switches between percent and dollars, keeping the same trail at the current price. */
+  setTrailUnit(unit: 'PERCENT' | 'AMOUNT'): void {
+    const price = this.sidePrice();
+    const value = this.trailValue();
+    if (unit === this.trailUnit()) {
+      return;
+    }
+    this.trailUnit.set(unit);
+    if (value == null || price == null || !(price > 0)) {
+      this.trailValue.set(this.defaultTrail());
+    } else {
+      this.trailValue.set(unit === 'AMOUNT' ? toCents(price * value / 100) : Math.round(value / price * 1000) / 10);
     }
   }
 
@@ -318,8 +356,20 @@ export class TradePanelComponent implements OnChanges, OnInit {
     switch (this.orderType()) {
       case 'MARKET': return this.sidePrice();
       case 'STOP': return this.stopPrice();
+      case 'TRAILING_STOP': return this.initialStop();
       default: return this.limitPrice();
     }
+  });
+
+  /** Where a trailing stop starts: the trail away from the price this side fills at. */
+  readonly initialStop = computed(() => {
+    const price = this.sidePrice();
+    const trail = this.trailValue();
+    if (!this.hasTrail() || price == null || trail == null || !(trail > 0)) {
+      return null;
+    }
+    const distance = this.trailUnit() === 'PERCENT' ? price * trail / 100 : trail;
+    return toCents(this.side() === 'SELL' ? price - distance : price + distance);
   });
 
   readonly estimate = computed(() => {
@@ -332,7 +382,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (this.isMarket()) {
       return this.estimate();
     }
-    const perShare = reservePricePerShare(this.orderType(), this.limitPrice(), this.stopPrice());
+    const perShare = reservePricePerShare(this.orderType(), this.limitPrice(),
+      this.hasTrail() ? this.initialStop() : this.stopPrice());
     return perShare != null && this.validQuantity() ? toCents(perShare * this.quantity()!) : null;
   });
 
@@ -356,6 +407,19 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     if (!this.validQuantity()) {
       return 'Enter a whole number of shares';
+    }
+    if (this.hasTrail()) {
+      const trail = this.trailValue();
+      if (trail == null || !(trail > 0)) {
+        return 'Enter how far to trail';
+      }
+      if (this.trailUnit() === 'PERCENT' && (trail < 0.1 || trail > 50)) {
+        return 'Trail by between 0.1% and 50%';
+      }
+      const stop = this.initialStop();
+      if (stop == null || stop <= 0) {
+        return 'The trail must be smaller than the price';
+      }
     }
     if (this.hasStop() && !TradePanelComponent.validPrice(this.stopPrice())) {
       return 'Enter a stop price';
@@ -395,6 +459,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const buy = this.side() === 'BUY';
     if (price == null || this.isMarket()) {
       return null;
+    }
+    if (this.hasTrail()) {
+      const distance = distanceTo(this.initialStop(), price);
+      return distance && distance.percent < 0.5 ? 'A very tight trail can trigger on ordinary price moves.' : null;
     }
     if (this.orderType() === 'LIMIT' && limit != null) {
       if (buy ? limit >= price : limit <= price) {
@@ -460,6 +528,63 @@ export class TradePanelComponent implements OnChanges, OnInit {
     return chips;
   });
 
+  /** One-tap trails: 1, 2, 5 and 10 percent, or the dollars they come to. */
+  readonly trailChips = computed<PriceChip[]>(() => {
+    const percents = [1, 2, 5, 10];
+    if (this.trailUnit() === 'PERCENT') {
+      return percents.map(percent => ({ label: `${percent}%`, value: percent }));
+    }
+    const price = this.sidePrice();
+    return price == null ? [] : percents.map(percent => ({
+      label: formatMoney(toCents(price * percent / 100)), value: toCents(price * percent / 100)
+    }));
+  });
+
+  /**
+   * The price lines drawn on the chart. A limit, stop or trailing stop can be dragged to a price;
+   * the market line is the price this side fills at.
+   */
+  readonly chartLines = computed<ChartLine[]>(() => {
+    const lines: ChartLine[] = [];
+    const market = this.sidePrice();
+    if (market != null) {
+      lines.push({
+        id: 'market', label: this.quoteOffset() ? (this.side() === 'BUY' ? 'Ask' : 'Bid') : 'Price',
+        value: market, tone: 'muted', draggable: false
+      });
+    }
+    if (this.hasStop() && TradePanelComponent.validPrice(this.stopPrice())) {
+      lines.push({ id: 'stop', label: 'Stop', value: this.stopPrice()!, tone: 'warning', draggable: true });
+    }
+    if (this.hasTrail() && this.initialStop() != null) {
+      lines.push({ id: 'trail', label: 'Stop', value: this.initialStop()!, tone: 'warning', draggable: true });
+    }
+    if (this.hasLimit() && TradePanelComponent.validPrice(this.limitPrice())) {
+      lines.push({ id: 'limit', label: 'Limit', value: this.limitPrice()!, tone: 'accent', draggable: true });
+    }
+    return lines;
+  });
+
+  /** A line was dragged (or nudged with the keyboard) on the chart to a new price. */
+  onChartLine(change: { id: string; value: number }): void {
+    const value = toCents(change.value);
+    if (!(value > 0)) {
+      return;
+    }
+    if (change.id === 'limit') {
+      this.setLimitPrice(value);
+    } else if (change.id === 'stop') {
+      this.setStopPrice(value);
+    } else if (change.id === 'trail') {
+      // Dragging a trailing stop's line sets how far it trails the price.
+      const price = this.sidePrice();
+      if (price != null && price > 0) {
+        const distance = Math.abs(price - value);
+        this.setTrailValue(this.trailUnit() === 'PERCENT' ? Math.round(distance / price * 1000) / 10 : toCents(distance));
+      }
+    }
+  }
+
   /** The order in plain English, rebuilt as it's edited. */
   readonly sentence = computed(() => describeOrder({
     side: this.side(),
@@ -468,8 +593,15 @@ export class TradePanelComponent implements OnChanges, OnInit {
     quantity: this.validQuantity() ? this.quantity() : null,
     limitPrice: this.limitPrice(),
     stopPrice: this.stopPrice(),
-    timeInForce: this.timeInForce()
+    timeInForce: this.timeInForce(),
+    trailAmount: this.trailUnit() === 'AMOUNT' ? this.trailValue() : null,
+    trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null
   }));
+
+  /** "5%" or "$2.00": the trail as entered. */
+  readonly trailLabel = computed(() => trailText(
+    this.trailUnit() === 'AMOUNT' ? this.trailValue() : null,
+    this.trailUnit() === 'PERCENT' ? this.trailValue() : null));
 
   readonly sentenceLabel = computed(() => sentenceText(this.sentence()));
 
@@ -576,6 +708,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
         orderType: this.orderType(),
         ...(this.hasLimit() ? { limitPrice: toCents(this.limitPrice()!) } : {}),
         ...(this.hasStop() ? { stopPrice: toCents(this.stopPrice()!) } : {}),
+        ...(this.hasTrail()
+          ? this.trailUnit() === 'PERCENT' ? { trailPercent: this.trailValue()! } : { trailAmount: toCents(this.trailValue()!) }
+          : {}),
         timeInForce: this.timeInForce()
       };
     }
@@ -642,6 +777,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.pricesTouched.set(false);
     this.limitPrice.set(null);
     this.stopPrice.set(null);
+    this.trailValue.set(this.orderType() === 'TRAILING_STOP' ? this.defaultTrail() : null);
   }
 
   readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
@@ -653,6 +789,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
       return null;
     }
     const buy = result.side === 'BUY';
+    if (result.orderType === 'TRAILING_STOP') {
+      return `${result.symbol} ${buy ? 'rises' : 'falls'} ${trailText(result.trailAmount, result.trailPercent)} from its ${buy ? 'low' : 'high'}`;
+    }
     if (result.orderType === 'LIMIT') {
       return `${result.symbol} ${buy ? 'falls' : 'rises'} to ${formatMoney(result.limitPrice)}`;
     }

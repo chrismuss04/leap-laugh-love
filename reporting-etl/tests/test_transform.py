@@ -33,6 +33,12 @@ def test_keeps_the_order_type():
     assert row.order_type == "STOP_LIMIT"
 
 
+def test_keeps_a_trailing_stop_order_type():
+    row = to_order_row(encode(filled_event(orderType="TRAILING_STOP")))
+
+    assert row.order_type == "TRAILING_STOP"
+
+
 def test_treats_an_event_without_an_order_type_as_a_market_order():
     # Events published before order types existed carry none.
     row = to_order_row(encode(filled_event()))
@@ -42,7 +48,7 @@ def test_treats_an_event_without_an_order_type_as_a_market_order():
 
 def test_rejects_an_unknown_order_type():
     with pytest.raises(InvalidEvent, match="orderType"):
-        to_order_row(encode(filled_event(orderType="TRAILING")))
+        to_order_row(encode(filled_event(orderType="ICEBERG")))
 
 
 def test_keeps_the_price_exact():

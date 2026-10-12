@@ -15,7 +15,7 @@ from typing import Any, Optional
 
 SIDES = frozenset({"BUY", "SELL"})
 STATUSES = frozenset({"FILLED", "REJECTED"})
-ORDER_TYPES = frozenset({"MARKET", "LIMIT", "STOP", "STOP_LIMIT"})
+ORDER_TYPES = frozenset({"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"})
 
 
 class InvalidEvent(ValueError):

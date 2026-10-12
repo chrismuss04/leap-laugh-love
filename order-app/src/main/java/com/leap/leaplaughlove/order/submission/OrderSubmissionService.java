@@ -18,6 +18,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
 import com.leap.leaplaughlove.order.working.ReservationService;
+import com.leap.leaplaughlove.order.working.TrailingStop;
 import com.leap.leaplaughlove.order.working.TriggerEvaluator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -333,6 +334,9 @@ public class OrderSubmissionService {
             Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
             order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
                     expiryOf(timeInForce, now));
+            if (orderType.hasTrail()) {
+                order.setTrailing(request.trailAmount(), request.trailPercent());
+            }
         }
         order = orderRepository.saveAndFlush(order);
 
@@ -394,6 +398,20 @@ public class OrderSubmissionService {
                                             BigDecimal executionPrice) {
         Order.OrderType orderType = order.getOrderType();
         Order.Side side = order.getSide();
+
+        // A trailing stop starts its trail from the price it is placed at.
+        if (orderType.hasTrail()) {
+            BigDecimal stop = TrailingStop.stopFor(side, executionPrice, order.getTrailAmount(), order.getTrailPercent());
+            if (stop.signum() <= 0) {
+                return new FirstStep(rejectOrder(order, accountValidation, String.format(
+                        "Trail of $%s must be smaller than the current %s of $%s - order rejected",
+                        TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())
+                                .setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                        side == Order.Side.BUY ? "ask" : "bid",
+                        executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);
+            }
+            order.moveTrail(executionPrice, stop);
+        }
 
         // A stop the price has already passed would trigger at once - almost always a mistake,
         // e.g. a sell stop entered above the market. The ticket points the client to a market
@@ -499,6 +517,7 @@ public class OrderSubmissionService {
             case LIMIT -> "Executed at limit price or better";
             case STOP -> "Stop price reached; executed at market price";
             case STOP_LIMIT -> "Stop price reached; executed at limit price or better";
+            case TRAILING_STOP -> "Trailing stop reached; executed at market price";
         };
     }
 
@@ -508,7 +527,7 @@ public class OrderSubmissionService {
      * @param now when the order is placed
      * @return midnight US Eastern time after placing for DAY, 90 days later for GTC
      */
-    static OffsetDateTime expiryOf(Order.TimeInForce timeInForce, OffsetDateTime now) {
+    public static OffsetDateTime expiryOf(Order.TimeInForce timeInForce, OffsetDateTime now) {
         if (timeInForce == Order.TimeInForce.GTC) {
             return now.plusDays(GTC_DAYS);
         }
@@ -617,7 +636,9 @@ public class OrderSubmissionService {
                 order.getStopPrice(),
                 order.getTimeInForce() != null ? order.getTimeInForce().name() : null,
                 order.getExpiresAt(),
-                order.getReservedCash()
+                order.getReservedCash(),
+                order.getTrailAmount(),
+                order.getTrailPercent()
         );
     }
 }
