@@ -10,16 +10,33 @@
       </select>
     </label>
     <p class="period-context">Simulated market · UTC periods. Changes compare against the last completed daily close before the period.</p>
+    <p class="period-context" *ngIf="overview()">{{ stream.status() === 'live' ? 'Prices update live.' : 'Live prices are connecting. Showing the last available prices.' }} Movers cover all instruments.</p>
   </header>
 
   <div class="movers">
     <section class="panel" aria-labelledby="gainers-title">
       <h2 id="gainers-title">Top Gainers</h2>
-      <p class="pending">Market performance will appear here when the data connection is added.</p>
+      <p class="pending" *ngIf="loading()">Loading market movers…</p>
+      <p class="pending" *ngIf="error()">Market movers are unavailable.</p>
+      <ol class="mover-list" *ngIf="overview()">
+        <li *ngFor="let instrument of gainers()">
+          <div><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></div>
+          <div class="mover-price num"><span>{{ number(instrument.price) }} <span class="currency">{{ instrument.currency }}</span></span><span class="text-gain">{{ percent(instrument.changePercent) }}</span></div>
+        </li>
+      </ol>
+      <p class="pending" *ngIf="overview() && !gainers().length">No gainers with available performance for this period.</p>
     </section>
     <section class="panel" aria-labelledby="losers-title">
       <h2 id="losers-title">Top Losers</h2>
-      <p class="pending">Market performance will appear here when the data connection is added.</p>
+      <p class="pending" *ngIf="loading()">Loading market movers…</p>
+      <p class="pending" *ngIf="error()">Market movers are unavailable.</p>
+      <ol class="mover-list" *ngIf="overview()">
+        <li *ngFor="let instrument of losers()">
+          <div><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></div>
+          <div class="mover-price num"><span>{{ number(instrument.price) }} <span class="currency">{{ instrument.currency }}</span></span><span class="text-loss">{{ percent(instrument.changePercent) }}</span></div>
+        </li>
+      </ol>
+      <p class="pending" *ngIf="overview() && !losers().length">No losers with available performance for this period.</p>
     </section>
   </div>
 
@@ -48,7 +65,7 @@
     </div>
     <ng-container *ngIf="overview() as data">
     <p class="result-count" role="status">Showing {{ visibleInstruments().length }} of {{ data.instruments.length }} instruments</p>
-    <p class="pending">{{ data.instruments.length }} instruments · Updated {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
+    <p class="pending">{{ data.instruments.length }} instruments · Snapshot fetched {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
     <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
     <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
       <table>

@@ -1,10 +1,12 @@
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { BehaviorSubject, catchError, EMPTY, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, EMPTY, interval, switchMap, tap } from 'rxjs';
 import { InstrumentOverview, InstrumentPeriod, InstrumentsService } from '../services/instruments';
 import { direction, formatNumber, formatSignedPercent } from '../shared/format';
 import { instrumentList, InstrumentSort, SortDirection, UNCLASSIFIED } from './instrument-list';
+import { PriceStreamService } from '../services/price-stream';
+import { liveInstruments, marketMovers, needsDailyRefresh } from './market-movers';
 
 @Component({
   selector: 'app-instruments',
@@ -17,6 +19,12 @@ export class InstrumentsComponent {
   readonly overview = signal<InstrumentOverview | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+  readonly stream = inject(PriceStreamService);
+  private readonly initialPrices = signal<Record<string, number>>({});
+  readonly instruments = computed(() => liveInstruments(this.overview()?.instruments ?? [],
+    this.stream.prices(), this.initialPrices()));
+  readonly gainers = computed(() => marketMovers(this.instruments(), 'gainers'));
+  readonly losers = computed(() => marketMovers(this.instruments(), 'losers'));
   readonly query = signal('');
   readonly asset = signal('');
   readonly sort = signal<InstrumentSort>('name');
@@ -24,7 +32,7 @@ export class InstrumentsComponent {
   readonly assetOptions = computed(() => [...new Set(
     (this.overview()?.instruments ?? []).map(row => row.assetClass ?? UNCLASSIFIED)
   )].sort());
-  readonly visibleInstruments = computed(() => instrumentList(this.overview()?.instruments ?? [],
+  readonly visibleInstruments = computed(() => instrumentList(this.instruments(),
     this.query(), this.asset(), this.sort(), this.sortDirection()));
   readonly direction = direction;
   readonly number = formatNumber;
@@ -33,6 +41,21 @@ export class InstrumentsComponent {
   private readonly requests = new BehaviorSubject<InstrumentPeriod>('today');
 
   constructor() {
+    // Once a symbol receives a changed tick, allow all later ticks, including
+    // a return to the price cached before the overview was fetched.
+    effect(() => {
+      const prices = this.stream.prices();
+      const initial = this.initialPrices();
+      const remaining = { ...initial };
+      let changed = false;
+      for (const symbol of Object.keys(initial)) {
+        if (Number.isFinite(prices[symbol]) && prices[symbol] > 0 && prices[symbol] !== initial[symbol]) {
+          delete remaining[symbol];
+          changed = true;
+        }
+      }
+      if (changed) this.initialPrices.set(remaining);
+    });
     this.requests.pipe(
       tap(() => {
         this.loading.set(true);
@@ -49,8 +72,17 @@ export class InstrumentsComponent {
       )),
       takeUntilDestroyed()
     ).subscribe(response => {
+      this.initialPrices.set({ ...this.stream.prices() });
       this.overview.set(response);
+      this.stream.watch(response.instruments.map(row => row.symbol));
       this.loading.set(false);
+    });
+    // RxJS tears down this timer with the component; the shared stream stays with the shell.
+    interval(30_000).pipe(takeUntilDestroyed()).subscribe(() => {
+      const snapshot = this.overview();
+      if (!this.loading() && snapshot && needsDailyRefresh(snapshot.asOf, new Date())) {
+        this.requests.next(this.period());
+      }
     });
   }
 
