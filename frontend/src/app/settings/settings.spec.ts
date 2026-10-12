@@ -47,7 +47,7 @@ describe('SettingsComponent', () => {
   const text = () => (fixture.nativeElement as HTMLElement).textContent ?? '';
 
   it('starts from the loaded profile, with the phone formatted for editing', () => {
-    expect(component.form.getRawValue()).toEqual(jasmine.objectContaining({
+    expect(component.form.getRawValue()).toEqual(expect.objectContaining({
       fullName: 'Alice Example', email: 'alice@example.com', phone: '(212) 555-0101', addressLine1: '1 Main St',
       addressLine2: '', city: 'Springfield', stateRegion: 'IL', postalCode: '62704', countryCode: 'US',
       notifyOrderFills: true, notifyPriceAlerts: false

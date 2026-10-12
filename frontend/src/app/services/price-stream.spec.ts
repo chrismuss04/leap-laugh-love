@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { AuthService } from './auth.service';
 import { PriceStreamService } from './price-stream';
+import type { Mock } from 'vitest';
 
 describe('PriceStreamService', () => {
   const realSetTimeout = window.setTimeout.bind(window);
@@ -9,12 +10,12 @@ describe('PriceStreamService', () => {
 
   let service: PriceStreamService;
   let token: string | null;
-  let fetchSpy: jasmine.Spy;
+  let fetchSpy: Mock;
   let streams: ReadableStreamDefaultController<Uint8Array>[];
 
   /** A fetch() that serves a controllable event stream and honours abort. */
   function serveStream(status = 200): void {
-    fetchSpy.and.callFake((_url: string, init: RequestInit) => {
+    fetchSpy.mockImplementation((_url: string, init: RequestInit) => {
       const body = new ReadableStream<Uint8Array>({
         start(controller) {
           streams.push(controller);
@@ -37,7 +38,7 @@ describe('PriceStreamService', () => {
   beforeEach(() => {
     token = 'jwt';
     streams = [];
-    fetchSpy = spyOn(window, 'fetch');
+    fetchSpy = vi.spyOn(window, 'fetch').mockReturnValue(undefined as never);
     serveStream();
     TestBed.configureTestingModule({ providers: [{ provide: AuthService, useValue: { getToken: () => token } }] });
     service = TestBed.inject(PriceStreamService);
@@ -45,7 +46,7 @@ describe('PriceStreamService', () => {
 
   afterEach(() => {
     service.stop();
-    jasmine.clock().uninstall();
+    vi.useRealTimers();
   });
 
   it('does not connect without a token or symbols', () => {
@@ -61,7 +62,7 @@ describe('PriceStreamService', () => {
     expect(service.status()).toBe('connecting');
     await settle();
 
-    const [url, init] = fetchSpy.calls.mostRecent().args;
+    const [url, init] = fetchSpy.mock.lastCall!;
     expect(url).toBe('/api/marketdata/stream?symbols=AAPL%2CMSFT');
     expect(init.headers.Authorization).toBe('Bearer jwt');
     expect(service.status()).toBe('live');
@@ -150,7 +151,7 @@ describe('PriceStreamService', () => {
   });
 
   it('reconnects when a request fails outright', async () => {
-    fetchSpy.and.returnValue(Promise.reject(new Error('offline')));
+    fetchSpy.mockReturnValue(Promise.reject(new Error('offline')));
     service.watch(['AAPL']);
     await settle();
     expect(service.status()).toBe('reconnecting');
@@ -165,12 +166,12 @@ describe('PriceStreamService', () => {
   });
 
   it('treats a silent connection as dead', async () => {
-    jasmine.clock().install();
-    jasmine.clock().mockDate(new Date());
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date());
     service.watch(['AAPL']);
     await settle();
     expect(service.status()).toBe('live');
-    jasmine.clock().tick(12_000);
+    vi.advanceTimersByTime(12_000);
     expect(service.status()).toBe('reconnecting');
   });
 

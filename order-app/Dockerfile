@@ -23,11 +23,27 @@ RUN --mount=type=cache,id=leap-maven-repo,target=/root/.m2,sharing=shared \
     mvn -B clean package -Dmaven.test.skip=true -Dmaven.javadoc.skip=true -Djacoco.skip=true \
         -Daether.syncContext.named.factory=file-lock -Daether.syncContext.named.nameMapper=file-gav \
         -pl order-app -am
+# CDS (see the runtime stage) needs a plain classpath rather than the nested jars of a fat jar.
+# Unpacked here so the runtime image gets only the unpacked copy, not both.
+RUN java -Djarmode=tools -jar order-app/target/*.jar extract --destination /app/extracted \
+    --application-filename app.jar
 
 # Runtime stage
 FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
-COPY --from=build /app/order-app/target/*.jar app.jar
+COPY --from=build /app/extracted extracted
+# Class Data Sharing: the JVM maps the classes Spring loads at startup from a prebuilt archive
+# instead of loading and verifying each one from the jars, which takes a large share off every
+# start - the recovery suite restarts these services over and over. The archive comes from a
+# training run that refreshes the application context and exits before anything starts: no web
+# server, schedulers, runners or Kafka clients, and no database - Hibernate is given its dialect
+# so it doesn't ask one. At runtime a missing or mismatched archive only costs speed; the JVM
+# starts without it.
+RUN java -XX:ArchiveClassesAtExit=extracted/app.jsa -Xlog:cds=off -Xlog:cds+dynamic=off \
+        -Dspring.context.exit=onRefresh \
+        -Dspring.jpa.database-platform=org.hibernate.dialect.PostgreSQLDialect \
+        -Dspring.jpa.properties.hibernate.boot.allow_jdbc_metadata_access=false \
+        -jar extracted/app.jar
 EXPOSE 8084
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-XX:SharedArchiveFile=extracted/app.jsa", "-jar", "extracted/app.jar"]
 

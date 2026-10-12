@@ -38,11 +38,12 @@ export interface OrderHistoryPage {
   totalElements: number;
   totalPages: number;
 }
-export interface LatestPrice {
+export interface LatestQuote {
   symbol: string;
-  name: string | null;
-  price: number;
-  asOf: string;
+  bidPrice: number;
+  askPrice: number;
+  lastPrice: number;
+  quoteTimestamp: string;
 }
 
 /**
@@ -167,8 +168,9 @@ export class Api {
 
   // ---- Market data ----
 
-  async latestPrice(symbol: string): Promise<LatestPrice> {
-    return this.json(await this.get(`/api/marketdata/prices/${encodeURIComponent(symbol)}`), `price ${symbol}`);
+  /** The latest ingested quote: what order-app prices an order against. */
+  async latestQuote(symbol: string): Promise<LatestQuote> {
+    return this.json(await this.get(`/api/marketdata/quotes/${encodeURIComponent(symbol)}`), `quote ${symbol}`);
   }
 
   private async json<T>(response: APIResponse, what: string): Promise<T> {

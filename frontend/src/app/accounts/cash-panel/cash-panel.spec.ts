@@ -3,6 +3,8 @@ import { Subject, of, throwError } from 'rxjs';
 import { AccountsService } from '../../services/accounts';
 import { BalanceService } from '../../services/balance';
 import { CashAccount, CashPanelComponent } from './cash-panel';
+import type { MockedObject } from 'vitest';
+import { createSpyObj } from '../../../testing/create-spy-obj';
 
 describe('CashPanelComponent', () => {
   const rich: CashAccount = { accountId: 'a', name: 'Brokerage ··0001', cash: 1000 };
@@ -11,8 +13,8 @@ describe('CashPanelComponent', () => {
 
   let fixture: ComponentFixture<CashPanelComponent>;
   let panel: CashPanelComponent;
-  let balance: jasmine.SpyObj<BalanceService>;
-  let accounts: jasmine.SpyObj<AccountsService>;
+  let balance: MockedObject<BalanceService>;
+  let accounts: MockedObject<AccountsService>;
 
   function setAccounts(list: CashAccount[], focus: string | null = null): void {
     fixture.componentRef.setInput('accounts', list);
@@ -26,8 +28,8 @@ describe('CashPanelComponent', () => {
     fromBalanceAfter: 990, toBalanceAfter: 10, createdAt: '' };
 
   beforeEach(() => {
-    balance = jasmine.createSpyObj('BalanceService', ['deposit']);
-    accounts = jasmine.createSpyObj('AccountsService', ['transferCash']);
+    balance = createSpyObj('BalanceService', ['deposit']);
+    accounts = createSpyObj('AccountsService', ['transferCash']);
     TestBed.configureTestingModule({
       imports: [CashPanelComponent],
       providers: [{ provide: BalanceService, useValue: balance }, { provide: AccountsService, useValue: accounts }]
@@ -149,10 +151,10 @@ describe('CashPanelComponent', () => {
       panel.mode.set('transfer');
       panel.amount.set(2000);
       expect(panel.blocker()).toBe('Not enough cash ($1,000.00 available)');
-      expect(panel.canReview()).toBeFalse();
+      expect(panel.canReview()).toBe(false);
       panel.amount.set(20);
       expect(panel.blocker()).toBeNull();
-      expect(panel.canReview()).toBeTrue();
+      expect(panel.canReview()).toBe(true);
     });
 
     it('does not review or submit an invalid ticket', () => {
@@ -205,11 +207,11 @@ describe('CashPanelComponent', () => {
   describe('submitting', () => {
     beforeEach(() => {
       setAccounts([rich, poor]);
-      spyOn(panel.changed, 'emit');
+      vi.spyOn(panel.changed, 'emit').mockImplementation(() => {});
     });
 
     it('adds cash with a trimmed note and shows the result', () => {
-      balance.deposit.and.returnValue(of(deposit));
+      balance.deposit.mockReturnValue(of(deposit));
       panel.amount.set(10);
       panel.note.set('  savings ');
       panel.submit();
@@ -222,7 +224,7 @@ describe('CashPanelComponent', () => {
     });
 
     it('transfers cash without a blank note and shows the result', () => {
-      accounts.transferCash.and.returnValue(of(transfer));
+      accounts.transferCash.mockReturnValue(of(transfer));
       panel.mode.set('transfer');
       panel.amount.set(10);
       panel.note.set('   ');
@@ -235,7 +237,7 @@ describe('CashPanelComponent', () => {
     });
 
     it('shows a spinner while the request is in flight', () => {
-      balance.deposit.and.returnValue(new Subject());
+      balance.deposit.mockReturnValue(new Subject());
       panel.amount.set(10);
       panel.submit();
       expect(panel.step()).toBe('submitting');
@@ -244,7 +246,7 @@ describe('CashPanelComponent', () => {
     });
 
     it('does not invite a repeat when the outcome is unknown', () => {
-      balance.deposit.and.returnValue(throwError(() => ({ status: 503 })));
+      balance.deposit.mockReturnValue(throwError(() => ({ status: 503 })));
       panel.amount.set(10);
       panel.submit();
       expect(panel.step()).toBe('unconfirmed');
@@ -252,7 +254,7 @@ describe('CashPanelComponent', () => {
       fixture.detectChanges();
       expect(fixture.nativeElement.textContent).toContain('We couldn\'t confirm your deposit');
 
-      accounts.transferCash.and.returnValue(throwError(() => ({ status: 0 })));
+      accounts.transferCash.mockReturnValue(throwError(() => ({ status: 0 })));
       panel.reset();
       panel.mode.set('transfer');
       panel.amount.set(10);
@@ -263,7 +265,7 @@ describe('CashPanelComponent', () => {
     });
 
     it('returns to review with the server message on a rejection', () => {
-      balance.deposit.and.returnValue(throwError(() => ({ status: 400, error: { message: 'Over the limit' } })));
+      balance.deposit.mockReturnValue(throwError(() => ({ status: 400, error: { message: 'Over the limit' } })));
       panel.amount.set(10);
       panel.submit();
       expect(panel.step()).toBe('review');
@@ -271,12 +273,12 @@ describe('CashPanelComponent', () => {
     });
 
     it('falls back to a generic message per mode', () => {
-      balance.deposit.and.returnValue(throwError(() => ({ status: 400, error: {} })));
+      balance.deposit.mockReturnValue(throwError(() => ({ status: 400, error: {} })));
       panel.amount.set(10);
       panel.submit();
       expect(panel.submitError()).toBe('Your cash could not be added. Please try again.');
 
-      accounts.transferCash.and.returnValue(throwError(() => ({ status: 400 })));
+      accounts.transferCash.mockReturnValue(throwError(() => ({ status: 400 })));
       panel.reset();
       panel.mode.set('transfer');
       panel.amount.set(10);
@@ -298,7 +300,7 @@ describe('CashPanelComponent', () => {
     setAccounts([rich]);
     panel.mode.set('transfer');
     fixture.detectChanges();
-    spyOn(panel.openAccount, 'emit');
+    vi.spyOn(panel.openAccount, 'emit').mockImplementation(() => {});
     const open = fixture.nativeElement.querySelector('.placeholder button') as HTMLButtonElement;
     open.click();
     expect(panel.openAccount.emit).toHaveBeenCalled();

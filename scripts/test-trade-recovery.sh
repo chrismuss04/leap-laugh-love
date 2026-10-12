@@ -25,7 +25,17 @@ export COMPOSE_PROJECT="leap-recovery-$run_id"
 export COMPOSE_PROJECT_NAME="$COMPOSE_PROJECT"
 export DB_VOLUME_NAME="${COMPOSE_PROJECT}_db_data"
 export DB_VOLUME_EXTERNAL=false
-export IMAGE_TAG="$COMPOSE_PROJECT"
+# CI has already built this commit's service images; RECOVERY_IMAGE_TAG reuses them instead of
+# building all four again. Those images belong to the caller, so cleanup leaves them alone.
+# Without it (local runs) the images are built here under a tag only this run uses.
+prebuilt_tag="${RECOVERY_IMAGE_TAG:-}"
+unset RECOVERY_IMAGE_TAG
+if [[ -n "$prebuilt_tag" ]]; then
+    [[ "$prebuilt_tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]] || { echo "Invalid RECOVERY_IMAGE_TAG."; exit 1; }
+    export IMAGE_TAG="$prebuilt_tag"
+else
+    export IMAGE_TAG="$COMPOSE_PROJECT"
+fi
 export DB_PASSWORD="recovery-$run_id"
 export JWT_SECRET="recovery-test-only-$run_id-$run_id"
 export DB_PORT=0 IAM_PORT=0 ACCOUNT_PORT=0 ORDER_PORT=0 MARKETDATA_PORT=0 FRONTEND_PORT=0
@@ -63,9 +73,11 @@ cleanup() {
     else
         rm -f -- "$active_run"
     fi
-    for service in iam-app account-app order-app market-data-app; do
-        docker image rm "$service:$IMAGE_TAG" >/dev/null 2>&1 || true
-    done
+    if [[ -z "$prebuilt_tag" ]]; then
+        for service in iam-app account-app order-app market-data-app; do
+            docker image rm "$service:$IMAGE_TAG" >/dev/null 2>&1 || true
+        done
+    fi
     echo "Recovery environment results: $RECOVERY_RESULTS_DIR"
     exit "$result"
 }
@@ -91,7 +103,15 @@ done
 [[ "$ready" == true ]] || { echo "Durable database/schema readiness check failed."; exit 1; }
 printf '%s\n' "$settings" > "$RECOVERY_RESULTS_DIR/durability.txt"
 
-"${compose[@]}" up -d --build iam-app account-app order-app market-data-app
+if [[ -n "$prebuilt_tag" ]]; then
+    for service in iam-app account-app order-app market-data-app; do
+        docker image inspect "$service:$IMAGE_TAG" >/dev/null 2>&1 \
+            || { echo "Prebuilt image $service:$IMAGE_TAG not found."; exit 1; }
+    done
+    "${compose[@]}" up -d --no-build iam-app account-app order-app market-data-app
+else
+    "${compose[@]}" up -d --build iam-app account-app order-app market-data-app
+fi
 for pair in iam-app:8081 account-app:8082 order-app:8084 market-data-app:8083; do
     service=${pair%:*}
     port=${pair#*:}

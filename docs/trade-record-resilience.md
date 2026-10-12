@@ -113,6 +113,11 @@ extend it where their scenarios need additional services or failure controls.
 Run it on the Docker host (not against a remote Docker context) because host-side
 test URLs use loopback. Image builds require network access for dependencies.
 
+Set `RECOVERY_IMAGE_TAG` to reuse service images that already exist as
+`<service>:<tag>` instead of building them; Jenkins passes the tag its "Build Docker
+Images" stage just built. The harness starts them with `--no-build`, fails if any
+is missing, and leaves them in place on cleanup, since they belong to the caller.
+
 The script can wrap a future test command, for example:
 
 ```bash
