@@ -240,3 +240,81 @@ SELECT 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb4'::UUID, o.order_id, NULL, NULL, 'RE
        'Insufficient funds - order rejected'
 FROM trading.orders o WHERE o.order_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4'::UUID
 ON CONFLICT (execution_id) DO NOTHING;
+
+-- ---- Analytics mock clients ------------------------------------------------------------------
+-- The 40 mock clients from seed_iam.sql (phone (646) 555-02NN is mock client NN) get one funded
+-- account each, opened the day after they registered, and every client but each fifth one trades:
+-- eight orders spread from account opening to yesterday, so the commercial analyst's reports
+-- have realistic volume, instruments and rejections to show. Fills follow the rules above: only
+-- filled_at here, booked by SeededFillService. Each sell sells half of an earlier buy of the same
+-- instrument, so no fill ever sells more than the account holds.
+
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at)
+SELECT c.client_id, format('ACC-%s-01', 100 + (right(c.phone, 4)::int - 200)), 'ACTIVE', 'USD', TRUE,
+       c.created_at + INTERVAL '1 day'
+FROM iam.clients c
+WHERE c.phone LIKE '(646) 555-02__'
+ON CONFLICT (account_number) DO NOTHING;
+
+INSERT INTO trading.cash_ledger (cash_ledger_id, account_id, entry_type, amount, currency, created_at, description)
+SELECT format('dddddddd-dddd-dddd-dddd-ffffffff%s', lpad(substr(a.account_number, 6, 2), 4, '0'))::UUID,
+       a.account_id, 'DEPOSIT', cp.initial_deposit_amount, 'USD', a.created_at, 'Initial account funding'
+FROM trading.accounts a
+JOIN iam.client_profile cp ON cp.client_id = a.client_id
+WHERE a.account_number ~ '^ACC-1[0-4][0-9]-01$'
+ON CONFLICT (cash_ledger_id) DO NOTHING;
+
+-- Per trading client: 1 BUY A, 2 SELL half of A, 3 BUY B, 4 SELL half of B, 5 BUY C, 6 a rejected
+-- order (reason varies by client), 7 SELL half of C, 8 BUY D. AAPL is weighted to trade most.
+WITH mock AS (
+    SELECT a.account_id, substr(a.account_number, 6, 2)::int AS n, current_date - a.created_at::date AS days_open
+    FROM trading.accounts a
+    WHERE a.account_number ~ '^ACC-1[0-4][0-9]-01$'
+),
+plan AS (
+    SELECT m.account_id, m.n, k,
+           -- Pair p covers orders 2p-1 and 2p; the rejected order (6) and the last buy (8) use their own.
+           CASE k WHEN 1 THEN 1 WHEN 2 THEN 1 WHEN 3 THEN 2 WHEN 4 THEN 2 WHEN 8 THEN 4 ELSE 3 END AS p,
+           -- Days before today, from the day after opening (k = 1) towards yesterday (k = 8).
+           m.days_open - 1 - ((m.days_open - 2) * k) / 9 AS days_ago
+    FROM mock m
+    CROSS JOIN generate_series(1, 8) AS k
+    WHERE m.n % 5 <> 0
+),
+orders AS (
+    SELECT format('cccccccc-cccc-cccc-%s-%s', lpad(n::text, 4, '0'), lpad(k::text, 12, '0'))::UUID AS order_id,
+           account_id, k,
+           (ARRAY['AAPL', 'AAPL', 'AAPL', 'MSFT', 'MSFT', 'TSLA', 'GOOGL'])[1 + (n * 3 + p) % 7] AS symbol,
+           CASE WHEN k IN (2, 4, 7) OR (k = 6 AND n % 4 = 1) THEN 'SELL' ELSE 'BUY' END AS side,
+           CASE
+               WHEN k = 6 AND n % 4 = 0 THEN 5000
+               WHEN k = 6 AND n % 4 = 1 THEN 1000
+               WHEN k IN (2, 4, 7) THEN (6 + (n * 5 + p * 7) % 15) / 2
+               ELSE 6 + (n * 5 + p * 7) % 15
+           END AS quantity,
+           CASE WHEN k = 6 THEN 'REJECTED' ELSE 'FILLED' END AS status,
+           CASE WHEN k = 6 THEN (ARRAY['Insufficient funds', 'Insufficient position quantity',
+                                       'Price moved beyond your price tolerance', 'Market quote unavailable'])[1 + n % 4]
+           END AS rejection_reason,
+           date_trunc('day', NOW()) - make_interval(days => days_ago)
+               + make_interval(hours => 9 + (n + k) % 7, mins => (n * 7 + k * 11) % 50) AS submitted_at
+    FROM plan
+)
+INSERT INTO trading.orders (order_id, account_id, instrument_id, side, quantity, status, submitted_at, accepted_at,
+                            rejected_at, filled_at, rejection_reason)
+SELECT o.order_id, o.account_id, i.instrument_id, o.side, o.quantity, o.status, o.submitted_at,
+       CASE WHEN o.status = 'REJECTED' THEN NULL ELSE o.submitted_at + INTERVAL '1 minute' END,
+       CASE WHEN o.status = 'REJECTED' THEN o.submitted_at + INTERVAL '1 minute' END,
+       CASE WHEN o.status = 'REJECTED' THEN NULL ELSE o.submitted_at + INTERVAL '2 minutes' END,
+       o.rejection_reason
+FROM orders o
+JOIN trading.instruments i ON i.symbol = o.symbol
+ON CONFLICT (order_id) DO NOTHING;
+
+-- The mock clients' rejected orders' executions, as for Alice's and Henry's above.
+INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
+SELECT ('eeeeeeee' || substr(o.order_id::text, 9))::UUID, o.order_id, NULL, NULL, o.status, o.rejected_at,
+       o.rejection_reason || ' - order rejected'
+FROM trading.orders o
+WHERE o.order_id::text LIKE 'cccccccc-cccc-cccc-%' AND o.rejected_at IS NOT NULL
+ON CONFLICT (execution_id) DO NOTHING;
