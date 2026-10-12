@@ -90,6 +90,7 @@ export const routes: Routes = [
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       // The same dashboard scoped to one account; the overview above covers all of them.
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
+      { path: 'instruments', loadComponent: () => import('./instruments/instruments').then(m => m.InstrumentsComponent) },
       { path: 'orders', component: OrderHistoryComponent },
       { path: 'holdings', component: HoldingsComponent },
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
