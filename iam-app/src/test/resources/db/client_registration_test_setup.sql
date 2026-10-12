@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS iam.clients CASCADE;
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
-    phone VARCHAR(50),
+    phone VARCHAR(50) UNIQUE,
     status VARCHAR(20) NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
@@ -95,4 +95,28 @@ CREATE TABLE iam.password_reset_tokens (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
     used_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Registration: support storing applications until their email is confirmed.
+DROP TABLE IF EXISTS iam.pending_registrations CASCADE;
+
+CREATE TABLE iam.pending_registrations (
+    registration_id UUID PRIMARY KEY,
+    token_hash VARCHAR(64) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(50),
+    full_name VARCHAR(255) NOT NULL,
+    date_of_birth DATE NOT NULL,
+    ssn CHAR(11) NOT NULL,
+    address_line1 VARCHAR(255) NOT NULL,
+    address_line2 VARCHAR(255),
+    city VARCHAR(100) NOT NULL,
+    state_region VARCHAR(100),
+    postal_code VARCHAR(20) NOT NULL,
+    country_code CHAR(2) NOT NULL,
+    experience_level VARCHAR(20) NOT NULL,
+    initial_deposit_amount NUMERIC(18,2) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL
 );
