@@ -40,6 +40,11 @@ don't belong here; they are cheaper and faster as unit tests.
 
 `BASE_URL` (default `http://localhost:4200`) points the suite elsewhere; put it in `e2e/.env`.
 
+`MAILPIT_URL` (default `http://localhost:8025`) is the mail catcher from `docker-compose.yml`.
+An application only becomes a client once the link iam-app emails is followed, so every test
+that registers a user reads that email from Mailpit. Without Docker, run Mailpit yourself and
+point iam-app at it (`SPRING_MAIL_HOST`/`SPRING_MAIL_PORT`); tests that register fail otherwise.
+
 ## How the suite stays independent
 
 - **Each worker trades from its own account.** `e2e/seed/e2e_seed.sql` creates

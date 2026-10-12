@@ -43,7 +43,9 @@ public class OrderSecurityConfig {
                         .requestMatchers("/error").permitAll()
                         // Reads every client's trades, so Trading Operations only.
                         .requestMatchers("/api/order/ops/**").hasRole("TRADING_OPERATIONS")
-                        // Client-only: staff tokens are refused here (403).
+                        // Activity reports read reporting.orders, not trading data: analysts only.
+                        .requestMatchers("/api/order/reports/**").hasRole("COMMERCIAL_ANALYST")
+                        // Everything else is client-only: staff tokens are refused here (403).
                         .anyRequest().hasRole("CLIENT"))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint((request, response, authException) ->

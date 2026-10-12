@@ -55,6 +55,10 @@ pipeline {
                     // These must be set rather than left unset: docker-compose.yml defaults them
                     // to the real 5432/8081-8084/4200, which would fight anything running locally
                     // on the agent.
+                    // Build the service images one at a time: each runs its own Maven build and a
+                    // CDS training JVM, and five at once is the heaviest single step on a small agent.
+                    env.COMPOSE_PARALLEL_LIMIT = '1'
+
                     env.DB_PORT = '0'
                     env.IAM_PORT = '0'
                     env.ORDER_PORT = '0'
@@ -87,7 +91,8 @@ pipeline {
                     // The E2E runner image (e2e/Dockerfile) is tagged by its lockfile, so it is built
                     // once and reused by every build until the suite's dependencies change.
                     env.E2E_IMAGE = "leap-e2e-runner:" + sh(
-                        script: "sha256sum e2e/package-lock.json | cut -c1-12",
+                        // sha256sum is GNU coreutils; macOS ships shasum instead.
+                        script: "{ sha256sum 2>/dev/null || shasum -a 256; } < e2e/package-lock.json | cut -c1-12",
                         returnStdout: true).trim()
 
                     // Feature-branch pushes stop at the smoke check; main and pull requests get
@@ -101,6 +106,51 @@ pipeline {
                     // project with no branch or PR support, so a feature-branch scan would replace
                     // main's results; only main and pull requests are analysed.
                     env.RUN_SONAR = env.RUN_E2E
+
+                    // The trade recovery suite is the slowest stage, so it runs on pull requests
+                    // only - a merge to main has already passed it as a PR - and is skipped when
+                    // every file the PR changes is in an area the suite cannot be affected by.
+                    // The list names what is safe rather than what is relevant, so a path nobody
+                    // thought about runs the suite instead of silently skipping it. A plain
+                    // Pipeline job (no BRANCH_NAME) still always runs it, as with E2E.
+                    env.RUN_RECOVERY = env.BRANCH_NAME ? 'false' : 'true'
+                    if (env.CHANGE_ID) {
+                        def unaffected = [
+                            ~/frontend\/.*/,
+                            ~/reporting-etl\/.*/,
+                            ~/docs\/.*/,
+                            ~/.*\.(md|mmd)/,
+                            ~/sonar-project\.properties/,
+                            ~/docker-compose\.external-db\.yml/,
+                            ~/\.(env\.example|gitignore|gitattributes)/,
+                            // The rest of the E2E suite; recovery shares fixtures/, data/, seed/
+                            // and the npm dependencies with it, so those still count.
+                            ~/e2e\/tests\/(?!recovery\/).*/,
+                            ~/e2e\/(pages|scripts)\/.*/,
+                            ~/e2e\/(Dockerfile|playwright\.config\.ts|eslint\.config\.mjs|\.env\.example)/,
+                        ]
+                        try {
+                            // Diff against the target branch, not the previous build: "changeset"
+                            // only sees commits since the last build of this PR. A PR checkout
+                            // doesn't always carry the target branch, so fetch it first.
+                            def changed = sh(script: '''
+                                set -eu
+                                git fetch --no-tags --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
+                                git diff --name-only "origin/$CHANGE_TARGET...HEAD"
+                            ''', returnStdout: true).trim().readLines()
+                            def relevant = changed.findAll { file -> !unaffected.any { file ==~ it } }
+                            if (relevant) {
+                                env.RUN_RECOVERY = 'true'
+                                echo "Trade recovery tests will run; affected by: ${relevant.take(10).join(', ')}${relevant.size() > 10 ? ', ...' : ''}"
+                            } else {
+                                echo "Trade recovery tests skipped: no changed file can affect them."
+                            }
+                        } catch (err) {
+                            // Unable to tell what changed (fetch failed, shallow history): run it.
+                            env.RUN_RECOVERY = 'true'
+                            echo "Trade recovery tests will run; could not diff against ${env.CHANGE_TARGET}: ${err}"
+                        }
+                    }
 
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
@@ -191,12 +241,151 @@ pipeline {
                 sh '$COMPOSE -p "$COMPOSE_PROJECT" up -d db'
             }
         }
+        // Run on their own, ahead of the image builds and the frontend, rather than beside them.
+        // Maven's test JVMs, Postgres, npm, Chromium and five image builds at once is more than a
+        // small or shared agent can hold; on one without a container memory cap it swaps until
+        // everything looks hung. Sequential costs wall-clock time, not correctness.
+        stage('Unit Tests') {
+            environment {
+                // Throwaway CI database credentials; the container is destroyed after the stage.
+                TEST_DB_PASSWORD = "ci-test-password"
+                // Named after the compose project, which carries the branch: BUILD_NUMBER plus
+                // EXECUTOR_NUMBER is not unique across jobs, so two branches that happened to
+                // land on the same build number and executor shared this name - and the
+                // "docker rm -f" below would then destroy the other build's test database
+                // mid-run. Same defect the fixed host ports had.
+                PG_CONTAINER = "pg-test-${COMPOSE_PROJECT}"
+            }
+            steps {
+                sh '''
+                    set -eu
+                    docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
+
+                    # The data directory is a tmpfs: the postgres image declares it a VOLUME,
+                    # so without this every build left an anonymous volume behind (a few
+                    # hundred MB each, one per build) until the agent's disk filled. A
+                    # throwaway test database also has no use for durability, so it runs
+                    # entirely in memory with fsync off - faster schema load and tests.
+                    docker run -d --name "${PG_CONTAINER}" \
+                        --tmpfs /var/lib/postgresql/data \
+                        -e POSTGRES_DB=paysprint \
+                        -e POSTGRES_USER=paysprint \
+                        -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
+                        -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
+                        postgres:16-alpine \
+                        -c fsync=off -c synchronous_commit=off -c full_page_writes=off
+
+                    # Poll for a schema table rather than pg_isready: the server answers on its
+                    # unix socket while the init scripts are still running, so pg_isready can
+                    # report ready before the schema exists.
+                    echo "waiting for postgres schema to load..."
+                    for i in $(seq 1 45); do
+                        if docker exec "${PG_CONTAINER}" psql -U paysprint -d paysprint \
+                                -c "SELECT 1 FROM trading.orders LIMIT 1;" >/dev/null 2>&1; then
+                            echo "postgres ready"
+                            break
+                        fi
+                        if [ "$i" = "45" ]; then
+                            echo "postgres never became ready"
+                            docker logs "${PG_CONTAINER}"
+                            exit 1
+                        fi
+                        sleep 2
+                    done
+
+                    # --user keeps target/ and surefire-reports/ owned by the agent account.
+                    # Without it Maven writes them as root and the next build's "git clean"
+                    # can't delete them, wedging this workspace permanently.
+                    # Maven needs a writable HOME to run as a non-root uid, hence user.home.
+                    #
+                    # Sharing the postgres container's network namespace makes the database
+                    # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
+                    #
+                    # The Maven repository is mounted from the agent so dependencies are
+                    # downloaded once, not on every build. The directory is created in Configure
+                    # Pipeline as the agent user; if Docker had to create it, it would be root's.
+                    #
+                    # The same Maven image the service Dockerfiles build with, so a fresh agent
+                    # pulls one Maven image rather than two. -T 1 builds the modules one at a time:
+                    # -T 1C (a thread per core) multiplied the forked test JVMs on a small agent and
+                    # swapped it. (The tests that reach the database each work in their own
+                    # app's tables, so raising it again is safe if the agent has the memory.)
+                    #
+                    # TieredStopAtLevel=1 keeps the JIT to its quick first tier. The suite is
+                    # dominated by Spring contexts starting in fresh JVMs, which finish before
+                    # the optimising tier would pay for itself; measured ~30% off the run.
+                    # Set through the environment so Maven's forked test JVMs inherit it too.
+                    # -Xmx768m caps every JVM here: without it each sizes its heap from the host's RAM
+                    # (a quarter of it), which on a native Linux agent with no container limit adds up.
+                    #
+                    # dependency:build-classpath writes each module's resolved jars to
+                    # target/sonar-classpath.txt for SonarQube's sonar.java.libraries; it reuses this
+                    # run's dependency resolution, so it costs next to nothing here.
+                    docker run --rm \
+                        --network "container:${PG_CONTAINER}" \
+                        --user "$(id -u):$(id -g)" \
+                        -v "$WORKSPACE":/app \
+                        -v "$HOME/.m2-ci":/tmp/.m2 \
+                        -w /app \
+                        -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
+                        -e MAVEN_CONFIG=/tmp/.m2 \
+                        -e JAVA_TOOL_OPTIONS="-XX:TieredStopAtLevel=1 -Xmx768m" \
+                        maven:3.9.9-eclipse-temurin-21-alpine \
+                        mvn -B -T 1 -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test \
+                            dependency:build-classpath -Dmdep.outputFile=target/sonar-classpath.txt \
+                            -Dmdep.pathSeparator=, -Dmdep.includeScope=test
+                '''
+                // Order Reporting ETL (Python). Same throwaway database, which the schema
+                // file gave a reporting schema, so the loader's SQL runs for real; the
+                // rest of the suite needs no database. Run from, and rooted at, the repo root
+                // so both reports name files the way SonarQube resolves them: coverage.xml as
+                // reporting-etl/..., and junit.xml's classnames as reporting-etl.tests.test_x,
+                // which Sonar maps to reporting-etl/tests/test_x.py. Rooted at reporting-etl
+                // the classnames were tests.test_x, which matches no file, so Sonar warned
+                // once per test case and dropped the per-file test results. Rooting here
+                // means pythonpath and the test directory are given relative to the repo root,
+                // overriding pyproject.toml's. The pip cache is the agent's, like the Maven
+                // repository.
+                sh '''
+                    set -eu
+                    docker run --rm \
+                        --network "container:${PG_CONTAINER}" \
+                        --user "$(id -u):$(id -g)" \
+                        -v "$WORKSPACE":/app \
+                        -v "$HOME/.pip-ci":/tmp/.pip-cache \
+                        -w /app \
+                        -e HOME=/tmp \
+                        -e PIP_CACHE_DIR=/tmp/.pip-cache \
+                        -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
+                        -e REPORTING_TEST_DB_URL="postgresql://paysprint:${TEST_DB_PASSWORD}@localhost:5432/paysprint" \
+                        python:3.12-slim \
+                        sh -c 'python -m venv /tmp/venv \
+                            && /tmp/venv/bin/pip install -q -r reporting-etl/requirements-dev.txt \
+                            && /tmp/venv/bin/python -m pytest -c reporting-etl/pyproject.toml --rootdir . \
+                                -o pythonpath=reporting-etl \
+                                -p no:cacheprovider \
+                                --junitxml=reporting-etl/test-results/junit.xml \
+                                --cov=reporting-etl/reporting_etl --cov-config=reporting-etl/pyproject.toml \
+                                --cov-report=xml:reporting-etl/coverage.xml \
+                                reporting-etl/tests'
+                '''
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml, reporting-etl/test-results/*.xml'
+                    // Preserve Java coverage alongside the test results before workspace cleanup.
+                    archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
+                    sh 'docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true'
+                }
+            }
+        }
 
         stage('Build and Test') {
             // These branches share this build's executor and workspace - parallel inside a
             // node needs no second executor. They touch disjoint parts of the workspace and
             // run in disjoint containers, and most of each is waiting on I/O (npm, Docker,
-            // Postgres, Spring startup) rather than competing for CPU.
+            // Postgres, Spring startup) rather than competing for CPU. The unit tests are not one
+            // of them: they run in their own stage above.
             failFast true
             parallel {
                 stage('Frontend') {
@@ -249,22 +438,44 @@ pipeline {
                                 // which the agent doesn't have; the runner image carries
                                 // Playwright's headless shell in /ms-playwright. frontend/ pins the
                                 // same Playwright version as e2e/, so it finds that build. Run here,
-                                // alongside the Maven suite, rather than as a stage after it.
+                                // alongside the service image builds, rather than as a stage after it.
+                                // --ipc=host: Chromium needs more than the 64MB of /dev/shm Docker gives
+                                // by default and crashes or stalls under memory pressure without it
+                                // (the E2E run does the same).
+                                // Mounted at /repo/frontend, mirroring the checkout: angular.json
+                                // writes lcov paths relative to the frontend's parent, and SonarQube
+                                // resolves them from the repo root, so they must come out as
+                                // frontend/src/...
+                                //
+                                // The container is Linux whatever the agent is. On a Linux agent the
+                                // host's "npm ci" above installed Linux binaries (esbuild, rollup,
+                                // lightningcss), so the container reuses that node_modules, and
                                 // --user keeps coverage/ and .angular/ owned by the agent account,
-                                // as with Maven. Mounted at /repo/frontend, mirroring the checkout:
-                                // angular.json writes lcov paths relative to the frontend's parent,
-                                // and SonarQube resolves them from the repo root, so they must come
-                                // out as frontend/src/...
+                                // as with Maven. On a macOS agent that node_modules holds darwin
+                                // binaries that won't load in Linux, so the container installs its
+                                // own into a throwaway volume over it, from the agent's npm cache.
+                                // That needs root to write the volume; Docker Desktop maps files
+                                // written to the bind mount back to the agent user, so ownership
+                                // stays right without --user.
                                 sh '''
                                     set -eu
+                                    test_cmd="npx ng test --watch=false --coverage"
+                                    if [ "$(uname -s)" = Linux ]; then
+                                        set -- --user "$(id -u):$(id -g)"
+                                    else
+                                        set -- -v /repo/frontend/node_modules \
+                                            -v "$HOME/.npm-ci":/tmp/.npm
+                                        test_cmd="npm ci --cache /tmp/.npm --no-audit --no-fund && $test_cmd"
+                                    fi
                                     docker run --rm \
-                                        --user "$(id -u):$(id -g)" \
+                                        "$@" \
                                         -e HOME=/tmp \
                                         -e CI=1 \
+                                        --ipc=host \
                                         -v "$WORKSPACE/frontend":/repo/frontend \
                                         -w /repo/frontend \
                                         "$E2E_IMAGE" \
-                                        npx ng test --watch=false --coverage
+                                        sh -c "$test_cmd"
                                 '''
                             }
                         }
@@ -275,127 +486,6 @@ pipeline {
                         }
                     }
                 }
-
-                stage('Unit Tests') {
-                    environment {
-                        // Throwaway CI database credentials; the container is destroyed after the stage.
-                        TEST_DB_PASSWORD = "ci-test-password"
-                        // Named after the compose project, which carries the branch: BUILD_NUMBER plus
-                        // EXECUTOR_NUMBER is not unique across jobs, so two branches that happened to
-                        // land on the same build number and executor shared this name - and the
-                        // "docker rm -f" below would then destroy the other build's test database
-                        // mid-run. Same defect the fixed host ports had.
-                        PG_CONTAINER = "pg-test-${COMPOSE_PROJECT}"
-                    }
-                    steps {
-                        sh '''
-                            set -eu
-                            docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true
-
-                            # The data directory is a tmpfs: the postgres image declares it a VOLUME,
-                            # so without this every build left an anonymous volume behind (a few
-                            # hundred MB each, one per build) until the agent's disk filled. A
-                            # throwaway test database also has no use for durability, so it runs
-                            # entirely in memory with fsync off - faster schema load and tests.
-                            docker run -d --name "${PG_CONTAINER}" \
-                                --tmpfs /var/lib/postgresql/data \
-                                -e POSTGRES_DB=paysprint \
-                                -e POSTGRES_USER=paysprint \
-                                -e POSTGRES_PASSWORD="${TEST_DB_PASSWORD}" \
-                                -v "$WORKSPACE/iam-app/src/main/resources/db/leap_laugh_love_schema.sql":/docker-entrypoint-initdb.d/01-schema.sql:ro \
-                                postgres:16-alpine \
-                                -c fsync=off -c synchronous_commit=off -c full_page_writes=off
-
-                            # Poll for a schema table rather than pg_isready: the server answers on its
-                            # unix socket while the init scripts are still running, so pg_isready can
-                            # report ready before the schema exists.
-                            echo "waiting for postgres schema to load..."
-                            for i in $(seq 1 45); do
-                                if docker exec "${PG_CONTAINER}" psql -U paysprint -d paysprint \
-                                        -c "SELECT 1 FROM trading.orders LIMIT 1;" >/dev/null 2>&1; then
-                                    echo "postgres ready"
-                                    break
-                                fi
-                                if [ "$i" = "45" ]; then
-                                    echo "postgres never became ready"
-                                    docker logs "${PG_CONTAINER}"
-                                    exit 1
-                                fi
-                                sleep 2
-                            done
-
-                            # --user keeps target/ and surefire-reports/ owned by the agent account.
-                            # Without it Maven writes them as root and the next build's "git clean"
-                            # can't delete them, wedging this workspace permanently.
-                            # Maven needs a writable HOME to run as a non-root uid, hence user.home.
-                            #
-                            # Sharing the postgres container's network namespace makes the database
-                            # reachable at localhost:5432, which is the URL the JDBC tests hardcode.
-                            #
-                            # The Maven repository is mounted from the agent so dependencies are
-                            # downloaded once, not on every build. The directory is created in Configure
-                            # Pipeline as the agent user; if Docker had to create it, it would be root's.
-                            #
-                            # The same Maven image the service Dockerfiles build with, so a fresh agent
-                            # pulls one Maven image rather than two. -T 1C builds the modules side by
-                            # side once common-security is done. The tests that reach the database
-                            # (iam-app and order-app booting their real applications, and order-app's
-                            # retention test) each work in their own app's tables, so running the
-                            # modules at once doesn't have them tripping over each other.
-                            #
-                            # TieredStopAtLevel=1 keeps the JIT to its quick first tier. The suite is
-                            # dominated by Spring contexts starting in fresh JVMs, which finish before
-                            # the optimising tier would pay for itself; measured ~30% off the run.
-                            # Set through the environment so Maven's forked test JVMs inherit it too.
-                            docker run --rm \
-                                --network "container:${PG_CONTAINER}" \
-                                --user "$(id -u):$(id -g)" \
-                                -v "$WORKSPACE":/app \
-                                -v "$HOME/.m2-ci":/tmp/.m2 \
-                                -w /app \
-                                -e TEST_DB_PASSWORD="${TEST_DB_PASSWORD}" \
-                                -e MAVEN_CONFIG=/tmp/.m2 \
-                                -e JAVA_TOOL_OPTIONS=-XX:TieredStopAtLevel=1 \
-                                maven:3.9.9-eclipse-temurin-21-alpine \
-                                mvn -B -T 1C -Duser.home=/tmp -Dmaven.repo.local=/tmp/.m2/repository test
-                        '''
-                        // Order Reporting ETL (Python). Same throwaway database, which the schema
-                        // file gave a reporting schema, so the loader's SQL runs for real; the
-                        // rest of the suite needs no database. Run from the repo root so
-                        // coverage.xml paths come out as reporting-etl/..., the way SonarQube
-                        // resolves them. The pip cache is the agent's, like the Maven repository.
-                        sh '''
-                            set -eu
-                            docker run --rm \
-                                --network "container:${PG_CONTAINER}" \
-                                --user "$(id -u):$(id -g)" \
-                                -v "$WORKSPACE":/app \
-                                -v "$HOME/.pip-ci":/tmp/.pip-cache \
-                                -w /app \
-                                -e HOME=/tmp \
-                                -e PIP_CACHE_DIR=/tmp/.pip-cache \
-                                -e PIP_DISABLE_PIP_VERSION_CHECK=1 \
-                                -e REPORTING_TEST_DB_URL="postgresql://paysprint:${TEST_DB_PASSWORD}@localhost:5432/paysprint" \
-                                python:3.12-slim \
-                                sh -c 'python -m venv /tmp/venv \
-                                    && /tmp/venv/bin/pip install -q -r reporting-etl/requirements-dev.txt \
-                                    && /tmp/venv/bin/python -m pytest -c reporting-etl/pyproject.toml --rootdir reporting-etl \
-                                        -p no:cacheprovider \
-                                        --junitxml=reporting-etl/test-results/junit.xml \
-                                        --cov=reporting-etl/reporting_etl --cov-config=reporting-etl/pyproject.toml \
-                                        --cov-report=xml:reporting-etl/coverage.xml'
-                        '''
-                    }
-                    post {
-                        always {
-                            junit allowEmptyResults: true, testResults: '**/target/surefire-reports/*.xml, reporting-etl/test-results/*.xml'
-                            // Preserve Java coverage alongside the test results before workspace cleanup.
-                            archiveArtifacts allowEmptyArchive: true, artifacts: '**/target/site/jacoco/**'
-                            sh 'docker rm -f -v "${PG_CONTAINER}" >/dev/null 2>&1 || true'
-                        }
-                    }
-                }
-
                 stage('Service Stack') {
                     stages {
                         stage('Build Docker Images') {
@@ -436,8 +526,9 @@ pipeline {
                         stage('Start Services') {
                             steps {
                                 sh '''
-                                    set -eu
-                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl
+                                    set -eu 
+                                    # mailpit: the E2E suite registers users by following the link iam-app emails them.
+                                    $COMPOSE -p "$COMPOSE_PROJECT" up -d --no-build iam-app account-app order-app market-data-app kafka kafka-init reporting-etl mailpit
                                     $COMPOSE -p "$COMPOSE_PROJECT" ps
                                 '''
                             }
@@ -495,9 +586,20 @@ pipeline {
                                 script {
                                     def scannerHome = tool 'SonarScanner'
                                     withSonarQubeEnv('SonarQube') {
+                                        // The Java analyser resolves library types from the jars the modules
+                                        // build against (the classpath files Unit Tests wrote). Those name the
+                                        // Maven container's repository path, so point them at the agent's copy;
+                                        // sibling modules appear as target/classes and are already binaries.
+                                        // One list serves main and test code: the extra test jars only add
+                                        // types main code never references.
                                         sh """
+                                            set -eu
+                                            libraries=\$(cat */target/sonar-classpath.txt 2>/dev/null | tr ',' '\\n' \\
+                                                | grep '\\.jar\$' | sed "s|^/tmp/.m2/repository/|\$HOME/.m2-ci/repository/|" \\
+                                                | sort -u | paste -sd, - || true)
                                             ${scannerHome}/bin/sonar-scanner --version
-                                            ${scannerHome}/bin/sonar-scanner
+                                            ${scannerHome}/bin/sonar-scanner \\
+                                                -Dsonar.java.libraries="\$libraries" -Dsonar.java.test.libraries="\$libraries"
                                         """
                                     }
                                 }
@@ -562,6 +664,7 @@ pipeline {
                                         -e HOME=/tmp \
                                         -e CI=1 \
                                         -e BASE_URL=http://frontend:4200 \
+                                        -e MAILPIT_URL=http://mailpit:8025 \
                                         -v "$WORKSPACE/e2e":/e2e \
                                         "$E2E_IMAGE" \
                                         sh -c "tsc --noEmit && eslint . && playwright test"
@@ -576,7 +679,8 @@ pipeline {
                     }
                     stage('Trade Recovery Tests') {
                         when {
-                            environment name: 'RUN_E2E', value: 'true'
+                            // RUN_RECOVERY is set in Configure Pipeline.
+                            environment name: 'RUN_RECOVERY', value: 'true'
                         }
                         options {
                             timeout(time: 30, unit: 'MINUTES')
@@ -660,7 +764,7 @@ pipeline {
                     docker images --format '{{.Repository}}:{{.Tag}}' \
                         | grep -E '^leap-e2e-runner:|^mcr.microsoft.com/playwright:' \
                         | grep -vx "$E2E_IMAGE" \
-                        | xargs -r docker image rm >/dev/null 2>&1 || true
+                        | while read -r image; do docker image rm "$image" >/dev/null 2>&1 || true; done
                 fi
                 # Database volumes are removed only by this build's scoped Compose teardown.
                 # Do not globally prune volumes: persistent deployments may be stopped.

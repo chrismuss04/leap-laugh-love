@@ -25,8 +25,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * Staff roles: order-app is for clients only, except trade reconstruction (Trading Operations
- * only). Every token here has a live session in its own session table, so the role is the only
- * thing that differs between them.
+ * only) and the activity reports (commercial analysts only). Every token here has a live session
+ * in its own session table, so the role is the only thing that differs between them.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -81,6 +81,7 @@ class RoleAccessTest {
         mockMvc.perform(post("/api/order/orders").contentType(MediaType.APPLICATION_JSON).content("{}"))
                 .andExpect(status().isUnauthorized());
     }
+
     @Test
     @Sql("/db/order_submission_test_setup.sql")
     @DisplayName("Trading Operations can search trades, view a timeline and download it")
@@ -116,6 +117,34 @@ class RoleAccessTest {
     @DisplayName("trade reconstruction without a token is unauthorized")
     void tradeReconstructionWithoutTokenIsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/order/ops/orders").param("symbol", "AAPL"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    @Sql("/db/reporting_orders_test_setup.sql")
+    @DisplayName("a commercial analyst can read activity reports")
+    void analystCanReadActivityReports() throws Exception {
+        mockMvc.perform(get("/api/order/reports/activity").header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST))
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
+                .andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"CLIENT", "TRADING_OPERATIONS"})
+    @DisplayName("clients and trading operations can't read activity reports")
+    void othersCannotReadActivityReports(Role role) throws Exception {
+        String token = tokenFor(role);
+        mockMvc.perform(get("/api/order/reports/activity").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/reports/instruments").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("activity reports without a token are unauthorized")
+    void activityReportsWithoutTokenAreUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/order/reports/activity").param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isUnauthorized());
     }
 }

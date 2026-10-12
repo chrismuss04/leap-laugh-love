@@ -1,0 +1,31 @@
+<div class="form-header">
+  <h2 class="font-display">Confirm your email</h2>
+  <p>The last step in opening your account.</p>
+</div>
+
+<!-- No token: the link was copied incompletely, or the page was opened directly. -->
+<div class="error-alert" role="alert" *ngIf="!token">
+  This confirmation link is invalid or incomplete.
+</div>
+
+<ng-container *ngIf="token">
+  <p role="status" *ngIf="state() === 'confirming'">Confirming your email address...</p>
+
+  <div class="success-alert" role="status" *ngIf="state() === 'confirmed'">
+    Your email is confirmed and your account is open. You can now sign in.
+  </div>
+
+  <!-- Deliberately one message: it must not say which of these it was. -->
+  <div class="error-alert" role="alert" *ngIf="state() === 'rejected'">
+    This confirmation link has expired or has already been used. If you have already confirmed
+    your email, sign in. Otherwise, please apply again.
+  </div>
+
+  <div class="error-alert" role="alert" *ngIf="state() === 'failed'">
+    We couldn't confirm your email right now. Please open the link again in a moment.
+  </div>
+</ng-container>
+
+<div class="auth-footer-link">
+  <a routerLink="/">Back to sign in</a>
+</div>

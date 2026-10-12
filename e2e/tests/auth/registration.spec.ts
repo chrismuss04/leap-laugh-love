@@ -1,13 +1,15 @@
 import { test, expect } from '../../fixtures/test';
-import { uniqueRegistration } from '../../data/factories';
+import { Registration, uniqueRegistration } from '../../data/factories';
 import { Api } from '../../fixtures/api';
+import { APPLICATION_SUBJECT, DETAILS_REUSED_SUBJECT, confirmationToken, emailTo } from '../../fixtures/mailbox';
 import { money } from '../../pages/format';
 import { RegistrationPage } from '../../pages/registration.page';
 import { SignInPage } from '../../pages/sign-in.page';
 import { DashboardPage } from '../../pages/dashboard.page';
 
 // Field-by-field validation belongs in the component's unit tests; these cover what only the
-// whole stack can: the application reaching iam-app, and iam-app's uniqueness rules.
+// whole stack can: the application reaching iam-app, the emailed link opening the account, and
+// iam-app's uniqueness rules - which the page must never give away, only the emails.
 test.describe('Create account', () => {
   let form: RegistrationPage;
 
@@ -16,8 +18,12 @@ test.describe('Create account', () => {
     await form.goto();
   });
 
-  test('a complete application registers and the new client can sign in @smoke', async ({ page, tokenFor }) => {
-    // Registration blocks while iam-app opens and funds the account in account-app, and the CI VM
+  /** What the page says after any accepted application, whatever iam-app did with it. */
+  const received = (email: string) =>
+    `Application received! We've emailed ${email} with the next step. Your account is not open until you follow it.`;
+
+  test('a complete application registers once its email is confirmed, and the new client can sign in @smoke', async ({ page, tokenFor }) => {
+    // Confirming blocks while iam-app opens and funds the account in account-app, and the CI VM
     // runs the whole stack on shared CPUs, so this test gets more room than the suite default.
     test.setTimeout(120_000);
     const slow = { timeout: 30_000 };
@@ -28,10 +34,16 @@ test.describe('Create account', () => {
     await form.fill(user);
     await form.submit.click();
 
-    await expect(form.success).toHaveText('Application submitted! Redirecting to sign in...', slow);
+    await expect(form.success).toHaveText(received(user.email), slow);
+
+    // Nothing is open yet: the application becomes a client when the emailed link is followed.
+    expect((await new Api(page.request).loginRaw(user.email, user.password)).status()).toBe(401);
+    await page.goto(`/verify-email?token=${await confirmationToken(page.request, user.email)}`);
+    await expect(page.getByRole('status')).toHaveText('Your email is confirmed and your account is open. You can now sign in.', slow);
+    await page.getByRole('link', { name: 'Back to sign in' }).click();
     await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible(slow);
 
-    // Registration opens the first account and books the initial deposit into it before it responds,
+    // Confirming opens the first account and books the initial deposit into it before it responds,
     // so the backend is checked first: a failure here names the step that broke (no account, or an
     // account with no deposit) instead of surfacing later as a bare "$0.00" on the dashboard.
     // Polled, because a deposit that outlasted iam-app's call timeout can still commit just after.
@@ -71,23 +83,50 @@ test.describe('Create account', () => {
     await expect(dashboard.positions).toContainText("You don't own any investments yet", slow);
   });
 
-  test('an email that is already registered is refused', async ({ api }) => {
+  test('a confirmation link works once', async ({ page, api }) => {
+    const user = uniqueRegistration();
+    await api.registerRaw(user);
+    const token = await confirmationToken(page.request, user.email);
+    expect((await api.verifyRegistrationRaw(token)).status()).toBe(204);
+
+    await page.goto(`/verify-email?token=${token}`);
+
+    await expect(page.getByRole('alert')).toContainText('This confirmation link has expired or has already been used.');
+  });
+
+  test('an email that is already registered is answered like a new one, and its owner is emailed', async ({ page, api }) => {
     const existing = uniqueRegistration();
     await api.register(existing);
 
     await form.fill(uniqueRegistration({ email: existing.email }));
     await form.submit.click();
 
-    await expect(form.error).toHaveText('email already registered');
+    await expect(form.success).toHaveText(received(existing.email));
+    await expect(form.error).toBeHidden();
+    expect(await emailTo(page.request, existing.email, APPLICATION_SUBJECT)).toContain('already registered');
   });
 
-  test('an SSN that is already registered is refused', async ({ api }) => {
-    const existing = uniqueRegistration();
-    await api.register(existing);
+  for (const [detail, named, reuse] of [
+    ['SSN', 'the Social Security Number on your account', (existing: Registration) => ({ ssnDigits: existing.ssnDigits })],
+    ['phone number', 'the phone number on your account', (existing: Registration) => ({ phoneDigits: existing.phoneDigits })]
+  ] as const) {
+    test(`a ${detail} that is already registered is answered like a new one, and opens nothing`, async ({ page, api }) => {
+      const existing = uniqueRegistration();
+      await api.register(existing);
 
-    await form.fill(uniqueRegistration({ ssnDigits: existing.ssnDigits }));
-    await form.submit.click();
+      const applicant = uniqueRegistration(reuse(existing));
+      await form.fill(applicant);
+      await form.submit.click();
 
-    await expect(form.error).toHaveText('ssn already registered');
-  });
+      await expect(form.success).toHaveText(received(applicant.email));
+      await expect(form.error).toBeHidden();
+      // The applicant is told it didn't go through, but not why; the client whose detail it was
+      // is warned, and told which detail.
+      const refusal = await emailTo(page.request, applicant.email, APPLICATION_SUBJECT);
+      expect(refusal).toContain('could not open');
+      expect(refusal).not.toContain(named);
+      expect(await emailTo(page.request, existing.email, DETAILS_REUSED_SUBJECT)).toContain(named);
+      expect((await api.loginRaw(applicant.email, applicant.password)).status()).toBe(401);
+    });
+  }
 });
