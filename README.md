@@ -1,11 +1,11 @@
 # leap-laugh-love
 
 ## Team Members
-1. Software Developer - Chris Musselman
-2. Scrum Master - Nikhil Akula
+1. Scrum Master & Software Developer - Chris Musselman
+2. Software Developer - Nikhil Akula
 3. Software Developer - Yahia Elsaad
-4. Software Developer - Lauren Sanday
-5. Tech Lead - Elisa Paul
+4. Tech Lead - Lauren Sanday
+5. Software Developer - Elisa Paul
 
 ## Branching Strategy
 We are using the Trunk branching strategy because it best fits our development strategy and schedule.
