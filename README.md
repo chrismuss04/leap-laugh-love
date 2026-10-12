@@ -1039,6 +1039,12 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT (client) |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
+| **Reporting** | `GET /api/reporting/analyst/scorecard` | Volume, filled orders, average trade value, active clients and registrations per month, each with month-over-month and year-over-year % change | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/client-activity` | Active clients per month split into new, returning and reactivated, with clients who lapsed | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/retention` | Cohort matrix: each sign-up month's % of clients active in each month after | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/activation` | Each sign-up month's % ordering within 30 days and ever, and median days to a first order | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/concentration` | Share of each month's volume from the top 1, 10 and 20% of trading clients | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/order-sizes` | Filled orders per month by value band, with mean and median order value | Bearer JWT (commercial analyst) |
 | **Reporting** | `GET /actuator/health` | Reporting service health check | Permitted |
 
 ---
@@ -1092,8 +1098,40 @@ to its own dashboard, and a client who opens `/reporting` is redirected home.
 
 > [!NOTE]
 > The dashboards are built, routed, filtered and tested, but the report panels are still
-> placeholders: `reporting-app` (port `8085`, `/api/reporting/**`) is where their reports will be
-> served from, and has none yet, so the pages show the layout and filters without data.
+> placeholders, so the pages show the layout and filters without data. The analyst's long-range
+> reports are served by `reporting-app` (see below); the pages don't call them yet.
+
+#### Analyst reports (`reporting-app`)
+
+Six reports under `/api/reporting/analyst/`, listed in the [API Endpoints Summary](#api-endpoints-summary).
+Each covers the **last 12 complete UTC months** (on 12 October 2026: October 2025 to September 2026)
+and takes no parameters; the current month is left out so a half-finished month doesn't read as a
+drop. Every response names its window and has one entry per month (or sign-up month), zeros included.
+
+- **Active client**: completed at least one order in the month, FILLED or REJECTED. Volume, filled
+  orders and order value count FILLED orders only, valued at quantity × fill price.
+- **Client activity**: *new* is a client's first ever active month; *returning* was also active the
+  month before; *reactivated* was active before but not the month before; *lapsed* was active the
+  month before but not this month.
+- **Retention**: cohorts are sign-up months in the window; each cohort runs from its sign-up month
+  (month 0) to the window's end.
+- **Activation**: a first order is the first one placed, of any final status. A cohort is marked
+  `complete: false` until 30 days after its month ends, while its 30-day figure can still rise.
+- **Concentration**: clients ranked by filled value each month; each top slice is rounded up to a
+  whole client. Clients with only rejected orders aren't counted as trading.
+- **Order sizes**: bands include their lower bound: under 1,000 · 1,000–4,999.99 · 5,000–9,999.99 ·
+  10,000–24,999.99 · 25,000+.
+- **Changes** (scorecard) are `null` when there's nothing to compare: the earlier figure is zero or
+  before the data starts.
+
+Most reports read `reporting.client_months` (see *Reporting ETL*) rather than every order. To try
+them on a fresh local stack, load synthetic history (**dev only**: 24 months of made-up clients and
+orders written straight into the reporting tables; it rebuilds `client_months` itself, and a rerun
+adds nothing):
+
+```bash
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/seed-reporting-history.sql
+```
 > The data they will read is being collected in the `reporting.orders` and `reporting.clients`
 > tables by the ETL services described under [Reporting ETL](#reporting-etl).
 
