@@ -171,9 +171,9 @@ export class PriceStreamService implements OnDestroy {
     const batch: Record<string, number> = {};
     for (const [symbol, price] of Object.entries(this.pending)) {
       const last = shown[symbol];
-      const bigMove = last !== undefined && last !== 0
-        && Math.abs(price - last) / Math.abs(last) >= PriceStreamService.BIG_MOVE
-        && now - (this.publishedAt[symbol] ?? 0) >= PriceStreamService.MIN_GAP_MS;
+      const movedFar = last !== undefined && last !== 0
+        && Math.abs(price - last) / Math.abs(last) >= PriceStreamService.BIG_MOVE;
+      const bigMove = movedFar && now - (this.publishedAt[symbol] ?? 0) >= PriceStreamService.MIN_GAP_MS;
       if (last === undefined || bigMove || now >= (this.dueAt[symbol] ?? 0)) {
         batch[symbol] = price;
         delete this.pending[symbol];

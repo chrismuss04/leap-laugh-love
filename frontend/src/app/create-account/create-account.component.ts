@@ -174,14 +174,13 @@ export class CreateAccountComponent implements OnInit {
 
   isFieldInvalid(fieldName: string): boolean {
     const field = this.registrationForm.get(fieldName);
-    if (fieldName === 'confirmPassword') {
-      return !!(
-        field &&
-        (field.dirty || field.touched) &&
-        (field.invalid || this.registrationForm.hasError('passwordsMismatch'))
-      );
+    if (!field || !(field.dirty || field.touched)) {
+      return false;
     }
-    return !!(field && field.invalid && (field.dirty || field.touched));
+    if (fieldName === 'confirmPassword') {
+      return field.invalid || this.registrationForm.hasError('passwordsMismatch');
+    }
+    return field.invalid;
   }
 
   getErrorMessage(fieldName: string): string {

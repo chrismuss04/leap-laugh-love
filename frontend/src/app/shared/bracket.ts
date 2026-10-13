@@ -13,7 +13,9 @@ export interface RiskReward {
 
 /** The dollars at risk and at stake for a bracket on a buy of `quantity` shares at `entry`. */
 export function riskReward(entry: number, takeProfit: number, stopLoss: number, quantity: number): RiskReward | null {
-  if (!(entry > 0) || !(quantity > 0) || !(takeProfit > entry) || !(stopLoss > 0) || !(stopLoss < entry)) {
+  const sized = entry > 0 && quantity > 0;
+  const ordered = stopLoss > 0 && stopLoss < entry && takeProfit > entry;
+  if (!sized || !ordered) {
     return null;
   }
   const risk = (entry - stopLoss) * quantity;

@@ -10,6 +10,8 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
+import java.util.Objects;
+import java.util.stream.Stream;
 
 /**
  * An edit to an OPEN order. Only the fields given change; each must apply to the order's type
@@ -54,8 +56,8 @@ public record ModifyOrderRequest(
     @JsonIgnore
     @AssertTrue(message = "Give at least one thing to change")
     public boolean isChangingSomething() {
-        return quantity != null || limitPrice != null || stopPrice != null || trailAmount != null
-                || trailPercent != null || timeInForce != null;
+        return Stream.of(quantity, limitPrice, stopPrice, trailAmount, trailPercent, timeInForce)
+                .anyMatch(Objects::nonNull);
     }
 
     /**

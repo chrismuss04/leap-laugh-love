@@ -53,6 +53,7 @@ export function orderImpact(input: ImpactInput): OrderImpact {
   }
 
   const stop = input.stopLossPrice;
+  const stopBelowPrice = stop != null && stop > 0 && stop < price;
   return {
     sharesAfter,
     positionValueAfter,
@@ -60,7 +61,7 @@ export function orderImpact(input: ImpactInput): OrderImpact {
     cashAfter: buy ? buyingPower - notional : buyingPower + notional,
     averageCostAfter,
     realized: !buy && averageCost != null ? quantity * (price - averageCost) : null,
-    worstCaseLoss: buy && stop != null && stop > 0 && stop < price ? quantity * (price - stop) : null,
+    worstCaseLoss: buy && stopBelowPrice ? quantity * (price - stop) : null,
     concentrated: buy && portfolioShare != null && portfolioShare >= CONCENTRATION_WARNING
   };
 }
