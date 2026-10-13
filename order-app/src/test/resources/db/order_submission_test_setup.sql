@@ -9,13 +9,20 @@ DROP TABLE IF EXISTS trading.orders CASCADE;
 DROP TABLE IF EXISTS trading.order_templates CASCADE;
 DROP TABLE IF EXISTS trading.instruments CASCADE;
 DROP TABLE IF EXISTS trading.accounts CASCADE;
+DROP TABLE IF EXISTS iam.client_profile CASCADE;
 DROP TABLE IF EXISTS iam.clients CASCADE;
 
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
-    status VARCHAR(20) NOT NULL,
-    notify_order_fills BOOLEAN NOT NULL DEFAULT TRUE
+    status VARCHAR(20) NOT NULL
+);
+
+-- As in the real schema, the notification choice lives in the profile, not on the client row.
+CREATE TABLE iam.client_profile (
+    client_id UUID PRIMARY KEY,
+    notify_order_fills BOOLEAN NOT NULL DEFAULT TRUE,
+    FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 
 CREATE TABLE trading.accounts (
@@ -151,6 +158,11 @@ INSERT INTO iam.clients (client_id, email, status)
 VALUES
     ('11111111-1111-1111-1111-111111111111', 'owner@example.com', 'ACTIVE'),
     ('22222222-2222-2222-2222-222222222222', 'other@example.com', 'ACTIVE');
+
+INSERT INTO iam.client_profile (client_id)
+VALUES
+    ('11111111-1111-1111-1111-111111111111'),
+    ('22222222-2222-2222-2222-222222222222');
 
 INSERT INTO trading.accounts (account_id, client_id, account_number, status, base_currency, trading_enabled, created_at)
 VALUES

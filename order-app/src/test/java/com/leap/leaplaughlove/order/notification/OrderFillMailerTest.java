@@ -135,7 +135,7 @@ class OrderFillMailerTest {
     @Test
     @DisplayName("a client who opted out gets no email, and the flag is just cleared")
     void optOut() {
-        jdbc.update("UPDATE iam.clients SET notify_order_fills = FALSE WHERE client_id = ?", OWNER);
+        jdbc.update("UPDATE iam.client_profile SET notify_order_fills = FALSE WHERE client_id = ?", OWNER);
         UUID id = order("FILLED", true, "LIMIT");
 
         assertThat(mailer.notifyClients()).isZero();

@@ -35,7 +35,7 @@ import java.util.UUID;
  * since reached one of those outcomes. Working from the database rather than from events means it
  * also covers fills that PendingFillRecovery finishes later, needs no Kafka, and retries after a
  * mail outage. The client's address and {@code notify_order_fills} choice are read straight from
- * the shared {@code iam.clients} table. An order is marked notified, in a transaction of its own,
+ * the shared {@code iam.clients} and {@code iam.client_profile} tables. An order is marked notified, in a transaction of its own,
  * only after the mail server accepts the email, so it is never mailed twice apart from a crash in
  * between. A client who opted out, or is not ACTIVE, just has the flag cleared. Nothing here
  * throws: the order is already decided, so a mail failure is logged and retried next sweep.
@@ -53,7 +53,8 @@ public class OrderFillMailer {
     private static final String PENDING_SQL = """
             SELECT o.order_id, o.side, o.order_type, o.quantity, o.status, o.rejection_reason,
                    o.filled_at, o.rejected_at, o.expired_at,
-                   i.symbol, a.account_number, c.email, c.status AS client_status, c.notify_order_fills,
+                   i.symbol, a.account_number, c.email, c.status AS client_status,
+                   COALESCE(p.notify_order_fills, TRUE) AS notify_order_fills,
                    (SELECT e.fill_price FROM trading.executions e
                      WHERE e.order_id = o.order_id AND e.status = 'FILLED'
                      ORDER BY e.executed_at DESC LIMIT 1) AS fill_price
@@ -61,6 +62,7 @@ public class OrderFillMailer {
               JOIN trading.instruments i ON i.instrument_id = o.instrument_id
               JOIN trading.accounts a ON a.account_id = o.account_id
               JOIN iam.clients c ON c.client_id = a.client_id
+              LEFT JOIN iam.client_profile p ON p.client_id = c.client_id
              WHERE o.notice_pending AND o.status IN ('FILLED', 'REJECTED', 'EXPIRED')
              ORDER BY o.submitted_at
              LIMIT\s""" + BATCH_SIZE;
