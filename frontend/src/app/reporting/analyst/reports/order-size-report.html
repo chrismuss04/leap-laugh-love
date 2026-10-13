@@ -1,0 +1,40 @@
+<app-report-panel heading="Orders by value"
+                  description="Each month's filled orders by value (quantity × fill price), with the mean and median."
+                  [state]="state()" message="No filled orders in the last 12 complete months." (retry)="load()">
+  <div *ngIf="report() as report">
+    <ul class="legend" aria-hidden="true">
+      <li *ngFor="let band of bands(); let i = index"><span class="swatch" [ngClass]="'band-' + i"></span>{{ bandLabel(band) }}</li>
+    </ul>
+    <div class="table-wrap">
+      <table class="report-table" data-testid="order-size-table">
+        <caption class="sr-only">Filled orders by value band per month, oldest month first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Month</th>
+            <th scope="col">Mix of orders</th>
+            <th scope="col" class="num">Filled</th>
+            <th scope="col" class="num">Mean</th>
+            <th scope="col" class="num">Median</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let month of report.months" data-testid="order-size-row">
+            <th scope="row">{{ monthLabel(month.month) }}</th>
+            <td>
+              <span class="stack stack-track">
+                <span *ngFor="let band of month.bands; let i = index" class="segment" [ngClass]="'band-' + i"
+                      [style.width.%]="share(month, band)" [attr.title]="bandLabel(band) + ': ' + count(band.orders) + ' orders'"></span>
+              </span>
+              <span class="sr-only">
+                <ng-container *ngFor="let band of month.bands; let last = last">{{ bandLabel(band) }}: {{ count(band.orders) }}{{ last ? '' : ', ' }}</ng-container>
+              </span>
+            </td>
+            <td class="num">{{ count(month.filledOrders) }}</td>
+            <td class="num">{{ formatMoney(month.meanValue) }}</td>
+            <td class="num">{{ formatMoney(month.medianValue) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</app-report-panel>
