@@ -157,6 +157,8 @@ export class PriceStreamService implements OnDestroy {
         event = line.slice(6).trim();
       } else if (line.startsWith('data:')) {
         data.push(line.slice(5).trimStart());
+      } else {
+        // Ignore SSE comments and fields not used by price events.
       }
     }
     if (event !== 'price' || data.length === 0) {
