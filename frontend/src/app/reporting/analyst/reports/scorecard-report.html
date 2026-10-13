@@ -1,0 +1,41 @@
+<app-report-panel heading="Monthly scorecard"
+                  [description]="'The headline figures each month. Changes of ' + notablePct + '% or more either way are coloured.'"
+                  [state]="state()" message="No trading or sign-ups in the last 12 complete months." (retry)="load()">
+  <div *ngIf="report() as report">
+    <div class="compare" role="group" aria-label="Compare each month with">
+      <button type="button" [attr.aria-pressed]="comparison() === 'month'" (click)="comparison.set('month')"
+              data-testid="compare-month">vs last month</button>
+      <button type="button" [attr.aria-pressed]="comparison() === 'year'" (click)="comparison.set('year')"
+              data-testid="compare-year">vs last year</button>
+    </div>
+    <div class="table-wrap">
+      <table class="report-table" data-testid="scorecard-table">
+        <caption class="sr-only">
+          Monthly scorecard, oldest month first, with each figure's change
+          {{ comparison() === 'month' ? 'on the month before' : 'on the same month a year earlier' }}
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Month</th>
+            <th scope="col" class="num" *ngFor="let column of columns">{{ column.label }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let month of report.months" data-testid="scorecard-row">
+            <th scope="row">{{ monthLabel(month.month) }}</th>
+            <td *ngFor="let column of columns" [attr.data-metric]="column.key">
+              <div class="metric" *ngIf="metric(month, column.key) as figure">
+                <span class="bar-track" aria-hidden="true" *ngIf="column.key === 'volume'; else spacer">
+                  <span class="bar-fill" [style.width.%]="barWidth(figure.value, maxVolume())"></span>
+                </span>
+                <ng-template #spacer><span aria-hidden="true"></span></ng-template>
+                <span class="figure num">{{ column.format(figure.value) }}</span>
+                <span class="change" [ngClass]="notableTrend(changeOf(figure))">{{ change(changeOf(figure)) }}</span>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</app-report-panel>
