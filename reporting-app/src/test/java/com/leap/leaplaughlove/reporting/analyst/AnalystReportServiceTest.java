@@ -225,4 +225,14 @@ class AnalystReportServiceTest {
         assertNull(AnalystReportService.change(dec("5"), null));
         assertNull(AnalystReportService.change(null, dec("5")));
     }
+
+    @Test
+    @DisplayName("a percentage is null when either figure is missing or the whole is zero")
+    void percent() {
+        assertEquals(dec("40.0"), AnalystReportService.percent(dec("400"), dec("1000")));
+        assertNull(AnalystReportService.percent(null, dec("1000")));
+        assertNull(AnalystReportService.percent(dec("400"), null));
+        assertNull(AnalystReportService.percent(dec("400"), BigDecimal.ZERO));
+        assertNull(AnalystReportService.percent(3, 0));
+    }
 }

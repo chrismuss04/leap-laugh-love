@@ -309,6 +309,100 @@ describe('Analyst reports', () => {
     expect(document.activeElement).toBe(cellAt(1, 10));
     press('Home');
     expect(document.activeElement).toBe(cellAt(1, 0));
+
+    // At the left edge, ArrowLeft stays put; ArrowUp moves to the cohort above.
+    press('ArrowLeft');
+    expect(document.activeElement).toBe(cellAt(1, 0));
+    press('ArrowUp');
+    expect(document.activeElement).toBe(cellAt(0, 0));
+    // At the top edge, ArrowUp stays put.
+    press('ArrowUp');
+    expect(document.activeElement).toBe(cellAt(0, 0));
+    press('ArrowRight');
+    press('ArrowLeft');
+    expect(document.activeElement).toBe(cellAt(0, 0));
+
+    // October's month 11 has nothing below it: November's cohort ends at month 10.
+    press('End');
+    expect(document.activeElement).toBe(cellAt(0, 11));
+    press('ArrowDown');
+    expect(document.activeElement).toBe(cellAt(0, 11));
+
+    // Down month 0 to the last cohort, where ArrowDown stays put.
+    press('Home');
+    for (let i = 0; i < 11; i++) press('ArrowDown');
+    expect(document.activeElement).toBe(cellAt(11, 0));
+    press('ArrowDown');
+    expect(document.activeElement).toBe(cellAt(11, 0));
+  });
+
+  it('retention: the arrow keys are kept from scrolling the page; any other key is left alone', () => {
+    const fixture = create(RetentionReportComponent);
+    http.expectOne('/api/reporting/analyst/retention').flush(retention({ '2025-10': 40 }));
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    const first = el.querySelector('[data-cell="0-0"]') as HTMLElement;
+    first.focus();
+    const keydown = (key: string) => {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+      first.dispatchEvent(event);
+      fixture.detectChanges();
+      return event;
+    };
+
+    expect(keydown('a').defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(first);
+    expect(keydown('ArrowUp').defaultPrevented).toBe(true);
+  });
+
+  it('retention: hovering a cell lights its cohort and its month, and leaving the table clears them', () => {
+    const fixture = create(RetentionReportComponent);
+    http.expectOne('/api/reporting/analyst/retention').flush(retention({ '2025-10': 40, '2025-11': 20 }));
+    fixture.detectChanges();
+    const el: HTMLElement = fixture.nativeElement;
+    const lit = () => all(el, '.lit').map(textOf);
+
+    el.querySelector('[data-cell="1-2"]')!.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+
+    // November's label and client count, and the M2 heading.
+    expect(lit()).toEqual(['M2', 'Nov 2025', '20']);
+    expect(all(el, 'td.cross')).toContain(el.querySelector('[data-cell="0-2"]'));
+    expect(all(el, 'td.cross')).toContain(el.querySelector('[data-cell="1-5"]'));
+    expect(all(el, 'td.cross')).not.toContain(el.querySelector('[data-cell="0-5"]'));
+
+    el.querySelector('table')!.dispatchEvent(new MouseEvent('mouseleave'));
+    fixture.detectChanges();
+
+    expect(lit()).toEqual([]);
+    expect(all(el, 'td.cross')).toHaveLength(0);
+  });
+
+  it('before a report arrives, its scales and summaries are empty rather than failing', () => {
+    const scorecardReport = create(ScorecardReportComponent).componentInstance;
+    expect(scorecardReport.maxVolume()).toBe(0);
+    http.expectOne('/api/reporting/analyst/scorecard').flush(scorecard());
+
+    TestBed.resetTestingModule();
+    const activity = create(ClientActivityReportComponent).componentInstance;
+    expect(activity.maxActive()).toBe(0);
+    expect(activity.meanLapsed()).toBe(0);
+    http.expectOne('/api/reporting/analyst/client-activity').flush(clientActivity());
+
+    TestBed.resetTestingModule();
+    const retentionReport = create(RetentionReportComponent).componentInstance;
+    expect(retentionReport.offsets()).toEqual([]);
+    http.expectOne('/api/reporting/analyst/retention').flush(retention());
+
+    TestBed.resetTestingModule();
+    const activationReport = create(ActivationReportComponent).componentInstance;
+    expect(activationReport.anyIncomplete()).toBe(false);
+    http.expectOne('/api/reporting/analyst/activation').flush(activation());
+
+    TestBed.resetTestingModule();
+    const orderSizeReport = create(OrderSizeReportComponent).componentInstance;
+    expect(orderSizeReport.bands()).toEqual([]);
+    http.expectOne('/api/reporting/analyst/order-sizes').flush(orderSizes());
   });
 
   it('activation: percentages and median wait, with cohorts still in their first 30 days marked', () => {
