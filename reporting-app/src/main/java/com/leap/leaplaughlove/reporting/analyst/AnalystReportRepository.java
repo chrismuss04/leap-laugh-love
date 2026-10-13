@@ -23,8 +23,9 @@ import java.util.stream.Collectors;
 @Repository
 public class AnalystReportRepository {
 
-    // A client is active in a month they completed any order in, FILLED or REJECTED: that is
-    // every client_months row. Volume and filled orders count FILLED orders only.
+    // A client is active in a month they had an order execute in, FILLED or REJECTED: that is
+    // every client_months row (CANCELLED and EXPIRED orders never reach it). Volume and filled
+    // orders count FILLED orders only.
     private static final String MONTHLY_TOTALS_SQL = """
             SELECT month,
                    count(*) AS active_clients,
@@ -91,8 +92,8 @@ public class AnalystReportRepository {
             GROUP BY 1, 2
             """;
 
-    // First order is the first one placed (submitted_at), of any final status, matching the
-    // definition of an active client. The median is over the clients who have ordered: the FILTER
+    // First order is the first executed one (FILLED or REJECTED) by when it was placed
+    // (submitted_at), matching the definition of an active client. The median is over the clients who have ordered: the FILTER
     // is needed because GREATEST, which guards against an order dated before its sign-up, turns
     // a client with no order (NULL) into 0 days rather than leaving them out.
     private static final String ACTIVATION_SQL = """
@@ -101,7 +102,8 @@ public class AnalystReportRepository {
                        date_trunc('month', clients.registered_at AT TIME ZONE 'UTC')::date AS cohort,
                        (SELECT min(orders.submitted_at)
                         FROM reporting.orders orders
-                        WHERE orders.client_id = clients.client_id) AS first_order_at
+                        WHERE orders.client_id = clients.client_id
+                          AND orders.status IN ('FILLED', 'REJECTED')) AS first_order_at
                 FROM reporting.clients clients
                 WHERE clients.registered_at >= :fromInstant AND clients.registered_at < :toInstant
             )

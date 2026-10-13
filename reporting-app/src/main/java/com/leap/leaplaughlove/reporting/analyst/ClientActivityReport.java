@@ -14,7 +14,7 @@ public record ClientActivityReport(ReportWindow window, List<Month> months) {
      * One month's client activity. The active clients are exactly the new, returning and
      * reactivated ones; lapsed clients are not active in the month.
      * @param month the month
-     * @param activeClients clients who completed at least one order, filled or rejected
+     * @param activeClients clients who had at least one order execute, filled or rejected
      * @param newClients active for the first time ever
      * @param returningClients also active the month before
      * @param reactivatedClients active before, but not the month before

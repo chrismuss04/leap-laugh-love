@@ -36,6 +36,8 @@ SELECT client_id,
        count(*) FILTER (WHERE status = 'FILLED'),
        coalesce(sum(quantity * fill_price) FILTER (WHERE status = 'FILLED'), 0)
 FROM reporting.orders
+-- Executed orders only, as reporting-etl keeps it: CANCELLED and EXPIRED never executed.
+WHERE status IN ('FILLED', 'REJECTED')
 GROUP BY 1, 2;
 
 COMMIT;

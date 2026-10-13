@@ -526,7 +526,8 @@ CREATE TABLE IF NOT EXISTS reporting.client_months (
     client_id UUID NOT NULL,
     -- First day of the UTC month the orders completed in.
     month DATE NOT NULL CHECK (EXTRACT(DAY FROM month) = 1),
-    -- Every completed order, FILLED or REJECTED: a client is active in a month they ordered in.
+    -- Every executed order, FILLED or REJECTED: a client is active in a month they traded or tried
+    -- to. CANCELLED and EXPIRED orders never executed and are left out of the rollup.
     order_count INTEGER NOT NULL CHECK (order_count > 0),
     filled_count INTEGER NOT NULL CHECK (filled_count >= 0 AND filled_count <= order_count),
     -- Sum of quantity * fill_price over FILLED orders. Unbounded NUMERIC: a precision limit here

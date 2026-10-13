@@ -12,8 +12,8 @@ import java.util.List;
 public record ActivationReport(ReportWindow window, List<Cohort> cohorts) {
 
     /**
-     * One sign-up month's first orders. A first order is the client's first placed order of any
-     * final status, the same as for an active client.
+     * One sign-up month's first orders. A first order is the client's first placed order that
+     * executed, filled or rejected, the same as for an active client.
      * @param cohort the month the clients signed up in
      * @param registered how many signed up
      * @param orderedWithin30Days how many placed their first order within 30 days of signing up

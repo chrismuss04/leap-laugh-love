@@ -41,9 +41,11 @@ import static org.assertj.core.api.Assertions.within;
  *   client  signed up          orders (FILLED unless noted)
  *   A       10 Dec 2025        Dec 1,000 · Jan 500 · Mar 30,000 · 1 Apr 100 (after the window)
  *   B       5 Jan 10:00        6 Jan 10:00 1,000 · Feb REJECTED
- *   C       20 Jan             25 Feb 999.99
+ *   C       20 Jan             21 Jan EXPIRED · 25 Feb 999.99
  *   D       28 Feb 23:30       1 Mar 11:30 25,000 · 31 Mar 23:59:59 4,999.99
- *   E       1 Mar              none
+ *   E       1 Mar              2 Mar CANCELLED
+ *
+ * C's and E's never-executed orders count nowhere: neither is active or activated by them.
  * </pre>
  */
 @DisplayName("AnalystReportRepository against Postgres")
@@ -96,9 +98,11 @@ class AnalystReportRepositoryTest {
         filled(a, 1, "100", "2026-04-01T00:00:00Z");
         filled(b, 5, "200", "2026-01-06T10:00:00Z");
         order(b, "REJECTED", 3, null, "2026-02-10T12:00:00Z");
+        order(c, "EXPIRED", 1, null, "2026-01-21T00:00:00Z");
         filled(c, 1, "999.99", "2026-02-25T00:00:00Z");
         filled(d, 1, "25000", "2026-03-01T11:30:00Z");
         filled(d, 1, "4999.99", "2026-03-31T23:59:59Z");
+        order(e, "CANCELLED", 1, null, "2026-03-02T00:00:00Z");
         rebuildClientMonths();
     }
 
@@ -138,6 +142,7 @@ class AnalystReportRepositoryTest {
                        count(*) FILTER (WHERE status = 'FILLED'),
                        coalesce(sum(quantity * fill_price) FILTER (WHERE status = 'FILLED'), 0)
                 FROM reporting.orders
+                WHERE status IN ('FILLED', 'REJECTED')
                 GROUP BY 1, 2
                 """);
     }

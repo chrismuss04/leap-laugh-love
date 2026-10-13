@@ -144,6 +144,25 @@ def test_a_rejected_order_counts_as_activity_but_adds_no_value(loader, order_ids
     assert rollup(row.client_id) == {date(2026, 10, 1): (1, 0, Decimal("0"))}
 
 
+@pytest.mark.parametrize("make_event", [cancelled_event, expired_event])
+def test_an_order_that_never_executed_loads_but_is_not_activity(loader, order_ids, make_event):
+    client = str(uuid.uuid4())
+    # load_all asserts each load reports a new order, though the rollup took nothing from it.
+    load_all(loader, order_ids, make_event(clientId=client))
+
+    assert rollup(uuid.UUID(client)) == {}
+
+
+def test_orders_that_never_executed_leave_a_month_s_activity_unchanged(loader, order_ids):
+    client = str(uuid.uuid4())
+    load_all(loader, order_ids,
+             filled_event(clientId=client, quantity=2, fillPrice=100),
+             cancelled_event(clientId=client),
+             expired_event(clientId=client))
+
+    assert rollup(uuid.UUID(client)) == {date(2026, 10, 1): (1, 1, Decimal("200.000000"))}
+
+
 def test_orders_in_the_same_month_accumulate_and_other_months_stay_apart(loader, order_ids):
     client = str(uuid.uuid4())
     load_all(loader, order_ids,
@@ -194,7 +213,10 @@ def test_the_migration_rebuilds_the_same_rollup_the_loader_kept(loader, order_id
     load_all(loader, order_ids,
              filled_event(clientId=client, quantity=2, fillPrice=100),
              rejected_event(clientId=client),
-             filled_event(clientId=client, quantity=7, fillPrice=3.25, completedAt="2026-08-15T12:00:00Z"))
+             filled_event(clientId=client, quantity=7, fillPrice=3.25, completedAt="2026-08-15T12:00:00Z"),
+             # Never executed: the rebuild leaves these out, as the loader did.
+             cancelled_event(clientId=client),
+             expired_event(clientId=client, completedAt="2026-07-15T12:00:00Z"))
     kept = rollup(uuid.UUID(client))
 
     with psycopg.connect(DB_URL, autocommit=True) as conn:

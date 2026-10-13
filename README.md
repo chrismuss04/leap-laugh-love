@@ -1168,14 +1168,16 @@ Each covers the **last 12 complete UTC months** (on 12 October 2026: October 202
 and takes no parameters; the current month is left out so a half-finished month doesn't read as a
 drop. Every response names its window and has one entry per month (or sign-up month), zeros included.
 
-- **Active client**: completed at least one order in the month, FILLED or REJECTED. Volume, filled
-  orders and order value count FILLED orders only, valued at quantity × fill price.
+- **Active client**: had at least one order execute in the month, FILLED or REJECTED. CANCELLED and
+  EXPIRED orders never executed and don't count (an expired order's date is when it lapsed, not
+  anything the client did). Volume, filled orders and order value count FILLED orders only, valued
+  at quantity × fill price.
 - **Client activity**: *new* is a client's first ever active month; *returning* was also active the
   month before; *reactivated* was active before but not the month before; *lapsed* was active the
   month before but not this month.
 - **Retention**: cohorts are sign-up months in the window; each cohort runs from its sign-up month
   (month 0) to the window's end.
-- **Activation**: a first order is the first one placed, of any final status. A cohort is marked
+- **Activation**: a first order is the first executed one (FILLED or REJECTED), by when it was placed. A cohort is marked
   `complete: false` until 30 days after its month ends, while its 30-day figure can still rise.
 - **Concentration**: clients ranked by filled value each month; each top slice is rounded up to a
   whole client. Clients with only rejected orders aren't counted as trading.

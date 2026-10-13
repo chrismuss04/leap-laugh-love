@@ -18,7 +18,7 @@ public record ScorecardReport(ReportWindow window, List<Month> months) {
      * @param volume value of the orders filled in the month
      * @param filledOrders how many orders filled
      * @param averageTradeValue volume per filled order; null when nothing filled
-     * @param activeClients clients who completed at least one order, filled or rejected
+     * @param activeClients clients who had at least one order execute, filled or rejected
      * @param registrations clients who signed up
      */
     public record Month(YearMonth month, Metric volume, Metric filledOrders, Metric averageTradeValue,
