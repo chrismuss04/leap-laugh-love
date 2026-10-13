@@ -7,6 +7,7 @@ COPY iam-app/pom.xml iam-app/
 COPY account-app/pom.xml account-app/
 COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
+COPY reporting-app/pom.xml reporting-app/
 COPY common-security/src common-security/src
 COPY order-app/src order-app/src
 # Maven's local repository lives in a BuildKit cache mount, not the image, so it survives

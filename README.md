@@ -21,6 +21,7 @@ We are using the Trunk branching strategy because it best fits our development s
   - [iam-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/iam-app/)
   - [market-data-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/market-data-app/)
   - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
+  - [reporting-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/reporting-app/)
 
 ---
 
@@ -33,8 +34,9 @@ The repository is a **Multi-Module Maven Project** splitting identity and tradin
 3. **`account-app` (Account & Portfolio Services)**: Handles client accounts and trade settings, cash balances, deposits, withdrawals, transfers between accounts, portfolio holdings/positions, portfolio value history, and the internal validation and settlement endpoints that `order-app` calls. A nightly job flags inactive accounts and emails their clients. Runs on port `8082`.
 4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Beyond market orders it takes limit, stop, stop-limit and trailing-stop orders that wait `OPEN` until the market reaches their price (the `OrderTriggerEngine`), lets a buy carry a take-profit and stop-loss bracket, saves order templates, and emails clients how an order that waited ended. Background jobs finish interrupted fills and book the seeded order history, and every finished order is published to the `order-events` Kafka topic. Runs on port `8084`.
 5. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument, a validated quote (bid, ask, last) for each tick, and OHLC candle history with scheduled retention, exposed via REST and an SSE push stream. Runs on port `8083`.
-6. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
-7. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
+6. **`reporting-app` (Staff Reports)**: Serves commercial analysts' reports from the `reporting` schema read models that `reporting-etl` loads; it reads nothing operational and writes nothing. Every endpoint requires the `COMMERCIAL_ANALYST` role. Runs on port `8085`.
+7. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
+8. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
 
 ```mermaid
 flowchart TB
@@ -100,6 +102,11 @@ flowchart TB
             StreamC["PriceStreamController<br/>/api/marketdata/stream (SSE)"]
             QuoteC["QuoteController<br/>/api/marketdata/quotes"]
         end
+
+        subgraph REPORTING["reporting-app (Port 8085)"]
+            RepApp["ReportingApplication @Import(JwtService)"]
+            RepSec["ReportingSecurityConfig (CORS Enabled)<br/>COMMERCIAL_ANALYST only"]
+        end
     end
 
     subgraph PG["PostgreSQL"]
@@ -123,6 +130,7 @@ flowchart TB
     UI -->|"HTTP / JSON (8082)"| AccountSec
     UI -->|"HTTP / JSON (8084)"| OrderSec
     UI -->|"HTTP / JSON / SSE (8083)"| MdSec
+    UI -->|"HTTP / JSON (8085)"| RepSec
 
     IamSec --> AuthC
     IamSec --> PwC
@@ -176,6 +184,8 @@ flowchart TB
     AccountApp -. "Library Dependency" .-> JwtS
     OrderApp -. "Library Dependency" .-> JwtS
     MdApp -. "Library Dependency" .-> JwtS
+    RepApp -. "Library Dependency" .-> JwtS
+    RepSec -. "reads" .-> REPORTING_DB
 
     AuthC --> IAM_DB
     PwC --> IAM_DB
@@ -201,7 +211,7 @@ flowchart TB
 
 ## UML Class Diagrams
 
-Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
+Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, `market-data-app`, and `reporting-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
 
 **Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
 
@@ -215,10 +225,12 @@ flowchart LR
     MD["market-data-app<br/>(instruments · simulation · quotes · candles)"]:::mod
     ACCT["account-app<br/>(accounts · balance · positions · portfolio)"]:::mod
     ORD["order-app<br/>(orders · validation · executions · events)"]:::mod
+    REP["reporting-app<br/>(staff reports)"]:::mod
     IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
     ACCT -- "depends on" --> CS
     ORD -- "depends on" --> CS
+    REP -- "depends on" --> CS
     IAM -. "opens first account" .-> ACCT
     ORD -. "calls" .-> ACCT
     ORD -. "calls" .-> MD
@@ -1088,6 +1100,13 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT (client) |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
+| **Reporting** | `GET /api/reporting/analyst/scorecard` | Volume, filled orders, average trade value, active clients and registrations per month, each with month-over-month and year-over-year % change | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/client-activity` | Active clients per month split into new, returning and reactivated, with clients who lapsed | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/retention` | Cohort matrix: each sign-up month's % of clients active in each month after | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/activation` | Each sign-up month's % ordering within 30 days and ever, and median days to a first order | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/concentration` | Share of each month's volume from the top 1, 10 and 20% of trading clients | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/order-sizes` | Filled orders per month by value band, with mean and median order value | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /actuator/health` | Reporting service health check | Permitted |
 
 ---
 
@@ -1136,11 +1155,48 @@ to its own dashboard, and a client who opens `/reporting` is redirected home.
 | --- | --- | --- |
 | `TRADING_OPERATIONS` | `/reporting` | **Order Audit**: orders submitted, filled, rejected and awaiting execution, with audit filters |
 | `TRADING_OPERATIONS` | `/reporting/orders/:orderId` | **Order lifecycle**: one order retraced through its executions and the cash and holdings ledgers |
-| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: trading volume, average order value, new registrations and active clients over a period (1W, 1M, 3M, YTD, 1Y or custom) |
+| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: headline tiles for a period (1W, 1M, 3M, YTD, 1Y or custom); the **activity report** by instrument, with its own dates and daily or weekly breakdown; and six **12-month reports**: monthly scorecard, client activity, activation, retention by sign-up month, volume from top clients and orders by value |
 
 > [!NOTE]
-> The dashboards are built, routed, filtered and tested, but the report panels are still
-> placeholders: no reporting API exists yet, so the pages show the layout and filters without data.
+> The Order Audit panels and the analyst's headline tiles are still placeholders, so they show the
+> layout and filters without data. On Trading Activity, the activity report and the six 12-month
+> reports are live. The 12-month reports always cover the last 12 complete months, whatever period
+> the page's filter is on, and say which months in each panel. They are tables with CSS-drawn bars
+> and heat cells, with no chart library.
+
+#### Analyst reports (`reporting-app`)
+
+Six reports under `/api/reporting/analyst/`, listed in the [API Endpoints Summary](#api-endpoints-summary).
+Each covers the **last 12 complete UTC months** (on 12 October 2026: October 2025 to September 2026)
+and takes no parameters; the current month is left out so a half-finished month doesn't read as a
+drop. Every response names its window and has one entry per month (or sign-up month), zeros included.
+
+- **Active client**: had at least one order execute in the month, FILLED or REJECTED. CANCELLED and
+  EXPIRED orders never executed and don't count (an expired order's date is when it lapsed, not
+  anything the client did). Volume, filled orders and order value count FILLED orders only, valued
+  at quantity × fill price.
+- **Client activity**: *new* is a client's first ever active month; *returning* was also active the
+  month before; *reactivated* was active before but not the month before; *lapsed* was active the
+  month before but not this month.
+- **Retention**: cohorts are sign-up months in the window; each cohort runs from its sign-up month
+  (month 0) to the window's end.
+- **Activation**: a first order is the first executed one (FILLED or REJECTED), by when it was placed. A cohort is marked
+  `complete: false` until 30 days after its month ends, while its 30-day figure can still rise.
+- **Concentration**: clients ranked by filled value each month; each top slice is rounded up to a
+  whole client. Clients with only rejected orders aren't counted as trading.
+- **Order sizes**: bands include their lower bound: under 1,000 · 1,000–4,999.99 · 5,000–9,999.99 ·
+  10,000–24,999.99 · 25,000+.
+- **Changes** (scorecard) are `null` when there's nothing to compare: the earlier figure is zero or
+  before the data starts.
+
+Most reports read `reporting.client_months` (see *Reporting ETL*) rather than every order. To try
+them on a fresh local stack, load synthetic history (**dev only**: 24 months of made-up clients and
+orders written straight into the reporting tables; it rebuilds `client_months` itself, and a rerun
+adds nothing):
+
+```bash
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/seed-reporting-history.sql
+```
 > The data they will read is being collected in the `reporting.orders` and `reporting.clients`
 > tables by the ETL services described under [Reporting ETL](#reporting-etl).
 
@@ -1214,6 +1270,9 @@ mvn -pl order-app -am test
 
 # Test Market Data module (with dependency building)
 mvn -pl market-data-app -am test
+
+# Test Reporting module (with dependency building)
+mvn -pl reporting-app -am test
 ```
 
 ### End-to-end tests (Playwright)
@@ -1341,6 +1400,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |
+| `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders`; run once the new `reporting-etl` is deployed, rerun any time to rebuild (see *Reporting ETL*) |
 | `migrate-price-candles-key.sql` | Moves `marketdata.price_candles` to its natural primary key; stop market-data-app first |
 
 `reporting.orders` has no migration script; it needs `docker compose down -v` once (see *Reporting ETL*).
@@ -1396,7 +1456,7 @@ To update the live GitHub Pages documentation hosted on the `gh-pages` branch:
 ### 3. Launch Services via Docker Compose (Recommended)
 
 Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
-container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app` and `frontend`:
+container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app`, `reporting-app` and `frontend`:
 
 ```bash
 docker compose up -d --build
@@ -1414,6 +1474,7 @@ Services will be exposed on:
 - **Account Application**: `http://localhost:8082`
 - **Order Application**: `http://localhost:8084`
 - **Market Data Application**: `http://localhost:8083`
+- **Reporting Application**: `http://localhost:8085`
 - **PostgreSQL Database**: `localhost:5432`
 
 The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
@@ -1564,6 +1625,12 @@ as the `reporting-etl` compose service (no port).
   broker. Known gap: an event is lost if order-app stops between the commit and the send - a
   transactional outbox would close it. `REPORTING_EVENTS_ENABLED=false` turns publishing off,
   as `scripts/start-local.ps1` does since no Kafka runs natively.
+- **Monthly rollup**: the same statement that inserts a new order also adds it to its client's
+  UTC month in `reporting.client_months` (orders of any status, filled orders, filled value),
+  which backs the analyst reports in `reporting-app`. A repeated order the insert ignores adds
+  nothing, so a replay never counts twice. `scripts/migrate-reporting-client-months.sql` adds
+  the table to an existing database and rebuilds it from `reporting.orders`; it locks out the
+  ETL's inserts while it runs, so it is safe against a live stack and safe to rerun.
 - **New schema**: `reporting.orders` is created by the schema file, which only runs on an empty
   database - run `docker compose down -v` once to pick it up.
 
@@ -1664,7 +1731,7 @@ PostgreSQL are all it needs.
 
 ```powershell
 .\scripts\setup-windows-db.ps1   # once: creates and seeds the paysprint database
-.\scripts\start-local.ps1        # builds, starts all five in their own windows, opens the browser
+.\scripts\start-local.ps1        # builds, starts all six in their own windows, opens the browser
 .\scripts\stop-local.ps1         # stops them again
 ```
 
@@ -1706,6 +1773,11 @@ mvn -pl order-app spring-boot:run
 Run Market Data App (in a separate terminal):
 ```bash
 mvn -pl market-data-app spring-boot:run
+```
+
+Run Reporting App (in a separate terminal):
+```bash
+mvn -pl reporting-app spring-boot:run
 ```
 
 ---

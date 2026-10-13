@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
   Runs the whole stack natively on Windows - no Docker: iam-app, account-app, order-app,
-  market-data-app and the Angular frontend, against a local PostgreSQL.
+  market-data-app, reporting-app and the Angular frontend, against a local PostgreSQL.
 
 .DESCRIPTION
-  Builds the four services, starts each (and the frontend) in its own titled window, waits
+  Builds the five services, starts each (and the frontend) in its own titled window, waits
   until they report healthy, then opens the app in the browser. Stop everything with
   .\scripts\stop-local.ps1, or close the windows.
 
@@ -42,7 +42,8 @@ $services = @(
     @{ Name = 'iam-app';         Port = 8081 },
     @{ Name = 'account-app';     Port = 8082 },
     @{ Name = 'market-data-app'; Port = 8083 },
-    @{ Name = 'order-app';       Port = 8084 }
+    @{ Name = 'order-app';       Port = 8084 },
+    @{ Name = 'reporting-app';   Port = 8085 }
 )
 $frontendPort = 4200
 

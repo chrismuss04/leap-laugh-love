@@ -5,7 +5,7 @@ export function liveInstruments(rows: InstrumentOverviewRow[], prices: Record<st
     initialPrices: Record<string, number>): InstrumentOverviewRow[] {
   return rows.map(row => {
     const price = prices[row.symbol];
-    if (!Number.isFinite(price) || price <= 0 || price === initialPrices[row.symbol]) return row;
+    if (!Number.isFinite(price) || price <= 0 || price === initialPrices[row.symbol]) { return row; }
     const baseline = row.baselinePrice;
     const change = baseline !== null && baseline > 0 ? price - baseline : null;
     return { ...row, price, change, changePercent: change === null ? null : change / baseline! * 100 };
