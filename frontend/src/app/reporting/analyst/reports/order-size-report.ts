@@ -24,8 +24,8 @@ export class OrderSizeReportComponent extends AnalystReport<OrderSizeReport> {
 
   /** '< $1K', '$1K–$5K', '$25K+' */
   bandLabel(band: OrderSizeBand): string {
-    if (band.from == null) return `< ${compactMoney(band.to)}`;
-    if (band.to == null) return `${compactMoney(band.from)}+`;
+    if (band.from == null) { return `< ${compactMoney(band.to)}`; }
+    if (band.to == null) { return `${compactMoney(band.from)}+`; }
     return `${compactMoney(band.from)}–${compactMoney(band.to)}`;
   }
 
