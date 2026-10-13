@@ -70,6 +70,8 @@ export class SessionActivityService implements OnDestroy {
             this.stop();
           } else if (event.key === this.storageKey) {
             this.checkTime();
+          } else {
+            // Other storage changes do not affect this session.
           }
         }));
       }

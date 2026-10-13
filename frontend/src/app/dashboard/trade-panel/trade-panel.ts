@@ -130,6 +130,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
       this.trailValue.set(applied.trailPercent);
     } else if (applied.orderType !== 'TRAILING_STOP') {
       this.trailValue.set(null);
+    } else {
+      // A trailing-stop template without a percentage keeps the current trail settings.
     }
     if (applied.side === 'BUY' && applied.takeProfitPercent != null && applied.stopLossPercent != null) {
       const entry = this.estimatePrice();
@@ -842,6 +844,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
         const distance = Math.abs(price - value);
         this.setTrailValue(this.trailUnit() === 'PERCENT' ? Math.round(distance / price * 1000) / 10 : toCents(distance));
       }
+    } else {
+      // Ignore chart lines that do not represent an editable order price.
     }
   }
 

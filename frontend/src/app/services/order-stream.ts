@@ -2,6 +2,7 @@ import { Injectable, NgZone, OnDestroy, inject, signal } from '@angular/core';
 import { Subject } from 'rxjs';
 import { AuthService } from './auth.service';
 import { OrderUpdate } from './order';
+import { parseSseFrame } from './sse-frame';
 
 export type OrderStreamStatus = 'idle' | 'connecting' | 'live' | 'reconnecting';
 
@@ -121,20 +122,12 @@ export class OrderStreamService implements OnDestroy {
   }
 
   private handleFrame(frame: string): void {
-    let event = 'message';
-    const data: string[] = [];
-    for (const line of frame.split(/\r?\n/)) {
-      if (line.startsWith('event:')) {
-        event = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        data.push(line.slice(5).trimStart());
-      }
-    }
-    if (event !== 'order' || data.length === 0) {
+    const parsed = parseSseFrame(frame);
+    if (parsed?.event !== 'order') {
       return;
     }
     try {
-      const update = JSON.parse(data.join('\n')) as OrderUpdate;
+      const update = JSON.parse(parsed.data) as OrderUpdate;
       this.zone.run(() => this.updates.next(update));
     } catch {
       // A malformed frame is dropped; the dashboard's next poll of open orders catches up.
