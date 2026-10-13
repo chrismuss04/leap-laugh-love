@@ -63,7 +63,7 @@ export class ShellComponent implements OnInit, OnDestroy {
   readonly staff = this.auth.isStaff();
 
   ngOnInit(): void {
-    if (this.staff) return;
+    if (this.staff) { return; }
     // Session Timeout & Revocation
     const token = this.auth.getToken();
     // Session Timeout & Revocation: invalid tokens can expire synchronously during ngOnInit.
@@ -73,7 +73,7 @@ export class ShellComponent implements OnInit, OnDestroy {
       this.auth.expireSession(token, reason);
     });
     this.sessionActivity.start();
-    if (!this.auth.isAuthenticated()) return;
+    if (!this.auth.isAuthenticated()) { return; }
     this.profileService.getMe().subscribe({
       next: profile => {
         this.profile.set(profile);

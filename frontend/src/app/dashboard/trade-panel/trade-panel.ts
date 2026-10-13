@@ -880,10 +880,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
   review(): void {
     if (this.canReview()) {
       // Prices are sent in cents; show the review with what will be sent.
-      if (this.limitPrice() != null) this.limitPrice.set(toCents(this.limitPrice()!));
-      if (this.stopPrice() != null) this.stopPrice.set(toCents(this.stopPrice()!));
-      if (this.takeProfit() != null) this.takeProfit.set(toCents(this.takeProfit()!));
-      if (this.stopLoss() != null) this.stopLoss.set(toCents(this.stopLoss()!));
+      if (this.limitPrice() != null) { this.limitPrice.set(toCents(this.limitPrice()!)); }
+      if (this.stopPrice() != null) { this.stopPrice.set(toCents(this.stopPrice()!)); }
+      if (this.takeProfit() != null) { this.takeProfit.set(toCents(this.takeProfit()!)); }
+      if (this.stopLoss() != null) { this.stopLoss.set(toCents(this.stopLoss()!)); }
       this.step.set('review');
       this.quoteForReview();
     }
