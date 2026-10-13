@@ -1,5 +1,6 @@
 import { Injectable, NgZone, OnDestroy, inject, signal } from '@angular/core';
 import { AuthService } from './auth.service';
+import { parseSseFrame } from './sse-frame';
 
 export type StreamStatus = 'idle' | 'connecting' | 'live' | 'reconnecting';
 
@@ -150,22 +151,12 @@ export class PriceStreamService implements OnDestroy {
   }
 
   private handleFrame(frame: string): void {
-    let event = 'message';
-    const data: string[] = [];
-    for (const line of frame.split(/\r?\n/)) {
-      if (line.startsWith('event:')) {
-        event = line.slice(6).trim();
-      } else if (line.startsWith('data:')) {
-        data.push(line.slice(5).trimStart());
-      } else {
-        // Ignore SSE comments and fields not used by price events.
-      }
-    }
-    if (event !== 'price' || data.length === 0) {
+    const parsed = parseSseFrame(frame);
+    if (parsed?.event !== 'price') {
       return;
     }
     try {
-      const tick = JSON.parse(data.join('\n')) as { symbol: string; price: number };
+      const tick = JSON.parse(parsed.data) as { symbol: string; price: number };
       this.pending[tick.symbol] = Number(tick.price);
       this.flushTimer ??= setInterval(() => this.flush(), PriceStreamService.FLUSH_MS);
     } catch {
