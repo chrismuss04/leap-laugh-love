@@ -1,3 +1,17 @@
+// Load, memory, disk and per-container usage on the agent. Logged at the start, before the heavy
+// stages and when a build fails or is aborted, so a stall or timeout can be matched to what the
+// host was doing instead of guessed at. Never fails the build.
+def hostSnapshot(String label) {
+    sh """
+        echo "========== HOST SNAPSHOT: ${label} =========="
+        uptime || true
+        free -m 2>/dev/null || vm_stat 2>/dev/null || true
+        df -h / 2>/dev/null | tail -n 2 || true
+        docker stats --no-stream --format 'table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}' 2>/dev/null | head -n 25 || true
+        docker ps -a --filter status=exited --format '{{.Names}} {{.Status}}' 2>/dev/null | grep -E '137|OOM' || true
+    """
+}
+
 pipeline {
     agent any
 
@@ -186,6 +200,44 @@ pipeline {
                         mkdir -p "$HOME/.m2-ci" "$HOME/.npm-ci" "$HOME/.pip-ci"
                         docker volume create leap-ci-npm-cache >/dev/null
                     '''
+                    // Remove what earlier builds of this job left behind. A build's own cleanup block
+                    // cannot run if the agent, the Docker daemon or Jenkins itself went down under
+                    // it, so each build clears the previous ones' containers, networks, volumes and
+                    // images before it starts. Safe because disableConcurrentBuilds means no older
+                    // build of this job is still running. Matches only this job's projects
+                    // (<job>-<number>, number below this build's), so other branches' running
+                    // builds, the SonarQube container and the npm cache volume are never touched.
+                    sh '''
+                        prefix="${COMPOSE_PROJECT%-${BUILD_NUMBER}}-"
+                        projects=$( { docker ps -a --format '{{.Label "com.docker.compose.project"}}'
+                                      docker network ls --format '{{.Label "com.docker.compose.project"}}'
+                                      docker volume ls --format '{{.Label "com.docker.compose.project"}}'
+                                    } 2>/dev/null | sort -u | grep -E "^${prefix}[0-9]+\\$" || true)
+                        for project in $projects; do
+                            number="${project#"$prefix"}"
+                            [ "$number" -lt "$BUILD_NUMBER" ] || continue
+                            echo "Removing leftovers of earlier build: $project"
+                            images=$(docker ps -a --filter "label=com.docker.compose.project=$project" --format '{{.Image}}' | sort -u)
+                            for id in $(docker ps -aq --filter "label=com.docker.compose.project=$project"); do
+                                docker rm -f -v "$id" >/dev/null 2>&1 || true
+                            done
+                            for id in $(docker network ls -q --filter "label=com.docker.compose.project=$project"); do
+                                docker network rm "$id" >/dev/null 2>&1 || true
+                            done
+                            for id in $(docker volume ls -q --filter "label=com.docker.compose.project=$project"); do
+                                docker volume rm "$id" >/dev/null 2>&1 || true
+                            done
+                            # Only the exact per-build tags those containers ran, never a base image.
+                            for image in $images; do
+                                case "$image" in *:*-[0-9]*) docker image rm "$image" >/dev/null 2>&1 || true ;; esac
+                            done
+                        done
+                        # Per-build images with no container left to name them (the build died between
+                        # making them and starting the stack). The CI overlay labels them; anything
+                        # unused for a day is far past the 90 minute build timeout.
+                        docker image prune -a -f --filter "until=24h" --filter "label=leap.ci=build" >/dev/null 2>&1 || true
+                    '''
+                    hostSnapshot('build start')
                     echo "Building ${commit} as ${env.IMAGE_TAG} (project ${env.COMPOSE_PROJECT})"
                 }
             }
@@ -246,6 +298,12 @@ pipeline {
         // small or shared agent can hold; on one without a container memory cap it swaps until
         // everything looks hung. Sequential costs wall-clock time, not correctness.
         stage('Unit Tests') {
+            // No log output for 15 minutes means a hung JVM or container, not a slow build: abort
+            // it (and release the executor) instead of waiting out the 90 minute limit. An
+            // activity timeout never cuts off a stage that is still printing progress.
+            options {
+                timeout(time: 15, unit: 'MINUTES', activity: true)
+            }
             environment {
                 // Throwaway CI database credentials; the container is destroyed after the stage.
                 TEST_DB_PASSWORD = "ci-test-password"
@@ -389,6 +447,9 @@ pipeline {
             failFast true
             parallel {
                 stage('Frontend') {
+                    options {
+                        timeout(time: 15, unit: 'MINUTES', activity: true)
+                    }
                     steps {
                         dir('frontend') {
                             // Its own npm cache rather than the agent user's ~/.npm: a single "sudo
@@ -439,6 +500,9 @@ pipeline {
                 stage('Service Stack') {
                     stages {
                         stage('Build Docker Images') {
+                            options {
+                                timeout(time: 20, unit: 'MINUTES', activity: true)
+                            }
                             steps {
                                 sh '''
                                     set -eu
@@ -524,6 +588,9 @@ pipeline {
             when {
                 environment name: 'RUN_SONAR', value: 'true'
             }
+            options {
+                timeout(time: 15, unit: 'MINUTES', activity: true)
+            }
             steps {
                 // Vitest runs the specs in headless Chromium through Playwright,
                 // which the agent doesn't have; the runner image carries
@@ -591,12 +658,16 @@ pipeline {
                             when {
                                 environment name: 'RUN_SONAR', value: 'true'
                             }
+                            options {
+                                timeout(time: 15, unit: 'MINUTES', activity: true)
+                            }
                             steps {
                                 // "SonarScanner" is the scanner installation under Manage Jenkins > Tools and
                                 // "SonarQube" the server under Manage Jenkins > System; withSonarQubeEnv supplies
                                 // its URL and the sonarqube-token credential. Project settings, including the
                                 // coverage report paths from the stages above, are in sonar-project.properties.
                                 script {
+                                    hostSnapshot('before SonarQube analysis')
                                     def scannerHome = tool 'SonarScanner'
                                     withSonarQubeEnv('SonarQube') {
                                         // The Java analyser resolves library types from the jars the modules
@@ -647,6 +718,7 @@ pipeline {
                                 timeout(time: 20, unit: 'MINUTES')
                             }
                             steps {
+                                script { hostSnapshot('before E2E') }
                                 sh '''
                                     set -eu
                                     # The Angular dev server: its proxy is what routes /api/** to the services, the
@@ -747,8 +819,15 @@ pipeline {
     }
 
     post {
+        // A timeout or manual stop is "aborted", not "failure", so it needs its own block to leave
+        // the same evidence behind.
+        aborted {
+            echo "Build ${env.BUILD_NUMBER} was aborted (timeout or stopped)."
+            script { hostSnapshot('build aborted') }
+        }
         failure {
             echo "Build ${env.BUILD_NUMBER} failed."
+            script { hostSnapshot('build failed') }
             sh '''
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     echo "========== CONTAINER STATUS =========="
@@ -768,7 +847,20 @@ pipeline {
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
                     # Test runners an interrupted stage left behind; they would otherwise keep running.
                     docker rm -f "e2e-${COMPOSE_PROJECT}" "frontend-tests-${COMPOSE_PROJECT}" >/dev/null 2>&1 || true
-                    $COMPOSE -p "$COMPOSE_PROJECT" down -v --remove-orphans || true
+                    $COMPOSE -p "$COMPOSE_PROJECT" down -v --remove-orphans \
+                        || echo "WARNING: compose down failed for $COMPOSE_PROJECT; sweeping its resources by label"
+                    # "down" is one call that can fail or be cut short, and "|| true" used to hide
+                    # that. Whatever still carries this build's project label goes now; the next
+                    # build's start-up sweep catches anything this misses.
+                    for id in $(docker ps -aq --filter "label=com.docker.compose.project=$COMPOSE_PROJECT"); do
+                        docker rm -f -v "$id" >/dev/null 2>&1 || true
+                    done
+                    for id in $(docker network ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT"); do
+                        docker network rm "$id" >/dev/null 2>&1 || true
+                    done
+                    for id in $(docker volume ls -q --filter "label=com.docker.compose.project=$COMPOSE_PROJECT"); do
+                        docker volume rm "$id" >/dev/null 2>&1 || true
+                    done
                 fi
                 # Every build produces three uniquely tagged images; without this the agent
                 # accumulates one set per build until the disk fills.

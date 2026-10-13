@@ -301,31 +301,8 @@ public class OrderSubmissionService {
         Instrument instrument = resolveInstrument(request);
 
         // 2. Pre-trade check via AccountClient
-        AccountValidationDto accountValidation;
-        try {
-            accountValidation = accountClient.getValidationData(request.accountId(), instrument.getInstrumentId());
-        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
-            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
-        } catch (HttpClientErrorException ex) {
-            log.warn("account-app refused validation for account {}: {}", request.accountId(), ex.getStatusCode());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
-        } catch (RestClientException ex) {
-            log.error("account-app unavailable validating account {}", request.accountId(), ex);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
-        }
-
-        // The order's own price tolerance, or else the one saved on the account. A limit price
-        // already caps the fill, so only market orders get one.
-        BigDecimal maxSlippagePercent = null;
-        if (orderType == Order.OrderType.MARKET) {
-            maxSlippagePercent = request.maxSlippagePercent() != null
-                    ? request.maxSlippagePercent()
-                    : accountValidation.maxSlippagePercent();
-            if (maxSlippagePercent != null && request.quotedPrice() == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                        "quotedPrice is required: this account has a saved price tolerance");
-            }
-        }
+        AccountValidationDto accountValidation = fetchAccountValidation(request, instrument);
+        BigDecimal maxSlippagePercent = resolveMaxSlippage(request, orderType, accountValidation);
 
         // Cash and shares other open orders hold aren't free for this one. The account's row lock
         // keeps two orders from counting the same cash or shares at once.
@@ -335,22 +312,8 @@ public class OrderSubmissionService {
         AccountValidationDto available = ReservationService.available(accountValidation, holds);
 
         // 3. Store order immediately with status SUBMITTED for audit retention
-        OffsetDateTime now = OffsetDateTime.now();
-        Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
-        order.setAccountNumber(accountValidation.accountNumber());
-        order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
-        if (request.hasBracket()) {
-            order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());
-        }
-        if (orderType != Order.OrderType.MARKET) {
-            Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
-            order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
-                    expiryOf(timeInForce, now));
-            if (orderType.hasTrail()) {
-                order.setTrailing(request.trailAmount(), request.trailPercent());
-            }
-        }
-        order = orderRepository.saveAndFlush(order);
+        Order order = orderRepository.saveAndFlush(
+                newOrder(request, instrument, accountValidation, maxSlippagePercent));
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
         BigDecimal executionPrice;
@@ -366,6 +329,27 @@ public class OrderSubmissionService {
             return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);
         }
 
+        return fillMarketOrder(request, order, accountValidation, available, holds, executionPrice,
+                maxSlippagePercent);
+    }
+
+    /**
+     * Fills a MARKET order now at the live price, unless its bracket, price tolerance or the
+     * account's funds or shares reject it.
+     * @param request the order submission request
+     * @param order the stored SUBMITTED order
+     * @param accountValidation the account's validation data from account-app
+     * @param available the same, less what other open orders hold
+     * @param holds what other open orders hold
+     * @param executionPrice the side's live executable price
+     * @param maxSlippagePercent the price tolerance in force, or null if none
+     * @return the rejection, or the accepted order and its execution
+     */
+    private FirstStep fillMarketOrder(OrderSubmissionRequest request, Order order,
+                                      AccountValidationDto accountValidation, AccountValidationDto available,
+                                      ReservationService.Holds holds, BigDecimal executionPrice,
+                                      BigDecimal maxSlippagePercent) {
+        Instrument instrument = order.getInstrument();
         String bracketProblem = bracketProblem(order, executionPrice);
         if (bracketProblem != null) {
             return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
@@ -397,6 +381,69 @@ public class OrderSubmissionService {
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
         Execution execution = fillRecorder.recordExecution(order, executionPrice, OffsetDateTime.now());
         return new FirstStep(null, order, execution);
+    }
+
+    /**
+     * Reads the account's validation data from account-app.
+     * @param request the order submission request
+     * @param instrument the resolved instrument
+     * @return the account's validation data
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails
+     */
+    private AccountValidationDto fetchAccountValidation(OrderSubmissionRequest request, Instrument instrument) {
+        try {
+            return accountClient.getValidationData(request.accountId(), instrument.getInstrumentId());
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
+            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
+        } catch (HttpClientErrorException ex) {
+            log.warn("account-app refused validation for account {}: {}", request.accountId(), ex.getStatusCode());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
+        } catch (RestClientException ex) {
+            log.error("account-app unavailable validating account {}", request.accountId(), ex);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
+        }
+    }
+
+    /**
+     * The order's own price tolerance, or else the one saved on the account. A limit price
+     * already caps the fill, so only market orders get one.
+     */
+    private static BigDecimal resolveMaxSlippage(OrderSubmissionRequest request, Order.OrderType orderType,
+                                                 AccountValidationDto accountValidation) {
+        if (orderType != Order.OrderType.MARKET) {
+            return null;
+        }
+        BigDecimal maxSlippagePercent = request.maxSlippagePercent() != null
+                ? request.maxSlippagePercent()
+                : accountValidation.maxSlippagePercent();
+        if (maxSlippagePercent != null && request.quotedPrice() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "quotedPrice is required: this account has a saved price tolerance");
+        }
+        return maxSlippagePercent;
+    }
+
+    private static Order newOrder(OrderSubmissionRequest request, Instrument instrument,
+                                  AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
+        Order.OrderType orderType = request.effectiveOrderType();
+        OffsetDateTime now = OffsetDateTime.now();
+        Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
+        order.setAccountNumber(accountValidation.accountNumber());
+        order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
+        if (request.hasBracket()) {
+            order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());
+        }
+        if (orderType != Order.OrderType.MARKET) {
+            Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
+            order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
+                    expiryOf(timeInForce, now));
+            if (orderType.hasTrail()) {
+                order.setTrailing(request.trailAmount(), request.trailPercent());
+            }
+        }
+        return order;
     }
 
     /**

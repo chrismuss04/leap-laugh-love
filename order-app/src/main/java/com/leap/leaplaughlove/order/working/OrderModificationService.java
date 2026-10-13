@@ -102,30 +102,18 @@ public class OrderModificationService {
             trailPercent = request.trailPercent();
             stopPrice = TrailingStop.stopFor(side, order.getTrailPeak(), trailAmount, trailPercent);
         }
-        Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : order.getTimeInForce();
+        Order.TimeInForce timeInForce = resolveTimeInForce(order, request);
         OffsetDateTime expiresAt = timeInForce != order.getTimeInForce()
                 ? OrderSubmissionService.expiryOf(timeInForce, OffsetDateTime.now())
                 : order.getExpiresAt();
 
         Instrument instrument = order.getInstrument();
-        boolean stopChanged = request.stopPrice() != null || trailChanged;
-        if (stopChanged) {
+        if (request.stopPrice() != null || trailChanged) {
             requireStopNotReached(order, stopPrice);
         }
 
         // The changed order must still be covered by what the account has free.
-        AccountValidationDto account;
-        try {
-            account = accountClient.getValidationData(order.getAccountId(), instrument.getInstrumentId());
-        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
-            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
-        } catch (HttpClientErrorException ex) {
-            log.warn("account-app refused validation for account {}: {}", order.getAccountId(), ex.getStatusCode());
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
-        } catch (RestClientException ex) {
-            log.error("account-app unavailable validating account {}", order.getAccountId(), ex);
-            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
-        }
+        AccountValidationDto account = fetchAccount(order, instrument);
         orderRepository.lockAccount(order.getAccountId());
         ReservationService.Holds holds = reservationService.holdsFor(
                 order.getAccountId(), instrument.getInstrumentId(), order.getOrderId());
@@ -140,12 +128,43 @@ public class OrderModificationService {
         order.modify(quantity, limitPrice, stopPrice, trailAmount, trailPercent, timeInForce, expiresAt,
                 ReservationService.reservedCash(side, quantity, reservePrice));
         // Both legs sell the same shares, so a new quantity applies to the leg still working too.
+        syncLinkedQuantity(linked, orderId, quantity);
+        return OpenOrderItem.of(order);
+    }
+
+    private static Order.TimeInForce resolveTimeInForce(Order order, ModifyOrderRequest request) {
+        return request.timeInForce() != null ? request.timeInForce() : order.getTimeInForce();
+    }
+
+    /**
+     * Reads the order's account's validation data from account-app.
+     * @param order the open order
+     * @param instrument the order's instrument
+     * @return the account's validation data
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails
+     */
+    private AccountValidationDto fetchAccount(Order order, Instrument instrument) {
+        try {
+            return accountClient.getValidationData(order.getAccountId(), instrument.getInstrumentId());
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
+            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
+        } catch (HttpClientErrorException ex) {
+            log.warn("account-app refused validation for account {}: {}", order.getAccountId(), ex.getStatusCode());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
+        } catch (RestClientException ex) {
+            log.error("account-app unavailable validating account {}", order.getAccountId(), ex);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
+        }
+    }
+
+    private static void syncLinkedQuantity(List<Order> linked, UUID orderId, long quantity) {
         for (Order leg : linked) {
             if (!leg.getOrderId().equals(orderId) && leg.getStatus() == Order.Status.OPEN) {
                 leg.syncQuantity(quantity);
             }
         }
-        return OpenOrderItem.of(order);
     }
 
     /**
