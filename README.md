@@ -1105,6 +1105,11 @@ Then open **http://localhost:4200** and sign in with a seeded account:
 | `trading.ops@leap.com` | `Password123!` | Staff, trading operations - lands on `/reporting` |
 | `commercial.analyst@leap.com` | `Password123!` | Staff, commercial analyst - lands on `/reporting` |
 
+The seed also adds 40 mock clients for the analyst's reports (e.g. `liam.garcia@leap.com`, same
+password), with phone numbers `(646) 555-0201` to `(646) 555-0240` and accounts `ACC-101-01` to
+`ACC-140-01`. They register one every 8 days across the past year; every fifth one never trades,
+and the rest each place 8 orders, one of them rejected.
+
 Emails the services send (password reset, inactive account) are caught by Mailpit at
 **http://localhost:8025**; nothing reaches a real inbox.
 
@@ -1248,6 +1253,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |
 | `migrate-price-candles-key.sql` | Moves `marketdata.price_candles` to its natural primary key; stop market-data-app first |
+| `migrate-reporting-seed.sql` | The 40 mock clients and their order history, the seed clients' backdated registrations, and `seed_reporting.sql`'s reporting rows; restart order-app afterwards to book the new fills |
 
 `reporting.orders` has no migration script; it needs `docker compose down -v` once (see *Reporting ETL*).
 
@@ -1411,6 +1417,16 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 
 The migration can be rerun and preserves existing records. It creates storage only and does
 not backfill clients.
+
+Seeded clients never registered through iam-app, and seeded rejected orders were never submitted,
+so no event brings either into reporting. `db/seed_reporting.sql` copies them in instead: one
+`reporting.clients` row per `iam.clients` row, dated by its `created_at`, and every rejected order
+into `reporting.orders`. It doesn't copy filled orders, which reach `reporting.orders` from the
+events `SeededFillService` publishes as it books them. Compose mounts it as `08-seed-reporting.sql`,
+after the E2E overlay's `07`, so it covers every other seed's clients and orders. On a fresh
+database, once the fills are booked, `reporting.orders` holds every filled and rejected order and
+`reporting.clients` one row per `iam.clients` row. For an existing database, run
+`scripts/migrate-reporting-seed.sql` (see *Migrating an existing database*) and restart order-app.
 
 The `user-etl` Compose service uses the same image as `reporting-etl`, with `ETL_MODE=clients`,
 topic `client-register` and an independent `user-etl` consumer group. It validates `clientId`
