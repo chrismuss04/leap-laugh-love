@@ -14,7 +14,7 @@ import { TickerStripComponent } from './ticker-strip/ticker-strip';
 function account(overrides: Partial<AccountView> = {}): AccountView {
   return {
     accountId: 'a1', accountNumber: 'ACC-0001', name: 'Brokerage ··0001', mask: '0001', color: '#5b9dff',
-    status: 'ACTIVE', tradingEnabled: true, openedAt: '2024-01-15T00:00:00Z', inactiveSince: null,
+    status: 'ACTIVE', tradingEnabled: true, openedAt: '2024-01-15T12:00:00Z', inactiveSince: null,
     cash: 100, marketValue: 900, value: 1000, dayChange: 10, dayChangePercent: 1, totalReturn: 50,
     positionCount: 2, share: 0.5, intraday: [1, 2], previousCloseValue: 990, ...overrides
   };
