@@ -48,7 +48,8 @@ public class OpenOrderController {
      * @param orderId the order to change
      * @param request what to change; only the fields given
      * @return the order as it now stands; 404 if the client has no such order, 409 if it is no
-     *         longer open, 400 if the edit doesn't fit the order or the account can't cover it
+     *         longer open, 400 if the edit doesn't fit the order or the account can't cover it,
+     *         404 or 403 if account-app refuses the account, 503 if account-app is unavailable
      */
     @PatchMapping("/{orderId}")
     public OpenOrderItem modifyOrder(@PathVariable UUID orderId, @Valid @RequestBody ModifyOrderRequest request) {

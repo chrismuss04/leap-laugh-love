@@ -9,9 +9,13 @@ import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
 import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
 import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -30,6 +34,8 @@ import java.util.UUID;
  */
 @Service
 public class OrderModificationService {
+
+    private static final Logger log = LoggerFactory.getLogger(OrderModificationService.class);
 
     private final OpenOrderService openOrderService;
     private final OrderRepository orderRepository;
@@ -67,7 +73,9 @@ public class OrderModificationService {
      * @return the order as it now stands
      * @throws ResponseStatusException not found (404) if the client has no such order, conflict
      *         (409) if it is no longer OPEN, bad request (400) if the edit doesn't fit the order's
-     *         type or the account can't cover it
+     *         type or the account can't cover it; not found (404) or forbidden (403) as account-app
+     *         answers for the account, bad request (400) for any other account-app refusal, and
+     *         service unavailable (503) if account-app can't be reached or fails
      */
     @Transactional
     public OpenOrderItem modify(UUID clientId, UUID orderId, ModifyOrderRequest request) {
@@ -128,13 +136,26 @@ public class OrderModificationService {
         return request.timeInForce() != null ? request.timeInForce() : order.getTimeInForce();
     }
 
+    /**
+     * Reads the order's account's validation data from account-app.
+     * @param order the open order
+     * @param instrument the order's instrument
+     * @return the account's validation data
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails
+     */
     private AccountValidationDto fetchAccount(Order order, Instrument instrument) {
         try {
             return accountClient.getValidationData(order.getAccountId(), instrument.getInstrumentId());
-        } catch (ResponseStatusException rse) {
-            throw rse;
-        } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account: " + ex.getMessage());
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
+            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
+        } catch (HttpClientErrorException ex) {
+            log.warn("account-app refused validation for account {}: {}", order.getAccountId(), ex.getStatusCode());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
+        } catch (RestClientException ex) {
+            log.error("account-app unavailable validating account {}", order.getAccountId(), ex);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
         }
     }
 

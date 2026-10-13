@@ -27,6 +27,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -157,6 +158,10 @@ public class OrderSubmissionService {
      * @param request the order submission request
      * @return OrderSubmissionResponse containing order, execution, and balance details; an OPEN
      *         order has no execution yet
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails during validation -
+     *         before anything is stored
      */
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
         if (request == null) {
@@ -378,13 +383,26 @@ public class OrderSubmissionService {
         return new FirstStep(null, order, execution);
     }
 
+    /**
+     * Reads the account's validation data from account-app.
+     * @param request the order submission request
+     * @param instrument the resolved instrument
+     * @return the account's validation data
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails
+     */
     private AccountValidationDto fetchAccountValidation(OrderSubmissionRequest request, Instrument instrument) {
         try {
             return accountClient.getValidationData(request.accountId(), instrument.getInstrumentId());
-        } catch (ResponseStatusException rse) {
-            throw rse;
-        } catch (Exception ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account: " + ex.getMessage());
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {
+            throw new ResponseStatusException(ex.getStatusCode(), "Failed to validate account");
+        } catch (HttpClientErrorException ex) {
+            log.warn("account-app refused validation for account {}: {}", request.accountId(), ex.getStatusCode());
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate account");
+        } catch (RestClientException ex) {
+            log.error("account-app unavailable validating account {}", request.accountId(), ex);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Account service unavailable, please try again");
         }
     }
 

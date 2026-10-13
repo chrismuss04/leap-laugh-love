@@ -32,8 +32,8 @@ import org.springframework.test.context.jdbc.Sql;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -261,7 +261,7 @@ class OrderSubmissionIntegrationTest {
     void testSubmitOrder_UnownedAccount_Returns404() throws Exception {
         UUID otherAccountId = UUID.fromString(ACCOUNT_OTHER_USD_ID);
         when(accountClient.getValidationData(eq(otherAccountId), eq(instrumentAaplId)))
-                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found"));
+                .thenThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null, null, null));
 
         OrderSubmissionRequest request = new OrderSubmissionRequest(
                 otherAccountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), null);
