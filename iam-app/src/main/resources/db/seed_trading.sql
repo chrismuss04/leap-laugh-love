@@ -242,12 +242,9 @@ FROM trading.orders o WHERE o.order_id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa4':
 ON CONFLICT (execution_id) DO NOTHING;
 
 -- ---- Analytics mock clients ------------------------------------------------------------------
--- The 40 mock clients from seed_iam.sql (phone (646) 555-02NN is mock client NN) get one funded
--- account each, opened the day after they registered, and every client but each fifth one trades:
--- eight orders spread from account opening to yesterday, so the commercial analyst's reports
--- have realistic volume, instruments and rejections to show. Fills follow the rules above: only
--- filled_at here, booked by SeededFillService. Each sell sells half of an earlier buy of the same
--- instrument, so no fill ever sells more than the account holds.
+-- One funded account per mock client from seed_iam.sql, opened the day after registering. All but
+-- every fifth client place 8 orders; fills are booked by SeededFillService, as above. Each sell is
+-- half an earlier buy, so no account sells more than it holds.
 
 INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at)
 SELECT c.client_id, format('ACC-%s-01', 100 + (right(c.phone, 4)::int - 200)), 'ACTIVE', 'USD', TRUE,
@@ -264,8 +261,8 @@ JOIN iam.client_profile cp ON cp.client_id = a.client_id
 WHERE a.account_number ~ '^ACC-1[0-4][0-9]-01$'
 ON CONFLICT (cash_ledger_id) DO NOTHING;
 
--- Per trading client: 1 BUY A, 2 SELL half of A, 3 BUY B, 4 SELL half of B, 5 BUY C, 6 a rejected
--- order (reason varies by client), 7 SELL half of C, 8 BUY D. AAPL is weighted to trade most.
+-- Orders per client: BUY A, SELL half of A, BUY B, SELL half of B, BUY C, a rejection, SELL half
+-- of C, BUY D. AAPL trades most.
 WITH mock AS (
     SELECT a.account_id, substr(a.account_number, 6, 2)::int AS n, current_date - a.created_at::date AS days_open
     FROM trading.accounts a
@@ -273,9 +270,9 @@ WITH mock AS (
 ),
 plan AS (
     SELECT m.account_id, m.n, k,
-           -- Pair p covers orders 2p-1 and 2p; the rejected order (6) and the last buy (8) use their own.
+           -- Instrument slot: buy/sell pairs share one; orders 6 and 8 get their own.
            CASE k WHEN 1 THEN 1 WHEN 2 THEN 1 WHEN 3 THEN 2 WHEN 4 THEN 2 WHEN 8 THEN 4 ELSE 3 END AS p,
-           -- Days before today, from the day after opening (k = 1) towards yesterday (k = 8).
+           -- Spread from the day after opening (k = 1) to yesterday (k = 8).
            m.days_open - 1 - ((m.days_open - 2) * k) / 9 AS days_ago
     FROM mock m
     CROSS JOIN generate_series(1, 8) AS k
@@ -311,7 +308,7 @@ FROM orders o
 JOIN trading.instruments i ON i.symbol = o.symbol
 ON CONFLICT (order_id) DO NOTHING;
 
--- The mock clients' rejected orders' executions, as for Alice's and Henry's above.
+-- Executions for the mock clients' rejected orders.
 INSERT INTO trading.executions (execution_id, order_id, fill_quantity, fill_price, status, executed_at, reason)
 SELECT ('eeeeeeee' || substr(o.order_id::text, 9))::UUID, o.order_id, NULL, NULL, o.status, o.rejected_at,
        o.rejection_reason || ' - order rejected'

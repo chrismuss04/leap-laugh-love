@@ -1,8 +1,6 @@
--- IAM Schema Seed Data - 10 Client Records with Profiles and Credentials, plus 40 mock clients
--- for the commercial analyst's reports (see the end of this file)
+-- IAM Schema Seed Data - 10 named clients, plus 40 mock clients for the analyst's reports
 
--- Insert 10 clients. Each registers shortly before its first account opens (seed_trading.sql), so
--- registration reports see when they signed up rather than when the database was created.
+-- Insert 10 clients, each registered shortly before its first account opens (seed_trading.sql).
 INSERT INTO iam.clients (email, phone, status, created_at) VALUES
     ('alice.johnson@leap.com', '(212) 555-0101', 'ACTIVE', date_trunc('day', NOW()) - INTERVAL '205 days' + TIME '10:00'),
     ('bob.smith@leap.com', '(212) 555-0102', 'ACTIVE', '2025-04-04 10:00:00+00'),
@@ -75,11 +73,8 @@ ON CONFLICT (client_id) DO UPDATE SET
     password_hash = EXCLUDED.password_hash,
     failed_attempts = EXCLUDED.failed_attempts;
 
--- Analytics mock clients: 40 more clients so the commercial analyst's reports have realistic
--- data before launch. They registered one every 8 days, from 352 days ago to 40 days ago, so
--- registrations spread across the reporting periods. Mock client NN has phone (646) 555-02NN,
--- which seed_trading.sql reads to give each one an account and an order history. Names are
--- fictional; SSNs are in the never-issued 900 range, like the E2E seed's.
+-- Analytics mock clients: 40 clients registered one every 8 days, 352 to 40 days ago. Client NN
+-- has phone (646) 555-02NN, which seed_trading.sql uses to find it. SSNs are in the unissued 900 range.
 CREATE TEMP TABLE mock_client AS
 SELECT n,
        (ARRAY['Liam', 'Olivia', 'Noah', 'Ava', 'Ethan', 'Sophia', 'Mason', 'Mia', 'Lucas', 'Amelia',
