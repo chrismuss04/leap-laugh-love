@@ -6,22 +6,37 @@ services:
   # and the SonarQube server) when E2E runs. The JVM heaps sit well under their container limits
   # to leave room for metaspace, thread stacks and the CDS archive. Raise a limit if a service is
   # OOM-killed ("docker inspect" shows OOMKilled), rather than removing it.
+  #
+  # The "leap.ci" build label marks the images this build creates, so the Jenkinsfile's start-up
+  # sweep can remove ones a crashed build left behind without ever matching a base image.
   iam-app:
+    build:
+      labels:
+        leap.ci: build
     mem_limit: 640m
     cpus: 1.0
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
   account-app:
+    build:
+      labels:
+        leap.ci: build
     mem_limit: 640m
     cpus: 1.0
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
   order-app:
+    build:
+      labels:
+        leap.ci: build
     mem_limit: 640m
     cpus: 1.0
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
   market-data-app:
+    build:
+      labels:
+        leap.ci: build
     # Also runs the history backfill, so a little more headroom than the others.
     mem_limit: 768m
     cpus: 1.0
@@ -32,9 +47,15 @@ services:
     mem_limit: 768m
     cpus: 1.0
   reporting-etl:
+    build:
+      labels:
+        leap.ci: build
     mem_limit: 256m
     cpus: 0.5
   user-etl:
+    build:
+      labels:
+        leap.ci: build
     mem_limit: 256m
     cpus: 0.5
   mailpit:
