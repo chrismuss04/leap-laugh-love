@@ -1248,9 +1248,10 @@ The [Jenkinsfile](Jenkinsfile) runs these stages on every push:
 | Stage | What it does |
 | --- | --- |
 | Checkout, Configure Pipeline, Pull Images, Start Database | Set up the workspace, decide which optional stages run, and start the database |
-| Build and Test → Frontend | Install dependencies, build the Angular app and run its unit tests (Vitest, with coverage) |
+| Build and Test → Frontend | Install dependencies, build the Angular app and prepare the test-runner image |
 | Build and Test → Unit Tests | `mvn test` across all modules (JaCoCo coverage) and the `reporting-etl` pytest suite |
 | Build and Test → Service Stack | Build the Docker images, validate the database schema and seeds, start the services and check their health |
+| Frontend Unit Tests | Angular unit tests (Vitest in headless Chromium, with coverage), run on their own because Chromium and the image builds together starve a small agent |
 | Verify → Static Analysis | SonarQube analysis and Quality Gate (see below) |
 | Verify → Stack Tests | Playwright **E2E** tests, then the **Trade Recovery Tests** (`scripts/test-trade-recovery.sh`; background in [docs/trade-record-resilience.md](docs/trade-record-resilience.md)) |
 

@@ -423,8 +423,8 @@ pipeline {
                             // The E2E runner image (e2e/Dockerfile): Node, the suite's dependencies
                             // and Chromium's headless shell only. Tagged by its lockfile, so it is
                             // built on the first build after a dependency change and found already
-                            // present otherwise. Built in this branch because the frontend specs
-                            // below run in it too.
+                            // present otherwise. Built in this branch because the Frontend Unit
+                            // Tests stage runs the specs in it too.
                             if (env.RUN_E2E == 'true' || env.RUN_SONAR == 'true') {
                                 sh '''
                                     set -eu
@@ -433,56 +433,6 @@ pipeline {
                                     fi
                                 '''
                             }
-                            if (env.RUN_SONAR == 'true') {
-                                // Vitest runs the specs in headless Chromium through Playwright,
-                                // which the agent doesn't have; the runner image carries
-                                // Playwright's headless shell in /ms-playwright. frontend/ pins the
-                                // same Playwright version as e2e/, so it finds that build. Run here,
-                                // alongside the service image builds, rather than as a stage after it.
-                                // --ipc=host: Chromium needs more than the 64MB of /dev/shm Docker gives
-                                // by default and crashes or stalls under memory pressure without it
-                                // (the E2E run does the same).
-                                // Mounted at /repo/frontend, mirroring the checkout: angular.json
-                                // writes lcov paths relative to the frontend's parent, and SonarQube
-                                // resolves them from the repo root, so they must come out as
-                                // frontend/src/...
-                                //
-                                // The container is Linux whatever the agent is. On a Linux agent the
-                                // host's "npm ci" above installed Linux binaries (esbuild, rollup,
-                                // lightningcss), so the container reuses that node_modules, and
-                                // --user keeps coverage/ and .angular/ owned by the agent account,
-                                // as with Maven. On a macOS agent that node_modules holds darwin
-                                // binaries that won't load in Linux, so the container installs its
-                                // own into a throwaway volume over it, from the agent's npm cache.
-                                // That needs root to write the volume; Docker Desktop maps files
-                                // written to the bind mount back to the agent user, so ownership
-                                // stays right without --user.
-                                sh '''
-                                    set -eu
-                                    test_cmd="npx ng test --watch=false --coverage"
-                                    if [ "$(uname -s)" = Linux ]; then
-                                        set -- --user "$(id -u):$(id -g)"
-                                    else
-                                        set -- -v /repo/frontend/node_modules \
-                                            -v "$HOME/.npm-ci":/tmp/.npm
-                                        test_cmd="npm ci --cache /tmp/.npm --no-audit --no-fund && $test_cmd"
-                                    fi
-                                    docker run --rm \
-                                        "$@" \
-                                        -e HOME=/tmp \
-                                        -e CI=1 \
-                                        --ipc=host \
-                                        -v "$WORKSPACE/frontend":/repo/frontend \
-                                        -w /repo/frontend \
-                                        "$E2E_IMAGE" \
-                                        sh -c "$test_cmd"
-                                '''
-                            }
-                        }
-                    }
-                    post {
-                        always {
-                            archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
                         }
                     }
                 }
@@ -561,6 +511,67 @@ pipeline {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Run on their own, after the parallel builds rather than beside them. Headless Chromium and the
+        // service image builds together starved Docker Desktop on a small agent: specs that take a few
+        // seconds ran 4-5x slower and Chromium's connection closed part-way ("Browser connection was
+        // closed while running tests"), failing the build with Sonar, E2E and the recovery suite never
+        // reached. Sequential costs wall-clock time, not correctness.
+        stage('Frontend Unit Tests') {
+            when {
+                environment name: 'RUN_SONAR', value: 'true'
+            }
+            steps {
+                // Vitest runs the specs in headless Chromium through Playwright,
+                // which the agent doesn't have; the runner image carries
+                // Playwright's headless shell in /ms-playwright. frontend/ pins the
+                // same Playwright version as e2e/, so it finds that build. Run in
+                // its own stage, after the parallel builds, not beside them.
+                // --ipc=host: Chromium needs more than the 64MB of /dev/shm Docker gives
+                // by default and crashes or stalls under memory pressure without it
+                // (the E2E run does the same).
+                // Mounted at /repo/frontend, mirroring the checkout: angular.json
+                // writes lcov paths relative to the frontend's parent, and SonarQube
+                // resolves them from the repo root, so they must come out as
+                // frontend/src/...
+                //
+                // The container is Linux whatever the agent is. On a Linux agent the
+                // host's "npm ci" above installed Linux binaries (esbuild, rollup,
+                // lightningcss), so the container reuses that node_modules, and
+                // --user keeps coverage/ and .angular/ owned by the agent account,
+                // as with Maven. On a macOS agent that node_modules holds darwin
+                // binaries that won't load in Linux, so the container installs its
+                // own into a throwaway volume over it, from the agent's npm cache.
+                // That needs root to write the volume; Docker Desktop maps files
+                // written to the bind mount back to the agent user, so ownership
+                // stays right without --user.
+                sh '''
+                    set -eu
+                    test_cmd="npx ng test --watch=false --coverage"
+                    if [ "$(uname -s)" = Linux ]; then
+                        set -- --user "$(id -u):$(id -g)"
+                    else
+                        set -- -v /repo/frontend/node_modules \
+                            -v "$HOME/.npm-ci":/tmp/.npm
+                        test_cmd="npm ci --cache /tmp/.npm --no-audit --no-fund && $test_cmd"
+                    fi
+                    docker run --rm \
+                        "$@" \
+                        -e HOME=/tmp \
+                        -e CI=1 \
+                        --ipc=host \
+                        -v "$WORKSPACE/frontend":/repo/frontend \
+                        -w /repo/frontend \
+                        "$E2E_IMAGE" \
+                        sh -c "$test_cmd"
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts allowEmptyArchive: true, artifacts: 'frontend/coverage/**'
                 }
             }
         }
