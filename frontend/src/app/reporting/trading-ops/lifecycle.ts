@@ -85,13 +85,13 @@ const COMPLETED_LABELS: Record<OrderOutcome, { label: string; source: string }> 
  * @param orderType the order's type, once known; a market order skips the price-reached step
  */
 export function withOutcome(stages: LifecycleStage[], outcome: OrderOutcome | null, orderType?: string | null): LifecycleStage[] {
-  if (!outcome && !orderType) return stages;
+  if (!outcome && !orderType) { return stages; }
   const executed = outcome !== 'CANCELLED' && outcome !== 'EXPIRED';
   return stages.map(stage => {
     if (stage.key === 'TRIGGERED' && orderType === 'MARKET') {
       return { ...stage, skipped: true };
     }
-    if (!outcome) return stage;
+    if (!outcome) { return stage; }
     if (stage.key === 'COMPLETED') {
       return { ...stage, ...COMPLETED_LABELS[outcome] };
     }
@@ -111,25 +111,25 @@ export function withOutcome(stages: LifecycleStage[], outcome: OrderOutcome | nu
  */
 export function elapsedSince(stages: LifecycleStage[], index: number): string | null {
   const at = stages[index]?.at;
-  if (!at) return null;
+  if (!at) { return null; }
   const previous = stages.slice(0, index).reverse().find(stage => stage.at && !stage.skipped);
-  if (!previous) return null;
+  if (!previous) { return null; }
   const ms = Date.parse(at) - Date.parse(previous.at!);
-  if (Number.isNaN(ms)) return null;
+  if (Number.isNaN(ms)) { return null; }
   return (ms < 0 ? '-' : '+') + formatDuration(Math.abs(ms));
 }
 
 /** The time from the first to the last recorded stage, or null with fewer than two. */
 export function totalDuration(stages: LifecycleStage[]): string | null {
   const times = stages.filter(stage => stage.at && !stage.skipped).map(stage => Date.parse(stage.at!));
-  if (times.length < 2 || times.some(Number.isNaN)) return null;
+  if (times.length < 2 || times.some(Number.isNaN)) { return null; }
   return formatDuration(Math.max(...times) - Math.min(...times));
 }
 
 export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${Math.round(ms)} ms`;
-  if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
-  if (ms < 3_600_000) return `${Math.round(ms / 60_000)} min`;
-  if (ms < 86_400_000) return `${(ms / 3_600_000).toFixed(1)} h`;
+  if (ms < 1000) { return `${Math.round(ms)} ms`; }
+  if (ms < 60_000) { return `${(ms / 1000).toFixed(1)} s`; }
+  if (ms < 3_600_000) { return `${Math.round(ms / 60_000)} min`; }
+  if (ms < 86_400_000) { return `${(ms / 3_600_000).toFixed(1)} h`; }
   return `${(ms / 86_400_000).toFixed(1)} d`;
 }
