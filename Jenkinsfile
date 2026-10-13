@@ -558,7 +558,9 @@ pipeline {
                             -v "$HOME/.npm-ci":/tmp/.npm
                         test_cmd="npm ci --cache /tmp/.npm --no-audit --no-fund && $test_cmd"
                     fi
-                    docker run --rm \
+                    # Named per build so the cleanup block can remove it: when this stage is interrupted
+                    # (e.g. a failed quality gate), Jenkins stops the docker client but not the container.
+                    docker run --rm --name "frontend-tests-${COMPOSE_PROJECT}" \
                         "$@" \
                         -e HOME=/tmp \
                         -e CI=1 \
@@ -671,7 +673,10 @@ pipeline {
                                     # Attached to the compose network so it reaches the frontend by service name.
                                     # --user keeps the reports owned by the agent account, for the same reason as
                                     # the Maven step. The image already holds node_modules, so nothing installs.
-                                    docker run --rm --ipc=host \
+                                    # Named per build so the cleanup block can remove it: an interrupted stage (a
+                                    # failed quality gate aborts this one) stops the docker client, not the container,
+                                    # which then keeps running Playwright against a stack that is already gone.
+                                    docker run --rm --ipc=host --name "e2e-${COMPOSE_PROJECT}" \
                                         --network "${COMPOSE_PROJECT}_default" \
                                         --user "$(id -u):$(id -g)" \
                                         -e HOME=/tmp \
@@ -762,6 +767,8 @@ pipeline {
         cleanup {
             sh '''
                 if [ -n "${COMPOSE_PROJECT:-}" ]; then
+                    # Test runners an interrupted stage left behind; they would otherwise keep running.
+                    docker rm -f "e2e-${COMPOSE_PROJECT}" "frontend-tests-${COMPOSE_PROJECT}" >/dev/null 2>&1 || true
                     $COMPOSE -p "$COMPOSE_PROJECT" down -v --remove-orphans || true
                 fi
                 # Every build produces three uniquely tagged images; without this the agent
