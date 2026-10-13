@@ -578,13 +578,13 @@ pipeline {
             }
         }
 
-        // Static analysis and the stack tests need nothing from each other, so they run side by
-        // side rather than the stack tests waiting out the scan and the quality-gate webhook.
-        // failFast: a failed quality gate aborts the stack tests, and a failed stack test aborts
-        // the analysis - either way the build is red and stops early.
+        // Static analysis and the stack tests need nothing from each other, but they run one after
+        // the other. Side by side, the scanner plus the SonarQube server's analysis (same host as
+        // Jenkins) competed with the full stack and two Chromium workers for a 4-core, 16GB box:
+        // it swapped, Jenkins' UI lagged and the stage timeouts fired. Analysis goes first, so a
+        // failed quality gate stops the build before the stack tests start.
         stage('Verify') {
-            failFast true
-            parallel {
+            stages {
                 stage('Static Analysis') {
                     stages {
                         stage('SonarQube Analysis') {
@@ -627,8 +627,7 @@ pipeline {
                         }
                         steps {
                             // Waits for SonarQube's webhook to report the gate result and fails the build
-                            // on a failed gate. failFast on the parallel stage then stops E2E and the
-                            // recovery suite as well, rather than letting them run on to the end.
+                            // on a failed gate, which also keeps E2E and the recovery suite from starting.
                             timeout(time: 5, unit: 'MINUTES') {
                                 waitForQualityGate abortPipeline: true
                             }
