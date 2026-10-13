@@ -36,6 +36,22 @@ describe('App routes', () => {
     });
   }
 
+  // These load on demand to keep the initial bundle under budget; each path must still open its page.
+  const lazyPages: [string, string, () => Promise<unknown>][] = [
+    ['orders', 'OrderHistoryComponent', () => import('./order-history/order-history').then(m => m.OrderHistoryComponent)],
+    ['holdings', 'HoldingsComponent', () => import('./holdings/holdings').then(m => m.HoldingsComponent)],
+    ['profile', 'ProfileComponent', () => import('./profile/profile').then(m => m.ProfileComponent)],
+    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)]
+  ];
+  for (const [path, name, expected] of lazyPages) {
+    it(`/${path} loads ${name} on demand`, async () => {
+      const page = pages.find(route => route.path === path);
+      expect(page, `no route for /${path}`).toBeDefined();
+      expect(page!.component).toBeUndefined();
+      expect(await page!.loadComponent!()).toBe(await expected());
+    });
+  }
+
   // Without a route of its own, the emailed reset link falls through to the catch-all and lands on the dashboard.
   for (const path of ['forgot-password', 'reset-password']) {
     it(`/${path} is not swallowed by the catch-all`, () => {

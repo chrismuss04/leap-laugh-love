@@ -7,12 +7,13 @@ describe('Order lifecycle', () => {
   it('runs from submission to the reporting store, each step read from the table that records it', () => {
     const stages = emptyLifecycle();
     expect(stages.map(stage => stage.key)).toEqual(
-      ['SUBMITTED', 'ACCEPTED', 'EXECUTED', 'COMPLETED', 'CASH_SETTLED', 'HOLDINGS_UPDATED', 'REPORTED']);
+      ['SUBMITTED', 'TRIGGERED', 'ACCEPTED', 'EXECUTED', 'COMPLETED', 'CASH_SETTLED', 'HOLDINGS_UPDATED', 'REPORTED']);
     expect(stages.map(stage => stage.source)).toEqual([
       'trading.orders.submitted_at',
+      'trading.orders.triggered_at',
       'trading.orders.accepted_at',
       'trading.executions.executed_at',
-      'trading.orders.filled_at / rejected_at',
+      'trading.orders.filled_at / rejected_at / cancelled_at / expired_at',
       'trading.cash_ledger.created_at',
       'trading.position_movements.created_at',
       'reporting.orders.loaded_at'
@@ -51,6 +52,30 @@ describe('Order lifecycle', () => {
     });
   });
 
+  describe('orders that waited for their price', () => {
+    it('names a cancelled or expired order, and marks every step of an execution as not applicable', () => {
+      for (const [outcome, label, source] of [
+        ['CANCELLED', 'Cancelled', 'trading.orders.cancelled_at'],
+        ['EXPIRED', 'Expired', 'trading.orders.expired_at']
+      ] as const) {
+        const stages = withOutcome(emptyLifecycle(), outcome);
+        const completed = stages.find(stage => stage.key === 'COMPLETED')!;
+        expect([completed.label, completed.source]).toEqual([label, source]);
+        expect(stages.filter(stage => stage.skipped).map(stage => stage.key))
+          .toEqual(['ACCEPTED', 'EXECUTED', 'CASH_SETTLED', 'HOLDINGS_UPDATED']);
+        // It is still reported to the reporting store.
+        expect(stages.find(stage => stage.key === 'REPORTED')!.skipped).toBe(false);
+      }
+    });
+
+    it('skips the price-reached step for a market order, which never waits', () => {
+      const stages = withOutcome(emptyLifecycle(), 'FILLED', 'MARKET');
+      expect(stages.filter(stage => stage.skipped).map(stage => stage.key)).toEqual(['TRIGGERED']);
+      expect(withOutcome(emptyLifecycle(), 'FILLED', 'LIMIT').some(stage => stage.skipped)).toBe(false);
+      expect(withOutcome(emptyLifecycle(), null, 'MARKET').find(stage => stage.key === 'TRIGGERED')!.skipped).toBe(true);
+    });
+  });
+
   describe('elapsedSince', () => {
     const stages = stamp(emptyLifecycle(), {
       SUBMITTED: '2026-10-08T09:00:00.000Z',
@@ -61,21 +86,21 @@ describe('Order lifecycle', () => {
 
     it('has nothing to measure for the first step or a step not yet recorded', () => {
       expect(elapsedSince(stages, 0)).toBeNull();
-      expect(elapsedSince(stages, 2)).toBeNull();
+      expect(elapsedSince(stages, 3)).toBeNull();
     });
 
     it('measures from the previous step', () => {
-      expect(elapsedSince(stages, 1)).toBe('+250 ms');
+      expect(elapsedSince(stages, 2)).toBe('+250 ms');
     });
 
     it('measures from the last recorded step when the one before is missing', () => {
-      expect(elapsedSince(stages, 3)).toBe('+2.0 s');
-      expect(elapsedSince(stages, 6)).toBe('+5 min');
+      expect(elapsedSince(stages, 4)).toBe('+2.0 s');
+      expect(elapsedSince(stages, 7)).toBe('+5 min');
     });
 
     it('shows a step recorded before the one ahead of it as negative', () => {
       const outOfOrder = stamp(emptyLifecycle(), { SUBMITTED: '2026-10-08T09:00:01Z', ACCEPTED: '2026-10-08T09:00:00Z' });
-      expect(elapsedSince(outOfOrder, 1)).toBe('-1.0 s');
+      expect(elapsedSince(outOfOrder, 2)).toBe('-1.0 s');
     });
   });
 

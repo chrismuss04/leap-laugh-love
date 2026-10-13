@@ -35,6 +35,10 @@ describe('TradePanelComponent order confirmation', () => {
   });
 
   afterEach(() => {
+    // Setting up a limit, stop or trailing order asks for a month of daily candles for the hit-rate hint.
+    http.match(req => req.url.includes('/history'));
+    // The ticket loads the client's saved templates when it opens.
+    http.match(req => req.url.includes('/api/order/templates'));
     http.verify();
     fixture.destroy();
   });
@@ -712,6 +716,283 @@ describe('TradePanelComponent order confirmation', () => {
       expect(text('[data-testid="trade-result"] .result-title')).toBe('Limit order placed');
       expect(text('[data-testid="trade-open"]')).toContain("We'll buy 2 shares of AAPL once AAPL falls to $99.00. It's good for today");
       expect(text('[data-testid="trade-result"] .summary')).toContain('$198.00');
+    });
+
+    describe('order impact', () => {
+      beforeEach(() => {
+        fixture.componentRef.setInput('accounts', [{
+          accountId: 'account-1', accountNumber: 'ACC-001', buyingPower: 5_000, shares: { AAPL: 10 },
+          maxSlippagePercent: null, averageCost: { AAPL: 80 }, totalValue: 10_000
+        }]);
+        fixture.detectChanges();
+      });
+
+      it('shows a buy\'s new position, share of the account, cash left and average cost', () => {
+        component.quantity.set(10);
+        fixture.detectChanges();
+        const impact = component.impact()!;
+        expect(impact.sharesAfter).toBe(20);
+        expect(impact.cashAfter).toBe(4_000);
+        expect(impact.averageCostAfter).toBe(90);
+        expect(text('[data-testid="order-impact"]')).toContain('New position');
+      });
+
+      it('prices an open order at its own limit, not the market', () => {
+        pick('Limit');
+        component.setLimitPrice(90);
+        component.quantity.set(10);
+        fixture.detectChanges();
+        expect(component.impact()!.cashAfter).toBe(4_100);
+      });
+
+      it('warns when the buy would make the stock too large a share of the account', () => {
+        component.quantity.set(35);
+        fixture.detectChanges();
+        expect(text('[data-testid="concentration-warning"]')).toBe('AAPL would be 45% of your portfolio.');
+      });
+
+      it('shows a sell\'s realized gain and shares left', () => {
+        component.setSide('SELL');
+        component.quantity.set(4);
+        fixture.detectChanges();
+        const impact = component.impact()!;
+        expect(impact.realized).toBe(80);
+        expect(impact.sharesAfter).toBe(6);
+        expect(text('[data-testid="order-impact"]')).toContain('Realized gain');
+      });
+
+      it('shows nothing without a valid quantity', () => {
+        expect(component.impact()).toBeNull();
+      });
+    });
+
+    describe('hit-rate hint', () => {
+      const days = (n: number, low: number, high: number) => Array.from({ length: n }, () => ({
+        bucketStart: '2026-09-01T00:00:00Z', bucketSeconds: 86400, open: low, high, low, close: high
+      }));
+
+      function flushHistory(candles: unknown[]): void {
+        const requests = http.match(req => req.url.includes('/prices/AAPL/history'));
+        expect(requests.length).toBe(1);
+        requests[0].flush({ content: [...candles].reverse(), last: true });
+        fixture.detectChanges();
+      }
+
+      it('is not asked for while the order is a market order', () => {
+        expect(http.match(req => req.url.includes('/history')).length).toBe(0);
+      });
+
+      it('says how often the limit price was reached, as simulated history', () => {
+        pick('Limit');
+        fixture.detectChanges();
+        flushHistory([...days(21, 101, 105), ...days(9, 95, 105)]);
+        component.setLimitPrice(99);
+        fixture.detectChanges();
+        expect(text('[data-testid="hit-rate"]')).toContain('AAPL traded at or below $99.00 on 9 of the last 30 days.');
+        expect(text('[data-testid="hit-rate"]')).toContain('not a prediction');
+      });
+
+      it('counts only the days available when there is less than a month', () => {
+        pick('Limit');
+        fixture.detectChanges();
+        flushHistory(days(5, 95, 105));
+        component.setLimitPrice(99);
+        fixture.detectChanges();
+        expect(text('[data-testid="hit-rate"]')).toContain('on 5 of the 5 days available');
+      });
+
+      it('shows no hint when history cannot be loaded', () => {
+        pick('Limit');
+        fixture.detectChanges();
+        http.match(req => req.url.includes('/history'))[0].flush('boom', { status: 500, statusText: 'Server Error' });
+        fixture.detectChanges();
+        expect(component.hitRate()).toBeNull();
+      });
+    });
+
+    describe('bracket ("Protect this trade")', () => {
+      function toggle(): void {
+        const box = fixture.nativeElement.querySelector('input[name="bracketOn"]') as HTMLInputElement;
+        box.click();
+        fixture.detectChanges();
+      }
+
+      it('is offered on a buy but not on a sell', () => {
+        expect(fixture.nativeElement.querySelector('[data-testid="bracket"]')).not.toBeNull();
+        component.setSide('SELL');
+        fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('[data-testid="bracket"]')).toBeNull();
+      });
+
+      it('starts at +10% and −5% of the price the buy enters at', () => {
+        toggle();
+        expect(component.takeProfit()).toBe(110);
+        expect(component.stopLoss()).toBe(95);
+        // Chips follow the entry price: a limit buy enters at its limit.
+        pick('Limit');
+        component.setLimitPrice(90);
+        expect(component.takeProfitChips().map(c => c.value)).toEqual([94.5, 99, 108]);
+        expect(component.stopLossChips().map(c => c.value)).toEqual([87.3, 85.5, 81]);
+      });
+
+      it('shows risk, reward and the ratio, and explains it in the sentence', () => {
+        toggle();
+        component.quantity.set(10);
+        component.setTakeProfit(130);
+        component.setStopLoss(88);
+        fixture.detectChanges();
+        expect(text('[data-testid="risk-reward"]')).toBe('Risk $120.00 · Reward $300.00 · 1 : 2.5');
+        expect(text('[data-testid="order-sentence"]')).toContain('sell to take profit at $130.00 or to cut losses at $88.00');
+      });
+
+      it('draws both exits on the chart, as draggable lines', () => {
+        toggle();
+        const ids = component.chartLines().map(line => line.id);
+        expect(ids).toContain('takeProfit');
+        expect(ids).toContain('stopLoss');
+        component.onChartLine({ id: 'takeProfit', value: 125.004 });
+        component.onChartLine({ id: 'stopLoss', value: 91 });
+        expect(component.takeProfit()).toBe(125);
+        expect(component.stopLoss()).toBe(91);
+      });
+
+      it('blocks review when the exits are on the wrong side of the entry', () => {
+        toggle();
+        component.quantity.set(1);
+        component.setTakeProfit(99);
+        expect(component.blocker()).toBe('The take-profit must be above the price you buy at');
+        component.setTakeProfit(120);
+        component.setStopLoss(100);
+        expect(component.blocker()).toBe('The stop-loss must be below the price you buy at');
+        component.setStopLoss(90);
+        expect(component.blocker()).toBeNull();
+      });
+
+      it('sends the bracket with the order, and shows the worst case in the impact preview', () => {
+        pick('Limit');
+        toggle();
+        component.quantity.set(2);
+        component.setLimitPrice(99);
+        component.setTakeProfit(120);
+        component.setStopLoss(90);
+        fixture.detectChanges();
+        expect(component.impact()!.worstCaseLoss).toBe(18);
+
+        const request = place();
+        expect(request.request.body).toEqual(expect.objectContaining({
+          orderType: 'LIMIT', limitPrice: 99, bracketTakeProfitPrice: 120, bracketStopLossPrice: 90
+        }));
+        request.flush({}, { status: 500, statusText: 'x' });
+      });
+
+      it('sends nothing bracket-related when it is off, or after switching to a sell', () => {
+        pick('Limit');
+        toggle();
+        component.setSide('SELL');
+        component.quantity.set(1);
+        component.setLimitPrice(101);
+        const request = place();
+        expect(request.request.body.bracketTakeProfitPrice).toBeUndefined();
+        expect(request.request.body.bracketStopLossPrice).toBeUndefined();
+        request.flush({}, { status: 500, statusText: 'x' });
+      });
+    });
+
+    describe('templates', () => {
+      const templatesUrl = '/api/order/templates';
+      const swing = {
+        templateId: 't1', name: 'Swing', side: 'BUY', orderType: 'MARKET', timeInForce: 'GTC',
+        limitOffsetPercent: null, stopOffsetPercent: null, trailPercent: null,
+        takeProfitPercent: 20, stopLossPercent: 8, createdAt: '2026-10-12T12:00:00Z'
+      };
+      const dip = {
+        ...swing, templateId: 't2', name: 'Buy the dip', orderType: 'LIMIT', limitOffsetPercent: -2,
+        takeProfitPercent: null, stopLossPercent: null
+      };
+
+      function loadTemplates(list: unknown[]): void {
+        http.expectOne({ method: 'GET', url: templatesUrl }).flush(list);
+        fixture.detectChanges();
+      }
+
+      it('lists the saved templates as one-tap chips', () => {
+        loadTemplates([swing, dip]);
+        const names = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('.template-apply'))
+          .map(b => b.textContent?.trim());
+        expect(names).toEqual(['Swing', 'Buy the dip']);
+      });
+
+      it('shows no template row without any', () => {
+        loadTemplates([]);
+        expect(fixture.nativeElement.querySelector('[data-testid="templates"]')).toBeNull();
+      });
+
+      it('applies a bracket template at today\'s prices', () => {
+        loadTemplates([swing]);
+        (fixture.nativeElement.querySelector('.template-apply') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(component.side()).toBe('BUY');
+        expect(component.orderType()).toBe('MARKET');
+        expect(component.timeInForce()).toBe('GTC');
+        expect(component.bracketOn()).toBe(true);
+        expect(component.takeProfit()).toBe(120);
+        expect(component.stopLoss()).toBe(92);
+      });
+
+      it('applies a limit template as a price against the market, without it being overwritten', () => {
+        loadTemplates([dip]);
+        component.bracketOn.set(true);
+        (fixture.nativeElement.querySelector('.template-apply') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(component.orderType()).toBe('LIMIT');
+        expect(component.limitPrice()).toBe(98);
+        expect(component.bracketOn()).toBe(false);
+      });
+
+      it('saves the reviewed ticket as a template of percent offsets', () => {
+        loadTemplates([]);
+        pick('Limit');
+        component.setLimitPrice(95);
+        component.quantity.set(2);
+        component.review();
+        fixture.detectChanges();
+
+        (fixture.nativeElement.querySelector('[data-testid="save-template"] .link-btn') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(component.templateName()).toBe('Buy, limit −5%, today');
+        component.templateName.set('Deep dip');
+        component.saveTemplate();
+
+        const request = http.expectOne({ method: 'POST', url: templatesUrl });
+        expect(request.request.body).toEqual(expect.objectContaining({
+          name: 'Deep dip', side: 'BUY', orderType: 'LIMIT', timeInForce: 'DAY', limitOffsetPercent: -5
+        }));
+        request.flush({ ...dip, templateId: 't3', name: 'Deep dip', limitOffsetPercent: -5 });
+        fixture.detectChanges();
+        expect(component.templates().map(t => t.name)).toEqual(['Deep dip']);
+        expect(text('[data-testid="save-template"]')).toContain('Saved “Deep dip”.');
+      });
+
+      it('says why a template could not be saved', () => {
+        loadTemplates([]);
+        pick('Limit');
+        component.quantity.set(1);
+        component.review();
+        fixture.detectChanges();
+        component.templateName.set('Dup');
+        component.saveTemplate();
+        http.expectOne({ method: 'POST', url: templatesUrl })
+          .flush({ message: 'You already have a template called "Dup"' }, { status: 409, statusText: 'Conflict' });
+        fixture.detectChanges();
+        expect(component.templateMessage()).toEqual({ text: 'You already have a template called "Dup"', tone: 'error' });
+      });
+
+      it('deletes a template', () => {
+        loadTemplates([swing, dip]);
+        component.deleteTemplate(swing as never);
+        http.expectOne({ method: 'DELETE', url: `${templatesUrl}/t1` }).flush(null);
+        expect(component.templates().map(t => t.name)).toEqual(['Buy the dip']);
+      });
     });
   });
 });

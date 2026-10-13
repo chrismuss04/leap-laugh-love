@@ -31,6 +31,11 @@ interface OpenOrderRow {
   account: string | null;
   /** "Trails 2% from its high $152.00", for a trailing stop. */
   trail: string | null;
+  /** Whether this is one of a bracket's two exits, where one executing cancels the other. */
+  linked: boolean;
+  /** The first/last row of a linked pair, to draw them as one block. */
+  groupStart: boolean;
+  groupEnd: boolean;
 }
 
 /**
@@ -50,10 +55,13 @@ interface OpenOrderRow {
       <p *ngIf="error()" class="error" role="alert">{{ error() }}</p>
 
       <ol class="rows">
-        <li *ngFor="let row of rows(); trackBy: trackById" class="row" data-testid="open-order">
+        <li *ngFor="let row of rows(); trackBy: trackById" class="row" data-testid="open-order"
+            [class.linked]="row.linked" [class.group-start]="row.groupStart" [class.group-end]="row.groupEnd">
           <div class="top">
             <span class="identity">
               <span class="symbol">{{ row.order.symbol }}</span>
+              <span *ngIf="row.linked" class="oco" data-testid="oco-badge"
+                    title="One cancels the other: when one of these sells executes, the other is cancelled">OCO</span>
               <span class="title" [class.buy]="row.order.side === 'BUY'" [class.sell]="row.order.side === 'SELL'">
                 {{ row.title }} · {{ row.order.quantity | number }}
               </span>
@@ -143,6 +151,13 @@ interface OpenOrderRow {
     .identity { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
     .symbol { font-weight: 600; font-size: 14px; }
     .title { font-size: 13px; font-weight: 500; white-space: nowrap; }
+    .oco {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px;
+      background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary);
+    }
+    /* A bracket's two exits read as one block: joined by an accent bar, with no divider between them. */
+    .row.linked { border-left: 3px solid var(--primary); }
+    .row.linked.group-end { border-top: 0; }
     .title.buy { color: var(--gain); }
     .title.sell { color: var(--loss); }
     .target { font-size: 14px; font-weight: 600; }
@@ -226,7 +241,26 @@ export class OpenOrdersComponent {
     const offsets = this.quoteOffsets();
     const accounts = this.accountNumbers();
     const multiAccount = Object.keys(accounts).length > 1;
-    return this.orders().map(order => {
+    // A bracket's two exits are listed together, in the position of the first of them.
+    const orders: OpenOrder[] = [];
+    for (const order of this.orders()) {
+      if (orders.includes(order)) {
+        continue;
+      }
+      orders.push(order);
+      if (order.ocoGroupId) {
+        orders.push(...this.orders().filter(o => o !== order && o.ocoGroupId === order.ocoGroupId));
+      }
+    }
+    const sizes = new Map<string, number>();
+    for (const order of orders) {
+      if (order.ocoGroupId) {
+        sizes.set(order.ocoGroupId, (sizes.get(order.ocoGroupId) ?? 0) + 1);
+      }
+    }
+    return orders.map((order, index) => {
+      // Only a pair still working together is a linked pair: a lone leg is a normal order.
+      const linked = !!order.ocoGroupId && (sizes.get(order.ocoGroupId) ?? 0) > 1;
       const target = waitingPrice(order);
       const last = prices[order.symbol] ?? null;
       const offset = offsets[order.symbol];
@@ -261,7 +295,10 @@ export class OpenOrdersComponent {
         trail: order.orderType === 'TRAILING_STOP'
           ? `Trails ${trailText(order.trailAmount, order.trailPercent)} from its ${order.side === 'BUY' ? 'low' : 'high'}`
             + (order.trailPeak != null ? ` ${formatMoney(order.trailPeak)}` : '')
-          : null
+          : null,
+        linked,
+        groupStart: linked && orders[index - 1]?.ocoGroupId !== order.ocoGroupId,
+        groupEnd: linked && orders[index - 1]?.ocoGroupId === order.ocoGroupId
       };
     });
   });

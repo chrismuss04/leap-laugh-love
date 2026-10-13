@@ -77,6 +77,12 @@ export interface OrderSubmissionRequest {
   trailAmount?: number;
   /** For TRAILING_STOP: how many percent behind the best price the stop trails. Give this or trailAmount. */
   trailPercent?: number;
+  /**
+   * For a BUY: attach a bracket. Once the buy fills, order-app opens a sell limit at the take-profit
+   * price and a sell stop at the stop-loss price; when one executes the other is cancelled. Give both.
+   */
+  bracketTakeProfitPrice?: number;
+  bracketStopLossPrice?: number;
 }
 
 /** A change to an open order. Only the fields given change; each must apply to the order's type. */
@@ -157,6 +163,13 @@ export interface OpenOrder {
   trailPercent?: number | null;
   /** For a trailing stop: the best price seen, the high for a sell and the low for a buy. */
   trailPeak?: number | null;
+  /** For a bracket's exit order: the buy whose fill opened it. */
+  parentOrderId?: string | null;
+  /** For a bracket's exit order: the group its two legs share, where one executing cancels the other. */
+  ocoGroupId?: string | null;
+  /** For a buy with a bracket: the exit prices it will open when it fills. */
+  bracketTakeProfitPrice?: number | null;
+  bracketStopLossPrice?: number | null;
 }
 
 @Injectable({

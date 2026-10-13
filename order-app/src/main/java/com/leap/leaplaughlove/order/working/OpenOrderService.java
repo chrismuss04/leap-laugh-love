@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.working;
 
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import org.slf4j.Logger;
@@ -32,6 +33,7 @@ public class OpenOrderService {
     private final AccountRepository accountRepository;
     private final TransactionTemplate transactionTemplate;
     private final OrderUpdateBroadcaster broadcaster;
+    private final OrderEventPublisher orderEventPublisher;
 
     /**
      * Constructs an OpenOrderService.
@@ -39,13 +41,16 @@ public class OpenOrderService {
      * @param accountRepository checks an order's account belongs to the client
      * @param transactionTemplate runs each expiry in its own transaction
      * @param broadcaster tells clients, as it happens, that an order of theirs expired
+     * @param orderEventPublisher reports each cancelled or expired order to reporting
      */
     public OpenOrderService(OrderRepository orderRepository, AccountRepository accountRepository,
-                            TransactionTemplate transactionTemplate, OrderUpdateBroadcaster broadcaster) {
+                            TransactionTemplate transactionTemplate, OrderUpdateBroadcaster broadcaster,
+                            OrderEventPublisher orderEventPublisher) {
         this.orderRepository = orderRepository;
         this.accountRepository = accountRepository;
         this.transactionTemplate = transactionTemplate;
         this.broadcaster = broadcaster;
+        this.orderEventPublisher = orderEventPublisher;
     }
 
     /**
@@ -71,6 +76,7 @@ public class OpenOrderService {
         Order order = lockOwned(clientId, orderId);
         requireOpen(order, "cancelled");
         order.markCancelled(OffsetDateTime.now());
+        orderEventPublisher.publishCancelled(order);
         return OpenOrderItem.of(order);
     }
 
@@ -123,6 +129,7 @@ public class OpenOrderService {
                         .filter(order -> order.getStatus() == Order.Status.OPEN)
                         .map(order -> {
                             order.markExpired(now);
+                            orderEventPublisher.publishExpired(order);
                             return new Expired(OrderUpdate.of(order, Order.Status.EXPIRED, null, null),
                                     order.getAccountId());
                         })

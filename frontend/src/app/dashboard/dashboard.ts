@@ -292,7 +292,8 @@ export class DashboardComponent implements OnInit {
         maxSlippagePercent: summaries.find(s => s.accountId === account.accountId)?.maxSlippagePercent ?? null,
         sharesOnHold: holds?.shares ?? {},
         cashOnHold: holds?.cash ?? 0,
-        averageCost: Object.fromEntries(positions.map(p => [p.symbol, p.averageCost]))
+        averageCost: Object.fromEntries(positions.map(p => [p.symbol, p.averageCost])),
+        totalValue: this.accounts().find(a => a.accountId === account.accountId)?.value ?? null
       };
     });
   });

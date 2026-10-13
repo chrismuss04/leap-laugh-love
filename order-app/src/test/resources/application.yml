@@ -32,3 +32,9 @@ trading:
   order-triggers:
     # Tests drive OrderTriggerEngine directly rather than on a schedule.
     enabled: false
+
+order:
+  notifications:
+    email:
+      # Tests have no mail server; OrderFillMailerTest and the wiring test enable it explicitly.
+      enabled: false

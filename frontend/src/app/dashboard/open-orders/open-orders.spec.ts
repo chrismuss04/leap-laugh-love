@@ -61,6 +61,33 @@ describe('OpenOrdersComponent', () => {
     expect(text()).toContain('Stop reached · AAPL needs to rise 2.0%');
   });
 
+  describe('a bracket\'s linked exits', () => {
+    const exit = (overrides: Partial<OpenOrder>) => order({
+      side: 'SELL', reservedCash: null, quantity: 5, ocoGroupId: 'g1', parentOrderId: 'p1', ...overrides
+    });
+
+    it('lists the two legs together with an OCO badge, even when other orders sit between them', () => {
+      fixture.componentRef.setInput('orders', [
+        exit({ orderId: 'tp', orderType: 'LIMIT', limitPrice: 120 }),
+        order({ orderId: 'other', symbol: 'AAPL' }),
+        exit({ orderId: 'sl', orderType: 'STOP', limitPrice: null, stopPrice: 90 })
+      ]);
+      fixture.detectChanges();
+
+      expect(component.rows().map(r => r.order.orderId)).toEqual(['tp', 'sl', 'other']);
+      expect(component.rows().map(r => r.linked)).toEqual([true, true, false]);
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="oco-badge"]').length).toBe(2);
+    });
+
+    it('treats a lone leg, whose sibling is gone, as a normal order', () => {
+      fixture.componentRef.setInput('orders', [exit({ orderId: 'sl', orderType: 'STOP', limitPrice: null, stopPrice: 90 })]);
+      fixture.detectChanges();
+
+      expect(component.rows()[0].linked).toBe(false);
+      expect(fixture.nativeElement.querySelector('[data-testid="oco-badge"]')).toBeNull();
+    });
+  });
+
   // Regression: the last trade reached a buy limit while the ask - what a buy fills at - was still
   // above it, and the card said "filling" for minutes before the order could fill.
   it('measures a buy from the ask, not the last trade', () => {

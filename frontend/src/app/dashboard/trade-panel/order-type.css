@@ -247,3 +247,78 @@
   .price-field,
   .type-hint { animation: none; }
 }
+
+/* Hit-rate hint: how often the market reached the order's price lately. */
+.hit-rate {
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted, #6b7280);
+}
+.hit-rate-note {
+  display: block;
+  font-style: italic;
+  opacity: 0.85;
+}
+
+/* Impact preview: what the order would do to the position and the account. */
+.impact {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--surface-muted, rgba(127, 127, 127, 0.08));
+  font-size: 0.85rem;
+}
+.impact div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.15rem 0;
+}
+.impact dt { color: var(--text-muted, #6b7280); }
+.impact dd { margin: 0; font-weight: 600; }
+
+/* Bracket: "Protect this trade" takes profit and cuts losses once a buy fills. */
+.bracket {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.25));
+}
+.bracket-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+}
+.bracket-sub {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted, #6b7280);
+}
+.risk-reward {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* Templates: saved setups, applied in one tap. */
+.templates { display: flex; flex-direction: column; gap: 0.35rem; }
+.template-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.template-chip { display: inline-flex; align-items: center; gap: 0.1rem; }
+.template-delete {
+  background: transparent;
+  border: 0;
+  padding: 0 0.3rem;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+}
+.template-delete:hover { color: var(--loss, #dc2626); }
+.save-template { display: flex; flex-direction: column; gap: 0.4rem; margin-top: 0.5rem; }
+.template-form { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.template-name { flex: 1 1 10rem; min-width: 0; }
+.template-message { margin: 0; font-size: 0.8rem; }
+.template-message.error { color: var(--loss, #dc2626); }

@@ -8,7 +8,12 @@ import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionRequest, OrderSubmissionResponse, OrderType, TimeInForce } from '../../services/order';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { formatMoney } from '../../shared/format';
-import { MarketDataService } from '../../services/market-data';
+import { Candle, MarketDataService } from '../../services/market-data';
+import { HIT_RATE_DAYS, hitRateDisclaimer, hitRateHint } from '../../shared/price-hit-rate';
+import { concentrationWarning, orderImpact } from '../../shared/order-impact';
+import { MAX_TEMPLATES, OrderTemplate, OrderTemplateService } from '../../services/order-templates';
+import { applyTemplate, bracketPrices, suggestedTemplateName, templateFromTicket } from '../../shared/order-templates';
+import { STOP_LOSS_PERCENTS, TAKE_PROFIT_PERCENTS, bracketProblem, riskReward, riskRewardLabel } from '../../shared/bracket';
 import { ProtectionPickerComponent } from '../../shared/protection-picker';
 import { formatProtection, protectionBand } from '../../shared/price-protection';
 import {
@@ -90,6 +95,108 @@ export class TradePanelComponent implements OnChanges, OnInit {
       next: profile => this.experienceLevel.set(profile.experienceLevel),
       error: () => this.experienceLevel.set(null)
     });
+    this.templateService.list().subscribe({
+      next: templates => this.templates.set(templates),
+      // Templates are a shortcut: without them the ticket works as before.
+      error: () => this.templates.set([])
+    });
+  }
+
+  // ---- Templates: saved ticket setups, applied in one tap ----
+  private readonly templateService = inject(OrderTemplateService);
+  readonly templates = signal<OrderTemplate[]>([]);
+  readonly templateName = signal('');
+  readonly savingTemplate = signal(false);
+  readonly templateFormOpen = signal(false);
+  readonly templateMessage = signal<{ text: string; tone: 'ok' | 'error' } | null>(null);
+  readonly templatesFull = computed(() => this.templates().length >= MAX_TEMPLATES);
+
+  /** Sets the ticket up from a template, with prices worked out from the market right now. */
+  applyTemplate(template: OrderTemplate): void {
+    const price = template.side === 'BUY' ? this.ask() ?? this.price() : this.bid() ?? this.price();
+    if (this.step() !== 'edit' || price == null || !(price > 0)) {
+      return;
+    }
+    const applied = applyTemplate(template, price);
+    this.side.set(applied.side);
+    this.orderType.set(applied.orderType);
+    this.timeInForce.set(applied.timeInForce);
+    // The template's prices stand: the ticket's own suggestions must not replace them.
+    this.pricesTouched.set(true);
+    this.limitPrice.set(applied.limitPrice);
+    this.stopPrice.set(applied.stopPrice);
+    if (applied.trailPercent != null) {
+      this.trailUnit.set('PERCENT');
+      this.trailValue.set(applied.trailPercent);
+    } else if (applied.orderType !== 'TRAILING_STOP') {
+      this.trailValue.set(null);
+    }
+    if (applied.side === 'BUY' && applied.takeProfitPercent != null && applied.stopLossPercent != null) {
+      const entry = this.estimatePrice();
+      if (entry != null && entry > 0) {
+        const exits = bracketPrices(entry, applied.takeProfitPercent, applied.stopLossPercent);
+        this.bracketTouched.set(true);
+        this.takeProfit.set(exits.takeProfit);
+        this.stopLoss.set(exits.stopLoss);
+        this.bracketOn.set(true);
+      }
+    } else {
+      this.bracketOn.set(false);
+    }
+    this.templateMessage.set(null);
+  }
+
+  /** The ticket as a template to save, or null while a price it needs is missing. */
+  private ticketTemplate(name: string) {
+    const price = this.sidePrice();
+    if (price == null) {
+      return null;
+    }
+    return templateFromTicket(name, {
+      side: this.side(), orderType: this.orderType(), timeInForce: this.timeInForce(), sidePrice: price,
+      limitPrice: this.limitPrice(), stopPrice: this.stopPrice(),
+      trailUnit: this.trailUnit(), trailValue: this.trailValue(),
+      entryPrice: this.estimatePrice(),
+      takeProfit: this.bracketActive() ? this.takeProfit() : null,
+      stopLoss: this.bracketActive() ? this.stopLoss() : null
+    });
+  }
+
+  /** Opens the "Save as template" form on the review step, with a name to start from. */
+  openTemplateForm(): void {
+    const draft = this.ticketTemplate('');
+    this.templateName.set(draft ? suggestedTemplateName(draft) : '');
+    this.templateMessage.set(null);
+    this.templateFormOpen.set(true);
+  }
+
+  saveTemplate(): void {
+    const name = this.templateName().trim();
+    const template = this.ticketTemplate(name);
+    if (!name || !template || this.savingTemplate()) {
+      this.templateMessage.set({ text: name ? 'This setup can\u2019t be saved as a template yet.' : 'Give the template a name.', tone: 'error' });
+      return;
+    }
+    this.savingTemplate.set(true);
+    this.templateService.create(template).subscribe({
+      next: saved => {
+        this.templates.update(list => [saved, ...list]);
+        this.savingTemplate.set(false);
+        this.templateFormOpen.set(false);
+        this.templateMessage.set({ text: `Saved \u201c${saved.name}\u201d.`, tone: 'ok' });
+      },
+      error: (err: HttpErrorResponse) => {
+        this.savingTemplate.set(false);
+        this.templateMessage.set({ text: err.error?.message || 'The template could not be saved.', tone: 'error' });
+      }
+    });
+  }
+
+  deleteTemplate(template: OrderTemplate): void {
+    this.templateService.delete(template.templateId).subscribe({
+      next: () => this.templates.update(list => list.filter(t => t.templateId !== template.templateId)),
+      error: () => this.templateMessage.set({ text: 'The template could not be deleted.', tone: 'error' })
+    });
   }
 
   // Order placement confirmation: unknown experience requires confirmation too.
@@ -126,6 +233,12 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly trailValue = signal<number | null>(null);
   /** Whether the client has set a price themselves; until then the ticket suggests one. */
   private readonly pricesTouched = signal(false);
+
+  // ---- Bracket: a take-profit and stop-loss that open as sells once a buy fills ----
+  readonly bracketOn = signal(false);
+  readonly takeProfit = signal<number | null>(null);
+  readonly stopLoss = signal<number | null>(null);
+  private readonly bracketTouched = signal(false);
 
   /** The live ask and bid: the last trade moved by the latest quote's offsets. */
   readonly ask = computed(() => {
@@ -176,7 +289,77 @@ export class TradePanelComponent implements OnChanges, OnInit {
         }
       });
     });
+
+    // The last month of daily candles for the hit-rate hint, fetched once per symbol and only
+    // while an order that waits for a price is being set up.
+    effect(() => {
+      const symbol = this.symbol();
+      if (!symbol || this.orderType() === 'MARKET') {
+        return;
+      }
+      untracked(() => this.loadDayCandles(symbol));
+    });
   }
+
+  // ---- Hit rate: how often the market reached this price lately ----
+  private readonly dayCandles = signal<{ symbol: string; candles: Candle[] } | null>(null);
+  private candleRequest?: Subscription;
+
+  private loadDayCandles(symbol: string): void {
+    if (this.dayCandles()?.symbol === symbol) {
+      return;
+    }
+    this.candleRequest?.unsubscribe();
+    const to = new Date();
+    const from = new Date(to.getTime() - (HIT_RATE_DAYS + 2) * 86_400_000);
+    this.candleRequest = this.marketData.getHistory(symbol, from, to, 86400, HIT_RATE_DAYS + 2).subscribe({
+      next: candles => this.dayCandles.set({ symbol, candles }),
+      // A hint is a nicety: without history the ticket just shows none.
+      error: () => this.dayCandles.set({ symbol, candles: [] })
+    });
+  }
+
+  /** "AAPL traded at or below $180.00 on 9 of the last 30 days.", or null when there is none to give. */
+  readonly hitRate = computed(() => {
+    const symbol = this.symbol();
+    const loaded = this.dayCandles();
+    if (!symbol || !loaded || loaded.symbol !== symbol || this.isMarket()) {
+      return null;
+    }
+    return hitRateHint({
+      symbol, side: this.side(), type: this.orderType(),
+      limitPrice: this.limitPrice(), stopPrice: this.stopPrice(),
+      trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null,
+      trailAmount: this.trailUnit() === 'AMOUNT' ? this.trailValue() : null
+    }, loaded.candles);
+  });
+
+  readonly hitRateNote = computed(() => {
+    const hint = this.hitRate();
+    return hint ? hitRateDisclaimer(hint) : null;
+  });
+
+  // ---- Impact: what the order would do to the position and the account ----
+  readonly impact = computed(() => {
+    const account = this.account();
+    const price = this.estimatePrice();
+    const market = this.price();
+    if (!account || !this.validQuantity() || price == null || !(price > 0) || market == null) {
+      return null;
+    }
+    return orderImpact({
+      side: this.side(), quantity: this.quantity()!, price, marketPrice: market,
+      sharesOwned: this.sharesOwned(), averageCost: this.averageCost(),
+      buyingPower: account.buyingPower, totalValue: account.totalValue ?? null,
+      stopLossPrice: this.bracketActive() ? this.stopLoss() : null
+    });
+  });
+
+  readonly concentrationWarning = computed(() => {
+    const impact = this.impact();
+    const symbol = this.symbol();
+    return impact?.concentrated && symbol ? concentrationWarning(symbol, impact.portfolioShare!) : null;
+  });
 
   setOrderType(type: OrderType): void {
     if (this.step() !== 'edit' || type === this.orderType()) {
@@ -317,6 +500,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
         this.limitPrice.set(null);
         this.stopPrice.set(null);
       }
+      if (side === 'SELL') {
+        // The app has no short selling, so a sell has nothing to bracket.
+        this.bracketOn.set(false);
+      }
     }
   }
 
@@ -387,6 +574,65 @@ export class TradePanelComponent implements OnChanges, OnInit {
     return perShare != null && this.validQuantity() ? toCents(perShare * this.quantity()!) : null;
   });
 
+  /** A bracket is only offered on a buy: the app has no short selling. */
+  readonly bracketAvailable = computed(() => this.side() === 'BUY');
+
+  /** Whether the bracket is attached to this order. */
+  readonly bracketActive = computed(() => this.bracketOn() && this.bracketAvailable());
+
+  /** One-tap take-profit and stop-loss prices, as percent from the price the buy enters at. */
+  readonly takeProfitChips = computed<PriceChip[]>(() => this.bracketChips(TAKE_PROFIT_PERCENTS, 1));
+  readonly stopLossChips = computed<PriceChip[]>(() => this.bracketChips(STOP_LOSS_PERCENTS, -1));
+
+  private bracketChips(percents: number[], direction: 1 | -1): PriceChip[] {
+    const entry = this.estimatePrice();
+    if (entry == null || !(entry > 0)) {
+      return [];
+    }
+    return percents.map(percent => ({
+      label: `${direction > 0 ? '+' : '−'}${percent}%`,
+      value: toCents(entry * (1 + direction * percent / 100))
+    }));
+  }
+
+  /** "Risk $120.00 · Reward $300.00 · 1 : 2.5" for the bracket as set. */
+  readonly riskRewardText = computed(() => {
+    const entry = this.estimatePrice();
+    const take = this.takeProfit();
+    const stop = this.stopLoss();
+    if (!this.bracketActive() || entry == null || take == null || stop == null || !this.validQuantity()) {
+      return null;
+    }
+    const value = riskReward(entry, take, stop, this.quantity()!);
+    return value ? riskRewardLabel(value) : null;
+  });
+
+  readonly bracketBlocker = computed(() =>
+    this.bracketActive() ? bracketProblem(this.estimatePrice(), this.takeProfit(), this.stopLoss()) : null);
+
+  /** Turns the bracket on or off, starting from +10% / −5% of the entry price. */
+  setBracketOn(on: boolean): void {
+    if (this.step() !== 'edit') {
+      return;
+    }
+    this.bracketOn.set(on);
+    const entry = this.estimatePrice();
+    if (on && !this.bracketTouched() && entry != null && entry > 0) {
+      this.takeProfit.set(toCents(entry * 1.1));
+      this.stopLoss.set(toCents(entry * 0.95));
+    }
+  }
+
+  setTakeProfit(value: number | null): void {
+    this.bracketTouched.set(true);
+    this.takeProfit.set(value);
+  }
+
+  setStopLoss(value: number | null): void {
+    this.bracketTouched.set(true);
+    this.stopLoss.set(value);
+  }
+
   /** Why the order can't be reviewed yet, or null if it can. */
   readonly blocker = computed(() => {
     const account = this.account();
@@ -420,6 +666,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
       if (stop == null || stop <= 0) {
         return 'The trail must be smaller than the price';
       }
+    }
+    const bracketBlock = this.bracketBlocker();
+    if (bracketBlock) {
+      return bracketBlock;
     }
     if (this.hasStop() && !TradePanelComponent.validPrice(this.stopPrice())) {
       return 'Enter a stop price';
@@ -562,6 +812,12 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (this.hasLimit() && TradePanelComponent.validPrice(this.limitPrice())) {
       lines.push({ id: 'limit', label: 'Limit', value: this.limitPrice()!, tone: 'accent', draggable: true });
     }
+    if (this.bracketActive() && TradePanelComponent.validPrice(this.takeProfit())) {
+      lines.push({ id: 'takeProfit', label: 'Take profit', value: this.takeProfit()!, tone: 'gain', draggable: true });
+    }
+    if (this.bracketActive() && TradePanelComponent.validPrice(this.stopLoss())) {
+      lines.push({ id: 'stopLoss', label: 'Stop loss', value: this.stopLoss()!, tone: 'loss', draggable: true });
+    }
     return lines;
   });
 
@@ -571,7 +827,11 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (!(value > 0)) {
       return;
     }
-    if (change.id === 'limit') {
+    if (change.id === 'takeProfit') {
+      this.setTakeProfit(value);
+    } else if (change.id === 'stopLoss') {
+      this.setStopLoss(value);
+    } else if (change.id === 'limit') {
       this.setLimitPrice(value);
     } else if (change.id === 'stop') {
       this.setStopPrice(value);
@@ -595,7 +855,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
     stopPrice: this.stopPrice(),
     timeInForce: this.timeInForce(),
     trailAmount: this.trailUnit() === 'AMOUNT' ? this.trailValue() : null,
-    trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null
+    trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null,
+    bracketTakeProfit: this.bracketActive() ? this.takeProfit() : null,
+    bracketStopLoss: this.bracketActive() ? this.stopLoss() : null
   }));
 
   /** "5%" or "$2.00": the trail as entered. */
@@ -620,6 +882,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
       // Prices are sent in cents; show the review with what will be sent.
       if (this.limitPrice() != null) this.limitPrice.set(toCents(this.limitPrice()!));
       if (this.stopPrice() != null) this.stopPrice.set(toCents(this.stopPrice()!));
+      if (this.takeProfit() != null) this.takeProfit.set(toCents(this.takeProfit()!));
+      if (this.stopLoss() != null) this.stopLoss.set(toCents(this.stopLoss()!));
       this.step.set('review');
       this.quoteForReview();
     }
@@ -701,7 +965,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   /** The order as order-app takes it. A market order is sent exactly as before order types. */
   private orderRequest(accountId: string, symbol: string): OrderSubmissionRequest {
-    const base = { accountId, symbol, side: this.side(), quantity: this.quantity()! };
+    const bracket = this.bracketActive()
+      ? { bracketTakeProfitPrice: toCents(this.takeProfit()!), bracketStopLossPrice: toCents(this.stopLoss()!) }
+      : {};
+    const base = { accountId, symbol, side: this.side(), quantity: this.quantity()!, ...bracket };
     if (!this.isMarket()) {
       return {
         ...base,
@@ -775,6 +1042,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.quotedPrice.set(null);
     // The order type sticks between tickets; its prices are suggested afresh for the new one.
     this.pricesTouched.set(false);
+    this.bracketOn.set(false);
+    this.bracketTouched.set(false);
+    this.takeProfit.set(null);
+    this.stopLoss.set(null);
     this.limitPrice.set(null);
     this.stopPrice.set(null);
     this.trailValue.set(this.orderType() === 'TRAILING_STOP' ? this.defaultTrail() : null);

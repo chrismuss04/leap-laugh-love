@@ -71,6 +71,11 @@ services:
       MARKET_DATA_BASE_URL: http://market-data-app:8083
       ACCOUNT_SERVICE_BASE_URL: http://account-app:8082
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      # Order outcome emails go to the local mail catcher below, never to a real inbox.
+      SPRING_MAIL_HOST: mailpit
+      SPRING_MAIL_PORT: 1025
+      # Where the order history link in those emails points; the address the browser reaches the frontend on.
+      ORDER_NOTIFICATIONS_HISTORY_URL: "${ORDER_NOTIFICATIONS_HISTORY_URL:-http://localhost:${FRONTEND_PORT:-4200}/orders}"
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"

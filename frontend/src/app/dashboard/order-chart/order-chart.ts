@@ -7,7 +7,7 @@ export interface ChartLine {
   id: string;
   label: string;
   value: number;
-  tone: 'muted' | 'accent' | 'warning';
+  tone: 'muted' | 'accent' | 'warning' | 'gain' | 'loss';
   draggable: boolean;
 }
 
@@ -69,6 +69,8 @@ const MIN_RANGE = 0.004;
     .line { position: absolute; left: 0; right: 0; height: 0; --tone: var(--muted-foreground); }
     .line[data-tone='accent'] { --tone: var(--accent, var(--primary)); }
     .line[data-tone='warning'] { --tone: var(--warning); }
+    .line[data-tone='gain'] { --tone: var(--gain); }
+    .line[data-tone='loss'] { --tone: var(--loss); }
     .rule { position: absolute; left: 0; right: 0; top: 0; border-top: 1px dashed var(--tone); opacity: 0.85; }
     .tag, .handle {
       position: absolute; right: 6px; top: 0; transform: translateY(-50%); white-space: nowrap;

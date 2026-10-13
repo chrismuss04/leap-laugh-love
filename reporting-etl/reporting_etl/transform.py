@@ -14,7 +14,9 @@ from decimal import Decimal
 from typing import Any, Optional
 
 SIDES = frozenset({"BUY", "SELL"})
-STATUSES = frozenset({"FILLED", "REJECTED"})
+# FILLED and REJECTED executed (a rejection is a settlement refusal); CANCELLED and EXPIRED are orders
+# that waited for their price and never did.
+STATUSES = frozenset({"FILLED", "REJECTED", "CANCELLED", "EXPIRED"})
 ORDER_TYPES = frozenset({"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"})
 
 

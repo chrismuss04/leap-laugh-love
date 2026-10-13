@@ -157,6 +157,24 @@ public class Order {
     @Column(name = "trail_peak", precision = 18, scale = 6)
     private BigDecimal trailPeak;
 
+    @Column(name = "bracket_take_profit_price", precision = 18, scale = 6)
+    private BigDecimal bracketTakeProfitPrice;
+
+    @Column(name = "bracket_stop_loss_price", precision = 18, scale = 6)
+    private BigDecimal bracketStopLossPrice;
+
+    @Column(name = "parent_order_id")
+    private UUID parentOrderId;
+
+    @Column(name = "oco_group_id")
+    private UUID ocoGroupId;
+
+    @Column(name = "notice_pending", nullable = false)
+    private boolean noticePending;
+
+    @Column(name = "notified_at")
+    private OffsetDateTime notifiedAt;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -252,6 +270,35 @@ public class Order {
     }
 
     /**
+     * Attaches a bracket to a buy: once it fills, a take-profit sell limit and a stop-loss sell
+     * stop are opened for the shares. Called once, before the order is first stored.
+     * @param takeProfitPrice the limit price of the take-profit sell
+     * @param stopLossPrice the stop price of the stop-loss sell
+     */
+    public void setBracket(BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
+        this.bracketTakeProfitPrice = takeProfitPrice;
+        this.bracketStopLossPrice = stopLossPrice;
+    }
+
+    /**
+     * Makes this order one leg of a bracket's exit pair. Called once, before it is first stored.
+     * @param parentOrderId the buy whose fill opened it
+     * @param ocoGroupId the group both exit legs share; only one of them can execute
+     */
+    public void linkAsExit(UUID parentOrderId, UUID ocoGroupId) {
+        this.parentOrderId = parentOrderId;
+        this.ocoGroupId = ocoGroupId;
+    }
+
+    /**
+     * Applies a share-count change made to the other leg of its group, which both legs sell.
+     * @param quantity the new quantity
+     */
+    public void syncQuantity(long quantity) {
+        this.quantity = quantity;
+    }
+
+    /**
      * Starts or moves a trailing stop: records the best price seen and the stop it sets.
      * @param trailPeak the best price seen: the high for a sell, the low for a buy
      * @param stopPrice the stop price that follows from it
@@ -292,6 +339,8 @@ public class Order {
     public void markOpen(BigDecimal reservedCash) {
         this.status = Status.OPEN;
         this.reservedCash = reservedCash;
+        // An order that waited owes the client an email about how it ended (see OrderFillMailer).
+        this.noticePending = true;
     }
 
     /**
@@ -311,6 +360,8 @@ public class Order {
      */
     public void markCancelled(OffsetDateTime cancelledAt) {
         this.status = Status.CANCELLED;
+        // The client did it themselves, so no email is owed.
+        this.noticePending = false;
         this.cancelledAt = cancelledAt != null ? cancelledAt : OffsetDateTime.now();
     }
 
@@ -526,6 +577,41 @@ public class Order {
      * @return the best price, or null before it starts
      */
     public BigDecimal getTrailPeak() { return trailPeak; }
+    /**
+     * Returns the limit price of the take-profit sell a buy opens when it fills.
+     * @return the take-profit price, or null if the order has no bracket
+     */
+    public BigDecimal getBracketTakeProfitPrice() { return bracketTakeProfitPrice; }
+    /**
+     * Returns the stop price of the stop-loss sell a buy opens when it fills.
+     * @return the stop-loss price, or null if the order has no bracket
+     */
+    public BigDecimal getBracketStopLossPrice() { return bracketStopLossPrice; }
+    /**
+     * Returns whether this buy carries a bracket.
+     * @return true if it has a take-profit and a stop-loss
+     */
+    public boolean hasBracket() { return bracketTakeProfitPrice != null && bracketStopLossPrice != null; }
+    /**
+     * Returns the buy whose fill opened this exit order.
+     * @return the parent order's ID, or null if this is not a bracket exit
+     */
+    public UUID getParentOrderId() { return parentOrderId; }
+    /**
+     * Returns the group of exit legs where one execution cancels the other.
+     * @return the group ID, or null if this is not a bracket exit
+     */
+    public UUID getOcoGroupId() { return ocoGroupId; }
+    /**
+     * Returns whether this order went OPEN and its outcome has not yet been emailed.
+     * @return true while an outcome email is owed
+     */
+    public boolean isNoticePending() { return noticePending; }
+    /**
+     * Returns when the outcome email was sent.
+     * @return the send time, or null if none was sent
+     */
+    public OffsetDateTime getNotifiedAt() { return notifiedAt; }
     /**
      * Returns the cash an OPEN buy holds back from buying power.
      * @return the reserved cash, or null for a sell or a market order

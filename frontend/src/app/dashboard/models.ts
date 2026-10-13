@@ -29,6 +29,8 @@ export interface TradeAccount {
   cashOnHold?: number;
   /** Average cost per share per symbol, for the break-even stop. */
   averageCost?: Record<string, number>;
+  /** The account's total value (cash plus shares at live prices), for the order impact preview. */
+  totalValue?: number | null;
 }
 
 export interface MarketIndex {

@@ -83,6 +83,9 @@ export interface OrderDescription {
   /** For a trailing stop: the trail, in dollars or percent. */
   trailAmount?: number | null;
   trailPercent?: number | null;
+  /** A buy's bracket: the sells that open when it fills. */
+  bracketTakeProfit?: number | null;
+  bracketStopLoss?: number | null;
 }
 
 /** "$5.00" or "2%": how far a trailing stop trails, or "$—" before it's entered. */
@@ -99,6 +102,19 @@ export function trailText(amount: number | null | undefined, percent: number | n
  * without the jargon.
  */
 export function describeOrder(order: OrderDescription): SentencePart[] {
+  const entry = describeEntry(order);
+  if (order.side !== 'BUY' || order.bracketTakeProfit == null || order.bracketStopLoss == null) {
+    return entry;
+  }
+  return [
+    ...entry,
+    { text: ' Once it fills, sell to take profit at ' }, { text: formatMoney(order.bracketTakeProfit), strong: true },
+    { text: ' or to cut losses at ' }, { text: formatMoney(order.bracketStopLoss), strong: true },
+    { text: ' — whichever comes first cancels the other.' }
+  ];
+}
+
+function describeEntry(order: OrderDescription): SentencePart[] {
   const verb = order.side === 'BUY' ? 'buy' : 'sell';
   const shares = order.quantity != null && order.quantity >= 1
     ? `${order.quantity.toLocaleString('en-US')} ${order.quantity === 1 ? 'share' : 'shares'}`
@@ -213,13 +229,22 @@ export interface AccountHolds {
 
 export function holdsByAccount(orders: OpenOrder[]): Record<string, AccountHolds> {
   const holds: Record<string, AccountHolds> = {};
+  // A bracket's two exits sell the same shares, so a linked group holds them once, as its largest leg.
+  const linked = new Map<string, number>();
   for (const order of orders) {
     const account = holds[order.accountId] ??= { cash: 0, shares: {} };
     if (order.side === 'BUY') {
       account.cash += order.reservedCash ?? 0;
+    } else if (order.ocoGroupId) {
+      linked.set(order.ocoGroupId, Math.max(linked.get(order.ocoGroupId) ?? 0, order.quantity));
     } else {
       account.shares[order.symbol] = (account.shares[order.symbol] ?? 0) + order.quantity;
     }
+  }
+  for (const group of new Set(orders.filter(o => o.side === 'SELL' && o.ocoGroupId).map(o => o.ocoGroupId!))) {
+    const leg = orders.find(o => o.ocoGroupId === group)!;
+    const account = holds[leg.accountId];
+    account.shares[leg.symbol] = (account.shares[leg.symbol] ?? 0) + linked.get(group)!;
   }
   return holds;
 }

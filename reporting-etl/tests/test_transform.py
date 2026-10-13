@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from reporting_etl.transform import InvalidEvent, to_order_row
-from tests.events import encode, filled_event, rejected_event
+from tests.events import cancelled_event, encode, expired_event, filled_event, rejected_event
 
 
 def test_maps_a_filled_event_to_a_row():
@@ -25,6 +25,15 @@ def test_maps_a_filled_event_to_a_row():
     assert row.rejection_reason is None
     assert row.submitted_at == datetime(2026, 10, 5, 14, 32, 7, 118000, tzinfo=timezone.utc)
     assert row.completed_at == datetime(2026, 10, 5, 14, 32, 7, 402000, tzinfo=timezone.utc)
+
+
+def test_maps_cancelled_and_expired_orders_to_rows_without_a_price():
+    cancelled = to_order_row(encode(cancelled_event()))
+    expired = to_order_row(encode(expired_event(fillPrice=187.42)))
+
+    assert (cancelled.status, cancelled.fill_price, cancelled.order_type) == ("CANCELLED", None, "LIMIT")
+    # A price on an order that never filled is dropped, not loaded.
+    assert (expired.status, expired.fill_price, expired.order_type) == ("EXPIRED", None, "STOP")
 
 
 def test_keeps_the_order_type():

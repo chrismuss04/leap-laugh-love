@@ -17,6 +17,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -24,7 +25,8 @@ import java.util.UUID;
  * ID and its place in history. The order is locked first, so an edit and {@link OrderTriggerEngine}
  * filling it can't both win, and checked as a new order would be: the account must still cover the
  * changed order's cash or shares (less what its other open orders hold), and a stop can't be moved
- * to a price the market has already passed, which would trigger the order at once.
+ * to a price the market has already passed, which would trigger the order at once. Changing the
+ * quantity of one exit leg of a bracket changes the other leg's too.
  */
 @Service
 public class OrderModificationService {
@@ -69,6 +71,10 @@ public class OrderModificationService {
      */
     @Transactional
     public OpenOrderItem modify(UUID clientId, UUID orderId, ModifyOrderRequest request) {
+        // A bracket's exit legs sell the same shares, so a change locks them together, lowest ID
+        // first (see OrderRepository#findGroupForUpdate), before the order itself.
+        UUID group = orderRepository.findOcoGroupId(orderId);
+        List<Order> linked = group != null ? orderRepository.findGroupForUpdate(group) : List.of();
         Order order = openOrderService.lockOwned(clientId, orderId);
         OpenOrderService.requireOpen(order, "changed");
 
@@ -121,6 +127,12 @@ public class OrderModificationService {
 
         order.modify(quantity, limitPrice, stopPrice, trailAmount, trailPercent, timeInForce, expiresAt,
                 ReservationService.reservedCash(side, quantity, reservePrice));
+        // Both legs sell the same shares, so a new quantity applies to the leg still working too.
+        for (Order leg : linked) {
+            if (!leg.getOrderId().equals(orderId) && leg.getStatus() == Order.Status.OPEN) {
+                leg.syncQuantity(quantity);
+            }
+        }
         return OpenOrderItem.of(order);
     }
 

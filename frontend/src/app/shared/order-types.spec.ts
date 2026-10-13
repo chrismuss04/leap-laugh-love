@@ -97,4 +97,28 @@ describe('order types', () => {
       a2: { cash: 0, shares: { MSFT: 1 } }
     });
   });
+
+  it('counts the two linked exits of a bracket once, as shares they both sell', () => {
+    const exit = { side: 'SELL' as const, reservedCash: null, ocoGroupId: 'g1', quantity: 10 };
+    expect(holdsByAccount([
+      open({ orderId: 'tp', orderType: 'LIMIT', ...exit }),
+      open({ orderId: 'sl', orderType: 'STOP', ...exit }),
+      open({ orderId: 'x', side: 'SELL', quantity: 4, reservedCash: null })
+    ])).toEqual({ a1: { cash: 0, shares: { AAPL: 14 } } });
+  });
+
+  it('keeps counting a lone exit leg once its sibling is gone', () => {
+    expect(holdsByAccount([
+      open({ orderId: 'sl', orderType: 'STOP', side: 'SELL', reservedCash: null, ocoGroupId: 'g1', quantity: 10 })
+    ])).toEqual({ a1: { cash: 0, shares: { AAPL: 10 } } });
+  });
+
+  it('extends the sentence for a bracket buy', () => {
+    const text = sentenceText(describeOrder({
+      side: 'BUY', type: 'MARKET', symbol: 'AAPL', quantity: 2, limitPrice: null, stopPrice: null,
+      timeInForce: 'DAY', bracketTakeProfit: 110, bracketStopLoss: 95
+    }));
+    expect(text).toBe('Buy 2 shares of AAPL now at the best available price. Once it fills, sell to take profit at $110.00 '
+      + 'or to cut losses at $95.00 — whichever comes first cancels the other.');
+  });
 });

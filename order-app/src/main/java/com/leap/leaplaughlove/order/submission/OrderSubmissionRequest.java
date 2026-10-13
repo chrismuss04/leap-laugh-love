@@ -41,6 +41,10 @@ import com.leap.leaplaughlove.order.order.Order;
  * @param trailAmount for TRAILING_STOP: how many dollars behind the best price the stop trails
  * @param trailPercent for TRAILING_STOP: how many percent behind the best price the stop trails;
  *                     give this or trailAmount
+ * @param bracketTakeProfitPrice for a BUY: the limit price of the sell order opened to take profit
+ *                               once the buy fills; give this with bracketStopLossPrice
+ * @param bracketStopLossPrice for a BUY: the stop price of the sell order opened to cut losses
+ *                             once the buy fills; whichever sell executes first cancels the other
  */
 public record OrderSubmissionRequest(
         @NotNull(message = "accountId is required")
@@ -83,8 +87,40 @@ public record OrderSubmissionRequest(
         @DecimalMin(value = "0.10", message = "trailPercent must be between 0.1 and 50")
         @DecimalMax(value = "50.00", message = "trailPercent must be between 0.1 and 50")
         @Digits(integer = 2, fraction = 2, message = "trailPercent may have at most two decimal places")
-        BigDecimal trailPercent
+        BigDecimal trailPercent,
+
+        @Positive(message = "bracketTakeProfitPrice must be greater than zero")
+        @Digits(integer = 12, fraction = 2, message = "bracketTakeProfitPrice may have at most two decimal places")
+        BigDecimal bracketTakeProfitPrice,
+
+        @Positive(message = "bracketStopLossPrice must be greater than zero")
+        @Digits(integer = 12, fraction = 2, message = "bracketStopLossPrice may have at most two decimal places")
+        BigDecimal bracketStopLossPrice
 ) {
+
+    /**
+     * An order placed before bracket orders existed.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     * @param trailAmount for TRAILING_STOP: the trail in dollars
+     * @param trailPercent for TRAILING_STOP: the trail in percent
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent) {
+        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null);
+    }
 
     /**
      * A market order, as placed before order types existed.
@@ -99,7 +135,7 @@ public record OrderSubmissionRequest(
     public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,
-                null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -121,7 +157,7 @@ public record OrderSubmissionRequest(
                                   Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                                   Order.TimeInForce timeInForce) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
-                limitPrice, stopPrice, timeInForce, null, null);
+                limitPrice, stopPrice, timeInForce, null, null, null, null);
     }
 
     /**
@@ -185,5 +221,45 @@ public record OrderSubmissionRequest(
     @AssertTrue(message = "maxSlippagePercent applies to market orders only")
     public boolean isToleranceForMarketOnly() {
         return maxSlippagePercent == null || effectiveOrderType() == Order.OrderType.MARKET;
+    }
+
+    /**
+     * Whether the buy carries a bracket.
+     * @return true if a take-profit or stop-loss was given
+     */
+    @JsonIgnore
+    public boolean hasBracket() {
+        return bracketTakeProfitPrice != null || bracketStopLossPrice != null;
+    }
+
+    /**
+     * A bracket needs both exit prices.
+     * @return false when only one of the take-profit and stop-loss is given
+     */
+    @JsonIgnore
+    @AssertTrue(message = "A bracket needs both bracketTakeProfitPrice and bracketStopLossPrice")
+    public boolean isBracketComplete() {
+        return (bracketTakeProfitPrice == null) == (bracketStopLossPrice == null);
+    }
+
+    /**
+     * The app has no short selling, so only a buy can be protected by sells.
+     * @return false when a bracket is given on a sell
+     */
+    @JsonIgnore
+    @AssertTrue(message = "A bracket can only be attached to a BUY order")
+    public boolean isBracketOnBuyOnly() {
+        return !hasBracket() || side == Order.Side.BUY;
+    }
+
+    /**
+     * The take-profit must sit above the stop-loss.
+     * @return false when the take-profit is not above the stop-loss
+     */
+    @JsonIgnore
+    @AssertTrue(message = "bracketTakeProfitPrice must be above bracketStopLossPrice")
+    public boolean isBracketOrdered() {
+        return bracketTakeProfitPrice == null || bracketStopLossPrice == null
+                || bracketTakeProfitPrice.compareTo(bracketStopLossPrice) > 0;
     }
 }

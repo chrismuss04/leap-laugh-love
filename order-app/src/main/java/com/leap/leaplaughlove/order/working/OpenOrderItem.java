@@ -26,6 +26,10 @@ import java.util.UUID;
  * @param trailAmount for a TRAILING_STOP, the dollars its stop trails the best price by
  * @param trailPercent for a TRAILING_STOP, the percent its stop trails the best price by
  * @param trailPeak for a TRAILING_STOP, the best price seen: the high for a sell, the low for a buy
+ * @param parentOrderId for a bracket's exit order, the buy whose fill opened it
+ * @param ocoGroupId for a bracket's exit order, the group its two legs share: one executes, the other is cancelled
+ * @param bracketTakeProfitPrice for a buy with a bracket, the take-profit price it will open at its fill
+ * @param bracketStopLossPrice for a buy with a bracket, the stop-loss price it will open at its fill
  */
 public record OpenOrderItem(
         UUID orderId,
@@ -44,7 +48,11 @@ public record OpenOrderItem(
         BigDecimal reservedCash,
         BigDecimal trailAmount,
         BigDecimal trailPercent,
-        BigDecimal trailPeak
+        BigDecimal trailPeak,
+        UUID parentOrderId,
+        UUID ocoGroupId,
+        BigDecimal bracketTakeProfitPrice,
+        BigDecimal bracketStopLossPrice
 ) {
     /**
      * Describes an order, whose instrument must be loaded.
@@ -69,6 +77,10 @@ public record OpenOrderItem(
                 order.getReservedCash(),
                 order.getTrailAmount(),
                 order.getTrailPercent(),
-                order.getTrailPeak());
+                order.getTrailPeak(),
+                order.getParentOrderId(),
+                order.getOcoGroupId(),
+                order.getBracketTakeProfitPrice(),
+                order.getBracketStopLossPrice());
     }
 }

@@ -330,6 +330,9 @@ public class OrderSubmissionService {
         Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
         order.setAccountNumber(accountValidation.accountNumber());
         order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
+        if (request.hasBracket()) {
+            order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());
+        }
         if (orderType != Order.OrderType.MARKET) {
             Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
             order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
@@ -352,6 +355,11 @@ public class OrderSubmissionService {
 
         if (orderType != Order.OrderType.MARKET) {
             return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);
+        }
+
+        String bracketProblem = bracketProblem(order, executionPrice);
+        if (bracketProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
         }
 
         // 5. Price tolerance: reject if the market moved too far from the client's quote
@@ -413,6 +421,11 @@ public class OrderSubmissionService {
             order.moveTrail(executionPrice, stop);
         }
 
+        String bracketProblem = bracketProblem(order, executionPrice);
+        if (bracketProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+        }
+
         // A stop the price has already passed would trigger at once - almost always a mistake,
         // e.g. a sell stop entered above the market. The ticket points the client to a market
         // or limit order instead.
@@ -460,7 +473,7 @@ public class OrderSubmissionService {
      * @return the rejection or the accepted order and its execution; null if it wasn't OPEN
      */
     private FirstStep acceptOpenOrder(UUID orderId, BigDecimal fillPrice, boolean stopReached, String bearerToken) {
-        Order order = orderRepository.findByIdForUpdate(orderId).orElse(null);
+        Order order = lockForFill(orderId);
         if (order == null || order.getStatus() != Order.Status.OPEN) {
             return null;
         }
@@ -504,6 +517,69 @@ public class OrderSubmissionService {
         order = orderRepository.saveAndFlush(order);
         Execution execution = fillRecorder.recordExecution(order, fillPrice, now, executionReason(order));
         return new FirstStep(null, order, execution);
+    }
+
+    /**
+     * Checks a bracket against where its buy enters: the take-profit has to be above that price and
+     * the stop-loss below it, or one of the exits would fire the moment the buy filled. Entry is
+     * the ask for a market buy, the limit price for a limit or stop-limit buy, and the stop price
+     * (a trailing stop's starting stop) for a stop buy.
+     * @param order the stored order, with its trail already started if it has one
+     * @param executionPrice the buy's live ask
+     * @return why the bracket is refused, or null if the order has none or it fits
+     */
+    private static String bracketProblem(Order order, BigDecimal executionPrice) {
+        if (!order.hasBracket()) {
+            return null;
+        }
+        BigDecimal entry = switch (order.getOrderType()) {
+            case MARKET -> executionPrice;
+            case LIMIT, STOP_LIMIT -> order.getLimitPrice();
+            case STOP, TRAILING_STOP -> order.getStopPrice() != null ? order.getStopPrice() : executionPrice;
+        };
+        if (order.getBracketTakeProfitPrice().compareTo(entry) <= 0) {
+            return String.format("Take-profit $%s must be above the buy's entry price of $%s - order rejected",
+                    order.getBracketTakeProfitPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());
+        }
+        if (order.getBracketStopLossPrice().compareTo(entry) >= 0) {
+            return String.format("Stop-loss $%s must be below the buy's entry price of $%s - order rejected",
+                    order.getBracketStopLossPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());
+        }
+        return null;
+    }
+
+    /**
+     * Locks the OPEN order about to be filled. A bracket's two exit orders sell the same shares, so
+     * they are locked together, lowest ID first, and a leg is not filled while its sibling has
+     * executed (ACCEPTED or FILLED): the first leg to reach its price wins, and the other is
+     * cancelled here if the cancel that should have followed the fill did not happen.
+     * @param orderId the order to fill
+     * @return the locked order; null if it is gone or is not to be filled
+     */
+    private Order lockForFill(UUID orderId) {
+        UUID group = orderRepository.findOcoGroupId(orderId);
+        if (group == null) {
+            return orderRepository.findByIdForUpdate(orderId).orElse(null);
+        }
+        Order order = null;
+        boolean siblingExecuted = false;
+        for (Order leg : orderRepository.findGroupForUpdate(group)) {
+            if (leg.getOrderId().equals(orderId)) {
+                order = leg;
+            } else if (leg.getStatus() == Order.Status.ACCEPTED || leg.getStatus() == Order.Status.FILLED) {
+                siblingExecuted = true;
+            }
+        }
+        if (order != null && siblingExecuted) {
+            if (order.getStatus() == Order.Status.OPEN) {
+                order.markCancelled(OffsetDateTime.now());
+                orderEventPublisher.publishCancelled(order);
+            }
+            return null;
+        }
+        return order;
     }
 
     /**
