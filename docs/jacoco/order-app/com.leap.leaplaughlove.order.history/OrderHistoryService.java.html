@@ -106,7 +106,7 @@ public class OrderHistoryService {
 <span class="fc" id="L106">        Pageable pageable = PageRequest.of(page, size);</span>
 <span class="fc bfc" id="L107" title="All 2 branches covered.">        Page&lt;Order&gt; orders = range == null</span>
 <span class="fc" id="L108">                ? orderRepository.findByClientId(clientId, pageable)</span>
-<span class="fc" id="L109">                : orderRepository.findByClientIdSubmittedBetween(clientId, range.from(), range.to(), pageable);</span>
+<span class="fc" id="L109">                : orderRepository.findByClientIdCompletedBetween(clientId, range.from(), range.to(), pageable);</span>
 
 <span class="fc" id="L111">        List&lt;UUID&gt; orderIds = orders.map(Order::getOrderId).getContent();</span>
 <span class="fc" id="L112">        Map&lt;UUID, List&lt;ExecutionItem&gt;&gt; executionsByOrderId = executionRepository</span>
@@ -181,7 +181,13 @@ public class OrderHistoryService {
 <span class="fc" id="L181">                order.getStatus().name(),</span>
 <span class="fc" id="L182">                order.getSubmittedAt(),</span>
 <span class="fc" id="L183">                order.getFilledAt(),</span>
-<span class="fc" id="L184">                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()));</span>
+<span class="fc" id="L184">                executionsByOrderId.getOrDefault(order.getOrderId(), List.of()),</span>
+<span class="fc" id="L185">                order.getOrderType().name(),</span>
+<span class="fc" id="L186">                order.getLimitPrice(),</span>
+<span class="fc" id="L187">                order.getStopPrice(),</span>
+<span class="fc" id="L188">                order.getCompletedAt(),</span>
+<span class="fc" id="L189">                order.getTrailAmount(),</span>
+<span class="fc" id="L190">                order.getTrailPercent());</span>
     }
 
     /**
@@ -191,11 +197,11 @@ public class OrderHistoryService {
      * @return the corresponding ExecutionItem DTO
      */
     private ExecutionItem toExecutionItem(Execution execution) {
-<span class="fc" id="L194">        return new ExecutionItem(</span>
-<span class="fc" id="L195">                execution.getExecutionId(),</span>
-<span class="fc" id="L196">                execution.getFillQuantity(),</span>
-<span class="fc" id="L197">                execution.getFillPrice(),</span>
-<span class="fc" id="L198">                execution.getExecutedAt());</span>
+<span class="fc" id="L200">        return new ExecutionItem(</span>
+<span class="fc" id="L201">                execution.getExecutionId(),</span>
+<span class="fc" id="L202">                execution.getFillQuantity(),</span>
+<span class="fc" id="L203">                execution.getFillPrice(),</span>
+<span class="fc" id="L204">                execution.getExecutedAt());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

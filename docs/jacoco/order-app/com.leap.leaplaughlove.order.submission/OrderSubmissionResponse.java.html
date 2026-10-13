@@ -19,10 +19,18 @@ import java.util.UUID;
  * @param rejectedAt the timestamp when the order was rejected
  * @param filledAt the timestamp when the order was filled
  * @param rejectionReason the reason for order rejection, if applicable
- * @param execution the execution details of the order
+ * @param execution the execution details of the order; null while the order is OPEN
  * @param accountBalanceAfter the account balance after the order execution
+ * @param orderType MARKET, LIMIT, STOP or STOP_LIMIT
+ * @param limitPrice the limit price, for LIMIT and STOP_LIMIT orders
+ * @param stopPrice the stop price, for STOP and STOP_LIMIT orders
+ * @param timeInForce DAY or GTC; null for a market order
+ * @param expiresAt when an OPEN order expires if it hasn't filled
+ * @param reservedCash the cash an OPEN buy holds back from buying power
+ * @param trailAmount for a TRAILING_STOP, the dollars its stop trails the best price by
+ * @param trailPercent for a TRAILING_STOP, the percent its stop trails the best price by
  */
-<span class="fc" id="L25">public record OrderSubmissionResponse(</span>
+<span class="fc" id="L33">public record OrderSubmissionResponse(</span>
         UUID orderId,
         UUID accountId,
         String accountNumber,
@@ -37,8 +45,44 @@ import java.util.UUID;
         OffsetDateTime filledAt,
         String rejectionReason,
         ExecutionDto execution,
-        BigDecimal accountBalanceAfter
+        BigDecimal accountBalanceAfter,
+        String orderType,
+        BigDecimal limitPrice,
+        BigDecimal stopPrice,
+        String timeInForce,
+        OffsetDateTime expiresAt,
+        BigDecimal reservedCash,
+        BigDecimal trailAmount,
+        BigDecimal trailPercent
 ) {
+    /**
+     * A market order's response, as returned before order types existed.
+     * @param orderId the ID of the submitted order
+     * @param accountId the ID of the account under which the order was submitted
+     * @param accountNumber the account number associated with the order
+     * @param instrumentId the ID of the instrument being traded
+     * @param symbol the symbol of the instrument being traded
+     * @param side the side of the order
+     * @param quantity the quantity of the order
+     * @param status the status of the order
+     * @param submittedAt the timestamp when the order was submitted
+     * @param acceptedAt the timestamp when the order was accepted
+     * @param rejectedAt the timestamp when the order was rejected
+     * @param filledAt the timestamp when the order was filled
+     * @param rejectionReason the reason for order rejection, if applicable
+     * @param execution the execution details of the order
+     * @param accountBalanceAfter the account balance after the order execution
+     */
+    public OrderSubmissionResponse(UUID orderId, UUID accountId, String accountNumber, UUID instrumentId,
+                                   String symbol, String side, long quantity, String status,
+                                   OffsetDateTime submittedAt, OffsetDateTime acceptedAt,
+                                   OffsetDateTime rejectedAt, OffsetDateTime filledAt, String rejectionReason,
+                                   ExecutionDto execution, BigDecimal accountBalanceAfter) {
+<span class="fc" id="L81">        this(orderId, accountId, accountNumber, instrumentId, symbol, side, quantity, status, submittedAt,</span>
+                acceptedAt, rejectedAt, filledAt, rejectionReason, execution, accountBalanceAfter,
+                &quot;MARKET&quot;, null, null, null, null, null, null, null);
+<span class="fc" id="L84">    }</span>
+
         /**
          * Constructs an instance of ExecutionDto with the specified execution details.
          * @param executionId the ID of the execution
@@ -48,7 +92,7 @@ import java.util.UUID;
          * @param executedAt the timestamp when the execution occurred
          * @param reason the reason for the execution status, if applicable
          */
-<span class="fc" id="L51">    public record ExecutionDto(</span>
+<span class="fc" id="L95">    public record ExecutionDto(</span>
             UUID executionId,
             Long fillQuantity,
             BigDecimal fillPrice,

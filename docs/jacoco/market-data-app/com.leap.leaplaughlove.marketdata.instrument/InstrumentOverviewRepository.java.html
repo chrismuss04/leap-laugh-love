@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InstrumentOverviewRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.instrument</a> &gt; <span class="el_source">InstrumentOverviewRepository.java</span></div><h1>InstrumentOverviewRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.instrument;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.sql.Timestamp;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+/** Loads metadata and completed daily baselines in one database round trip. */
+@Repository
+public class InstrumentOverviewRepository {
+    private final JdbcTemplate jdbc;
+
+<span class="fc" id="L16">    public InstrumentOverviewRepository(JdbcTemplate jdbc) {</span>
+<span class="fc" id="L17">        this.jdbc = jdbc;</span>
+<span class="fc" id="L18">    }</span>
+
+    public List&lt;Metadata&gt; findAll(OffsetDateTime periodStart) {
+        // A daily candle must end by periodStart. The existing candle primary key
+        // supports each backwards lookup. Schemas have separate UUIDs: join by symbol.
+<span class="fc" id="L23">        return jdbc.query(&quot;&quot;&quot;</span>
+                SELECT m.symbol, m.display_name, t.asset_class, t.currency,
+                    (SELECT c.close FROM marketdata.price_candles c
+                     WHERE c.instrument_id = m.instrument_id AND c.bucket_seconds = 86400
+                       AND c.bucket_start &lt;= ?
+                     ORDER BY c.bucket_start DESC LIMIT 1) AS baseline_price
+                FROM marketdata.instruments m
+                LEFT JOIN trading.instruments t ON t.symbol = m.symbol
+                WHERE m.is_active = TRUE
+                ORDER BY m.symbol
+<span class="fc" id="L33">                &quot;&quot;&quot;, (rs, row) -&gt; new Metadata(rs.getString(&quot;symbol&quot;), rs.getString(&quot;display_name&quot;),</span>
+<span class="fc" id="L34">                rs.getString(&quot;asset_class&quot;), rs.getString(&quot;currency&quot;), rs.getBigDecimal(&quot;baseline_price&quot;)),</span>
+<span class="fc" id="L35">                Timestamp.from(periodStart.minusDays(1).toInstant()));</span>
+    }
+
+<span class="fc" id="L38">    public record Metadata(String symbol, String name, String assetClass, String currency,</span>
+            BigDecimal baselinePrice) {}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

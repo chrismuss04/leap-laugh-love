@@ -7,14 +7,21 @@ import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.position.PositionMovement;
+import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
+import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
+import com.leap.leaplaughlove.order.working.BracketService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Writes everything a fill leaves behind: the FILLED execution, the cash settlement and holding
@@ -40,6 +47,8 @@ public class FillRecorder {
     private final ExecutionRepository executionRepository;
     private final PositionMovementRepository positionMovementRepository;
     private final AccountClient accountClient;
+    private final OrderRepository orderRepository;
+    private final BracketService bracketService;
 
     /**
      * Constructs a FillRecorder with the required repositories and client.
@@ -47,14 +56,35 @@ public class FillRecorder {
      * @param executionRepository        the repository for persisting execution records
      * @param positionMovementRepository the repository for recording position movements
      * @param accountClient              the client for communicating settlement details to the account service
+     * @param orderRepository            stores the exit orders a bracket opens when its buy fills
+     * @param bracketService             cancels the other exit once one has executed
+     */
+    @Autowired
+    public FillRecorder(ExecutionRepository executionRepository,
+                        PositionMovementRepository positionMovementRepository,
+                        AccountClient accountClient,
+                        OrderRepository orderRepository,
+<span class="fc" id="L67">                        BracketService bracketService) {</span>
+<span class="fc" id="L68">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L69">        this.positionMovementRepository = positionMovementRepository;</span>
+<span class="fc" id="L70">        this.accountClient = accountClient;</span>
+<span class="fc" id="L71">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L72">        this.bracketService = bracketService;</span>
+<span class="fc" id="L73">    }</span>
+
+    /**
+     * Constructs a FillRecorder that does not handle brackets: a bracket buy it fills opens no
+     * exit orders, and an exit order it fills cancels no sibling.
+     * 
+     * @param executionRepository        the repository for persisting execution records
+     * @param positionMovementRepository the repository for recording position movements
+     * @param accountClient              the client for communicating settlement details to the account service
      */
     public FillRecorder(ExecutionRepository executionRepository,
                         PositionMovementRepository positionMovementRepository,
-<span class="fc" id="L53">                        AccountClient accountClient) {</span>
-<span class="fc" id="L54">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L55">        this.positionMovementRepository = positionMovementRepository;</span>
-<span class="fc" id="L56">        this.accountClient = accountClient;</span>
-<span class="fc" id="L57">    }</span>
+                        AccountClient accountClient) {
+<span class="fc" id="L86">        this(executionRepository, positionMovementRepository, accountClient, null, null);</span>
+<span class="fc" id="L87">    }</span>
 
     /**
      * Writes the FILLED execution for a fill of the whole order at one price. Does not change the
@@ -65,9 +95,21 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
-<span class="fc" id="L68">        return executionRepository.saveAndFlush(new Execution(</span>
-<span class="fc" id="L69">                order, order.getQuantity(), price, Execution.Status.FILLED,</span>
-                &quot;Executed at market price&quot;, time));
+<span class="fc" id="L98">        return recordExecution(order, price, time, &quot;Executed at market price&quot;);</span>
+    }
+
+    /**
+     * Writes the FILLED execution for a fill of the whole order at one price, with the given
+     * description of how it was priced. Does not change the order's own status.
+     * @param order the order being filled
+     * @param price the execution price per share
+     * @param time when the fill happened; stamped on every row the fill writes
+     * @param reason how the fill was priced, e.g. at a limit price or better
+     * @return the saved FILLED execution
+     */
+    public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time, String reason) {
+<span class="fc" id="L111">        return executionRepository.saveAndFlush(new Execution(</span>
+<span class="fc" id="L112">                order, order.getQuantity(), price, Execution.Status.FILLED, reason, time));</span>
     }
 
     /**
@@ -81,19 +123,19 @@ public class FillRecorder {
      * @return account-app's settlement result
      */
     public SettlementResponse settle(Order order, Execution execution, String bearerToken) {
-<span class="fc" id="L84">        SettlementRequest request = new SettlementRequest(</span>
-<span class="fc" id="L85">                order.getOrderId(),</span>
-<span class="fc" id="L86">                execution.getExecutionId(),</span>
-<span class="fc" id="L87">                order.getInstrument().getInstrumentId(),</span>
-<span class="fc" id="L88">                order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L89">                order.getSide().name(),</span>
-<span class="fc" id="L90">                order.getQuantity(),</span>
-<span class="fc" id="L91">                execution.getFillPrice(),</span>
-<span class="fc" id="L92">                execution.getExecutedAt()</span>
+<span class="fc" id="L126">        SettlementRequest request = new SettlementRequest(</span>
+<span class="fc" id="L127">                order.getOrderId(),</span>
+<span class="fc" id="L128">                execution.getExecutionId(),</span>
+<span class="fc" id="L129">                order.getInstrument().getInstrumentId(),</span>
+<span class="fc" id="L130">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L131">                order.getSide().name(),</span>
+<span class="fc" id="L132">                order.getQuantity(),</span>
+<span class="fc" id="L133">                execution.getFillPrice(),</span>
+<span class="fc" id="L134">                execution.getExecutedAt()</span>
         );
-<span class="fc bfc" id="L94" title="All 2 branches covered.">        return bearerToken == null</span>
-<span class="fc" id="L95">                ? accountClient.settleOrder(order.getAccountId(), request)</span>
-<span class="fc" id="L96">                : accountClient.settleOrderAs(order.getAccountId(), request, bearerToken);</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        return bearerToken == null</span>
+<span class="fc" id="L137">                ? accountClient.settleOrder(order.getAccountId(), request)</span>
+<span class="fc" id="L138">                : accountClient.settleOrderAs(order.getAccountId(), request, bearerToken);</span>
     }
 
     /**
@@ -109,11 +151,11 @@ public class FillRecorder {
      * @return true only if account-app answered with a refusal
      */
     public static boolean isRefused(RuntimeException failure) {
-<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (!(failure instanceof HttpClientErrorException clientError)) {</span>
-<span class="fc" id="L113">            return false;</span>
+<span class="fc bfc" id="L154" title="All 2 branches covered.">        if (!(failure instanceof HttpClientErrorException clientError)) {</span>
+<span class="fc" id="L155">            return false;</span>
         }
-<span class="fc" id="L115">        int status = clientError.getStatusCode().value();</span>
-<span class="fc bfc" id="L116" title="All 4 branches covered.">        return status == 400 || status == 422;</span>
+<span class="fc" id="L157">        int status = clientError.getStatusCode().value();</span>
+<span class="fc bfc" id="L158" title="All 4 branches covered.">        return status == 400 || status == 422;</span>
     }
 
     /**
@@ -123,22 +165,24 @@ public class FillRecorder {
      * @return the reason, or the exception's message if the body has none
      */
     public static String refusalReason(RuntimeException refusal) {
-<span class="pc bpc" id="L126" title="1 of 2 branches missed.">        if (refusal instanceof HttpClientErrorException clientError) {</span>
+<span class="pc bpc" id="L168" title="1 of 2 branches missed.">        if (refusal instanceof HttpClientErrorException clientError) {</span>
             try {
-<span class="fc" id="L128">                Map&lt;?, ?&gt; body = clientError.getResponseBodyAs(Map.class);</span>
-<span class="pc bpc" id="L129" title="3 of 6 branches missed.">                if (body != null &amp;&amp; body.get(&quot;message&quot;) instanceof String message &amp;&amp; !message.isBlank()) {</span>
-<span class="fc" id="L130">                    return message;</span>
+<span class="fc" id="L170">                Map&lt;?, ?&gt; body = clientError.getResponseBodyAs(Map.class);</span>
+<span class="pc bpc" id="L171" title="3 of 6 branches missed.">                if (body != null &amp;&amp; body.get(&quot;message&quot;) instanceof String message &amp;&amp; !message.isBlank()) {</span>
+<span class="fc" id="L172">                    return message;</span>
                 }
-<span class="fc" id="L132">            } catch (RuntimeException unreadable) {</span>
+<span class="fc" id="L174">            } catch (RuntimeException unreadable) {</span>
                 // Not account-app's JSON error body; fall back to the exception's message.
-<span class="nc" id="L134">            }</span>
+<span class="nc" id="L176">            }</span>
         }
-<span class="fc" id="L136">        return refusal.getMessage();</span>
+<span class="fc" id="L178">        return refusal.getMessage();</span>
     }
 
     /**
      * Finishes booking a settled live fill: writes its position movement and marks the order
-     * FILLED. Call inside a transaction holding the order's row lock (see
+     * FILLED. A bracket buy then opens its two exit orders in the same transaction, so they exist
+     * exactly when the fill is booked - whichever of live submission, the trigger engine or
+     * recovery finishes it. An exit order's fill cancels its linked sibling once it commits. Call inside a transaction holding the order's row lock (see
      * OrderRepository#findByIdForUpdate), so live submission and {@link PendingFillRecovery}
      * can't both finish it. Does nothing if the fill was already finished.
      * @param lockedOrder the order, loaded with its row lock in the current transaction
@@ -146,13 +190,72 @@ public class FillRecorder {
      * @return true if this call finished the fill, false if it was already finished
      */
     public boolean completeFill(Order lockedOrder, Execution execution) {
-<span class="fc bfc" id="L149" title="All 2 branches covered.">        if (positionMovementRepository.existsByOrderId(lockedOrder.getOrderId())) {</span>
-<span class="fc" id="L150">            return false;</span>
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        if (positionMovementRepository.existsByOrderId(lockedOrder.getOrderId())) {</span>
+<span class="fc" id="L194">            return false;</span>
         }
-<span class="fc" id="L152">        recordPositionMovement(lockedOrder, execution);</span>
-<span class="fc" id="L153">        lockedOrder.markFilled(execution.getExecutedAt());</span>
-<span class="fc" id="L154">        return true;</span>
+<span class="fc" id="L196">        recordPositionMovement(lockedOrder, execution);</span>
+<span class="fc" id="L197">        lockedOrder.markFilled(execution.getExecutedAt());</span>
+<span class="fc" id="L198">        openExitOrders(lockedOrder, execution.getExecutedAt());</span>
+<span class="fc" id="L199">        cancelSiblingsAfterCommit(lockedOrder);</span>
+<span class="fc" id="L200">        return true;</span>
     }
+
+    /**
+     * Opens the take-profit and stop-loss sells of a filled bracket buy. They are OPEN at once, good
+     * until cancelled, and share one group. Nothing checks the stop against the market here: if the
+     * price has already fallen through it, {@code OrderTriggerEngine} sees that on its next pass and
+     * sells at once, which is the point of a stop-loss.
+     * @param parent the filled buy, locked in the current transaction
+     * @param now when the buy filled
+     */
+    private void openExitOrders(Order parent, OffsetDateTime now) {
+<span class="pc bpc" id="L212" title="1 of 6 branches missed.">        if (orderRepository == null || !parent.hasBracket() || parent.getSide() != Order.Side.BUY</span>
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">                || orderRepository.existsByParentOrderId(parent.getOrderId())) {</span>
+<span class="fc" id="L214">            return;</span>
+        }
+<span class="fc" id="L216">        UUID group = UUID.randomUUID();</span>
+<span class="fc" id="L217">        OffsetDateTime expiresAt = OrderSubmissionService.expiryOf(Order.TimeInForce.GTC, now);</span>
+
+<span class="fc" id="L219">        Order stopLoss = exit(parent, group, now);</span>
+<span class="fc" id="L220">        stopLoss.setConditions(Order.OrderType.STOP, null, parent.getBracketStopLossPrice(),</span>
+                Order.TimeInForce.GTC, expiresAt);
+<span class="fc" id="L222">        Order takeProfit = exit(parent, group, now);</span>
+<span class="fc" id="L223">        takeProfit.setConditions(Order.OrderType.LIMIT, parent.getBracketTakeProfitPrice(), null,</span>
+                Order.TimeInForce.GTC, expiresAt);
+<span class="fc" id="L225">        orderRepository.save(stopLoss);</span>
+<span class="fc" id="L226">        orderRepository.save(takeProfit);</span>
+<span class="fc" id="L227">    }</span>
+
+    private static Order exit(Order parent, UUID group, OffsetDateTime now) {
+<span class="fc" id="L230">        Order exit = new Order(parent.getAccountId(), parent.getInstrument(), Order.Side.SELL,</span>
+<span class="fc" id="L231">                parent.getQuantity(), now);</span>
+<span class="fc" id="L232">        exit.linkAsExit(parent.getOrderId(), group);</span>
+<span class="fc" id="L233">        exit.markOpen(null);</span>
+<span class="fc" id="L234">        return exit;</span>
+    }
+
+    /**
+     * Once this exit order's fill has committed, cancels its linked sibling in a transaction of its
+     * own, locking the group lowest ID first.
+     * @param order the filled order
+     */
+    private void cancelSiblingsAfterCommit(Order order) {
+<span class="fc bfc" id="L243" title="All 4 branches covered.">        if (bracketService == null || order.getOcoGroupId() == null) {</span>
+<span class="fc" id="L244">            return;</span>
+        }
+<span class="fc" id="L246">        UUID orderId = order.getOrderId();</span>
+<span class="fc" id="L247">        UUID group = order.getOcoGroupId();</span>
+<span class="pc bpc" id="L248" title="1 of 2 branches missed.">        if (!TransactionSynchronizationManager.isSynchronizationActive()) {</span>
+<span class="nc" id="L249">            bracketService.cancelSiblings(orderId, group);</span>
+<span class="nc" id="L250">            return;</span>
+        }
+<span class="fc" id="L252">        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {</span>
+            @Override
+            public void afterCommit() {
+<span class="fc" id="L255">                bracketService.cancelSiblings(orderId, group);</span>
+<span class="fc" id="L256">            }</span>
+        });
+<span class="fc" id="L258">    }</span>
 
     /**
      * Writes a settled fill's movement to the position movements ledger.
@@ -160,16 +263,16 @@ public class FillRecorder {
      * @param execution its settled FILLED execution
      */
     public void recordPositionMovement(Order order, Execution execution) {
-<span class="fc" id="L163">        long quantity = order.getQuantity();</span>
-<span class="fc" id="L164">        BigDecimal tradeCost = execution.getFillPrice().multiply(BigDecimal.valueOf(quantity))</span>
-<span class="fc" id="L165">                .setScale(2, RoundingMode.HALF_UP);</span>
-<span class="fc bfc" id="L166" title="All 2 branches covered.">        boolean buy = order.getSide() == Order.Side.BUY;</span>
+<span class="fc" id="L266">        long quantity = order.getQuantity();</span>
+<span class="fc" id="L267">        BigDecimal tradeCost = execution.getFillPrice().multiply(BigDecimal.valueOf(quantity))</span>
+<span class="fc" id="L268">                .setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc bfc" id="L269" title="All 2 branches covered.">        boolean buy = order.getSide() == Order.Side.BUY;</span>
 
-<span class="fc" id="L168">        positionMovementRepository.save(new PositionMovement(</span>
-<span class="fc" id="L169">                order.getAccountId(), order.getInstrument().getInstrumentId(), order.getOrderId(),</span>
-<span class="fc bfc" id="L170" title="All 2 branches covered.">                execution.getExecutionId(), buy ? &quot;BUY_FILL&quot; : &quot;SELL_FILL&quot;,</span>
-<span class="fc bfc" id="L171" title="All 4 branches covered.">                buy ? quantity : -quantity, buy ? tradeCost : tradeCost.negate(),</span>
-<span class="fc" id="L172">                execution.getExecutedAt()));</span>
-<span class="fc" id="L173">    }</span>
+<span class="fc" id="L271">        positionMovementRepository.save(new PositionMovement(</span>
+<span class="fc" id="L272">                order.getAccountId(), order.getInstrument().getInstrumentId(), order.getOrderId(),</span>
+<span class="fc bfc" id="L273" title="All 2 branches covered.">                execution.getExecutionId(), buy ? &quot;BUY_FILL&quot; : &quot;SELL_FILL&quot;,</span>
+<span class="fc bfc" id="L274" title="All 4 branches covered.">                buy ? quantity : -quantity, buy ? tradeCost : tradeCost.negate(),</span>
+<span class="fc" id="L275">                execution.getExecutedAt()));</span>
+<span class="fc" id="L276">    }</span>
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

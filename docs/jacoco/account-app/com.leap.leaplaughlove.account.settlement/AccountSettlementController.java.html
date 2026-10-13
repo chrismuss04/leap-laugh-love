@@ -2,7 +2,13 @@
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
@@ -20,9 +26,9 @@ public class AccountSettlementController {
      * Constructs an AccountSettlementController with the injected AccountSettlementService.
      * @param accountSettlementService the service for handling account settlement operations
      */
-<span class="fc" id="L23">    public AccountSettlementController(AccountSettlementService accountSettlementService) {</span>
-<span class="fc" id="L24">        this.accountSettlementService = accountSettlementService;</span>
-<span class="fc" id="L25">    }</span>
+<span class="fc" id="L29">    public AccountSettlementController(AccountSettlementService accountSettlementService) {</span>
+<span class="fc" id="L30">        this.accountSettlementService = accountSettlementService;</span>
+<span class="fc" id="L31">    }</span>
 
     /**
      * Retrieves the validation data for a specific account and optionally for a specific instrument.
@@ -34,7 +40,7 @@ public class AccountSettlementController {
     public ResponseEntity&lt;AccountValidationDto&gt; getValidationData(
             @PathVariable UUID accountId,
             @RequestParam(required = false) UUID instrumentId) {
-<span class="fc" id="L37">        return ResponseEntity.ok(accountSettlementService.getValidationData(accountId, instrumentId));</span>
+<span class="fc" id="L43">        return ResponseEntity.ok(accountSettlementService.getValidationData(accountId, instrumentId));</span>
     }
     /**
      * Settles an order for a specific account.
@@ -46,7 +52,7 @@ public class AccountSettlementController {
     public ResponseEntity&lt;SettlementResponse&gt; settleOrder(
             @PathVariable UUID accountId,
             @Valid @RequestBody SettlementRequest request) {
-<span class="fc" id="L49">        return ResponseEntity.ok(accountSettlementService.settleOrder(accountId, request));</span>
+<span class="fc" id="L55">        return ResponseEntity.ok(accountSettlementService.settleOrder(accountId, request));</span>
     }
 }
 

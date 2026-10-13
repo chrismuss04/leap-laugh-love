@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -26,7 +28,7 @@ import java.util.UUID;
 @Component
 public class OrderEventPublisher {
 
-<span class="fc" id="L29">    private static final Logger log = LoggerFactory.getLogger(OrderEventPublisher.class);</span>
+<span class="fc" id="L31">    private static final Logger log = LoggerFactory.getLogger(OrderEventPublisher.class);</span>
 
     private final KafkaTemplate&lt;String, OrderCompletedEvent&gt; kafkaTemplate;
     private final AccountRepository accountRepository;
@@ -43,12 +45,12 @@ public class OrderEventPublisher {
     public OrderEventPublisher(KafkaTemplate&lt;String, OrderCompletedEvent&gt; kafkaTemplate,
                                AccountRepository accountRepository,
                                @Value(&quot;${reporting.events.enabled:true}&quot;) boolean enabled,
-<span class="fc" id="L46">                               @Value(&quot;${reporting.events.topic:order-events}&quot;) String topic) {</span>
-<span class="fc" id="L47">        this.kafkaTemplate = kafkaTemplate;</span>
-<span class="fc" id="L48">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L49">        this.enabled = enabled;</span>
-<span class="fc" id="L50">        this.topic = topic;</span>
-<span class="fc" id="L51">    }</span>
+<span class="fc" id="L48">                               @Value(&quot;${reporting.events.topic:order-events}&quot;) String topic) {</span>
+<span class="fc" id="L49">        this.kafkaTemplate = kafkaTemplate;</span>
+<span class="fc" id="L50">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L51">        this.enabled = enabled;</span>
+<span class="fc" id="L52">        this.topic = topic;</span>
+<span class="fc" id="L53">    }</span>
 
     /**
      * Publishes a FILLED order.
@@ -56,8 +58,8 @@ public class OrderEventPublisher {
      * @param execution its FILLED execution, which carries the fill price
      */
     public void publishFilled(Order order, Execution execution) {
-<span class="fc" id="L59">        publish(order, execution.getFillPrice(), order.getFilledAt());</span>
-<span class="fc" id="L60">    }</span>
+<span class="fc" id="L61">        publish(order, execution.getFillPrice(), order.getFilledAt());</span>
+<span class="fc" id="L62">    }</span>
 
     /**
      * Publishes an order rejected after its execution, i.e. refused at settlement. Orders
@@ -65,40 +67,86 @@ public class OrderEventPublisher {
      * @param order the order, marked REJECTED, with its instrument loaded
      */
     public void publishRejected(Order order) {
-<span class="fc" id="L68">        publish(order, null, order.getRejectedAt());</span>
-<span class="fc" id="L69">    }</span>
+<span class="fc" id="L70">        publish(order, null, order.getRejectedAt());</span>
+<span class="fc" id="L71">    }</span>
+
+    /**
+     * Publishes an order the client cancelled, or that a bracket cancelled because its other exit
+     * executed. Sent once the transaction that cancelled it commits, if there is one.
+     * @param order the order, marked CANCELLED, with its instrument loaded
+     */
+    public void publishCancelled(Order order) {
+<span class="fc" id="L79">        publish(order, null, order.getCancelledAt());</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Publishes an order that expired unfilled. Sent once the transaction that expired it commits,
+     * if there is one.
+     * @param order the order, marked EXPIRED, with its instrument loaded
+     */
+    public void publishExpired(Order order) {
+<span class="fc" id="L88">        publish(order, null, order.getExpiredAt());</span>
+<span class="fc" id="L89">    }</span>
 
     private void publish(Order order, BigDecimal fillPrice, OffsetDateTime completedAt) {
-<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (!enabled) {</span>
-<span class="fc" id="L73">            return;</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (!enabled) {</span>
+<span class="fc" id="L93">            return;</span>
         }
-<span class="fc" id="L75">        UUID orderId = order.getOrderId();</span>
+<span class="fc" id="L95">        UUID orderId = order.getOrderId();</span>
         try {
-<span class="fc" id="L77">            OrderCompletedEvent event = new OrderCompletedEvent(</span>
-<span class="fc" id="L78">                    UUID.randomUUID(),</span>
+<span class="fc" id="L97">            OrderCompletedEvent event = new OrderCompletedEvent(</span>
+<span class="fc" id="L98">                    UUID.randomUUID(),</span>
                     orderId,
-<span class="fc" id="L80">                    order.getAccountId(),</span>
-<span class="fc" id="L81">                    clientIdOf(order),</span>
-<span class="fc" id="L82">                    order.getInstrument().getInstrumentId(),</span>
-<span class="fc" id="L83">                    order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L84">                    order.getSide().name(),</span>
-<span class="fc" id="L85">                    order.getQuantity(),</span>
-<span class="fc" id="L86">                    order.getStatus().name(),</span>
+<span class="fc" id="L100">                    order.getAccountId(),</span>
+<span class="fc" id="L101">                    clientIdOf(order),</span>
+<span class="fc" id="L102">                    order.getInstrument().getInstrumentId(),</span>
+<span class="fc" id="L103">                    order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L104">                    order.getSide().name(),</span>
+<span class="fc" id="L105">                    order.getQuantity(),</span>
+<span class="fc" id="L106">                    order.getStatus().name(),</span>
                     fillPrice,
-<span class="fc" id="L88">                    order.getRejectionReason(),</span>
-<span class="fc" id="L89">                    order.getSubmittedAt(),</span>
-                    completedAt);
-            // Keyed by order, so any later event for the same order lands on the same partition.
-<span class="fc" id="L92">            kafkaTemplate.send(topic, orderId.toString(), event)</span>
-<span class="fc" id="L93">                    .whenComplete((result, failure) -&gt; {</span>
-<span class="fc bfc" id="L94" title="All 2 branches covered.">                        if (failure != null) {</span>
-<span class="fc" id="L95">                            log.warn(&quot;Order event for order {} was not delivered: {}&quot;, orderId, failure.getMessage());</span>
+<span class="fc" id="L108">                    order.getRejectionReason(),</span>
+<span class="fc" id="L109">                    order.getSubmittedAt(),</span>
+                    completedAt,
+<span class="fc" id="L111">                    order.getOrderType().name());</span>
+            // Built now, while the order is loaded; sent once what made it final has committed.
+<span class="fc" id="L113">            afterCommit(() -&gt; send(orderId, event));</span>
+<span class="fc" id="L114">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L115">            log.warn(&quot;Could not publish order event for order {}: {}&quot;, orderId, ex.getMessage());</span>
+<span class="fc" id="L116">        }</span>
+<span class="fc" id="L117">    }</span>
+
+    /** Keyed by order, so any later event for the same order lands on the same partition. */
+    private void send(UUID orderId, OrderCompletedEvent event) {
+        try {
+<span class="fc" id="L122">            kafkaTemplate.send(topic, orderId.toString(), event)</span>
+<span class="fc" id="L123">                    .whenComplete((result, failure) -&gt; {</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">                        if (failure != null) {</span>
+<span class="fc" id="L125">                            log.warn(&quot;Order event for order {} was not delivered: {}&quot;, orderId, failure.getMessage());</span>
                         }
-<span class="fc" id="L97">                    });</span>
-<span class="fc" id="L98">        } catch (RuntimeException ex) {</span>
-<span class="fc" id="L99">            log.warn(&quot;Could not publish order event for order {}: {}&quot;, orderId, ex.getMessage());</span>
-<span class="fc" id="L100">        }</span>
-<span class="fc" id="L101">    }</span>
+<span class="fc" id="L127">                    });</span>
+<span class="fc" id="L128">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L129">            log.warn(&quot;Could not publish order event for order {}: {}&quot;, orderId, ex.getMessage());</span>
+<span class="fc" id="L130">        }</span>
+<span class="fc" id="L131">    }</span>
+
+    /**
+     * Runs the action once the current transaction commits, so a cancel that rolls back is never
+     * reported; at once when there is no transaction, as for the fills and rejections, which are
+     * published after theirs has committed.
+     */
+    private static void afterCommit(Runnable action) {
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        if (!TransactionSynchronizationManager.isSynchronizationActive()) {</span>
+<span class="fc" id="L140">            action.run();</span>
+<span class="fc" id="L141">            return;</span>
+        }
+<span class="nc" id="L143">        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {</span>
+            @Override
+            public void afterCommit() {
+<span class="nc" id="L146">                action.run();</span>
+<span class="nc" id="L147">            }</span>
+        });
+<span class="nc" id="L149">    }</span>
 
     /**
      * The client who owns the order's account.
@@ -106,9 +154,9 @@ public class OrderEventPublisher {
      * @return its account's client ID
      */
     private UUID clientIdOf(Order order) {
-<span class="fc" id="L109">        return accountRepository.findById(order.getAccountId())</span>
-<span class="fc" id="L110">                .map(Account::getClientId)</span>
-<span class="fc" id="L111">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found: &quot; + order.getAccountId()));</span>
+<span class="fc" id="L157">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L158">                .map(Account::getClientId)</span>
+<span class="fc" id="L159">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found: &quot; + order.getAccountId()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

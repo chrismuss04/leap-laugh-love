@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReportingSecurityConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.security</a> &gt; <span class="el_source">ReportingSecurityConfig.java</span></div><h1>ReportingSecurityConfig.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.security;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import com.leap.leaplaughlove.common.security.CommonCorsConfiguration;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationEntryPoint;
+import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
+import com.leap.leaplaughlove.common.security.JwtService;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Import;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfigurationSource;
+
+/**
+ * Configures Spring Security for the reporting service: stateless JWT authentication (reusing
+ * iam-app's {@link JwtService}), with every report for commercial analysts only.
+ */
+// Session Timeout &amp; Revocation: common-security is outside each app's component scan.
+@Import(ClientSessionValidator.class)
+@Configuration
+<span class="fc" id="L26">public class ReportingSecurityConfig {</span>
+
+    /**
+     * Builds the security filter chain: stateless sessions, CORS, JWT authentication, and a
+     * JSON 401 response for unauthenticated requests.
+     * @param http the security configuration builder
+     * @param jwtService the JWT service used to validate bearer tokens
+     * @param objectMapper the object mapper used to write the JSON 401 response body
+     * @param sessions checks that a token's session is still live
+     * @return the configured security filter chain
+     * @throws Exception if the security configuration cannot be built
+     */
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper,
+                                           ClientSessionValidator sessions) throws Exception {
+<span class="fc" id="L41">        http</span>
+<span class="fc" id="L42">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
+<span class="fc" id="L43">                .csrf(AbstractHttpConfigurer::disable)</span>
+<span class="fc" id="L44">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L45">                .authorizeHttpRequests(auth -&gt; auth</span>
+<span class="fc" id="L46">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
+                        // let Spring Boot's internal error forward render the real status instead
+                        // of falling through to the role check and masking it as a 401
+<span class="fc" id="L49">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+                        // Analyst-only: client and trading operations tokens are refused here (403).
+<span class="fc" id="L51">                        .anyRequest().hasRole(&quot;COMMERCIAL_ANALYST&quot;))</span>
+<span class="fc" id="L52">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L53">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L54">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L55">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L56">        return http.build();</span>
+    }
+
+    /**
+     * Provides the CORS configuration applied to every endpoint.
+     * @return the CORS configuration source
+     */
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+<span class="fc" id="L65">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

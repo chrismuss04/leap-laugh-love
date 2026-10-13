@@ -142,75 +142,103 @@ public class PortfolioHistoryService {
         // Today's holdings and cash: the known end state the walk starts from.
 <span class="fc" id="L143">        Map&lt;UUID, Long&gt; quantities = new HashMap&lt;&gt;();</span>
 <span class="fc" id="L144">        Map&lt;UUID, String&gt; symbols = new HashMap&lt;&gt;();</span>
-<span class="fc bfc" id="L145" title="All 2 branches covered.">        for (UUID accountId : accountIds) {</span>
-<span class="fc" id="L146">            positionRepository.findPositionsByAccountId(accountId).forEach(row -&gt; {</span>
-<span class="fc" id="L147">                UUID instrumentId = UUID.fromString(row.getInstrumentId());</span>
-<span class="fc" id="L148">                quantities.merge(instrumentId, row.getQuantity(), Long::sum);</span>
-<span class="fc" id="L149">                symbols.put(instrumentId, row.getSymbol());</span>
-<span class="fc" id="L150">            });</span>
-<span class="fc" id="L151">        }</span>
-<span class="fc" id="L152">        BigDecimal cash = cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()</span>
-<span class="fc" id="L153">                .filter(total -&gt; total.getCurrency().equals(baseCurrencies.get(total.getAccountId())))</span>
-<span class="fc" id="L154">                .map(CashLedgerRepository.AccountTotal::getTotal)</span>
-<span class="fc" id="L155">                .reduce(BigDecimal.ZERO, BigDecimal::add);</span>
+<span class="fc" id="L145">        loadHoldings(accountIds, quantities, symbols);</span>
+<span class="fc" id="L146">        BigDecimal cash = currentCash(accountIds, baseCurrencies);</span>
 
         // Everything that happened inside the range, newest first, to undo on the way
         // back.
-<span class="fc" id="L159">        List&lt;PositionMovement&gt; movements = new ArrayList&lt;&gt;(</span>
-<span class="fc" id="L160">                positionMovementRepository.findByAccountIdInAndCreatedAtAfter(accountIds, window.from()));</span>
-<span class="fc" id="L161">        movements.sort(Comparator.comparing(PositionMovement::getCreatedAt).reversed());</span>
-<span class="fc" id="L162">        List&lt;CashLedgerEntry&gt; entries = new ArrayList&lt;&gt;(</span>
-<span class="fc" id="L163">                cashLedgerRepository.findByAccountIdInAndCreatedAtAfter(accountIds, window.from()));</span>
-<span class="pc bpc" id="L164" title="1 of 2 branches missed.">        entries.removeIf(entry -&gt; !entry.getCurrency().equals(baseCurrencies.get(entry.getAccountId())));</span>
-<span class="fc" id="L165">        entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());</span>
+<span class="fc" id="L150">        List&lt;PositionMovement&gt; movements = new ArrayList&lt;&gt;(</span>
+<span class="fc" id="L151">                positionMovementRepository.findByAccountIdInAndCreatedAtAfter(accountIds, window.from()));</span>
+<span class="fc" id="L152">        movements.sort(Comparator.comparing(PositionMovement::getCreatedAt).reversed());</span>
+<span class="fc" id="L153">        List&lt;CashLedgerEntry&gt; entries = new ArrayList&lt;&gt;(</span>
+<span class="fc" id="L154">                cashLedgerRepository.findByAccountIdInAndCreatedAtAfter(accountIds, window.from()));</span>
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">        entries.removeIf(entry -&gt; !entry.getCurrency().equals(baseCurrencies.get(entry.getAccountId())));</span>
+<span class="fc" id="L156">        entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());</span>
 
-        // Only instruments held at some point in the range need pricing.
-<span class="fc" id="L168">        Set&lt;UUID&gt; priced = new HashSet&lt;&gt;();</span>
-<span class="fc" id="L169">        quantities.forEach((instrumentId, quantity) -&gt; {</span>
-<span class="pc bpc" id="L170" title="1 of 2 branches missed.">            if (quantity != 0) {</span>
-<span class="fc" id="L171">                priced.add(instrumentId);</span>
+<span class="fc" id="L158">        Map&lt;UUID, BigDecimal[]&gt; prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);</span>
+<span class="fc" id="L159">        BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);</span>
+<span class="fc" id="L160">        return toResponse(range, window, timeline, values);</span>
+    }
+
+    /** Today's quantity and symbol of every instrument held across the accounts. */
+    private void loadHoldings(List&lt;UUID&gt; accountIds, Map&lt;UUID, Long&gt; quantities, Map&lt;UUID, String&gt; symbols) {
+<span class="fc bfc" id="L165" title="All 2 branches covered.">        for (UUID accountId : accountIds) {</span>
+<span class="fc" id="L166">            positionRepository.findPositionsByAccountId(accountId).forEach(row -&gt; {</span>
+<span class="fc" id="L167">                UUID instrumentId = UUID.fromString(row.getInstrumentId());</span>
+<span class="fc" id="L168">                quantities.merge(instrumentId, row.getQuantity(), Long::sum);</span>
+<span class="fc" id="L169">                symbols.put(instrumentId, row.getSymbol());</span>
+<span class="fc" id="L170">            });</span>
+<span class="fc" id="L171">        }</span>
+<span class="fc" id="L172">    }</span>
+
+    /** Today's cash across the accounts, counting only each account's base currency. */
+    private BigDecimal currentCash(List&lt;UUID&gt; accountIds, Map&lt;UUID, String&gt; baseCurrencies) {
+<span class="fc" id="L176">        return cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()</span>
+<span class="fc" id="L177">                .filter(total -&gt; total.getCurrency().equals(baseCurrencies.get(total.getAccountId())))</span>
+<span class="fc" id="L178">                .map(CashLedgerRepository.AccountTotal::getTotal)</span>
+<span class="fc" id="L179">                .reduce(BigDecimal.ZERO, BigDecimal::add);</span>
+    }
+
+    /** Prices every instrument held at some point in the range; the rest need none. */
+    private Map&lt;UUID, BigDecimal[]&gt; priceHeldInstruments(Map&lt;UUID, Long&gt; quantities, Map&lt;UUID, String&gt; symbols,
+            List&lt;PositionMovement&gt; movements, PortfolioRange.Window window, List&lt;OffsetDateTime&gt; timeline) {
+<span class="fc" id="L185">        Set&lt;UUID&gt; priced = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L186">        quantities.forEach((instrumentId, quantity) -&gt; {</span>
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">            if (quantity != 0) {</span>
+<span class="fc" id="L188">                priced.add(instrumentId);</span>
             }
-<span class="fc" id="L173">        });</span>
-<span class="fc" id="L174">        movements.forEach(movement -&gt; priced.add(movement.getInstrumentId()));</span>
-<span class="fc" id="L175">        Set&lt;UUID&gt; unnamed = new HashSet&lt;&gt;(priced);</span>
-<span class="fc" id="L176">        unnamed.removeAll(symbols.keySet());</span>
-<span class="pc bpc" id="L177" title="1 of 2 branches missed.">        if (!unnamed.isEmpty()) {</span>
-<span class="nc" id="L178">            instrumentRepository.findAllById(unnamed)</span>
-<span class="nc" id="L179">                    .forEach(instrument -&gt; symbols.put(instrument.getInstrumentId(), instrument.getSymbol()));</span>
+<span class="fc" id="L190">        });</span>
+<span class="fc" id="L191">        movements.forEach(movement -&gt; priced.add(movement.getInstrumentId()));</span>
+<span class="fc" id="L192">        Set&lt;UUID&gt; unnamed = new HashSet&lt;&gt;(priced);</span>
+<span class="fc" id="L193">        unnamed.removeAll(symbols.keySet());</span>
+<span class="pc bpc" id="L194" title="1 of 2 branches missed.">        if (!unnamed.isEmpty()) {</span>
+<span class="nc" id="L195">            instrumentRepository.findAllById(unnamed)</span>
+<span class="nc" id="L196">                    .forEach(instrument -&gt; symbols.put(instrument.getInstrumentId(), instrument.getSymbol()));</span>
         }
 
-<span class="fc" id="L182">        Map&lt;UUID, BigDecimal[]&gt; prices = new LinkedHashMap&lt;&gt;();</span>
-<span class="fc bfc" id="L183" title="All 2 branches covered.">        for (UUID instrumentId : priced) {</span>
-<span class="fc" id="L184">            String symbol = symbols.get(instrumentId);</span>
-<span class="pc bpc" id="L185" title="1 of 2 branches missed.">            if (symbol != null) {</span>
-<span class="fc" id="L186">                prices.put(instrumentId, priceSeries(symbol, window, timeline,</span>
-<span class="pc bpc" id="L187" title="1 of 2 branches missed.">                        quantities.getOrDefault(instrumentId, 0L) != 0));</span>
+<span class="fc" id="L199">        Map&lt;UUID, BigDecimal[]&gt; prices = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L200" title="All 2 branches covered.">        for (UUID instrumentId : priced) {</span>
+<span class="fc" id="L201">            String symbol = symbols.get(instrumentId);</span>
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">            if (symbol != null) {</span>
+<span class="fc" id="L203">                prices.put(instrumentId, priceSeries(symbol, window, timeline,</span>
+<span class="pc bpc" id="L204" title="1 of 2 branches missed.">                        quantities.getOrDefault(instrumentId, 0L) != 0));</span>
             }
-<span class="fc" id="L189">        }</span>
+<span class="fc" id="L206">        }</span>
+<span class="fc" id="L207">        return prices;</span>
+    }
 
-<span class="fc" id="L191">        BigDecimal[] values = new BigDecimal[timeline.size()];</span>
-<span class="fc" id="L192">        int movementIndex = 0;</span>
-<span class="fc" id="L193">        int entryIndex = 0;</span>
-<span class="fc bfc" id="L194" title="All 2 branches covered.">        for (int k = timeline.size() - 1; k &gt;= 0; k--) {</span>
-<span class="fc" id="L195">            OffsetDateTime at = timeline.get(k);</span>
-<span class="fc bfc" id="L196" title="All 4 branches covered.">            while (movementIndex &lt; movements.size() &amp;&amp; movements.get(movementIndex).getCreatedAt().isAfter(at)) {</span>
-<span class="fc" id="L197">                PositionMovement movement = movements.get(movementIndex++);</span>
-<span class="fc" id="L198">                quantities.merge(movement.getInstrumentId(), -movement.getQuantityDelta(), Long::sum);</span>
-<span class="fc" id="L199">            }</span>
-<span class="fc bfc" id="L200" title="All 4 branches covered.">            while (entryIndex &lt; entries.size() &amp;&amp; entries.get(entryIndex).getCreatedAt().isAfter(at)) {</span>
-<span class="fc" id="L201">                cash = cash.subtract(entries.get(entryIndex++).getAmount());</span>
+    /** Walks the timeline back from today, undoing movements and cash entries to value each point. */
+    private static BigDecimal[] walkBack(List&lt;OffsetDateTime&gt; timeline, Map&lt;UUID, Long&gt; quantities,
+            BigDecimal cash, List&lt;PositionMovement&gt; movements, List&lt;CashLedgerEntry&gt; entries,
+            Map&lt;UUID, BigDecimal[]&gt; prices) {
+<span class="fc" id="L214">        BigDecimal[] values = new BigDecimal[timeline.size()];</span>
+<span class="fc" id="L215">        int movementIndex = 0;</span>
+<span class="fc" id="L216">        int entryIndex = 0;</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        for (int k = timeline.size() - 1; k &gt;= 0; k--) {</span>
+<span class="fc" id="L218">            OffsetDateTime at = timeline.get(k);</span>
+<span class="fc bfc" id="L219" title="All 4 branches covered.">            while (movementIndex &lt; movements.size() &amp;&amp; movements.get(movementIndex).getCreatedAt().isAfter(at)) {</span>
+<span class="fc" id="L220">                PositionMovement movement = movements.get(movementIndex++);</span>
+<span class="fc" id="L221">                quantities.merge(movement.getInstrumentId(), -movement.getQuantityDelta(), Long::sum);</span>
+<span class="fc" id="L222">            }</span>
+<span class="fc bfc" id="L223" title="All 4 branches covered.">            while (entryIndex &lt; entries.size() &amp;&amp; entries.get(entryIndex).getCreatedAt().isAfter(at)) {</span>
+<span class="fc" id="L224">                cash = cash.subtract(entries.get(entryIndex++).getAmount());</span>
             }
-<span class="fc" id="L203">            BigDecimal value = cash;</span>
-<span class="fc bfc" id="L204" title="All 2 branches covered.">            for (Map.Entry&lt;UUID, BigDecimal[]&gt; price : prices.entrySet()) {</span>
-<span class="fc" id="L205">                long quantity = quantities.getOrDefault(price.getKey(), 0L);</span>
-<span class="fc" id="L206">                BigDecimal unitPrice = price.getValue()[k];</span>
-<span class="pc bpc" id="L207" title="1 of 4 branches missed.">                if (quantity != 0 &amp;&amp; unitPrice != null) {</span>
-<span class="fc" id="L208">                    value = value.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));</span>
-                }
-<span class="fc" id="L210">            }</span>
-<span class="fc" id="L211">            values[k] = value.setScale(2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L226">            values[k] = valueAt(cash, quantities, prices, k).setScale(2, RoundingMode.HALF_UP);</span>
         }
-<span class="fc" id="L213">        return toResponse(range, window, timeline, values);</span>
+<span class="fc" id="L228">        return values;</span>
+    }
+
+    private static BigDecimal valueAt(BigDecimal cash, Map&lt;UUID, Long&gt; quantities,
+            Map&lt;UUID, BigDecimal[]&gt; prices, int k) {
+<span class="fc" id="L233">        BigDecimal value = cash;</span>
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        for (Map.Entry&lt;UUID, BigDecimal[]&gt; price : prices.entrySet()) {</span>
+<span class="fc" id="L235">            long quantity = quantities.getOrDefault(price.getKey(), 0L);</span>
+<span class="fc" id="L236">            BigDecimal unitPrice = price.getValue()[k];</span>
+<span class="pc bpc" id="L237" title="1 of 4 branches missed.">            if (quantity != 0 &amp;&amp; unitPrice != null) {</span>
+<span class="fc" id="L238">                value = value.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));</span>
+            }
+<span class="fc" id="L240">        }</span>
+<span class="fc" id="L241">        return value;</span>
     }
 
     /**
@@ -224,15 +252,15 @@ public class PortfolioHistoryService {
      * @return A list of timestamps for each point in the history.
      */
     static List&lt;OffsetDateTime&gt; timeline(PortfolioRange.Window window, OffsetDateTime now) {
-<span class="fc" id="L227">        long width = window.intervalSeconds();</span>
-<span class="fc" id="L228">        long nowSeconds = now.toEpochSecond();</span>
-<span class="fc" id="L229">        long bucketStart = Math.floorDiv(window.from().toEpochSecond(), width) * width;</span>
-<span class="fc" id="L230">        List&lt;OffsetDateTime&gt; points = new ArrayList&lt;&gt;();</span>
-<span class="fc bfc" id="L231" title="All 2 branches covered.">        for (long end = bucketStart + width; end &lt; nowSeconds; end += width) {</span>
-<span class="fc" id="L232">            points.add(OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC));</span>
+<span class="fc" id="L255">        long width = window.intervalSeconds();</span>
+<span class="fc" id="L256">        long nowSeconds = now.toEpochSecond();</span>
+<span class="fc" id="L257">        long bucketStart = Math.floorDiv(window.from().toEpochSecond(), width) * width;</span>
+<span class="fc" id="L258">        List&lt;OffsetDateTime&gt; points = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L259" title="All 2 branches covered.">        for (long end = bucketStart + width; end &lt; nowSeconds; end += width) {</span>
+<span class="fc" id="L260">            points.add(OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC));</span>
         }
-<span class="fc" id="L234">        points.add(now);</span>
-<span class="fc" id="L235">        return points;</span>
+<span class="fc" id="L262">        points.add(now);</span>
+<span class="fc" id="L263">        return points;</span>
     }
 
     /**
@@ -250,32 +278,32 @@ public class PortfolioHistoryService {
      */
     private BigDecimal[] priceSeries(String symbol, PortfolioRange.Window window,
             List&lt;OffsetDateTime&gt; timeline, boolean currentlyHeld) {
-<span class="fc" id="L253">        int width = window.intervalSeconds();</span>
-<span class="fc" id="L254">        OffsetDateTime historyFrom = timeline.get(0).minusSeconds(width);</span>
-<span class="fc" id="L255">        List&lt;CandleClose&gt; closes = priceHistoryClient.fetchCloses(</span>
-<span class="fc" id="L256">                symbol, historyFrom, timeline.get(timeline.size() - 1), width);</span>
+<span class="fc" id="L281">        int width = window.intervalSeconds();</span>
+<span class="fc" id="L282">        OffsetDateTime historyFrom = timeline.get(0).minusSeconds(width);</span>
+<span class="fc" id="L283">        List&lt;CandleClose&gt; closes = priceHistoryClient.fetchCloses(</span>
+<span class="fc" id="L284">                symbol, historyFrom, timeline.get(timeline.size() - 1), width);</span>
 
-<span class="fc" id="L258">        BigDecimal[] series = new BigDecimal[timeline.size()];</span>
-<span class="fc" id="L259">        int candle = 0;</span>
-<span class="fc bfc" id="L260" title="All 2 branches covered.">        BigDecimal last = closes.isEmpty() ? null : closes.get(0).close();</span>
-<span class="fc bfc" id="L261" title="All 2 branches covered.">        for (int k = 0; k &lt; timeline.size(); k++) {</span>
-<span class="fc" id="L262">            OffsetDateTime at = timeline.get(k);</span>
-<span class="fc bfc" id="L263" title="All 2 branches covered.">            while (candle &lt; closes.size()</span>
-<span class="fc bfc" id="L264" title="All 2 branches covered.">                    &amp;&amp; !closes.get(candle).bucketStart().plusSeconds(width).isAfter(at)) {</span>
-<span class="fc" id="L265">                last = closes.get(candle++).close();</span>
+<span class="fc" id="L286">        BigDecimal[] series = new BigDecimal[timeline.size()];</span>
+<span class="fc" id="L287">        int candle = 0;</span>
+<span class="fc bfc" id="L288" title="All 2 branches covered.">        BigDecimal last = closes.isEmpty() ? null : closes.get(0).close();</span>
+<span class="fc bfc" id="L289" title="All 2 branches covered.">        for (int k = 0; k &lt; timeline.size(); k++) {</span>
+<span class="fc" id="L290">            OffsetDateTime at = timeline.get(k);</span>
+<span class="fc bfc" id="L291" title="All 2 branches covered.">            while (candle &lt; closes.size()</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">                    &amp;&amp; !closes.get(candle).bucketStart().plusSeconds(width).isAfter(at)) {</span>
+<span class="fc" id="L293">                last = closes.get(candle++).close();</span>
             }
-<span class="fc" id="L267">            series[k] = last;</span>
+<span class="fc" id="L295">            series[k] = last;</span>
         }
-<span class="pc bpc" id="L269" title="1 of 2 branches missed.">        if (currentlyHeld) {</span>
-<span class="fc" id="L270">            priceHistoryClient.fetchLatestPrice(symbol)</span>
-<span class="fc" id="L271">                    .ifPresent(live -&gt; series[series.length - 1] = live);</span>
+<span class="pc bpc" id="L297" title="1 of 2 branches missed.">        if (currentlyHeld) {</span>
+<span class="fc" id="L298">            priceHistoryClient.fetchLatestPrice(symbol)</span>
+<span class="fc" id="L299">                    .ifPresent(live -&gt; series[series.length - 1] = live);</span>
         }
         // No candles at all: the live price (if any) is the best estimate for every
         // point.
-<span class="pc bpc" id="L275" title="1 of 4 branches missed.">        if (closes.isEmpty() &amp;&amp; series[series.length - 1] != null) {</span>
-<span class="fc" id="L276">            Arrays.fill(series, series[series.length - 1]);</span>
+<span class="pc bpc" id="L303" title="1 of 4 branches missed.">        if (closes.isEmpty() &amp;&amp; series[series.length - 1] != null) {</span>
+<span class="fc" id="L304">            Arrays.fill(series, series[series.length - 1]);</span>
         }
-<span class="fc" id="L278">        return series;</span>
+<span class="fc" id="L306">        return series;</span>
     }
 
     /**
@@ -289,17 +317,17 @@ public class PortfolioHistoryService {
      */
     private static PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
             List&lt;OffsetDateTime&gt; timeline, BigDecimal[] values) {
-<span class="fc" id="L292">        List&lt;PortfolioHistoryResponse.Point&gt; points = new ArrayList&lt;&gt;(timeline.size());</span>
-<span class="fc bfc" id="L293" title="All 2 branches covered.">        for (int k = 0; k &lt; timeline.size(); k++) {</span>
-<span class="fc bfc" id="L294" title="All 2 branches covered.">            BigDecimal value = values[k] != null ? values[k] : BigDecimal.ZERO.setScale(2);</span>
-<span class="fc" id="L295">            points.add(new PortfolioHistoryResponse.Point(timeline.get(k), value));</span>
+<span class="fc" id="L320">        List&lt;PortfolioHistoryResponse.Point&gt; points = new ArrayList&lt;&gt;(timeline.size());</span>
+<span class="fc bfc" id="L321" title="All 2 branches covered.">        for (int k = 0; k &lt; timeline.size(); k++) {</span>
+<span class="fc bfc" id="L322" title="All 2 branches covered.">            BigDecimal value = values[k] != null ? values[k] : BigDecimal.ZERO.setScale(2);</span>
+<span class="fc" id="L323">            points.add(new PortfolioHistoryResponse.Point(timeline.get(k), value));</span>
         }
-<span class="fc" id="L297">        BigDecimal start = points.get(0).value();</span>
-<span class="fc" id="L298">        BigDecimal end = points.get(points.size() - 1).value();</span>
-<span class="fc" id="L299">        BigDecimal change = end.subtract(start);</span>
-<span class="fc bfc" id="L300" title="All 2 branches covered.">        BigDecimal changePercent = start.signum() == 0 ? null</span>
-<span class="fc" id="L301">                : change.multiply(BigDecimal.valueOf(100)).divide(start.abs(), 2, RoundingMode.HALF_UP);</span>
-<span class="fc" id="L302">        return new PortfolioHistoryResponse(range.code(), window.intervalSeconds(), points,</span>
+<span class="fc" id="L325">        BigDecimal start = points.get(0).value();</span>
+<span class="fc" id="L326">        BigDecimal end = points.get(points.size() - 1).value();</span>
+<span class="fc" id="L327">        BigDecimal change = end.subtract(start);</span>
+<span class="fc bfc" id="L328" title="All 2 branches covered.">        BigDecimal changePercent = start.signum() == 0 ? null</span>
+<span class="fc" id="L329">                : change.multiply(BigDecimal.valueOf(100)).divide(start.abs(), 2, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L330">        return new PortfolioHistoryResponse(range.code(), window.intervalSeconds(), points,</span>
                 start, end, change, changePercent);
     }
 }

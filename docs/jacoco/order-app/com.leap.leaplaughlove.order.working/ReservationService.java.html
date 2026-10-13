@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReservationService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">ReservationService.java</span></div><h1>ReservationService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.client.AccountValidationDto;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.order.OrderRepository;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.util.UUID;
+
+/**
+ * Works out what an account's OPEN orders hold back, so cash or shares one open order is
+ * counting on can't be spent by another order too. An open buy holds the most it could cost
+ * (its {@code reserved_cash}); an open sell holds its shares.
+ *
+ * &lt;p&gt;Holds live only in order-app: account-app's balances don't know about them, so the check
+ * when an open order finally fills is the last line of defence (e.g. after a withdrawal).
+ */
+@Service
+public class ReservationService {
+
+    /**
+     * A stop buy becomes a market order, which can fill above its stop if the price jumps, so it
+     * holds this much more than stop x quantity.
+     */
+<span class="fc" id="L27">    public static final BigDecimal STOP_BUY_BUFFER = new BigDecimal(&quot;1.05&quot;);</span>
+
+    /** Stands in for &quot;no order to leave out&quot; in the repository's sums. */
+<span class="fc" id="L30">    private static final UUID NO_ORDER = new UUID(0L, 0L);</span>
+
+    /**
+     * What an account's OPEN orders hold back.
+     * @param cash cash held by open buys
+     * @param shares shares of one instrument held by open sells
+     */
+<span class="fc" id="L37">    public record Holds(BigDecimal cash, long shares) {</span>
+        /** Nothing held. */
+<span class="fc" id="L39">        public static final Holds NONE = new Holds(BigDecimal.ZERO, 0L);</span>
+    }
+
+    private final OrderRepository orderRepository;
+
+    /**
+     * Constructs a ReservationService.
+     * @param orderRepository sums the account's open orders
+     */
+<span class="fc" id="L48">    public ReservationService(OrderRepository orderRepository) {</span>
+<span class="fc" id="L49">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L50">    }</span>
+
+    /**
+     * Returns what the account's OPEN orders hold back.
+     * @param accountId the account
+     * @param instrumentId the instrument whose shares to count
+     * @param excludedOrderId an order to leave out, e.g. the one being filled; null for none
+     * @return the cash and shares held
+     */
+    public Holds holdsFor(UUID accountId, UUID instrumentId, UUID excludedOrderId) {
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        UUID excluded = excludedOrderId != null ? excludedOrderId : NO_ORDER;</span>
+<span class="fc" id="L61">        BigDecimal cash = orderRepository.sumReservedCash(accountId, excluded);</span>
+<span class="fc" id="L62">        Long shares = orderRepository.sumOpenSellQuantity(accountId, instrumentId, excluded);</span>
+<span class="pc bpc" id="L63" title="1 of 4 branches missed.">        return new Holds(cash != null ? cash : BigDecimal.ZERO, shares != null ? shares : 0L);</span>
+    }
+
+    /**
+     * The account's validation data with held cash and shares taken out, so validating against
+     * it only counts what is actually free.
+     * @param account the account's validation data from account-app
+     * @param holds what its open orders hold
+     * @return the same data, with cash and holdings reduced by the holds
+     */
+    public static AccountValidationDto available(AccountValidationDto account, Holds holds) {
+<span class="pc bpc" id="L74" title="2 of 4 branches missed.">        if (account == null || holds == null) {</span>
+<span class="nc" id="L75">            return account;</span>
+        }
+<span class="pc bpc" id="L77" title="1 of 2 branches missed.">        BigDecimal cash = account.cashBalance() != null ? account.cashBalance().subtract(holds.cash()) : null;</span>
+<span class="fc" id="L78">        return new AccountValidationDto(</span>
+<span class="fc" id="L79">                account.accountActive(),</span>
+<span class="fc" id="L80">                account.tradingEnabled(),</span>
+                cash,
+<span class="fc" id="L82">                account.holdingQuantity() - holds.shares(),</span>
+<span class="fc" id="L83">                account.baseCurrency(),</span>
+<span class="fc" id="L84">                account.accountNumber(),</span>
+<span class="fc" id="L85">                account.maxSlippagePercent());</span>
+    }
+
+    /**
+     * The most one share could cost when an order on these conditions fills: its limit for a
+     * LIMIT or STOP_LIMIT order, its stop plus {@link #STOP_BUY_BUFFER} for a STOP order.
+     * @param type the order type (not MARKET)
+     * @param limitPrice the limit price, if any
+     * @param stopPrice the stop price, if any
+     * @return the price per share to hold cash for
+     */
+    public static BigDecimal reservePricePerShare(Order.OrderType type, BigDecimal limitPrice, BigDecimal stopPrice) {
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (type.hasLimit()) {</span>
+<span class="fc" id="L98">            return limitPrice;</span>
+        }
+<span class="fc" id="L100">        return stopPrice.multiply(STOP_BUY_BUFFER).setScale(4, RoundingMode.HALF_UP);</span>
+    }
+
+    /**
+     * The cash an OPEN order holds back from buying power.
+     * @param side the order's side; only a buy holds cash
+     * @param quantity the shares ordered
+     * @param pricePerShare see {@link #reservePricePerShare}
+     * @return the cash to hold, or null for a sell
+     */
+    public static BigDecimal reservedCash(Order.Side side, long quantity, BigDecimal pricePerShare) {
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        if (side != Order.Side.BUY) {</span>
+<span class="fc" id="L112">            return null;</span>
+        }
+<span class="fc" id="L114">        return pricePerShare.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);</span>
+    }
+
+    /**
+     * Adds what open orders hold to a rejection for lack of cash or shares, so the client can
+     * see why the money or shares they have aren't enough.
+     * @param reason the rejection reason from validation
+     * @param side the order's side
+     * @param holds what the account's other open orders hold
+     * @return the reason, explained when holds caused it
+     */
+    public static String explain(String reason, Order.Side side, Holds holds) {
+<span class="pc bpc" id="L126" title="2 of 4 branches missed.">        if (reason == null || holds == null) {</span>
+<span class="nc" id="L127">            return reason;</span>
+        }
+<span class="fc bfc" id="L129" title="All 4 branches covered.">        if (side == Order.Side.BUY &amp;&amp; reason.startsWith(&quot;Insufficient funds&quot;)</span>
+<span class="fc bfc" id="L130" title="All 2 branches covered.">                &amp;&amp; holds.cash().compareTo(BigDecimal.ZERO) &gt; 0) {</span>
+<span class="fc" id="L131">            return reason + &quot; ($&quot; + holds.cash().setScale(2, RoundingMode.HALF_UP).toPlainString()</span>
+                    + &quot; is held for your open orders)&quot;;
+        }
+<span class="pc bpc" id="L134" title="1 of 6 branches missed.">        if (side == Order.Side.SELL &amp;&amp; reason.startsWith(&quot;Insufficient position&quot;) &amp;&amp; holds.shares() &gt; 0) {</span>
+<span class="pc bpc" id="L135" title="1 of 2 branches missed.">            return reason + &quot; (&quot; + holds.shares() + (holds.shares() == 1 ? &quot; share is&quot; : &quot; shares are&quot;)</span>
+                    + &quot; held for your open sell orders)&quot;;
+        }
+<span class="fc" id="L138">        return reason;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,257 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AnalystReportService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">AnalystReportService.java</span></div><h1>AnalystReportService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.Activation;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.BandCount;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.ClientActivity;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.CohortActivity;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.Concentration;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.MonthlyCount;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.MonthlyTotals;
+import com.leap.leaplaughlove.reporting.analyst.AnalystReportRepository.OrderSizeStats;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * Builds the commercial analysts' long-range reports over the last twelve complete UTC months
+ * (see {@link ReportWindow#trailingMonths}). The queries only return months that had activity;
+ * this fills in the rest with zeros, so every report has one entry for every month in the window.
+ */
+@Service
+public class AnalystReportService {
+
+    /** The slices of a month's trading clients the concentration report shows, in percent. */
+<span class="fc" id="L35">    static final int[] CONCENTRATION_TIERS = {1, 10, 20};</span>
+
+    /** How long after signing up a first order still counts towards activation. */
+    static final int ACTIVATION_DAYS = 30;
+
+<span class="fc" id="L40">    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);</span>
+
+    private final AnalystReportRepository repository;
+    private final Clock clock;
+
+    /**
+     * Constructs an instance of AnalystReportService.
+     * @param repository the repository the reports' figures are read from
+     * @param clock the clock the reporting window is measured from
+     */
+<span class="fc" id="L50">    public AnalystReportService(AnalystReportRepository repository, Clock clock) {</span>
+<span class="fc" id="L51">        this.repository = repository;</span>
+<span class="fc" id="L52">        this.clock = clock;</span>
+<span class="fc" id="L53">    }</span>
+
+    /**
+     * Builds the scorecard: volume, filled orders, average trade value, active clients and
+     * registrations per month, each with month-over-month and year-over-year change.
+     * @return the scorecard for the current window
+     */
+    public ScorecardReport getScorecard() {
+<span class="fc" id="L61">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+        // A year earlier as well, so the window's first month has a year-ago month to compare with.
+<span class="fc" id="L63">        ReportWindow withHistory = window.startingEarlier(12);</span>
+<span class="fc" id="L64">        Map&lt;YearMonth, MonthlyTotals&gt; totals = byMonth(repository.findMonthlyTotals(withHistory), MonthlyTotals::month);</span>
+<span class="fc" id="L65">        Map&lt;YearMonth, MonthlyCount&gt; registrations = byMonth(repository.findRegistrations(withHistory), MonthlyCount::month);</span>
+
+<span class="fc bfc" id="L67" title="All 2 branches covered.">        Function&lt;YearMonth, BigDecimal&gt; volume = month -&gt; money(totals.containsKey(month) ? totals.get(month).volume() : BigDecimal.ZERO);</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        Function&lt;YearMonth, BigDecimal&gt; filledOrders = month -&gt; BigDecimal.valueOf(totals.containsKey(month) ? totals.get(month).filledOrders() : 0);</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        Function&lt;YearMonth, BigDecimal&gt; averageTradeValue = month -&gt; filledOrders.apply(month).signum() == 0 ? null</span>
+<span class="fc" id="L70">                : volume.apply(month).divide(filledOrders.apply(month), 2, RoundingMode.HALF_UP);</span>
+<span class="fc bfc" id="L71" title="All 2 branches covered.">        Function&lt;YearMonth, BigDecimal&gt; activeClients = month -&gt; BigDecimal.valueOf(totals.containsKey(month) ? totals.get(month).activeClients() : 0);</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        Function&lt;YearMonth, BigDecimal&gt; signUps = month -&gt; BigDecimal.valueOf(registrations.containsKey(month) ? registrations.get(month).clients() : 0);</span>
+
+<span class="fc" id="L74">        List&lt;ScorecardReport.Month&gt; months = window.months().stream()</span>
+<span class="fc" id="L75">                .map(month -&gt; new ScorecardReport.Month(month,</span>
+<span class="fc" id="L76">                        metric(volume, month),</span>
+<span class="fc" id="L77">                        metric(filledOrders, month),</span>
+<span class="fc" id="L78">                        metric(averageTradeValue, month),</span>
+<span class="fc" id="L79">                        metric(activeClients, month),</span>
+<span class="fc" id="L80">                        metric(signUps, month)))</span>
+<span class="fc" id="L81">                .toList();</span>
+<span class="fc" id="L82">        return new ScorecardReport(window, months);</span>
+    }
+
+    /**
+     * Builds the client activity report: each month's active clients split into new, returning
+     * and reactivated, with the clients who lapsed.
+     * @return the client activity report for the current window
+     */
+    public ClientActivityReport getClientActivity() {
+<span class="fc" id="L91">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+<span class="fc" id="L92">        Map&lt;YearMonth, ClientActivity&gt; activity = byMonth(repository.findClientActivity(window), ClientActivity::month);</span>
+<span class="fc" id="L93">        Map&lt;YearMonth, MonthlyCount&gt; lapsed = byMonth(repository.findLapsedClients(window), MonthlyCount::month);</span>
+
+<span class="fc" id="L95">        List&lt;ClientActivityReport.Month&gt; months = window.months().stream()</span>
+<span class="fc" id="L96">                .map(month -&gt; {</span>
+<span class="fc" id="L97">                    ClientActivity counts = activity.getOrDefault(month, new ClientActivity(month, 0, 0, 0));</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">                    long lapsedClients = lapsed.containsKey(month) ? lapsed.get(month).clients() : 0;</span>
+<span class="fc" id="L99">                    return new ClientActivityReport.Month(month,</span>
+<span class="fc" id="L100">                            counts.newClients() + counts.returningClients() + counts.reactivatedClients(),</span>
+<span class="fc" id="L101">                            counts.newClients(), counts.returningClients(), counts.reactivatedClients(), lapsedClients);</span>
+                })
+<span class="fc" id="L103">                .toList();</span>
+<span class="fc" id="L104">        return new ClientActivityReport(window, months);</span>
+    }
+
+    /**
+     * Builds the retention matrix: for each sign-up month in the window, the share of its clients
+     * active in each month from then to the window's end.
+     * @return the retention report for the current window
+     */
+    public RetentionReport getRetention() {
+<span class="fc" id="L113">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+<span class="fc" id="L114">        Map&lt;YearMonth, MonthlyCount&gt; sizes = byMonth(repository.findRegistrations(window), MonthlyCount::month);</span>
+<span class="fc" id="L115">        Map&lt;YearMonth, Map&lt;YearMonth, Long&gt;&gt; active = repository.findCohortActivity(window).stream()</span>
+<span class="fc" id="L116">                .collect(Collectors.groupingBy(CohortActivity::cohort,</span>
+<span class="fc" id="L117">                        Collectors.toMap(CohortActivity::month, CohortActivity::activeClients)));</span>
+
+<span class="fc" id="L119">        List&lt;RetentionReport.Cohort&gt; cohorts = window.months().stream()</span>
+<span class="fc" id="L120">                .map(cohort -&gt; {</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">                    long clients = sizes.containsKey(cohort) ? sizes.get(cohort).clients() : 0;</span>
+<span class="fc" id="L122">                    Map&lt;YearMonth, Long&gt; cohortActive = active.getOrDefault(cohort, Map.of());</span>
+<span class="fc" id="L123">                    List&lt;RetentionReport.Cell&gt; cells = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">                    for (YearMonth month = cohort; !month.isAfter(window.lastMonth()); month = month.plusMonths(1)) {</span>
+<span class="fc" id="L125">                        long activeClients = cohortActive.getOrDefault(month, 0L);</span>
+<span class="fc" id="L126">                        cells.add(new RetentionReport.Cell(cells.size(), month, activeClients, percent(activeClients, clients)));</span>
+                    }
+<span class="fc" id="L128">                    return new RetentionReport.Cohort(cohort, clients, cells);</span>
+                })
+<span class="fc" id="L130">                .toList();</span>
+<span class="fc" id="L131">        return new RetentionReport(window, cohorts);</span>
+    }
+
+    /**
+     * Builds the activation report: for each sign-up month in the window, how many of its clients
+     * ordered within {@value #ACTIVATION_DAYS} days, how many have ordered at all, and how soon.
+     * @return the activation report for the current window
+     */
+    public ActivationReport getActivation() {
+<span class="fc" id="L140">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+<span class="fc" id="L141">        Map&lt;YearMonth, Activation&gt; activation = byMonth(repository.findActivation(window), Activation::cohort);</span>
+<span class="fc" id="L142">        Instant now = clock.instant();</span>
+
+<span class="fc" id="L144">        List&lt;ActivationReport.Cohort&gt; cohorts = window.months().stream()</span>
+<span class="fc" id="L145">                .map(cohort -&gt; {</span>
+<span class="fc" id="L146">                    Activation counts = activation.getOrDefault(cohort, new Activation(cohort, 0, 0, 0, null));</span>
+                    // The cohort's last client signed up just before the month ended, and has the
+                    // full 30 days from then.
+<span class="fc" id="L149">                    Instant settled = cohort.plusMonths(1).atDay(1).atStartOfDay(ZoneOffset.UTC)</span>
+<span class="fc" id="L150">                            .plusDays(ACTIVATION_DAYS).toInstant();</span>
+<span class="fc bfc" id="L151" title="All 2 branches covered.">                    BigDecimal medianDays = counts.medianDaysToFirstOrder() == null ? null</span>
+<span class="fc" id="L152">                            : counts.medianDaysToFirstOrder().setScale(1, RoundingMode.HALF_UP);</span>
+<span class="fc" id="L153">                    return new ActivationReport.Cohort(cohort, counts.registered(),</span>
+<span class="fc" id="L154">                            counts.orderedWithin30Days(), percent(counts.orderedWithin30Days(), counts.registered()),</span>
+<span class="fc" id="L155">                            counts.orderedEver(), percent(counts.orderedEver(), counts.registered()),</span>
+<span class="fc bfc" id="L156" title="All 2 branches covered.">                            medianDays, !now.isBefore(settled));</span>
+                })
+<span class="fc" id="L158">                .toList();</span>
+<span class="fc" id="L159">        return new ActivationReport(window, cohorts);</span>
+    }
+
+    /**
+     * Builds the concentration report: each month's traded volume and the share of it from the
+     * top 1, 10 and 20 percent of trading clients.
+     * @return the concentration report for the current window
+     */
+    public ConcentrationReport getConcentration() {
+<span class="fc" id="L168">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+<span class="fc" id="L169">        Map&lt;YearMonth, Concentration&gt; concentration = byMonth(repository.findConcentration(window), Concentration::month);</span>
+
+<span class="fc" id="L171">        List&lt;ConcentrationReport.Month&gt; months = window.months().stream()</span>
+<span class="fc" id="L172">                .map(month -&gt; {</span>
+<span class="fc" id="L173">                    Concentration row = concentration.get(month);</span>
+<span class="fc bfc" id="L174" title="All 2 branches covered.">                    if (row == null) {</span>
+<span class="fc" id="L175">                        return new ConcentrationReport.Month(month, 0, money(BigDecimal.ZERO), List.of());</span>
+                    }
+<span class="fc" id="L177">                    List&lt;BigDecimal&gt; topVolumes = List.of(row.top1PctVolume(), row.top10PctVolume(), row.top20PctVolume());</span>
+<span class="fc" id="L178">                    List&lt;ConcentrationReport.Tier&gt; tiers = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">                    for (int i = 0; i &lt; CONCENTRATION_TIERS.length; i++) {</span>
+<span class="fc" id="L180">                        int topPct = CONCENTRATION_TIERS[i];</span>
+<span class="fc" id="L181">                        BigDecimal volume = money(topVolumes.get(i));</span>
+<span class="fc" id="L182">                        tiers.add(new ConcentrationReport.Tier(topPct, Math.ceilDiv(row.traders() * topPct, 100),</span>
+<span class="fc" id="L183">                                volume, percent(topVolumes.get(i), row.volume())));</span>
+                    }
+<span class="fc" id="L185">                    return new ConcentrationReport.Month(month, row.traders(), money(row.volume()), tiers);</span>
+                })
+<span class="fc" id="L187">                .toList();</span>
+<span class="fc" id="L188">        return new ConcentrationReport(window, months);</span>
+    }
+
+    /**
+     * Builds the order size report: each month's filled orders by value band, with the mean and
+     * median filled order value.
+     * @return the order size report for the current window
+     */
+    public OrderSizeReport getOrderSizes() {
+<span class="fc" id="L197">        ReportWindow window = ReportWindow.trailingMonths(clock);</span>
+<span class="fc" id="L198">        Map&lt;YearMonth, OrderSizeStats&gt; stats = byMonth(repository.findOrderSizeStats(window), OrderSizeStats::month);</span>
+<span class="fc" id="L199">        Map&lt;YearMonth, Map&lt;OrderSizeBand, BandCount&gt;&gt; bands = repository.findOrderSizeBands(window).stream()</span>
+<span class="fc" id="L200">                .collect(Collectors.groupingBy(BandCount::month, Collectors.toMap(BandCount::band, Function.identity())));</span>
+
+<span class="fc" id="L202">        List&lt;OrderSizeReport.Month&gt; months = window.months().stream()</span>
+<span class="fc" id="L203">                .map(month -&gt; {</span>
+<span class="fc" id="L204">                    OrderSizeStats monthStats = stats.getOrDefault(month, new OrderSizeStats(month, 0, null, null));</span>
+<span class="fc" id="L205">                    Map&lt;OrderSizeBand, BandCount&gt; monthBands = bands.getOrDefault(month, Map.of());</span>
+<span class="fc" id="L206">                    List&lt;OrderSizeReport.Band&gt; bandRows = Arrays.stream(OrderSizeBand.values())</span>
+<span class="fc" id="L207">                            .map(band -&gt; {</span>
+<span class="fc" id="L208">                                BandCount count = monthBands.get(band);</span>
+<span class="fc" id="L209">                                return new OrderSizeReport.Band(band, band.from(), band.to(),</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">                                        count == null ? 0 : count.orders(),</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">                                        money(count == null ? BigDecimal.ZERO : count.value()));</span>
+                            })
+<span class="fc" id="L213">                            .toList();</span>
+<span class="fc" id="L214">                    return new OrderSizeReport.Month(month, monthStats.orders(),</span>
+<span class="fc" id="L215">                            money(monthStats.mean()), money(monthStats.median()), bandRows);</span>
+                })
+<span class="fc" id="L217">                .toList();</span>
+<span class="fc" id="L218">        return new OrderSizeReport(window, months);</span>
+    }
+
+    private static ScorecardReport.Metric metric(Function&lt;YearMonth, BigDecimal&gt; figure, YearMonth month) {
+<span class="fc" id="L222">        BigDecimal value = figure.apply(month);</span>
+<span class="fc" id="L223">        return new ScorecardReport.Metric(value,</span>
+<span class="fc" id="L224">                change(value, figure.apply(month.minusMonths(1))),</span>
+<span class="fc" id="L225">                change(value, figure.apply(month.minusMonths(12))));</span>
+    }
+
+    /** Percentage change from earlier to now, or null when earlier is zero or missing. */
+    static BigDecimal change(BigDecimal now, BigDecimal earlier) {
+<span class="fc bfc" id="L230" title="All 6 branches covered.">        if (now == null || earlier == null || earlier.signum() == 0) {</span>
+<span class="fc" id="L231">            return null;</span>
+        }
+<span class="fc" id="L233">        return now.subtract(earlier).multiply(HUNDRED).divide(earlier, 1, RoundingMode.HALF_UP);</span>
+    }
+
+    /** part as a percentage of whole, or null when whole is zero. */
+    static BigDecimal percent(long part, long whole) {
+<span class="fc" id="L238">        return percent(BigDecimal.valueOf(part), BigDecimal.valueOf(whole));</span>
+    }
+
+    /** part as a percentage of whole, or null when whole is zero or missing. */
+    static BigDecimal percent(BigDecimal part, BigDecimal whole) {
+<span class="fc bfc" id="L243" title="All 6 branches covered.">        if (part == null || whole == null || whole.signum() == 0) {</span>
+<span class="fc" id="L244">            return null;</span>
+        }
+<span class="fc" id="L246">        return part.multiply(HUNDRED).divide(whole, 1, RoundingMode.HALF_UP);</span>
+    }
+
+    private static BigDecimal money(BigDecimal amount) {
+<span class="fc bfc" id="L250" title="All 2 branches covered.">        return amount == null ? null : amount.setScale(2, RoundingMode.HALF_UP);</span>
+    }
+
+    private static &lt;T&gt; Map&lt;YearMonth, T&gt; byMonth(List&lt;T&gt; rows, Function&lt;T, YearMonth&gt; month) {
+<span class="fc" id="L254">        return rows.stream().collect(Collectors.toMap(month, Function.identity()));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -26,37 +26,47 @@ public class ClientSessionController {
     // Take identity from the verified token, never a client-supplied session ID or activity timestamp.
     private JwtService.TokenIdentity identity(Authentication authentication, Instant now) {
 <span class="fc bfc" id="L28" title="All 4 branches covered.">        if (authentication == null || !authentication.isAuthenticated()</span>
-<span class="fc bfc" id="L29" title="All 2 branches covered.">                || !(authentication.getDetails() instanceof JwtService.TokenIdentity identity)</span>
-<span class="fc bfc" id="L30" title="All 4 branches covered.">                || identity.sessionId() == null || identity.purpose() != null</span>
-<span class="fc bfc" id="L31" title="All 2 branches covered.">                || !identity.expiresAt().isAfter(now)) {</span>
-<span class="fc" id="L32">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, &quot;Session is no longer active&quot;);</span>
+<span class="fc bfc" id="L29" title="All 2 branches covered.">                || !(authentication.getDetails() instanceof JwtService.TokenIdentity identity)) {</span>
+<span class="fc" id="L30">            throw inactive();</span>
         }
-<span class="fc" id="L34">        return identity;</span>
+<span class="fc bfc" id="L32" title="All 2 branches covered.">        if (!isUsable(identity, now)) {</span>
+<span class="fc" id="L33">            throw inactive();</span>
+        }
+<span class="fc" id="L35">        return identity;</span>
+    }
+
+    // A login token for a live session; purpose-scoped service tokens never qualify.
+    private static boolean isUsable(JwtService.TokenIdentity identity, Instant now) {
+<span class="fc bfc" id="L40" title="All 6 branches covered.">        return identity.sessionId() != null &amp;&amp; identity.purpose() == null &amp;&amp; identity.expiresAt().isAfter(now);</span>
+    }
+
+    private static ResponseStatusException inactive() {
+<span class="fc" id="L44">        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, &quot;Session is no longer active&quot;);</span>
     }
 
     @PostMapping(&quot;/activity&quot;)
     public ResponseEntity&lt;Void&gt; activity(Authentication authentication) {
-<span class="fc" id="L39">        Instant now = Instant.now();</span>
-<span class="fc" id="L40">        var identity = identity(authentication, now);</span>
-<span class="fc bfc" id="L41" title="All 2 branches covered.">        boolean active = identity.role().isStaff()</span>
-<span class="fc" id="L42">                ? staffSessions.recordActivity(identity.sessionId(), identity.clientId(), now)</span>
-<span class="fc" id="L43">                : sessions.recordActivity(identity.sessionId(), identity.clientId(), now);</span>
-<span class="fc bfc" id="L44" title="All 2 branches covered.">        if (!active) {</span>
-<span class="fc" id="L45">            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, &quot;Session is no longer active&quot;);</span>
+<span class="fc" id="L49">        Instant now = Instant.now();</span>
+<span class="fc" id="L50">        var identity = identity(authentication, now);</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        boolean active = identity.role().isStaff()</span>
+<span class="fc" id="L52">                ? staffSessions.recordActivity(identity.sessionId(), identity.clientId(), now)</span>
+<span class="fc" id="L53">                : sessions.recordActivity(identity.sessionId(), identity.clientId(), now);</span>
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (!active) {</span>
+<span class="fc" id="L55">            throw inactive();</span>
         }
-<span class="fc" id="L47">        return ResponseEntity.noContent().build();</span>
+<span class="fc" id="L57">        return ResponseEntity.noContent().build();</span>
     }
 
     @PostMapping(&quot;/logout&quot;)
     public ResponseEntity&lt;Void&gt; logout(Authentication authentication) {
-<span class="fc" id="L52">        Instant now = Instant.now();</span>
-<span class="fc" id="L53">        var identity = identity(authentication, now);</span>
-<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (identity.role().isStaff()) {</span>
-<span class="fc" id="L55">            staffSessions.revoke(identity.sessionId(), identity.clientId(), now);</span>
+<span class="fc" id="L62">        Instant now = Instant.now();</span>
+<span class="fc" id="L63">        var identity = identity(authentication, now);</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (identity.role().isStaff()) {</span>
+<span class="fc" id="L65">            staffSessions.revoke(identity.sessionId(), identity.clientId(), now);</span>
         } else {
-<span class="fc" id="L57">            sessions.revoke(identity.sessionId(), identity.clientId(), now);</span>
+<span class="fc" id="L67">            sessions.revoke(identity.sessionId(), identity.clientId(), now);</span>
         }
-<span class="fc" id="L59">        return ResponseEntity.noContent().build();</span>
+<span class="fc" id="L69">        return ResponseEntity.noContent().build();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

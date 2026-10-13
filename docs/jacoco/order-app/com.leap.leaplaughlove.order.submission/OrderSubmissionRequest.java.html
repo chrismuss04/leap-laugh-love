@@ -17,9 +17,14 @@ import com.leap.leaplaughlove.order.order.Order;
  * Request payload for submitting an order.
  * Supports whole-share trading: quantity must be at least 1 whole share.
  *
- * &lt;p&gt;Orders always fill at the live quote. {@code quotedPrice} is only the price the client was
- * shown; when a price tolerance applies - {@code maxSlippagePercent}, or else the account's saved
- * one - the order is rejected if the fill price is further than that from {@code quotedPrice}.
+ * &lt;p&gt;Market orders (the default) always fill at the live quote. {@code quotedPrice} is only the
+ * price the client was shown; when a price tolerance applies - {@code maxSlippagePercent}, or else
+ * the account's saved one - the order is rejected if the fill price is further than that from
+ * {@code quotedPrice}.
+ *
+ * &lt;p&gt;Order types: LIMIT, STOP and STOP_LIMIT orders wait OPEN until the market reaches their
+ * price, for as long as {@code timeInForce} allows (DAY when not given). A limit price already
+ * caps the fill, so price tolerance applies to market orders only.
  *
  * @param accountId the account to trade in
  * @param symbol the instrument's symbol, used when instrumentId is absent
@@ -29,8 +34,19 @@ import com.leap.leaplaughlove.order.order.Order;
  * @param quotedPrice the price the client was quoted when placing the order
  * @param maxSlippagePercent the price tolerance in percent for this order, overriding the
  *                           account's saved one; requires quotedPrice
+ * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+ * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+ * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+ * @param timeInForce DAY (when null) or GTC, for orders other than MARKET
+ * @param trailAmount for TRAILING_STOP: how many dollars behind the best price the stop trails
+ * @param trailPercent for TRAILING_STOP: how many percent behind the best price the stop trails;
+ *                     give this or trailAmount
+ * @param bracketTakeProfitPrice for a BUY: the limit price of the sell order opened to take profit
+ *                               once the buy fills; give this with bracketStopLossPrice
+ * @param bracketStopLossPrice for a BUY: the stop price of the sell order opened to cut losses
+ *                             once the buy fills; whichever sell executes first cancels the other
  */
-<span class="fc" id="L33">public record OrderSubmissionRequest(</span>
+<span class="fc" id="L49">public record OrderSubmissionRequest(</span>
         @NotNull(message = &quot;accountId is required&quot;)
         UUID accountId,
 
@@ -50,8 +66,108 @@ import com.leap.leaplaughlove.order.order.Order;
         @DecimalMin(value = &quot;0.00&quot;, message = &quot;maxSlippagePercent must be between 0 and 10&quot;)
         @DecimalMax(value = &quot;10.00&quot;, message = &quot;maxSlippagePercent must be between 0 and 10&quot;)
         @Digits(integer = 2, fraction = 2, message = &quot;maxSlippagePercent may have at most two decimal places&quot;)
-        BigDecimal maxSlippagePercent
+        BigDecimal maxSlippagePercent,
+
+        Order.OrderType orderType,
+
+        @Positive(message = &quot;limitPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;limitPrice may have at most two decimal places&quot;)
+        BigDecimal limitPrice,
+
+        @Positive(message = &quot;stopPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;stopPrice may have at most two decimal places&quot;)
+        BigDecimal stopPrice,
+
+        Order.TimeInForce timeInForce,
+
+        @Positive(message = &quot;trailAmount must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;trailAmount may have at most two decimal places&quot;)
+        BigDecimal trailAmount,
+
+        @DecimalMin(value = &quot;0.10&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @DecimalMax(value = &quot;50.00&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @Digits(integer = 2, fraction = 2, message = &quot;trailPercent may have at most two decimal places&quot;)
+        BigDecimal trailPercent,
+
+        @Positive(message = &quot;bracketTakeProfitPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;bracketTakeProfitPrice may have at most two decimal places&quot;)
+        BigDecimal bracketTakeProfitPrice,
+
+        @Positive(message = &quot;bracketStopLossPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;bracketStopLossPrice may have at most two decimal places&quot;)
+        BigDecimal bracketStopLossPrice
 ) {
+
+    /**
+     * An order placed before bracket orders existed.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     * @param trailAmount for TRAILING_STOP: the trail in dollars
+     * @param trailPercent for TRAILING_STOP: the trail in percent
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent) {
+<span class="nc" id="L121">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null);
+<span class="nc" id="L123">    }</span>
+
+    /**
+     * A market order, as placed before order types existed.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
+<span class="fc" id="L137">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,</span>
+                null, null, null, null, null, null, null, null);
+<span class="fc" id="L139">    }</span>
+
+    /**
+     * An order placed before trailing stops existed.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP or STOP_LIMIT
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce) {
+<span class="nc" id="L159">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
+                limitPrice, stopPrice, timeInForce, null, null, null, null);
+<span class="nc" id="L161">    }</span>
+
+    /**
+     * The order type, MARKET when none was given.
+     * @return the order type to place
+     */
+    @JsonIgnore
+    public Order.OrderType effectiveOrderType() {
+<span class="fc bfc" id="L169" title="All 2 branches covered.">        return orderType != null ? orderType : Order.OrderType.MARKET;</span>
+    }
 
     /**
      * A tolerance means nothing without a quote to measure the price move from.
@@ -60,7 +176,91 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;quotedPrice is required when maxSlippagePercent is set&quot;)
     public boolean isQuotedPricePresentForTolerance() {
-<span class="fc bfc" id="L63" title="All 4 branches covered.">        return maxSlippagePercent == null || quotedPrice != null;</span>
+<span class="fc bfc" id="L179" title="All 4 branches covered.">        return maxSlippagePercent == null || quotedPrice != null;</span>
+    }
+
+    /**
+     * LIMIT and STOP_LIMIT orders need a limit price, and no other type takes one.
+     * @return false when the limit price doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;limitPrice is required for LIMIT and STOP_LIMIT orders, and only for them&quot;)
+    public boolean isLimitPriceMatchingType() {
+<span class="fc bfc" id="L189" title="All 4 branches covered.">        return effectiveOrderType().hasLimit() == (limitPrice != null);</span>
+    }
+
+    /**
+     * STOP and STOP_LIMIT orders need a stop price, and no other type takes one.
+     * @return false when the stop price doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;stopPrice is required for STOP and STOP_LIMIT orders, and only for them&quot;)
+    public boolean isStopPriceMatchingType() {
+<span class="fc bfc" id="L199" title="All 4 branches covered.">        return effectiveOrderType().takesStopPrice() == (stopPrice != null);</span>
+    }
+
+    /**
+     * A TRAILING_STOP needs a trail as an amount or a percent - not both - and no other type takes one.
+     * @return false when the trail doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;TRAILING_STOP orders need exactly one of trailAmount and trailPercent, and only they take them&quot;)
+    public boolean isTrailMatchingType() {
+<span class="fc bfc" id="L209" title="All 4 branches covered.">        boolean hasTrail = trailAmount != null || trailPercent != null;</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (!effectiveOrderType().hasTrail()) {</span>
+<span class="fc bfc" id="L211" title="All 2 branches covered.">            return !hasTrail;</span>
+        }
+<span class="fc bfc" id="L213" title="All 6 branches covered.">        return (trailAmount != null) != (trailPercent != null);</span>
+    }
+
+    /**
+     * A limit price already caps what the order fills at, so tolerance is for market orders.
+     * @return false when maxSlippagePercent is given for an order other than MARKET
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;maxSlippagePercent applies to market orders only&quot;)
+    public boolean isToleranceForMarketOnly() {
+<span class="fc bfc" id="L223" title="All 4 branches covered.">        return maxSlippagePercent == null || effectiveOrderType() == Order.OrderType.MARKET;</span>
+    }
+
+    /**
+     * Whether the buy carries a bracket.
+     * @return true if a take-profit or stop-loss was given
+     */
+    @JsonIgnore
+    public boolean hasBracket() {
+<span class="pc bpc" id="L232" title="1 of 4 branches missed.">        return bracketTakeProfitPrice != null || bracketStopLossPrice != null;</span>
+    }
+
+    /**
+     * A bracket needs both exit prices.
+     * @return false when only one of the take-profit and stop-loss is given
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;A bracket needs both bracketTakeProfitPrice and bracketStopLossPrice&quot;)
+    public boolean isBracketComplete() {
+<span class="fc bfc" id="L242" title="All 6 branches covered.">        return (bracketTakeProfitPrice == null) == (bracketStopLossPrice == null);</span>
+    }
+
+    /**
+     * The app has no short selling, so only a buy can be protected by sells.
+     * @return false when a bracket is given on a sell
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;A bracket can only be attached to a BUY order&quot;)
+    public boolean isBracketOnBuyOnly() {
+<span class="fc bfc" id="L252" title="All 4 branches covered.">        return !hasBracket() || side == Order.Side.BUY;</span>
+    }
+
+    /**
+     * The take-profit must sit above the stop-loss.
+     * @return false when the take-profit is not above the stop-loss
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;bracketTakeProfitPrice must be above bracketStopLossPrice&quot;)
+    public boolean isBracketOrdered() {
+<span class="fc bfc" id="L262" title="All 4 branches covered.">        return bracketTakeProfitPrice == null || bracketStopLossPrice == null</span>
+<span class="fc bfc" id="L263" title="All 2 branches covered.">                || bracketTakeProfitPrice.compareTo(bracketStopLossPrice) &gt; 0;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -14,22 +14,29 @@ import java.util.UUID;
 @Service
 public class ClientSessionValidator {
 <span class="fc" id="L16">    public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);</span>
+    /**
+     * How far ahead of this service's clock a session's last activity may be. iam-app records
+     * activity at its own &quot;now&quot;, which can land between another request reading the clock and
+     * querying the session - a few milliseconds in that request's future. Without this slack that
+     * request was refused with a 401, and the frontend signed the client out mid-session.
+     */
+<span class="fc" id="L23">    static final Duration CLOCK_SKEW = Duration.ofSeconds(30);</span>
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
     @Autowired
     public ClientSessionValidator(JdbcTemplate jdbc) {
-<span class="fc" id="L22">        this(jdbc, Clock.systemUTC());</span>
-<span class="fc" id="L23">    }</span>
+<span class="fc" id="L29">        this(jdbc, Clock.systemUTC());</span>
+<span class="fc" id="L30">    }</span>
 
-<span class="fc" id="L25">    ClientSessionValidator(JdbcTemplate jdbc, Clock clock) {</span>
-<span class="fc" id="L26">        this.jdbc = jdbc;</span>
-<span class="fc" id="L27">        this.clock = clock;</span>
-<span class="fc" id="L28">    }</span>
+<span class="fc" id="L32">    ClientSessionValidator(JdbcTemplate jdbc, Clock clock) {</span>
+<span class="fc" id="L33">        this.jdbc = jdbc;</span>
+<span class="fc" id="L34">        this.clock = clock;</span>
+<span class="fc" id="L35">    }</span>
 
     // Never extend activity here: polling and market-data requests must not keep a login alive.
     public boolean isActive(UUID sessionId, UUID clientId, Instant tokenExpiry) {
-<span class="fc" id="L32">        return isActive(Role.CLIENT, sessionId, clientId, tokenExpiry);</span>
+<span class="fc" id="L39">        return isActive(Role.CLIENT, sessionId, clientId, tokenExpiry);</span>
     }
 
     /**
@@ -43,26 +50,28 @@ public class ClientSessionValidator {
      * @return true if the session exists, is unrevoked, unexpired and not idle
      */
     public boolean isActive(Role role, UUID sessionId, UUID subjectId, Instant tokenExpiry) {
-<span class="fc" id="L46">        Instant now = clock.instant();</span>
-<span class="fc bfc" id="L47" title="All 8 branches covered.">        if (role == null || sessionId == null || subjectId == null || tokenExpiry == null</span>
-<span class="fc bfc" id="L48" title="All 2 branches covered.">                || !tokenExpiry.isAfter(now)) {</span>
-<span class="fc" id="L49">            return false;</span>
+<span class="fc" id="L53">        Instant now = clock.instant();</span>
+<span class="fc bfc" id="L54" title="All 6 branches covered.">        if (role == null || sessionId == null || subjectId == null) {</span>
+<span class="fc" id="L55">            return false;</span>
+        }
+<span class="fc bfc" id="L57" title="All 4 branches covered.">        if (tokenExpiry == null || !tokenExpiry.isAfter(now)) {</span>
+<span class="fc" id="L58">            return false;</span>
         }
         // Table and column names are fixed per role, never taken from the token.
-<span class="fc bfc" id="L52" title="All 2 branches covered.">        String sql = role.isStaff() ? &quot;&quot;&quot;</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        String sql = role.isStaff() ? &quot;&quot;&quot;</span>
                 SELECT COUNT(*) FROM iam.staff_sessions
                 WHERE session_id = ? AND staff_id = ? AND revoked_at IS NULL
                   AND expires_at &gt; ? AND last_activity_at &gt; ?
                   AND last_activity_at &lt;= ?
-<span class="fc" id="L57">                &quot;&quot;&quot; : &quot;&quot;&quot;</span>
+<span class="fc" id="L66">                &quot;&quot;&quot; : &quot;&quot;&quot;</span>
                 SELECT COUNT(*) FROM iam.client_sessions
                 WHERE session_id = ? AND client_id = ? AND revoked_at IS NULL
                   AND expires_at &gt; ? AND last_activity_at &gt; ?
                   AND last_activity_at &lt;= ?
                 &quot;&quot;&quot;;
-<span class="fc" id="L63">        Integer count = jdbc.queryForObject(sql, Integer.class, sessionId, subjectId, now.atOffset(ZoneOffset.UTC),</span>
-<span class="fc" id="L64">                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));</span>
-<span class="fc bfc" id="L65" title="All 4 branches covered.">        return count != null &amp;&amp; count == 1;</span>
+<span class="fc" id="L72">        Integer count = jdbc.queryForObject(sql, Integer.class, sessionId, subjectId, now.atOffset(ZoneOffset.UTC),</span>
+<span class="fc" id="L73">                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.plus(CLOCK_SKEW).atOffset(ZoneOffset.UTC));</span>
+<span class="fc bfc" id="L74" title="All 4 branches covered.">        return count != null &amp;&amp; count == 1;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

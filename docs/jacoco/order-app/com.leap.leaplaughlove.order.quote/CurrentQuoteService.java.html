@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Supplies the current market quote an order is priced against at execution time, rejecting
@@ -14,7 +16,7 @@ import java.time.OffsetDateTime;
 @Service
 public class CurrentQuoteService {
 
-<span class="fc" id="L17">    private static final Logger log = LoggerFactory.getLogger(CurrentQuoteService.class);</span>
+<span class="fc" id="L19">    private static final Logger log = LoggerFactory.getLogger(CurrentQuoteService.class);</span>
 
     private final CurrentQuoteClient quoteClient;
     private final long maxQuoteAgeSeconds;
@@ -25,10 +27,10 @@ public class CurrentQuoteService {
      * @param maxQuoteAgeSeconds the maximum age of a quote in seconds before it is considered stale
      */
     public CurrentQuoteService(CurrentQuoteClient quoteClient,
-<span class="fc" id="L28">                               @Value(&quot;${order.execution.max-quote-age-seconds:${trading.execution.max-quote-age-seconds:5}}&quot;) long maxQuoteAgeSeconds) {</span>
-<span class="fc" id="L29">        this.quoteClient = quoteClient;</span>
-<span class="fc" id="L30">        this.maxQuoteAgeSeconds = maxQuoteAgeSeconds;</span>
-<span class="fc" id="L31">    }</span>
+<span class="fc" id="L30">                               @Value(&quot;${order.execution.max-quote-age-seconds:${trading.execution.max-quote-age-seconds:5}}&quot;) long maxQuoteAgeSeconds) {</span>
+<span class="fc" id="L31">        this.quoteClient = quoteClient;</span>
+<span class="fc" id="L32">        this.maxQuoteAgeSeconds = maxQuoteAgeSeconds;</span>
+<span class="fc" id="L33">    }</span>
 
     /**
      * Retrieves the current quote for the specified symbol, ensuring it is not stale.
@@ -39,24 +41,42 @@ public class CurrentQuoteService {
      * @throws StaleQuoteException if the retrieved quote is older than the maximum allowed age
      */
     public QuoteSnapshot getCurrentQuote(String symbol) {
-<span class="fc bfc" id="L42" title="All 4 branches covered.">        if (symbol == null || symbol.isBlank()) {</span>
-<span class="fc" id="L43">            throw new IllegalArgumentException(&quot;symbol must not be blank&quot;);</span>
+<span class="fc bfc" id="L44" title="All 4 branches covered.">        if (symbol == null || symbol.isBlank()) {</span>
+<span class="fc" id="L45">            throw new IllegalArgumentException(&quot;symbol must not be blank&quot;);</span>
         }
 
-<span class="fc" id="L46">        QuoteSnapshot quote = quoteClient.fetchLatest(symbol)</span>
-<span class="fc" id="L47">                .orElseThrow(() -&gt; new QuoteUnavailableException(</span>
+<span class="fc" id="L48">        QuoteSnapshot quote = quoteClient.fetchLatest(symbol)</span>
+<span class="fc" id="L49">                .orElseThrow(() -&gt; new QuoteUnavailableException(</span>
                         &quot;No current quote is available for symbol &quot; + symbol));
 
-<span class="fc" id="L50">        OffsetDateTime staleBefore = OffsetDateTime.now().minusSeconds(maxQuoteAgeSeconds);</span>
-<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (quote.quoteTimestamp().isBefore(staleBefore)) {</span>
-<span class="fc" id="L52">            log.warn(&quot;Rejected quote for {}: quoteTimestamp {} is older than {} seconds&quot;,</span>
-<span class="fc" id="L53">                    symbol, quote.quoteTimestamp(), maxQuoteAgeSeconds);</span>
-<span class="fc" id="L54">            throw new StaleQuoteException(&quot;Current quote for symbol &quot; + symbol</span>
-<span class="fc" id="L55">                    + &quot; is stale: quoteTimestamp &quot; + quote.quoteTimestamp()</span>
+<span class="fc" id="L52">        OffsetDateTime staleBefore = OffsetDateTime.now().minusSeconds(maxQuoteAgeSeconds);</span>
+<span class="fc bfc" id="L53" title="All 2 branches covered.">        if (quote.quoteTimestamp().isBefore(staleBefore)) {</span>
+<span class="fc" id="L54">            log.warn(&quot;Rejected quote for {}: quoteTimestamp {} is older than {} seconds&quot;,</span>
+<span class="fc" id="L55">                    symbol, quote.quoteTimestamp(), maxQuoteAgeSeconds);</span>
+<span class="fc" id="L56">            throw new StaleQuoteException(&quot;Current quote for symbol &quot; + symbol</span>
+<span class="fc" id="L57">                    + &quot; is stale: quoteTimestamp &quot; + quote.quoteTimestamp()</span>
                     + &quot; is older than the maximum quote age of &quot; + maxQuoteAgeSeconds + &quot; seconds&quot;);
         }
 
-<span class="fc" id="L59">        return quote;</span>
+<span class="fc" id="L61">        return quote;</span>
+    }
+
+    /**
+     * Retrieves the current quote of every instrument, leaving out any too old to act on.
+     * @param bearerToken a market-quotes service token
+     * @return the fresh quotes by symbol
+     * @throws QuoteUnavailableException if the market data service can't be reached
+     */
+    public Map&lt;String, QuoteSnapshot&gt; getFreshQuotes(String bearerToken) {
+<span class="nc" id="L71">        OffsetDateTime staleBefore = OffsetDateTime.now().minusSeconds(maxQuoteAgeSeconds);</span>
+<span class="nc" id="L72">        Map&lt;String, QuoteSnapshot&gt; fresh = new HashMap&lt;&gt;();</span>
+<span class="nc bnc" id="L73" title="All 2 branches missed.">        for (QuoteSnapshot quote : quoteClient.fetchAllAs(bearerToken)) {</span>
+<span class="nc bnc" id="L74" title="All 4 branches missed.">            if (quote.symbol() != null &amp;&amp; quote.quoteTimestamp() != null</span>
+<span class="nc bnc" id="L75" title="All 2 branches missed.">                    &amp;&amp; !quote.quoteTimestamp().isBefore(staleBefore)) {</span>
+<span class="nc" id="L76">                fresh.put(quote.symbol().toUpperCase(), quote);</span>
+            }
+<span class="nc" id="L78">        }</span>
+<span class="nc" id="L79">        return fresh;</span>
     }
 }
 

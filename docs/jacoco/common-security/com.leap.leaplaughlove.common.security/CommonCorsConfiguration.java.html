@@ -25,7 +25,7 @@ public final class CommonCorsConfiguration {
     public static CorsConfigurationSource corsConfigurationSource() {
 <span class="fc" id="L26">        CorsConfiguration config = new CorsConfiguration();</span>
 <span class="fc" id="L27">        config.setAllowedOriginPatterns(List.of(&quot;*&quot;));</span>
-<span class="fc" id="L28">        config.setAllowedMethods(List.of(&quot;GET&quot;, &quot;POST&quot;, &quot;PUT&quot;, &quot;DELETE&quot;, &quot;OPTIONS&quot;));</span>
+<span class="fc" id="L28">        config.setAllowedMethods(List.of(&quot;GET&quot;, &quot;POST&quot;, &quot;PUT&quot;, &quot;PATCH&quot;, &quot;DELETE&quot;, &quot;OPTIONS&quot;));</span>
 <span class="fc" id="L29">        config.setAllowedHeaders(List.of(&quot;*&quot;));</span>
 <span class="fc" id="L30">        config.setAllowCredentials(true);</span>
 <span class="fc" id="L31">        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();</span>

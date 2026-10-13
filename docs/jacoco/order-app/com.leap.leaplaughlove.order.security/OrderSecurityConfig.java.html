@@ -7,6 +7,8 @@ import com.leap.leaplaughlove.common.security.JwtAuthenticationFilter;
 import com.leap.leaplaughlove.common.security.JwtService;
 // Session Timeout &amp; Revocation
 import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -23,7 +25,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
 // Session Timeout &amp; Revocation: common-security is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
-<span class="fc" id="L26">public class OrderSecurityConfig {</span>
+<span class="fc" id="L28">public class OrderSecurityConfig {</span>
     /**
      * Configures the security filter chain for the Order application, including CORS, CSRF, session management, and JWT authentication.
      * @param http the HttpSecurity object to configure
@@ -34,20 +36,25 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http, JwtService jwtService, ObjectMapper objectMapper, ClientSessionValidator sessions) throws Exception {
-<span class="fc" id="L37">        http</span>
-<span class="fc" id="L38">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
-<span class="fc" id="L39">                .csrf(AbstractHttpConfigurer::disable)</span>
-<span class="fc" id="L40">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
-<span class="fc" id="L41">                .authorizeHttpRequests(auth -&gt; auth</span>
-<span class="fc" id="L42">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
-<span class="fc" id="L43">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
-                        // Client-only: staff tokens are refused here (403).
-<span class="fc" id="L45">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
-<span class="fc" id="L46">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L47">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L48">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L49">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L50">        return http.build();</span>
+<span class="fc" id="L39">        http</span>
+<span class="fc" id="L40">                .cors(cors -&gt; cors.configurationSource(corsConfigurationSource()))</span>
+<span class="fc" id="L41">                .csrf(AbstractHttpConfigurer::disable)</span>
+<span class="fc" id="L42">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
+<span class="fc" id="L43">                .authorizeHttpRequests(auth -&gt; auth</span>
+<span class="fc" id="L44">                        .requestMatchers(&quot;/actuator/health&quot;).permitAll()</span>
+<span class="fc" id="L45">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+                        // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
+                        // the original REQUEST dispatch was already authenticated
+<span class="fc" id="L48">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
+                        // Activity reports read reporting.orders, not trading data: analysts only.
+<span class="fc" id="L50">                        .requestMatchers(&quot;/api/order/reports/**&quot;).hasRole(&quot;COMMERCIAL_ANALYST&quot;)</span>
+                        // Everything else is client-only: staff tokens are refused here (403).
+<span class="fc" id="L52">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
+<span class="fc" id="L53">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L54">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L55">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L56">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L57">        return http.build();</span>
     }
 
     /**
@@ -57,7 +64,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L60">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L67">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

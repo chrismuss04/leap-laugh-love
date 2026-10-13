@@ -43,10 +43,10 @@ account-app,com.leap.leaplaughlove.account.inactivity,InactivityCheckedEvent,0,3
 account-app,com.leap.leaplaughlove.account.inactivity,InactiveAccountDetector,0,116,0,4,0,24,0,10,0,8
 account-app,com.leap.leaplaughlove.account.instrument,Instrument,0,72,0,0,0,23,0,10,0,10
 account-app,com.leap.leaplaughlove.account.client,ClientStatus,0,30,0,0,0,12,0,6,0,6
-account-app,com.leap.leaplaughlove.account.security,AccountSecurityConfig,0,96,0,0,0,16,0,8,0,8
+account-app,com.leap.leaplaughlove.account.security,AccountSecurityConfig,0,101,0,0,0,16,0,8,0,8
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioController,0,12,0,0,0,4,0,2,0,2
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryResponse,0,24,0,0,0,1,0,1,0,1
-account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryService,18,674,8,46,2,120,9,32,1,13
+account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryService,18,711,8,46,2,128,9,37,1,18
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioHistoryResponse.Point,0,9,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioRange.Window,0,9,0,0,0,1,0,1,0,1
 account-app,com.leap.leaplaughlove.account.portfolio,PortfolioRange,2,160,2,8,0,30,2,10,0,7

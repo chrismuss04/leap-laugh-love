@@ -38,9 +38,16 @@ com.leap.leaplaughlove.order.events
 com.leap.leaplaughlove.order.execution
 com.leap.leaplaughlove.order.history
 com.leap.leaplaughlove.order.instrument
+com.leap.leaplaughlove.order.notification
 com.leap.leaplaughlove.order.order
 com.leap.leaplaughlove.order.position
 com.leap.leaplaughlove.order.quote
+com.leap.leaplaughlove.order.report
 com.leap.leaplaughlove.order.security
 com.leap.leaplaughlove.order.submission
+com.leap.leaplaughlove.order.template
 com.leap.leaplaughlove.order.validation
+com.leap.leaplaughlove.order.working
+com.leap.leaplaughlove.reporting
+com.leap.leaplaughlove.reporting.analyst
+com.leap.leaplaughlove.reporting.security

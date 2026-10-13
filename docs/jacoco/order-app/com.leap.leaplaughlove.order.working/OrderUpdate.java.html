@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderUpdate.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OrderUpdate.java</span></div><h1>OrderUpdate.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.order.Order;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Tells a client, as it happens, that one of their open orders ended without them doing anything:
+ * it filled, was refused when its price was reached, or expired. Sent on the order stream.
+ *
+ * @param orderId the order
+ * @param symbol the instrument's symbol
+ * @param side BUY or SELL
+ * @param quantity whole shares ordered
+ * @param orderType LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+ * @param status FILLED, ACCEPTED (it executed and is still being confirmed), REJECTED or EXPIRED
+ * @param fillPrice the price it filled at, for FILLED and ACCEPTED
+ * @param reason why it was rejected, for REJECTED
+ * @param at when this happened
+ */
+<span class="fc" id="L23">public record OrderUpdate(</span>
+        UUID orderId,
+        String symbol,
+        String side,
+        long quantity,
+        String orderType,
+        String status,
+        BigDecimal fillPrice,
+        String reason,
+        OffsetDateTime at
+) {
+    /**
+     * Describes how an order, whose instrument must be loaded, has just ended.
+     * @param order the order
+     * @param status how it ended
+     * @param fillPrice the price it executed at, if it did
+     * @param reason why it was rejected, if it was
+     * @return the update to send
+     */
+    public static OrderUpdate of(Order order, Order.Status status, BigDecimal fillPrice, String reason) {
+<span class="fc" id="L43">        return new OrderUpdate(</span>
+<span class="fc" id="L44">                order.getOrderId(),</span>
+<span class="fc" id="L45">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L46">                order.getSide().name(),</span>
+<span class="fc" id="L47">                order.getQuantity(),</span>
+<span class="fc" id="L48">                order.getOrderType().name(),</span>
+<span class="fc" id="L49">                status.name(),</span>
+                fillPrice,
+                reason,
+<span class="fc" id="L52">                OffsetDateTime.now());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ActivityReportRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.report</a> &gt; <span class="el_source">ActivityReportRepository.java</span></div><h1>ActivityReportRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.report;
+
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Reads filled orders from reporting.orders, the read model reporting-etl loads from the
+ * order-events topic. Read with plain SQL rather than JPA: order-app never writes this table.
+ */
+@Repository
+public class ActivityReportRepository {
+
+    // Rejected orders never traded, so only FILLED rows count. The range is half-open so a fill
+    // at exactly midnight lands in one day only; completed_at is indexed for it.
+    private static final String FILLS_SQL = &quot;&quot;&quot;
+            SELECT side, quantity, fill_price, completed_at
+            FROM reporting.orders
+            WHERE status = 'FILLED'
+              AND fill_price IS NOT NULL
+              AND completed_at &gt;= :from
+              AND completed_at &lt; :to
+            &quot;&quot;&quot;;
+
+    private final NamedParameterJdbcTemplate jdbc;
+
+    /**
+     * Constructs an instance of ActivityReportRepository.
+     * @param jdbc the JDBC template used to query reporting.orders
+     */
+<span class="fc" id="L35">    public ActivityReportRepository(NamedParameterJdbcTemplate jdbc) {</span>
+<span class="fc" id="L36">        this.jdbc = jdbc;</span>
+<span class="fc" id="L37">    }</span>
+
+    /**
+     * Finds the orders that filled within a time range.
+     * @param from the start of the range, inclusive
+     * @param to the end of the range, exclusive
+     * @param instrumentId the instrument to restrict to, or null for all instruments
+     * @return the fills in the range, in no particular order
+     */
+    public List&lt;ReportedFill&gt; findFills(OffsetDateTime from, OffsetDateTime to, UUID instrumentId) {
+<span class="fc" id="L47">        var params = new MapSqlParameterSource()</span>
+<span class="fc" id="L48">                .addValue(&quot;from&quot;, from)</span>
+<span class="fc" id="L49">                .addValue(&quot;to&quot;, to);</span>
+<span class="fc" id="L50">        String sql = FILLS_SQL;</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (instrumentId != null) {</span>
+<span class="fc" id="L52">            sql += &quot;  AND instrument_id = :instrumentId\n&quot;;</span>
+<span class="fc" id="L53">            params.addValue(&quot;instrumentId&quot;, instrumentId);</span>
+        }
+<span class="fc" id="L55">        return jdbc.query(sql, params, (rs, rowNum) -&gt; new ReportedFill(</span>
+<span class="fc" id="L56">                rs.getString(&quot;side&quot;),</span>
+<span class="fc" id="L57">                rs.getLong(&quot;quantity&quot;),</span>
+<span class="fc" id="L58">                rs.getBigDecimal(&quot;fill_price&quot;),</span>
+<span class="fc" id="L59">                rs.getObject(&quot;completed_at&quot;, OffsetDateTime.class)));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -2,6 +2,7 @@
 
 import com.leap.leaplaughlove.order.order.Order;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -22,25 +23,29 @@ public class OrderSubmissionController {
      * Constructs an instance of OrderSubmissionController with the specified OrderSubmissionService.
      * @param orderSubmissionService the service used for handling order submissions
      */
-<span class="fc" id="L25">    public OrderSubmissionController(OrderSubmissionService orderSubmissionService) {</span>
-<span class="fc" id="L26">        this.orderSubmissionService = orderSubmissionService;</span>
-<span class="fc" id="L27">    }</span>
+<span class="fc" id="L26">    public OrderSubmissionController(OrderSubmissionService orderSubmissionService) {</span>
+<span class="fc" id="L27">        this.orderSubmissionService = orderSubmissionService;</span>
+<span class="fc" id="L28">    }</span>
 
     /**
      * Submits an order for execution under the specified account.
      * @param request the order submission request containing order details
      * @return the result of the order submission: 200 once filled or rejected, 202 while the
-     *         fill is still being settled
+     *         fill is still being settled, 201 when the order is OPEN, waiting for its price
      */
     @PostMapping
     public ResponseEntity&lt;OrderSubmissionResponse&gt; submitOrder(
             @Valid @RequestBody OrderSubmissionRequest request) {
-<span class="fc" id="L38">        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);</span>
+<span class="fc" id="L39">        OrderSubmissionResponse response = orderSubmissionService.submitOrder(request);</span>
         // ACCEPTED means the fill is still being settled (see PendingFillRecovery).
-<span class="fc bfc" id="L40" title="All 2 branches covered.">        if (Order.Status.ACCEPTED.name().equals(response.status())) {</span>
-<span class="fc" id="L41">            return ResponseEntity.accepted().body(response);</span>
+<span class="fc bfc" id="L41" title="All 2 branches covered.">        if (Order.Status.ACCEPTED.name().equals(response.status())) {</span>
+<span class="fc" id="L42">            return ResponseEntity.accepted().body(response);</span>
         }
-<span class="fc" id="L43">        return ResponseEntity.ok(response);</span>
+        // OPEN: created and working, but nothing has executed yet.
+<span class="fc bfc" id="L45" title="All 2 branches covered.">        if (Order.Status.OPEN.name().equals(response.status())) {</span>
+<span class="fc" id="L46">            return ResponseEntity.status(HttpStatus.CREATED).body(response);</span>
+        }
+<span class="fc" id="L48">        return ResponseEntity.ok(response);</span>
     }
 }
 

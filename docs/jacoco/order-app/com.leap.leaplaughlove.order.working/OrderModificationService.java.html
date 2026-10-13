@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderModificationService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OrderModificationService.java</span></div><h1>OrderModificationService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.client.AccountClient;
+import com.leap.leaplaughlove.order.client.AccountValidationDto;
+import com.leap.leaplaughlove.order.instrument.Instrument;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.order.OrderRepository;
+import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
+import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
+import com.leap.leaplaughlove.order.validation.TradeValidationResult;
+import com.leap.leaplaughlove.order.validation.TradeValidationService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Edits an OPEN order in place - quantity, limit or stop price, trail, time in force - keeping its
+ * ID and its place in history. The order is locked first, so an edit and {@link OrderTriggerEngine}
+ * filling it can't both win, and checked as a new order would be: the account must still cover the
+ * changed order's cash or shares (less what its other open orders hold), and a stop can't be moved
+ * to a price the market has already passed, which would trigger the order at once. Changing the
+ * quantity of one exit leg of a bracket changes the other leg's too.
+ */
+@Service
+public class OrderModificationService {
+
+<span class="fc" id="L38">    private static final Logger log = LoggerFactory.getLogger(OrderModificationService.class);</span>
+
+    private final OpenOrderService openOrderService;
+    private final OrderRepository orderRepository;
+    private final AccountClient accountClient;
+    private final CurrentQuoteService currentQuoteService;
+    private final TradeValidationService tradeValidationService;
+    private final ReservationService reservationService;
+
+    /**
+     * Constructs an OrderModificationService.
+     * @param openOrderService finds and locks the client's open order
+     * @param orderRepository locks the account while holds are counted
+     * @param accountClient reads the account's cash and holdings
+     * @param currentQuoteService reads the live quote a stop is checked against
+     * @param tradeValidationService checks the changed order is affordable
+     * @param reservationService counts what the account's other open orders hold
+     */
+    public OrderModificationService(OpenOrderService openOrderService, OrderRepository orderRepository,
+                                    AccountClient accountClient, CurrentQuoteService currentQuoteService,
+                                    TradeValidationService tradeValidationService,
+<span class="fc" id="L59">                                    ReservationService reservationService) {</span>
+<span class="fc" id="L60">        this.openOrderService = openOrderService;</span>
+<span class="fc" id="L61">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L62">        this.accountClient = accountClient;</span>
+<span class="fc" id="L63">        this.currentQuoteService = currentQuoteService;</span>
+<span class="fc" id="L64">        this.tradeValidationService = tradeValidationService;</span>
+<span class="fc" id="L65">        this.reservationService = reservationService;</span>
+<span class="fc" id="L66">    }</span>
+
+    /**
+     * Applies an edit to one of the client's open orders.
+     * @param clientId the authenticated client
+     * @param orderId the order to change
+     * @param request what to change
+     * @return the order as it now stands
+     * @throws ResponseStatusException not found (404) if the client has no such order, conflict
+     *         (409) if it is no longer OPEN, bad request (400) if the edit doesn't fit the order's
+     *         type or the account can't cover it; not found (404) or forbidden (403) as account-app
+     *         answers for the account, bad request (400) for any other account-app refusal, and
+     *         service unavailable (503) if account-app can't be reached or fails
+     */
+    @Transactional
+    public OpenOrderItem modify(UUID clientId, UUID orderId, ModifyOrderRequest request) {
+        // A bracket's exit legs sell the same shares, so a change locks them together, lowest ID
+        // first (see OrderRepository#findGroupForUpdate), before the order itself.
+<span class="fc" id="L84">        UUID group = orderRepository.findOcoGroupId(orderId);</span>
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        List&lt;Order&gt; linked = group != null ? orderRepository.findGroupForUpdate(group) : List.of();</span>
+<span class="fc" id="L86">        Order order = openOrderService.lockOwned(clientId, orderId);</span>
+<span class="fc" id="L87">        OpenOrderService.requireOpen(order, &quot;changed&quot;);</span>
+
+<span class="fc" id="L89">        Order.OrderType type = order.getOrderType();</span>
+<span class="fc" id="L90">        Order.Side side = order.getSide();</span>
+<span class="fc" id="L91">        requireApplicable(order, request);</span>
+
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        long quantity = request.quantity() != null ? request.quantity() : order.getQuantity();</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        BigDecimal limitPrice = request.limitPrice() != null ? request.limitPrice() : order.getLimitPrice();</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">        BigDecimal stopPrice = request.stopPrice() != null ? request.stopPrice() : order.getStopPrice();</span>
+<span class="fc" id="L96">        BigDecimal trailAmount = order.getTrailAmount();</span>
+<span class="fc" id="L97">        BigDecimal trailPercent = order.getTrailPercent();</span>
+<span class="pc bpc" id="L98" title="1 of 4 branches missed.">        boolean trailChanged = request.trailAmount() != null || request.trailPercent() != null;</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (trailChanged) {</span>
+            // A new trail sets the stop afresh from the best price already seen.
+<span class="fc" id="L101">            trailAmount = request.trailAmount();</span>
+<span class="fc" id="L102">            trailPercent = request.trailPercent();</span>
+<span class="fc" id="L103">            stopPrice = TrailingStop.stopFor(side, order.getTrailPeak(), trailAmount, trailPercent);</span>
+        }
+<span class="fc" id="L105">        Order.TimeInForce timeInForce = resolveTimeInForce(order, request);</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        OffsetDateTime expiresAt = timeInForce != order.getTimeInForce()</span>
+<span class="fc" id="L107">                ? OrderSubmissionService.expiryOf(timeInForce, OffsetDateTime.now())</span>
+<span class="fc" id="L108">                : order.getExpiresAt();</span>
+
+<span class="fc" id="L110">        Instrument instrument = order.getInstrument();</span>
+<span class="fc bfc" id="L111" title="All 4 branches covered.">        if (request.stopPrice() != null || trailChanged) {</span>
+<span class="fc" id="L112">            requireStopNotReached(order, stopPrice);</span>
+        }
+
+        // The changed order must still be covered by what the account has free.
+<span class="fc" id="L116">        AccountValidationDto account = fetchAccount(order, instrument);</span>
+<span class="fc" id="L117">        orderRepository.lockAccount(order.getAccountId());</span>
+<span class="fc" id="L118">        ReservationService.Holds holds = reservationService.holdsFor(</span>
+<span class="fc" id="L119">                order.getAccountId(), instrument.getInstrumentId(), order.getOrderId());</span>
+<span class="fc" id="L120">        BigDecimal reservePrice = ReservationService.reservePricePerShare(type, limitPrice, stopPrice);</span>
+<span class="fc" id="L121">        TradeValidationResult result = tradeValidationService.validateTrade(</span>
+<span class="fc" id="L122">                ReservationService.available(account, holds), instrument, side, quantity, reservePrice);</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">        if (!result.isValid()) {</span>
+<span class="fc" id="L124">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc" id="L125">                    ReservationService.explain(result.reason(), side, holds));</span>
+        }
+
+<span class="fc" id="L128">        order.modify(quantity, limitPrice, stopPrice, trailAmount, trailPercent, timeInForce, expiresAt,</span>
+<span class="fc" id="L129">                ReservationService.reservedCash(side, quantity, reservePrice));</span>
+        // Both legs sell the same shares, so a new quantity applies to the leg still working too.
+<span class="fc" id="L131">        syncLinkedQuantity(linked, orderId, quantity);</span>
+<span class="fc" id="L132">        return OpenOrderItem.of(order);</span>
+    }
+
+    private static Order.TimeInForce resolveTimeInForce(Order order, ModifyOrderRequest request) {
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        return request.timeInForce() != null ? request.timeInForce() : order.getTimeInForce();</span>
+    }
+
+    /**
+     * Reads the order's account's validation data from account-app.
+     * @param order the open order
+     * @param instrument the order's instrument
+     * @return the account's validation data
+     * @throws ResponseStatusException not found (404) or forbidden (403) as account-app answers
+     *         for the account, bad request (400) for any other account-app refusal, and service
+     *         unavailable (503) if account-app can't be reached or fails
+     */
+    private AccountValidationDto fetchAccount(Order order, Instrument instrument) {
+        try {
+<span class="fc" id="L150">            return accountClient.getValidationData(order.getAccountId(), instrument.getInstrumentId());</span>
+<span class="fc" id="L151">        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {</span>
+<span class="fc" id="L152">            throw new ResponseStatusException(ex.getStatusCode(), &quot;Failed to validate account&quot;);</span>
+<span class="fc" id="L153">        } catch (HttpClientErrorException ex) {</span>
+<span class="fc" id="L154">            log.warn(&quot;account-app refused validation for account {}: {}&quot;, order.getAccountId(), ex.getStatusCode());</span>
+<span class="fc" id="L155">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Failed to validate account&quot;);</span>
+<span class="fc" id="L156">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L157">            log.error(&quot;account-app unavailable validating account {}&quot;, order.getAccountId(), ex);</span>
+<span class="fc" id="L158">            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, &quot;Account service unavailable, please try again&quot;);</span>
+        }
+    }
+
+    private static void syncLinkedQuantity(List&lt;Order&gt; linked, UUID orderId, long quantity) {
+<span class="fc bfc" id="L163" title="All 2 branches covered.">        for (Order leg : linked) {</span>
+<span class="pc bpc" id="L164" title="1 of 4 branches missed.">            if (!leg.getOrderId().equals(orderId) &amp;&amp; leg.getStatus() == Order.Status.OPEN) {</span>
+<span class="fc" id="L165">                leg.syncQuantity(quantity);</span>
+            }
+<span class="fc" id="L167">        }</span>
+<span class="fc" id="L168">    }</span>
+
+    /**
+     * Refuses a field that doesn't apply to the order's type, or a stop that has already been reached.
+     * @param order the open order
+     * @param request the edit
+     */
+    private static void requireApplicable(Order order, ModifyOrderRequest request) {
+<span class="fc" id="L176">        Order.OrderType type = order.getOrderType();</span>
+<span class="fc bfc" id="L177" title="All 4 branches covered.">        if (request.limitPrice() != null &amp;&amp; !type.hasLimit()) {</span>
+<span class="fc" id="L178">            throw badRequest(&quot;A &quot; + describe(type) + &quot; order has no limit price to change&quot;);</span>
+        }
+<span class="fc bfc" id="L180" title="All 4 branches covered.">        if (request.stopPrice() != null &amp;&amp; !type.takesStopPrice()) {</span>
+<span class="fc" id="L181">            throw badRequest(&quot;A &quot; + describe(type) + &quot; order has no stop price to change&quot;</span>
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">                    + (type.hasTrail() ? &quot; - change its trail instead&quot; : &quot;&quot;));</span>
+        }
+<span class="fc bfc" id="L184" title="All 6 branches covered.">        if ((request.trailAmount() != null || request.trailPercent() != null) &amp;&amp; !type.hasTrail()) {</span>
+<span class="fc" id="L185">            throw badRequest(&quot;Only a trailing stop has a trail to change&quot;);</span>
+        }
+<span class="pc bpc" id="L187" title="1 of 4 branches missed.">        if (request.stopPrice() != null &amp;&amp; order.getTriggeredAt() != null) {</span>
+<span class="nc" id="L188">            throw badRequest(&quot;This order's stop price has been reached, so it can no longer be changed&quot;);</span>
+        }
+<span class="fc" id="L190">    }</span>
+
+    /**
+     * Refuses a stop that the market has already passed, which would trigger the order at once.
+     * @param order the open order
+     * @param stopPrice the stop it would now have
+     */
+    private void requireStopNotReached(Order order, BigDecimal stopPrice) {
+<span class="fc" id="L198">        Order.Side side = order.getSide();</span>
+<span class="pc bpc" id="L199" title="1 of 2 branches missed.">        if (stopPrice.signum() &lt;= 0) {</span>
+<span class="nc" id="L200">            throw badRequest(&quot;That trail is larger than the price, which would put the stop at or below zero&quot;);</span>
+        }
+<span class="fc" id="L202">        BigDecimal price = TriggerEvaluator.executablePrice(side,</span>
+<span class="fc" id="L203">                currentQuoteService.getCurrentQuote(order.getInstrument().getSymbol()));</span>
+<span class="pc bpc" id="L204" title="1 of 2 branches missed.">        if (price == null) {</span>
+<span class="nc" id="L205">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,</span>
+<span class="nc" id="L206">                    &quot;No valid executable price found for symbol: &quot; + order.getInstrument().getSymbol());</span>
+        }
+<span class="fc bfc" id="L208" title="All 2 branches covered.">        if (TriggerEvaluator.stopReached(side, stopPrice, price)) {</span>
+<span class="fc" id="L209">            throw badRequest(String.format(&quot;A stop of $%s must be %s the current %s of $%s, or the order would trigger at once&quot;,</span>
+<span class="fc" id="L210">                    stopPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="pc bpc" id="L211" title="1 of 2 branches missed.">                    side == Order.Side.BUY ? &quot;above&quot; : &quot;below&quot;,</span>
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">                    side == Order.Side.BUY ? &quot;ask&quot; : &quot;bid&quot;,</span>
+<span class="fc" id="L213">                    price.setScale(2, RoundingMode.HALF_UP).toPlainString()));</span>
+        }
+<span class="fc" id="L215">    }</span>
+
+    private static String describe(Order.OrderType type) {
+<span class="fc" id="L218">        return type.name().toLowerCase().replace('_', ' ');</span>
+    }
+
+    private static ResponseStatusException badRequest(String reason) {
+<span class="fc" id="L222">        return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

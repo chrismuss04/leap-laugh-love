@@ -52,13 +52,15 @@ import org.springframework.web.cors.CorsConfigurationSource;
 <span class="fc" id="L52">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
                         // order-app's seeded fills read history with a market-history service token.
 <span class="fc" id="L54">                        .requestMatchers(HttpMethod.GET, &quot;/api/marketdata/prices/*/history&quot;).hasAnyRole(&quot;CLIENT&quot;, &quot;SERVICE&quot;)</span>
+                        // order-app's trigger engine reads every quote with a market-quotes service token.
+<span class="fc" id="L56">                        .requestMatchers(HttpMethod.GET, &quot;/api/marketdata/quotes&quot;).hasAnyRole(&quot;CLIENT&quot;, &quot;SERVICE&quot;)</span>
                         // Client-only: staff tokens are refused here (403).
-<span class="fc" id="L56">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
-<span class="fc" id="L57">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L58">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L59">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L60">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;market-history&quot;), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L61">        return http.build();</span>
+<span class="fc" id="L58">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
+<span class="fc" id="L59">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L60">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L61">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L62">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions, &quot;market-history&quot;, &quot;market-quotes&quot;), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L63">        return http.build();</span>
     }
 
     /**
@@ -67,7 +69,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L70">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L72">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RetentionReport.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">RetentionReport.java</span></div><h1>RetentionReport.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.util.List;
+
+/**
+ * How many of each month's sign-ups were still placing orders in the months after. Cohorts are the
+ * window's sign-up months, so later cohorts have fewer months to show.
+ * @param window the months reported on, both as sign-up months and as activity months
+ * @param cohorts one entry per sign-up month in the window, oldest first
+ */
+<span class="fc" id="L13">public record RetentionReport(ReportWindow window, List&lt;Cohort&gt; cohorts) {</span>
+
+    /**
+     * One sign-up month's clients and their activity from then to the end of the window.
+     * @param cohort the month the clients signed up in
+     * @param clients how many signed up
+     * @param months one entry per month from the sign-up month to the window's last, oldest first
+     */
+<span class="fc" id="L21">    public record Cohort(YearMonth cohort, long clients, List&lt;Cell&gt; months) {}</span>
+
+    /**
+     * The cohort's activity in one month.
+     * @param monthsSinceSignUp 0 for the sign-up month itself
+     * @param month the month
+     * @param activeClients cohort clients who completed at least one order in the month
+     * @param activePct active clients as a percentage of the cohort; null for an empty cohort
+     */
+<span class="fc" id="L30">    public record Cell(int monthsSinceSignUp, YearMonth month, long activeClients, BigDecimal activePct) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

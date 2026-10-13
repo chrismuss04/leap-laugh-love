@@ -65,21 +65,22 @@ public class IamSecurityConfig {
 <span class="fc" id="L65">                .sessionManagement(session -&gt; session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))</span>
 <span class="fc" id="L66">                .authorizeHttpRequests(auth -&gt; auth</span>
                         // LLL-117: registration must stay public - a new applicant has no JWT yet.
-<span class="fc" id="L68">                        .requestMatchers(&quot;/api/iam/auth/**&quot;, &quot;/api/iam/v1/clients/register&quot;, &quot;/actuator/health&quot;)</span>
-<span class="fc" id="L69">                        .permitAll()</span>
+<span class="fc" id="L68">                        .requestMatchers(&quot;/api/iam/auth/**&quot;, &quot;/api/iam/v1/clients/register&quot;,</span>
+                                &quot;/api/iam/v1/clients/register/verify&quot;, &quot;/actuator/health&quot;)
+<span class="fc" id="L70">                        .permitAll()</span>
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to anyRequest().authenticated() and masking it as a 401
-<span class="fc" id="L72">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
+<span class="fc" id="L73">                        .requestMatchers(&quot;/error&quot;).permitAll()</span>
                         // Every signed-in role keeps its own session alive and signs out here.
-<span class="fc" id="L74">                        .requestMatchers(&quot;/api/iam/session/**&quot;).hasAnyRole(</span>
-<span class="fc" id="L75">                                Role.CLIENT.name(), Role.TRADING_OPERATIONS.name(), Role.COMMERCIAL_ANALYST.name())</span>
+<span class="fc" id="L75">                        .requestMatchers(&quot;/api/iam/session/**&quot;).hasAnyRole(</span>
+<span class="fc" id="L76">                                Role.CLIENT.name(), Role.TRADING_OPERATIONS.name(), Role.COMMERCIAL_ANALYST.name())</span>
                         // Client-only (profile and the rest): staff tokens are refused here (403).
-<span class="fc" id="L77">                        .anyRequest().hasRole(Role.CLIENT.name()))</span>
-<span class="fc" id="L78">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L79">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L80">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L81">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L82">        return http.build();</span>
+<span class="fc" id="L78">                        .anyRequest().hasRole(Role.CLIENT.name()))</span>
+<span class="fc" id="L79">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L80">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L81">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L82">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L83">        return http.build();</span>
     }
 
     /**
@@ -89,7 +90,7 @@ public class IamSecurityConfig {
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L92">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L93">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

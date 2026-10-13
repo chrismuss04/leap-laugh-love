@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PendingRegistrationRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.client</a> &gt; <span class="el_source">PendingRegistrationRepository.java</span></div><h1>PendingRegistrationRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.client;
+
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Optional;
+import java.util.UUID;
+
+// Every write joins the caller's transaction, so an application is only stored or spent together
+// with the change it belongs to.
+@Repository
+@Transactional(propagation = Propagation.MANDATORY)
+public class PendingRegistrationRepository {
+
+<span class="fc" id="L22">    private static final RowMapper&lt;PendingRegistration&gt; ROW_MAPPER = (rs, rowNum) -&gt; new PendingRegistration(</span>
+<span class="fc" id="L23">            rs.getObject(&quot;registration_id&quot;, UUID.class), rs.getString(&quot;token_hash&quot;),</span>
+<span class="fc" id="L24">            rs.getString(&quot;email&quot;), rs.getString(&quot;phone&quot;), rs.getString(&quot;full_name&quot;),</span>
+<span class="fc" id="L25">            rs.getObject(&quot;date_of_birth&quot;, LocalDate.class), rs.getString(&quot;ssn&quot;),</span>
+<span class="fc" id="L26">            rs.getString(&quot;address_line1&quot;), rs.getString(&quot;address_line2&quot;), rs.getString(&quot;city&quot;),</span>
+<span class="fc" id="L27">            rs.getString(&quot;state_region&quot;), rs.getString(&quot;postal_code&quot;), rs.getString(&quot;country_code&quot;),</span>
+<span class="fc" id="L28">            rs.getString(&quot;experience_level&quot;), rs.getBigDecimal(&quot;initial_deposit_amount&quot;),</span>
+<span class="fc" id="L29">            rs.getString(&quot;password_hash&quot;),</span>
+<span class="fc" id="L30">            rs.getObject(&quot;created_at&quot;, OffsetDateTime.class).toInstant(),</span>
+<span class="fc" id="L31">            rs.getObject(&quot;expires_at&quot;, OffsetDateTime.class).toInstant());</span>
+
+    private final JdbcTemplate jdbcTemplate;
+
+<span class="fc" id="L35">    public PendingRegistrationRepository(JdbcTemplate jdbcTemplate) {</span>
+<span class="fc" id="L36">        this.jdbcTemplate = jdbcTemplate;</span>
+<span class="fc" id="L37">    }</span>
+
+    // Stores an application, dropping any earlier one for the same email so only the newest link works.
+    public void replace(PendingRegistration pending) {
+<span class="fc" id="L41">        jdbcTemplate.update(&quot;DELETE FROM iam.pending_registrations WHERE email = ?&quot;, pending.email());</span>
+<span class="fc" id="L42">        jdbcTemplate.update(&quot;&quot;&quot;</span>
+                INSERT INTO iam.pending_registrations
+                    (registration_id, token_hash, email, phone, full_name, date_of_birth, ssn,
+                     address_line1, address_line2, city, state_region, postal_code, country_code,
+                     experience_level, initial_deposit_amount, password_hash, created_at, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+<span class="fc" id="L48">                &quot;&quot;&quot;, pending.registrationId(), pending.tokenHash(), pending.email(), pending.phone(),</span>
+<span class="fc" id="L49">                pending.fullName(), pending.dateOfBirth(), pending.ssn(),</span>
+<span class="fc" id="L50">                pending.addressLine1(), pending.addressLine2(), pending.city(), pending.stateRegion(),</span>
+<span class="fc" id="L51">                pending.postalCode(), pending.countryCode(), pending.experienceLevel(),</span>
+<span class="fc" id="L52">                pending.initialDepositAmount(), pending.passwordHash(),</span>
+<span class="fc" id="L53">                pending.createdAt().atOffset(ZoneOffset.UTC), pending.expiresAt().atOffset(ZoneOffset.UTC));</span>
+<span class="fc" id="L54">    }</span>
+
+    // An unconfirmed application holds an SSN and a password hash, so it is not kept past its link.
+    public void deleteExpired(Instant now) {
+<span class="fc" id="L58">        jdbcTemplate.update(&quot;DELETE FROM iam.pending_registrations WHERE expires_at &lt;= ?&quot;,</span>
+<span class="fc" id="L59">                now.atOffset(ZoneOffset.UTC));</span>
+<span class="fc" id="L60">    }</span>
+
+    // Removes and returns the application a link was issued for. The delete decides who gets it,
+    // so a link submitted twice at the same moment opens one client, not two.
+    public Optional&lt;PendingRegistration&gt; consume(String tokenHash, Instant now) {
+<span class="fc" id="L65">        Optional&lt;PendingRegistration&gt; pending = jdbcTemplate.query(&quot;&quot;&quot;</span>
+                SELECT * FROM iam.pending_registrations WHERE token_hash = ? AND expires_at &gt; ?
+<span class="fc" id="L67">                &quot;&quot;&quot;, ROW_MAPPER, tokenHash, now.atOffset(ZoneOffset.UTC)).stream().findFirst();</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">        if (pending.isEmpty()) {</span>
+<span class="fc" id="L69">            return pending;</span>
+        }
+<span class="fc" id="L71">        int spent = jdbcTemplate.update(&quot;DELETE FROM iam.pending_registrations WHERE registration_id = ?&quot;,</span>
+<span class="fc" id="L72">                pending.get().registrationId());</span>
+<span class="pc bpc" id="L73" title="1 of 2 branches missed.">        return spent == 1 ? pending : Optional.empty();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

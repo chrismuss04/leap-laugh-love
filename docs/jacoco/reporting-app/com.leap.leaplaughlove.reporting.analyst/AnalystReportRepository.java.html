@@ -1,0 +1,348 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AnalystReportRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">AnalystReportRepository.java</span></div><h1>AnalystReportRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.YearMonth;
+import java.util.Arrays;
+import java.util.List;
+import java.util.stream.Collectors;
+
+/**
+ * Reads the analyst reports' figures from the reporting schema: reporting.client_months (one row
+ * per client per UTC month they ordered in) for activity and value, reporting.orders where a
+ * report needs single orders, and reporting.clients for sign-ups. Plain SQL rather than JPA: every
+ * query is an aggregate, and this service never writes. Months are UTC throughout, and every
+ * range is half-open, from the window's first month up to but not including the month after it.
+ */
+@Repository
+public class AnalystReportRepository {
+
+    // A client is active in a month they had an order execute in, FILLED or REJECTED: that is
+    // every client_months row (CANCELLED and EXPIRED orders never reach it). Volume and filled
+    // orders count FILLED orders only.
+    private static final String MONTHLY_TOTALS_SQL = &quot;&quot;&quot;
+            SELECT month,
+                   count(*) AS active_clients,
+                   sum(filled_count) AS filled_orders,
+                   sum(filled_value) AS volume
+            FROM reporting.client_months
+            WHERE month &gt;= :from AND month &lt; :to
+            GROUP BY month
+            &quot;&quot;&quot;;
+
+    private static final String REGISTRATIONS_SQL = &quot;&quot;&quot;
+            SELECT date_trunc('month', registered_at AT TIME ZONE 'UTC')::date AS month,
+                   count(*) AS clients
+            FROM reporting.clients
+            WHERE registered_at &gt;= :fromInstant AND registered_at &lt; :toInstant
+            GROUP BY 1
+            &quot;&quot;&quot;;
+
+    // previous_month is the client's last active month before this one, over all their history,
+    // so a client whose first ever month falls in the window is new rather than reactivated.
+    private static final String CLIENT_ACTIVITY_SQL = &quot;&quot;&quot;
+            WITH activity AS (
+                SELECT month,
+                       lag(month) OVER (PARTITION BY client_id ORDER BY month) AS previous_month
+                FROM reporting.client_months
+                WHERE month &lt; :to
+            )
+            SELECT month,
+                   count(*) FILTER (WHERE previous_month IS NULL) AS new_clients,
+                   count(*) FILTER (WHERE previous_month = (month - interval '1 month')::date) AS returning_clients,
+                   count(*) FILTER (WHERE previous_month &lt; (month - interval '1 month')::date) AS reactivated_clients
+            FROM activity
+            WHERE month &gt;= :from
+            GROUP BY month
+            &quot;&quot;&quot;;
+
+    // Lapsed in a month: active the month before, not active in it. Reported against the month
+    // the client went quiet in, so the range starts and ends a month earlier.
+    private static final String LAPSED_SQL = &quot;&quot;&quot;
+            SELECT (earlier.month + interval '1 month')::date AS month,
+                   count(*) AS clients
+            FROM reporting.client_months earlier
+            WHERE earlier.month &gt;= :from AND earlier.month &lt; :to
+              AND NOT EXISTS (
+                  SELECT 1 FROM reporting.client_months later
+                  WHERE later.client_id = earlier.client_id
+                    AND later.month = (earlier.month + interval '1 month')::date)
+            GROUP BY 1
+            &quot;&quot;&quot;;
+
+    // Each cohort's active clients per month from sign-up on. An order dated before its client's
+    // sign-up month can only be bad data, and is left out rather than shown as month -1.
+    private static final String COHORT_ACTIVITY_SQL = &quot;&quot;&quot;
+            WITH cohorts AS (
+                SELECT client_id,
+                       date_trunc('month', registered_at AT TIME ZONE 'UTC')::date AS cohort
+                FROM reporting.clients
+                WHERE registered_at &gt;= :fromInstant AND registered_at &lt; :toInstant
+            )
+            SELECT cohorts.cohort, client_months.month, count(*) AS active_clients
+            FROM cohorts
+            JOIN reporting.client_months client_months ON client_months.client_id = cohorts.client_id
+            WHERE client_months.month &gt;= cohorts.cohort AND client_months.month &lt; :to
+            GROUP BY 1, 2
+            &quot;&quot;&quot;;
+
+    // First order is the first executed one (FILLED or REJECTED) by when it was placed
+    // (submitted_at), matching the definition of an active client. The median is over the clients who have ordered: the FILTER
+    // is needed because GREATEST, which guards against an order dated before its sign-up, turns
+    // a client with no order (NULL) into 0 days rather than leaving them out.
+    private static final String ACTIVATION_SQL = &quot;&quot;&quot;
+            WITH cohorts AS (
+                SELECT clients.registered_at,
+                       date_trunc('month', clients.registered_at AT TIME ZONE 'UTC')::date AS cohort,
+                       (SELECT min(orders.submitted_at)
+                        FROM reporting.orders orders
+                        WHERE orders.client_id = clients.client_id
+                          AND orders.status IN ('FILLED', 'REJECTED')) AS first_order_at
+                FROM reporting.clients clients
+                WHERE clients.registered_at &gt;= :fromInstant AND clients.registered_at &lt; :toInstant
+            )
+            SELECT cohort,
+                   count(*) AS registered,
+                   count(*) FILTER (WHERE first_order_at &lt; registered_at + interval '30 days') AS ordered_within_30_days,
+                   count(first_order_at) AS ordered_ever,
+                   percentile_cont(0.5) WITHIN GROUP (
+                       ORDER BY greatest(0, extract(epoch FROM first_order_at - registered_at) / 86400)::float8
+                   ) FILTER (WHERE first_order_at IS NOT NULL) AS median_days_to_first_order
+            FROM cohorts
+            GROUP BY cohort
+            &quot;&quot;&quot;;
+
+    // Ranks each month's clients by filled value and sums the top 1, 10 and 20 percent of them,
+    // rounding each group up to a whole client. Clients with no filled value that month (only
+    // rejected orders) traded nothing, so they are not counted among the month's traders.
+    private static final String CONCENTRATION_SQL = &quot;&quot;&quot;
+            WITH ranked AS (
+                SELECT month, filled_value,
+                       row_number() OVER (PARTITION BY month ORDER BY filled_value DESC, client_id) AS rank,
+                       count(*) OVER (PARTITION BY month) AS traders
+                FROM reporting.client_months
+                WHERE month &gt;= :from AND month &lt; :to AND filled_value &gt; 0
+            )
+            SELECT month,
+                   max(traders) AS traders,
+                   sum(filled_value) AS volume,
+                   sum(filled_value) FILTER (WHERE rank &lt;= ceil(traders * 0.01)) AS top_1_pct,
+                   sum(filled_value) FILTER (WHERE rank &lt;= ceil(traders * 0.10)) AS top_10_pct,
+                   sum(filled_value) FILTER (WHERE rank &lt;= ceil(traders * 0.20)) AS top_20_pct
+            FROM ranked
+            GROUP BY month
+            &quot;&quot;&quot;;
+
+    // Single filled orders, valued at quantity times fill price. The band CASE is built from
+    // OrderSizeBand's own bounds, so the two can't drift apart.
+    private static final String FILLED_ORDER_VALUES = &quot;&quot;&quot;
+            SELECT date_trunc('month', completed_at AT TIME ZONE 'UTC')::date AS month,
+                   quantity * fill_price AS value
+            FROM reporting.orders
+            WHERE status = 'FILLED' AND fill_price IS NOT NULL
+              AND completed_at &gt;= :fromInstant AND completed_at &lt; :toInstant
+            &quot;&quot;&quot;;
+
+<span class="fc" id="L152">    private static final String ORDER_SIZE_BANDS_SQL = &quot;&quot;&quot;</span>
+            SELECT month, %s AS band, count(*) AS orders, sum(value) AS value
+            FROM (%s) filled
+            GROUP BY 1, 2
+<span class="fc" id="L156">            &quot;&quot;&quot;.formatted(bandCase(), FILLED_ORDER_VALUES);</span>
+
+<span class="fc" id="L158">    private static final String ORDER_SIZE_STATS_SQL = &quot;&quot;&quot;</span>
+            SELECT month,
+                   count(*) AS orders,
+                   avg(value) AS mean,
+                   percentile_cont(0.5) WITHIN GROUP (ORDER BY value::float8) AS median
+            FROM (%s) filled
+            GROUP BY month
+<span class="fc" id="L165">            &quot;&quot;&quot;.formatted(FILLED_ORDER_VALUES);</span>
+
+    private final NamedParameterJdbcTemplate jdbc;
+
+    /**
+     * Constructs an instance of AnalystReportRepository.
+     * @param jdbc the JDBC template used to query the reporting schema
+     */
+<span class="fc" id="L173">    public AnalystReportRepository(NamedParameterJdbcTemplate jdbc) {</span>
+<span class="fc" id="L174">        this.jdbc = jdbc;</span>
+<span class="fc" id="L175">    }</span>
+
+    /**
+     * Active clients, filled orders and traded volume for each month that had any activity.
+     * @param window the months to report on
+     * @return one row per month with activity, in no particular order
+     */
+    public List&lt;MonthlyTotals&gt; findMonthlyTotals(ReportWindow window) {
+<span class="nc" id="L183">        return jdbc.query(MONTHLY_TOTALS_SQL, months(window), (rs, rowNum) -&gt; new MonthlyTotals(</span>
+<span class="nc" id="L184">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L185">                rs.getLong(&quot;active_clients&quot;),</span>
+<span class="nc" id="L186">                rs.getLong(&quot;filled_orders&quot;),</span>
+<span class="nc" id="L187">                rs.getBigDecimal(&quot;volume&quot;)));</span>
+    }
+
+    /**
+     * Client sign-ups for each month that had any: each sign-up month's cohort size.
+     * @param window the months to report on
+     * @return one row per month with sign-ups, in no particular order
+     */
+    public List&lt;MonthlyCount&gt; findRegistrations(ReportWindow window) {
+<span class="nc" id="L196">        return jdbc.query(REGISTRATIONS_SQL, instants(window), (rs, rowNum) -&gt; monthlyCount(rs));</span>
+    }
+
+    /**
+     * Active clients each month, split by what they did the month before.
+     * @param window the months to report on
+     * @return one row per month with activity, in no particular order
+     */
+    public List&lt;ClientActivity&gt; findClientActivity(ReportWindow window) {
+<span class="nc" id="L205">        return jdbc.query(CLIENT_ACTIVITY_SQL, months(window), (rs, rowNum) -&gt; new ClientActivity(</span>
+<span class="nc" id="L206">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L207">                rs.getLong(&quot;new_clients&quot;),</span>
+<span class="nc" id="L208">                rs.getLong(&quot;returning_clients&quot;),</span>
+<span class="nc" id="L209">                rs.getLong(&quot;reactivated_clients&quot;)));</span>
+    }
+
+    /**
+     * Clients who were active the month before and not in the month itself.
+     * @param window the months to report on
+     * @return one row per month anyone lapsed in, in no particular order
+     */
+    public List&lt;MonthlyCount&gt; findLapsedClients(ReportWindow window) {
+<span class="nc" id="L218">        var params = new MapSqlParameterSource()</span>
+<span class="nc" id="L219">                .addValue(&quot;from&quot;, window.startDate().minusMonths(1))</span>
+<span class="nc" id="L220">                .addValue(&quot;to&quot;, window.endDate().minusMonths(1));</span>
+<span class="nc" id="L221">        return jdbc.query(LAPSED_SQL, params, (rs, rowNum) -&gt; monthlyCount(rs));</span>
+    }
+
+    /**
+     * How many of each cohort were active in each month from their sign-up month to the window's end.
+     * @param window the sign-up months, which are also the activity months, to report on
+     * @return one row per cohort and month with activity, in no particular order
+     */
+    public List&lt;CohortActivity&gt; findCohortActivity(ReportWindow window) {
+<span class="nc" id="L230">        var params = instants(window).addValue(&quot;to&quot;, window.endDate());</span>
+<span class="nc" id="L231">        return jdbc.query(COHORT_ACTIVITY_SQL, params, (rs, rowNum) -&gt; new CohortActivity(</span>
+<span class="nc" id="L232">                month(rs, &quot;cohort&quot;),</span>
+<span class="nc" id="L233">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L234">                rs.getLong(&quot;active_clients&quot;)));</span>
+    }
+
+    /**
+     * For each sign-up month, how many of its clients placed an order, and how soon.
+     * @param window the sign-up months to report on
+     * @return one row per month with sign-ups, in no particular order
+     */
+    public List&lt;Activation&gt; findActivation(ReportWindow window) {
+<span class="nc" id="L243">        return jdbc.query(ACTIVATION_SQL, instants(window), (rs, rowNum) -&gt; new Activation(</span>
+<span class="nc" id="L244">                month(rs, &quot;cohort&quot;),</span>
+<span class="nc" id="L245">                rs.getLong(&quot;registered&quot;),</span>
+<span class="nc" id="L246">                rs.getLong(&quot;ordered_within_30_days&quot;),</span>
+<span class="nc" id="L247">                rs.getLong(&quot;ordered_ever&quot;),</span>
+<span class="nc" id="L248">                rs.getBigDecimal(&quot;median_days_to_first_order&quot;)));</span>
+    }
+
+    /**
+     * Each month's traded volume and how much of it the top clients by volume account for.
+     * @param window the months to report on
+     * @return one row per month with any filled order, in no particular order
+     */
+    public List&lt;Concentration&gt; findConcentration(ReportWindow window) {
+<span class="nc" id="L257">        return jdbc.query(CONCENTRATION_SQL, months(window), (rs, rowNum) -&gt; new Concentration(</span>
+<span class="nc" id="L258">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L259">                rs.getLong(&quot;traders&quot;),</span>
+<span class="nc" id="L260">                rs.getBigDecimal(&quot;volume&quot;),</span>
+<span class="nc" id="L261">                rs.getBigDecimal(&quot;top_1_pct&quot;),</span>
+<span class="nc" id="L262">                rs.getBigDecimal(&quot;top_10_pct&quot;),</span>
+<span class="nc" id="L263">                rs.getBigDecimal(&quot;top_20_pct&quot;)));</span>
+    }
+
+    /**
+     * Filled orders by value band per month.
+     * @param window the months to report on
+     * @return one row per month and band with any orders, in no particular order
+     */
+    public List&lt;BandCount&gt; findOrderSizeBands(ReportWindow window) {
+<span class="nc" id="L272">        return jdbc.query(ORDER_SIZE_BANDS_SQL, instants(window), (rs, rowNum) -&gt; new BandCount(</span>
+<span class="nc" id="L273">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L274">                OrderSizeBand.valueOf(rs.getString(&quot;band&quot;)),</span>
+<span class="nc" id="L275">                rs.getLong(&quot;orders&quot;),</span>
+<span class="nc" id="L276">                rs.getBigDecimal(&quot;value&quot;)));</span>
+    }
+
+    /**
+     * The mean and median value of a filled order per month.
+     * @param window the months to report on
+     * @return one row per month with any filled order, in no particular order
+     */
+    public List&lt;OrderSizeStats&gt; findOrderSizeStats(ReportWindow window) {
+<span class="nc" id="L285">        return jdbc.query(ORDER_SIZE_STATS_SQL, instants(window), (rs, rowNum) -&gt; new OrderSizeStats(</span>
+<span class="nc" id="L286">                month(rs, &quot;month&quot;),</span>
+<span class="nc" id="L287">                rs.getLong(&quot;orders&quot;),</span>
+<span class="nc" id="L288">                rs.getBigDecimal(&quot;mean&quot;),</span>
+<span class="nc" id="L289">                rs.getBigDecimal(&quot;median&quot;)));</span>
+    }
+
+    private static MapSqlParameterSource months(ReportWindow window) {
+<span class="nc" id="L293">        return new MapSqlParameterSource()</span>
+<span class="nc" id="L294">                .addValue(&quot;from&quot;, window.startDate())</span>
+<span class="nc" id="L295">                .addValue(&quot;to&quot;, window.endDate());</span>
+    }
+
+    private static MapSqlParameterSource instants(ReportWindow window) {
+<span class="nc" id="L299">        return new MapSqlParameterSource()</span>
+<span class="nc" id="L300">                .addValue(&quot;fromInstant&quot;, window.startInstant())</span>
+<span class="nc" id="L301">                .addValue(&quot;toInstant&quot;, window.endInstant());</span>
+    }
+
+    private static YearMonth month(ResultSet rs, String column) throws SQLException {
+<span class="nc" id="L305">        return YearMonth.from(rs.getObject(column, LocalDate.class));</span>
+    }
+
+    private static MonthlyCount monthlyCount(ResultSet rs) throws SQLException {
+<span class="nc" id="L309">        return new MonthlyCount(month(rs, &quot;month&quot;), rs.getLong(&quot;clients&quot;));</span>
+    }
+
+    // Literals from OrderSizeBand only, never from a request, so building the SQL is safe. The
+    // bands ascend without gaps, so the first upper bound a value is below is its band.
+    private static String bandCase() {
+<span class="fc" id="L315">        OrderSizeBand[] bands = OrderSizeBand.values();</span>
+<span class="fc" id="L316">        String whens = Arrays.stream(bands, 0, bands.length - 1)</span>
+<span class="fc" id="L317">                .map(band -&gt; &quot;WHEN value &lt; &quot; + band.to().toPlainString() + &quot; THEN '&quot; + band.name() + &quot;'&quot;)</span>
+<span class="fc" id="L318">                .collect(Collectors.joining(&quot; &quot;));</span>
+<span class="fc" id="L319">        return &quot;CASE &quot; + whens + &quot; ELSE '&quot; + bands[bands.length - 1].name() + &quot;' END&quot;;</span>
+    }
+
+    /** One month's activity totals. */
+<span class="fc" id="L323">    public record MonthlyTotals(YearMonth month, long activeClients, long filledOrders, BigDecimal volume) {}</span>
+
+    /** A number of clients in one month. */
+<span class="fc" id="L326">    public record MonthlyCount(YearMonth month, long clients) {}</span>
+
+    /** One month's active clients by what they did the month before. */
+<span class="fc" id="L329">    public record ClientActivity(YearMonth month, long newClients, long returningClients, long reactivatedClients) {}</span>
+
+    /** How many of one sign-up month's clients were active in a later month. */
+<span class="fc" id="L332">    public record CohortActivity(YearMonth cohort, YearMonth month, long activeClients) {}</span>
+
+    /** One sign-up month's first orders; the median is null when nobody has ordered. */
+<span class="fc" id="L335">    public record Activation(YearMonth cohort, long registered, long orderedWithin30Days, long orderedEver,</span>
+                             BigDecimal medianDaysToFirstOrder) {}
+
+    /** One month's traded volume and the share of it from its top clients. */
+<span class="fc" id="L339">    public record Concentration(YearMonth month, long traders, BigDecimal volume,</span>
+                                BigDecimal top1PctVolume, BigDecimal top10PctVolume, BigDecimal top20PctVolume) {}
+
+    /** Filled orders in one value band in one month. */
+<span class="fc" id="L343">    public record BandCount(YearMonth month, OrderSizeBand band, long orders, BigDecimal value) {}</span>
+
+    /** The mean and median filled order value in one month. */
+<span class="fc" id="L346">    public record OrderSizeStats(YearMonth month, long orders, BigDecimal mean, BigDecimal median) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
