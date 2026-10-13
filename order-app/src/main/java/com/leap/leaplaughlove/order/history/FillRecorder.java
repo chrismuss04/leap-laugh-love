@@ -7,14 +7,21 @@ import com.leap.leaplaughlove.order.execution.Execution;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.position.PositionMovement;
+import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
+import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
+import com.leap.leaplaughlove.order.working.BracketService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.OffsetDateTime;
 import java.util.Map;
+import java.util.UUID;
 
 /**
  * Writes everything a fill leaves behind: the FILLED execution, the cash settlement and holding
@@ -40,9 +47,34 @@ public class FillRecorder {
     private final ExecutionRepository executionRepository;
     private final PositionMovementRepository positionMovementRepository;
     private final AccountClient accountClient;
+    private final OrderRepository orderRepository;
+    private final BracketService bracketService;
 
     /**
      * Constructs a FillRecorder with the required repositories and client.
+     * 
+     * @param executionRepository        the repository for persisting execution records
+     * @param positionMovementRepository the repository for recording position movements
+     * @param accountClient              the client for communicating settlement details to the account service
+     * @param orderRepository            stores the exit orders a bracket opens when its buy fills
+     * @param bracketService             cancels the other exit once one has executed
+     */
+    @Autowired
+    public FillRecorder(ExecutionRepository executionRepository,
+                        PositionMovementRepository positionMovementRepository,
+                        AccountClient accountClient,
+                        OrderRepository orderRepository,
+                        BracketService bracketService) {
+        this.executionRepository = executionRepository;
+        this.positionMovementRepository = positionMovementRepository;
+        this.accountClient = accountClient;
+        this.orderRepository = orderRepository;
+        this.bracketService = bracketService;
+    }
+
+    /**
+     * Constructs a FillRecorder that does not handle brackets: a bracket buy it fills opens no
+     * exit orders, and an exit order it fills cancels no sibling.
      * 
      * @param executionRepository        the repository for persisting execution records
      * @param positionMovementRepository the repository for recording position movements
@@ -51,9 +83,7 @@ public class FillRecorder {
     public FillRecorder(ExecutionRepository executionRepository,
                         PositionMovementRepository positionMovementRepository,
                         AccountClient accountClient) {
-        this.executionRepository = executionRepository;
-        this.positionMovementRepository = positionMovementRepository;
-        this.accountClient = accountClient;
+        this(executionRepository, positionMovementRepository, accountClient, null, null);
     }
 
     /**
@@ -65,9 +95,21 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
+        return recordExecution(order, price, time, "Executed at market price");
+    }
+
+    /**
+     * Writes the FILLED execution for a fill of the whole order at one price, with the given
+     * description of how it was priced. Does not change the order's own status.
+     * @param order the order being filled
+     * @param price the execution price per share
+     * @param time when the fill happened; stamped on every row the fill writes
+     * @param reason how the fill was priced, e.g. at a limit price or better
+     * @return the saved FILLED execution
+     */
+    public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time, String reason) {
         return executionRepository.saveAndFlush(new Execution(
-                order, order.getQuantity(), price, Execution.Status.FILLED,
-                "Executed at market price", time));
+                order, order.getQuantity(), price, Execution.Status.FILLED, reason, time));
     }
 
     /**
@@ -138,7 +180,9 @@ public class FillRecorder {
 
     /**
      * Finishes booking a settled live fill: writes its position movement and marks the order
-     * FILLED. Call inside a transaction holding the order's row lock (see
+     * FILLED. A bracket buy then opens its two exit orders in the same transaction, so they exist
+     * exactly when the fill is booked - whichever of live submission, the trigger engine or
+     * recovery finishes it. An exit order's fill cancels its linked sibling once it commits. Call inside a transaction holding the order's row lock (see
      * OrderRepository#findByIdForUpdate), so live submission and {@link PendingFillRecovery}
      * can't both finish it. Does nothing if the fill was already finished.
      * @param lockedOrder the order, loaded with its row lock in the current transaction
@@ -151,7 +195,66 @@ public class FillRecorder {
         }
         recordPositionMovement(lockedOrder, execution);
         lockedOrder.markFilled(execution.getExecutedAt());
+        openExitOrders(lockedOrder, execution.getExecutedAt());
+        cancelSiblingsAfterCommit(lockedOrder);
         return true;
+    }
+
+    /**
+     * Opens the take-profit and stop-loss sells of a filled bracket buy. They are OPEN at once, good
+     * until cancelled, and share one group. Nothing checks the stop against the market here: if the
+     * price has already fallen through it, {@code OrderTriggerEngine} sees that on its next pass and
+     * sells at once, which is the point of a stop-loss.
+     * @param parent the filled buy, locked in the current transaction
+     * @param now when the buy filled
+     */
+    private void openExitOrders(Order parent, OffsetDateTime now) {
+        if (orderRepository == null || !parent.hasBracket() || parent.getSide() != Order.Side.BUY
+                || orderRepository.existsByParentOrderId(parent.getOrderId())) {
+            return;
+        }
+        UUID group = UUID.randomUUID();
+        OffsetDateTime expiresAt = OrderSubmissionService.expiryOf(Order.TimeInForce.GTC, now);
+
+        Order stopLoss = exit(parent, group, now);
+        stopLoss.setConditions(Order.OrderType.STOP, null, parent.getBracketStopLossPrice(),
+                Order.TimeInForce.GTC, expiresAt);
+        Order takeProfit = exit(parent, group, now);
+        takeProfit.setConditions(Order.OrderType.LIMIT, parent.getBracketTakeProfitPrice(), null,
+                Order.TimeInForce.GTC, expiresAt);
+        orderRepository.save(stopLoss);
+        orderRepository.save(takeProfit);
+    }
+
+    private static Order exit(Order parent, UUID group, OffsetDateTime now) {
+        Order exit = new Order(parent.getAccountId(), parent.getInstrument(), Order.Side.SELL,
+                parent.getQuantity(), now);
+        exit.linkAsExit(parent.getOrderId(), group);
+        exit.markOpen(null);
+        return exit;
+    }
+
+    /**
+     * Once this exit order's fill has committed, cancels its linked sibling in a transaction of its
+     * own, locking the group lowest ID first.
+     * @param order the filled order
+     */
+    private void cancelSiblingsAfterCommit(Order order) {
+        if (bracketService == null || order.getOcoGroupId() == null) {
+            return;
+        }
+        UUID orderId = order.getOrderId();
+        UUID group = order.getOcoGroupId();
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            bracketService.cancelSiblings(orderId, group);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                bracketService.cancelSiblings(orderId, group);
+            }
+        });
     }
 
     /**

@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 
 from reporting_etl.transform import InvalidEvent, to_order_row
-from tests.events import encode, filled_event, rejected_event
+from tests.events import cancelled_event, encode, expired_event, filled_event, rejected_event
 
 
 def test_maps_a_filled_event_to_a_row():
@@ -25,6 +25,39 @@ def test_maps_a_filled_event_to_a_row():
     assert row.rejection_reason is None
     assert row.submitted_at == datetime(2026, 10, 5, 14, 32, 7, 118000, tzinfo=timezone.utc)
     assert row.completed_at == datetime(2026, 10, 5, 14, 32, 7, 402000, tzinfo=timezone.utc)
+
+
+def test_maps_cancelled_and_expired_orders_to_rows_without_a_price():
+    cancelled = to_order_row(encode(cancelled_event()))
+    expired = to_order_row(encode(expired_event(fillPrice=187.42)))
+
+    assert (cancelled.status, cancelled.fill_price, cancelled.order_type) == ("CANCELLED", None, "LIMIT")
+    # A price on an order that never filled is dropped, not loaded.
+    assert (expired.status, expired.fill_price, expired.order_type) == ("EXPIRED", None, "STOP")
+
+
+def test_keeps_the_order_type():
+    row = to_order_row(encode(filled_event(orderType="STOP_LIMIT")))
+
+    assert row.order_type == "STOP_LIMIT"
+
+
+def test_keeps_a_trailing_stop_order_type():
+    row = to_order_row(encode(filled_event(orderType="TRAILING_STOP")))
+
+    assert row.order_type == "TRAILING_STOP"
+
+
+def test_treats_an_event_without_an_order_type_as_a_market_order():
+    # Events published before order types existed carry none.
+    row = to_order_row(encode(filled_event()))
+
+    assert row.order_type == "MARKET"
+
+
+def test_rejects_an_unknown_order_type():
+    with pytest.raises(InvalidEvent, match="orderType"):
+        to_order_row(encode(filled_event(orderType="ICEBERG")))
 
 
 def test_keeps_the_price_exact():

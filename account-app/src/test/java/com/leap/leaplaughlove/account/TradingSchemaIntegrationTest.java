@@ -81,7 +81,7 @@ class TradingSchemaIntegrationTest {
             "orders account_id should restrict delete");
         assertTrue(schema.contains("CHECK (side IN ('BUY', 'SELL'))"),
             "orders side should be constrained");
-        assertTrue(schema.contains("CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED'))"),
+        assertTrue(schema.contains("CHECK (status IN ('SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED'))"),
             "orders status should be constrained");
     }
 

@@ -6,6 +6,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { routes } from './app.module';
 import { AccountsComponent } from './accounts/accounts';
+import { InstrumentsComponent } from './instruments/instruments';
 import { ShellComponent } from './shell/shell';
 import { AuthService } from './services/auth.service';
 import { PriceStreamService } from './services/price-stream';
@@ -27,6 +28,11 @@ function reachesPage(url: string): boolean {
 }
 
 describe('App routes', () => {
+  it('/instruments lazy-loads the Instruments page inside the client shell', async () => {
+    const page = pages.find(route => route.path === 'instruments');
+    expect(page).toBeDefined();
+    expect(await page!.loadComponent!()).toBe(InstrumentsComponent);
+  });
   // Regression: a revert merge once dropped these, and every Accounts link silently led to the dashboard.
   for (const path of ['accounts', 'accounts/:accountId']) {
     it(`/${path} opens the Accounts page`, async () => {
@@ -36,8 +42,24 @@ describe('App routes', () => {
     });
   }
 
-  // Without a route of its own, the emailed reset link falls through to the catch-all and lands on the dashboard.
-  for (const path of ['forgot-password', 'reset-password']) {
+  // These load on demand to keep the initial bundle under budget; each path must still open its page.
+  const lazyPages: [string, string, () => Promise<unknown>][] = [
+    ['orders', 'OrderHistoryComponent', () => import('./order-history/order-history').then(m => m.OrderHistoryComponent)],
+    ['holdings', 'HoldingsComponent', () => import('./holdings/holdings').then(m => m.HoldingsComponent)],
+    ['profile', 'ProfileComponent', () => import('./profile/profile').then(m => m.ProfileComponent)],
+    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)]
+  ];
+  for (const [path, name, expected] of lazyPages) {
+    it(`/${path} loads ${name} on demand`, async () => {
+      const page = pages.find(route => route.path === path);
+      expect(page, `no route for /${path}`).toBeDefined();
+      expect(page!.component).toBeUndefined();
+      expect(await page!.loadComponent!()).toBe(await expected());
+    });
+  }
+
+  // Without a route of its own, an emailed link falls through to the catch-all and lands on the dashboard.
+  for (const path of ['forgot-password', 'reset-password', 'verify-email']) {
     it(`/${path} is not swallowed by the catch-all`, () => {
       const index = routes.findIndex(route => route.path === path);
       expect(index, `no route for /${path}`).toBeGreaterThanOrEqual(0);
@@ -74,6 +96,7 @@ describe('App routes', () => {
       .map(tree => router.serializeUrl(tree!));
 
     expect(urls).toContain('/accounts');
+    expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
     }
@@ -112,7 +135,7 @@ describe('Role-based routing', () => {
         expect(router.url).toBe('/reporting');
       });
 
-      for (const url of ['/dashboard', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
         it(`is sent from ${url} to reporting`, async () => {
           await router.navigateByUrl(url);
           expect(router.url).toBe('/reporting');

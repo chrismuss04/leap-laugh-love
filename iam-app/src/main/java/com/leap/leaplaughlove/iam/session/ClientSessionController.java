@@ -26,12 +26,22 @@ public class ClientSessionController {
     // Take identity from the verified token, never a client-supplied session ID or activity timestamp.
     private JwtService.TokenIdentity identity(Authentication authentication, Instant now) {
         if (authentication == null || !authentication.isAuthenticated()
-                || !(authentication.getDetails() instanceof JwtService.TokenIdentity identity)
-                || identity.sessionId() == null || identity.purpose() != null
-                || !identity.expiresAt().isAfter(now)) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session is no longer active");
+                || !(authentication.getDetails() instanceof JwtService.TokenIdentity identity)) {
+            throw inactive();
+        }
+        if (!isUsable(identity, now)) {
+            throw inactive();
         }
         return identity;
+    }
+
+    // A login token for a live session; purpose-scoped service tokens never qualify.
+    private static boolean isUsable(JwtService.TokenIdentity identity, Instant now) {
+        return identity.sessionId() != null && identity.purpose() == null && identity.expiresAt().isAfter(now);
+    }
+
+    private static ResponseStatusException inactive() {
+        return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session is no longer active");
     }
 
     @PostMapping("/activity")
@@ -42,7 +52,7 @@ public class ClientSessionController {
                 ? staffSessions.recordActivity(identity.sessionId(), identity.clientId(), now)
                 : sessions.recordActivity(identity.sessionId(), identity.clientId(), now);
         if (!active) {
-            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session is no longer active");
+            throw inactive();
         }
         return ResponseEntity.noContent().build();
     }

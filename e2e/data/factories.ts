@@ -22,9 +22,9 @@ export interface Registration {
 }
 
 /**
- * A registration no previous run has used. Email and SSN are both unique in iam, and clients
- * can't be deleted, so each call has to generate fresh ones. SSNs start at 800 to stay clear of
- * the seeded 123-xx and 900-xx ranges.
+ * A registration no previous run has used. Email, phone number and SSN are all unique in iam, and
+ * clients can't be deleted, so each call has to generate fresh ones. SSNs start at 800 to stay
+ * clear of the seeded 123-xx and 900-xx ranges; phone numbers avoid the seeded 212 and 555 area codes.
  */
 export function uniqueRegistration(overrides: Partial<Registration> = {}): Registration {
   const id = randomUUID().slice(0, 8);
@@ -33,7 +33,7 @@ export function uniqueRegistration(overrides: Partial<Registration> = {}): Regis
     lastName: `Tester ${id}`,
     dateOfBirth: '1990-06-15',
     email: `e2e.reg.${id}.${Date.now()}@leap.test`,
-    phoneDigits: `555${randomInt(1_000_000, 9_999_999)}`,
+    phoneDigits: `${randomInt(600, 1000)}${randomInt(1_000_000, 10_000_000)}`,
     password: 'Password123!',
     streetAddress: '1 Test Street',
     city: 'New York',

@@ -1,5 +1,6 @@
 import { APIRequestContext, APIResponse, expect } from '@playwright/test';
 import { formatPhone, formatSsn, Registration } from '../data/factories';
+import { confirmationToken } from './mailbox';
 
 // Response shapes, mirroring frontend/src/app/services/*. Only the fields the suite reads.
 export interface AccountSummary {
@@ -27,13 +28,23 @@ export interface OrderResponse {
   symbol: string;
   side: 'BUY' | 'SELL';
   quantity: number;
-  status: 'SUBMITTED' | 'ACCEPTED' | 'REJECTED' | 'FILLED';
+  status: 'SUBMITTED' | 'OPEN' | 'ACCEPTED' | 'REJECTED' | 'FILLED' | 'CANCELLED' | 'EXPIRED';
   rejectionReason: string | null;
   execution: { fillQuantity: number | null; fillPrice: number | null } | null;
   accountBalanceAfter: number | null;
 }
+export interface OpenOrderResponse {
+  orderId: string;
+  symbol: string;
+  side: 'BUY' | 'SELL';
+  quantity: number;
+  orderType: string;
+  status: string;
+  parentOrderId?: string | null;
+  ocoGroupId?: string | null;
+}
 export interface OrderHistoryPage {
-  content: { orderId: string; symbol: string; side: string; quantity: number; status: string; submittedAt: string }[];
+  content: { orderId: string; symbol: string; side: string; quantity: number; status: string; submittedAt: string; completedAt?: string }[];
   totalElements: number;
   totalPages: number;
 }
@@ -48,7 +59,8 @@ export interface LatestQuote {
 /**
  * Typed calls to the backend, used to arrange state (log in, buy a position to sell) and to
  * verify it independently of the UI. Every path goes through the frontend's dev-server proxy,
- * the same route the browser takes, so BASE_URL is the only address the suite needs.
+ * the same route the browser takes, so BASE_URL is the only backend address the suite needs
+ * (registering also reads the applicant's email; see mailbox.ts).
  */
 export class Api {
   constructor(
@@ -111,8 +123,15 @@ export class Api {
     });
   }
 
+  verifyRegistrationRaw(token: string): Promise<APIResponse> {
+    return this.request.post('/api/iam/v1/clients/register/verify', { data: { token } });
+  }
+
+  /** Applies, then confirms the email with the link iam-app sent, which is what opens the client. */
   async register(r: Registration): Promise<void> {
     await expectOk(await this.registerRaw(r), `register ${r.email}`);
+    const token = await confirmationToken(this.request, r.email);
+    await expectOk(await this.verifyRegistrationRaw(token), `confirm the email of ${r.email}`);
   }
 
   // ---- Account ----
@@ -142,7 +161,7 @@ export class Api {
 
   // ---- Orders ----
 
-  placeOrderRaw(order: { accountId: string; symbol: string; side: 'BUY' | 'SELL'; quantity: number }): Promise<APIResponse> {
+  placeOrderRaw(order: { accountId: string; symbol: string; side: 'BUY' | 'SELL'; quantity: number } & Record<string, unknown>): Promise<APIResponse> {
     return this.post('/api/order/orders', order);
   }
 
@@ -151,6 +170,28 @@ export class Api {
     const result: OrderResponse = await this.json(await this.placeOrderRaw(order), `place ${order.side} ${order.symbol}`);
     expect(result.status, `order ${order.side} ${order.quantity} ${order.symbol}: ${result.rejectionReason}`).toBe('FILLED');
     return result;
+  }
+
+  /** The client's open orders (limit, stop and trailing orders waiting for their price). */
+  async openOrders(): Promise<OpenOrderResponse[]> {
+    return this.json(await this.get('/api/order/orders/open'), 'get open orders');
+  }
+
+  /** Cancels every open order, so one test's held cash and shares don't leak into the next. */
+  async cancelAllOpenOrders(): Promise<void> {
+    for (const order of await this.openOrders()) {
+      await this.post(`/api/order/orders/${order.orderId}/cancel`);
+    }
+  }
+
+  async templates(): Promise<{ templateId: string; name: string }[]> {
+    return this.json(await this.get('/api/order/templates'), 'get order templates');
+  }
+
+  async deleteAllTemplates(): Promise<void> {
+    for (const template of await this.templates()) {
+      await this.request.delete(`/api/order/templates/${template.templateId}`, { headers: this.headers() });
+    }
   }
 
   async orderHistory(page = 0, size = 20): Promise<OrderHistoryPage> {

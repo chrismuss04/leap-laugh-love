@@ -1,11 +1,11 @@
 # leap-laugh-love
 
 ## Team Members
-1. Software Developer - Chris Musselman
-2. Scrum Master - Nikhil Akula
+1. Scrum Master & Software Developer - Chris Musselman
+2. Software Developer - Nikhil Akula
 3. Software Developer - Yahia Elsaad
-4. Software Developer - Lauren Sanday
-5. Tech Lead - Elisa Paul
+4. Tech Lead - Lauren Sanday
+5. Software Developer - Elisa Paul
 
 ## Branching Strategy
 We are using the Trunk branching strategy because it best fits our development strategy and schedule.
@@ -21,6 +21,7 @@ We are using the Trunk branching strategy because it best fits our development s
   - [iam-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/iam-app/)
   - [market-data-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/market-data-app/)
   - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
+  - [reporting-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/reporting-app/)
 
 ---
 
@@ -31,10 +32,11 @@ The repository is a **Multi-Module Maven Project** splitting identity and tradin
 1. **`common-security` (Shared Security Library)**: Contains reusable JWT token handling (`JwtService`, `JwtAuthenticationFilter`), the `Role` model (client, trading operations, commercial analyst), per-request session checks against the database (`ClientSessionValidator`), 401 JSON error formatting (`JwtAuthenticationEntryPoint`), and shared CORS configuration (`CommonCorsConfiguration`). Packaged as a standard library JAR.
 2. **`iam-app` (Identity Access Management)**: Handles client registration, client and staff sign-in, JWT token issuance, login sessions (activity and logout), password reset by email, and the client profile and notification settings. On registration it opens the client's first account and funds it through `account-app`, and publishes a `client-register` event to Kafka. Runs on port `8081`.
 3. **`account-app` (Account & Portfolio Services)**: Handles client accounts and trade settings, cash balances, deposits, withdrawals, transfers between accounts, portfolio holdings/positions, portfolio value history, and the internal validation and settlement endpoints that `order-app` calls. A nightly job flags inactive accounts and emails their clients. Runs on port `8082`.
-4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Background jobs finish interrupted fills and book the seeded order history, and every completed order is published to the `order-events` Kafka topic. Runs on port `8084`.
+4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Beyond market orders it takes limit, stop, stop-limit and trailing-stop orders that wait `OPEN` until the market reaches their price (the `OrderTriggerEngine`), lets a buy carry a take-profit and stop-loss bracket, saves order templates, and emails clients how an order that waited ended. Background jobs finish interrupted fills and book the seeded order history, and every finished order is published to the `order-events` Kafka topic. Runs on port `8084`.
 5. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument, a validated quote (bid, ask, last) for each tick, and OHLC candle history with scheduled retention, exposed via REST and an SSE push stream. Runs on port `8083`.
-6. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
-7. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
+6. **`reporting-app` (Staff Reports)**: Serves commercial analysts' reports from the `reporting` schema read models that `reporting-etl` loads; it reads nothing operational and writes nothing. Every endpoint requires the `COMMERCIAL_ANALYST` role. Runs on port `8085`.
+7. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
+8. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
 
 ```mermaid
 flowchart TB
@@ -79,6 +81,11 @@ flowchart TB
             OrderSec["OrderSecurityConfig (CORS Enabled)"]
             OrderSubC["OrderSubmissionController<br/>/api/order/orders"]
             OrderHistC["OrderHistoryController<br/>/api/order/orders/history"]
+            OpenOrdC["OpenOrderController & OrderStreamController<br/>/api/order/orders/open, /{id}, /cancel, /stream"]
+            TriggerEng["OrderTriggerEngine<br/>(1s @Scheduled: fills open orders at their price)"]
+            BracketSvc["BracketService<br/>(one exit cancels the other)"]
+            TemplateC["OrderTemplateController<br/>/api/order/templates"]
+            FillMailer["OrderFillMailer<br/>(15s @Scheduled sweep, JavaMailSender)"]
             QuoteSvc["CurrentQuoteService<br/>(non-stale quote at execution)"]
             AcctClient["AccountClient<br/>(REST to account-app)"]
             FillRec["PendingFillRecovery &<br/>SeededFillService"]
@@ -94,6 +101,11 @@ flowchart TB
             PriceC["PriceController<br/>/api/marketdata/prices"]
             StreamC["PriceStreamController<br/>/api/marketdata/stream (SSE)"]
             QuoteC["QuoteController<br/>/api/marketdata/quotes"]
+        end
+
+        subgraph REPORTING["reporting-app (Port 8085)"]
+            RepApp["ReportingApplication @Import(JwtService)"]
+            RepSec["ReportingSecurityConfig (CORS Enabled)<br/>COMMERCIAL_ANALYST only"]
         end
     end
 
@@ -118,6 +130,7 @@ flowchart TB
     UI -->|"HTTP / JSON (8082)"| AccountSec
     UI -->|"HTTP / JSON (8084)"| OrderSec
     UI -->|"HTTP / JSON / SSE (8083)"| MdSec
+    UI -->|"HTTP / JSON (8085)"| RepSec
 
     IamSec --> AuthC
     IamSec --> PwC
@@ -171,6 +184,8 @@ flowchart TB
     AccountApp -. "Library Dependency" .-> JwtS
     OrderApp -. "Library Dependency" .-> JwtS
     MdApp -. "Library Dependency" .-> JwtS
+    RepApp -. "Library Dependency" .-> JwtS
+    RepSec -. "reads" .-> REPORTING_DB
 
     AuthC --> IAM_DB
     PwC --> IAM_DB
@@ -196,7 +211,7 @@ flowchart TB
 
 ## UML Class Diagrams
 
-Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, and `market-data-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
+Entities, repositories, services and controllers for each module (test sources, DTO getters and DTO records omitted for legibility). Microservices (`iam-app`, `account-app`, `order-app`, `market-data-app`, and `reporting-app`) share `JwtService`, `JwtAuthenticationFilter`, `JwtAuthenticationEntryPoint`, and `CommonCorsConfiguration` from the `common-security` module — those classes are marked `<<from common-security>>` where they appear. The Angular frontend and `reporting-etl` are not shown.
 
 **Legend:** solid arrow (`-->`) = association / field reference · dashed arrow (`..>`) = dependency (calls / uses) · `<<interface>>` = Spring Data repository.
 
@@ -210,10 +225,12 @@ flowchart LR
     MD["market-data-app<br/>(instruments · simulation · quotes · candles)"]:::mod
     ACCT["account-app<br/>(accounts · balance · positions · portfolio)"]:::mod
     ORD["order-app<br/>(orders · validation · executions · events)"]:::mod
+    REP["reporting-app<br/>(staff reports)"]:::mod
     IAM -- "depends on" --> CS
     MD -- "depends on" --> CS
     ACCT -- "depends on" --> CS
     ORD -- "depends on" --> CS
+    REP -- "depends on" --> CS
     IAM -. "opens first account" .-> ACCT
     ORD -. "calls" .-> ACCT
     ORD -. "calls" .-> MD
@@ -314,6 +331,7 @@ classDiagram
         +findByEmail(String) Optional~Client~
         +existsByEmail(String) boolean
         +existsBySsn(String) boolean
+        +existsByPhone(String) boolean
     }
     class ClientCredentialsRepository {
         <<interface>>
@@ -343,6 +361,7 @@ classDiagram
     }
     class ClientRegistrationController {
         +register(RegistrationRequest) RegistrationResponse
+        +verify(VerifyRegistrationRequest)
     }
     class ClientProfileController {
         +me() ClientProfileResponse
@@ -810,7 +829,17 @@ classDiagram
 
 ### Order Management — `order-app`
 
-`com.leap.leaplaughlove.order.{order, execution, submission, history, validation, instrument, position, account, client, quote, events, security}` — handles pre-trade validation, order submission, execution against live market quotes, position movements audit logging, and paginated order history; coordinates with `account-app` via internal REST client and `market-data-app` for quotes. Background jobs complete interrupted fills and book the seeded order history, and every finished order is published to Kafka for reporting.
+`com.leap.leaplaughlove.order.{order, execution, submission, history, working, notification, template, validation, instrument, position, account, client, quote, events, security}` — handles pre-trade validation, order submission, execution against live market quotes, position movements audit logging, and paginated order history; coordinates with `account-app` via internal REST client and `market-data-app` for quotes. Background jobs complete interrupted fills and book the seeded order history, and every finished order is published to Kafka for reporting.
+
+**Order types and the trigger engine.** A market order fills at once at the live ask (buy) or bid (sell). `LIMIT`, `STOP`, `STOP_LIMIT` and `TRAILING_STOP` orders that can't fill yet are stored `OPEN`, holding back the cash or shares they may need (`ReservationService`). `OrderTriggerEngine` (package `working`) reads every live quote once a second and fills each open order whose price was reached through `OrderSubmissionService.fillOpenOrder`, the same validation, settlement and recovery path a market order takes; a separate, slower pass expires `DAY` and `GTC` orders past their time in force. A client can edit (`PATCH`) or cancel an open order, and the order stream pushes fills, refusals and expiries to the browser. A `DAY` order expires at midnight US Eastern; a `GTC` order after 90 days.
+
+**Bracket orders.** A buy can carry `bracketTakeProfitPrice` (above its entry) and `bracketStopLossPrice` (below it). When the buy fills, `FillRecorder.completeFill` opens two `OPEN`, good-till-cancelled sells for the same shares: a `LIMIT` at the take-profit and a `STOP` at the stop-loss, sharing one `oco_group_id` and pointing back at the buy through `parent_order_id`. The first to execute cancels the other (`BracketService`, locking the group lowest ID first); a leg is never filled once its sibling has executed. Both legs sell the same shares, so holds count them once per group, a quantity edit applies to both, and cancelling one by hand leaves the other as a normal order. If the price has already fallen through the stop-loss when the exits open, the engine sells on its next pass.
+
+**Order templates.** A client can save a ticket setup as percent offsets from the market (`trading.order_templates`, at most 20 each) and apply it in one tap on any device.
+
+**Fill emails.** Orders that wait set `notice_pending`; `OrderFillMailer` sweeps every 15 seconds for those that filled, were refused when their price was reached, or expired (not cancelled, and not orders that filled the moment they were placed), reads the client's address and `notify_order_fills` setting from the shared `iam.clients` and `iam.client_profile` tables, sends a plain-text email, and marks it sent in its own transaction. A mail failure is retried on the next sweep. Configure with `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (Mailpit in Compose), `ORDER_NOTIFICATIONS_EMAIL_ENABLED`, `ORDER_NOTIFICATIONS_EMAIL_FROM` and `ORDER_NOTIFICATIONS_HISTORY_URL`.
+
+**Running more than one order-app.** `OrderTriggerEngine` assumes it is the only instance: two copies would each evaluate every open order, and the row lock in `acceptOpenOrder` would make one of them wait and then find the order already filled. Before scaling out, claim orders with `SELECT ... FOR UPDATE SKIP LOCKED` in `findOpen` or elect a leader, and do the same for `OrderFillMailer`'s sweep.
 
 ```mermaid
 classDiagram
@@ -927,9 +956,39 @@ classDiagram
     class OrderEventPublisher {
         +publishFilled(Order, Execution)
         +publishRejected(Order)
+        +publishCancelled(Order)
+        +publishExpired(Order)
+    }
+    class OrderTriggerEngine {
+        +run()
+        +expire()
+        +evaluateOpenOrders() int
+    }
+    class BracketService {
+        +cancelSiblings(UUID, UUID) int
+    }
+    class OpenOrderService {
+        +listOpen(UUID) List~OpenOrderItem~
+        +cancel(UUID, UUID) OpenOrderItem
+        +expireDue() int
+    }
+    class OrderModificationService {
+        +modify(UUID, UUID, ModifyOrderRequest) OpenOrderItem
+    }
+    class OrderFillMailer {
+        +run()
+        +notifyClients() int
+    }
+    class OrderTemplateService {
+        +list(UUID) List~OrderTemplateItem~
+        +create(UUID, OrderTemplateRequest) OrderTemplateItem
+        +delete(UUID, UUID)
     }
     class OrderCompletedEvent {
         <<record>>
+    }
+    class OrderTemplateRepository {
+        <<interface>>
     }
     class OrderSecurityConfig {
         +filterChain(...) SecurityFilterChain
@@ -956,6 +1015,14 @@ classDiagram
     OrderSubmissionService --> FillRecorder : uses
     OrderSubmissionService --> OrderEventPublisher : uses
     OrderSubmissionController --> OrderSubmissionService : uses
+    OrderTriggerEngine --> OrderSubmissionService : fills open orders
+    OrderTriggerEngine --> OpenOrderService : expires orders
+    OrderModificationService --> OpenOrderService : locks the order
+    FillRecorder --> BracketService : cancels the other exit
+    FillRecorder --> OrderRepository : opens a bracket's exits
+    BracketService --> OrderRepository : locks the group
+    OrderFillMailer ..> OrderRepository : sweeps notice_pending
+    OrderTemplateService --> OrderTemplateRepository : uses
     FillRecorder --> ExecutionRepository : uses
     FillRecorder --> PositionMovementRepository : uses
     FillRecorder --> AccountClient : settles via
@@ -992,7 +1059,8 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | Module | Endpoint | Description | Permitted / Auth |
 |---|---|---|---|
 | **IAM** | `POST /api/iam/auth/login` | Sign in as a client or as staff (trading operations, commercial analyst); returns a JWT carrying the role | Permitted |
-| **IAM** | `POST /api/iam/v1/clients/register` | Client registration | Permitted |
+| **IAM** | `POST /api/iam/v1/clients/register` | Apply for an account; always `202` with the same body, whether or not the email, phone number or SSN is already registered. The applicant is emailed a confirmation link, or why no account was opened | Permitted |
+| **IAM** | `POST /api/iam/v1/clients/register/verify` | Confirm the applicant's email with the token from that link, which opens the client and their first account; `400 INVALID_VERIFICATION_LINK` if it is unknown, expired, used, or its details have since been registered | Permitted |
 | **IAM** | `POST /api/iam/auth/forgot-password` | Request a password reset link; always `204`, whether or not the email is registered | Permitted |
 | **IAM** | `POST /api/iam/auth/reset-password/validate` | Check that a reset link's token is still usable, without spending it; `400 INVALID_RESET_TOKEN` if not | Permitted |
 | **IAM** | `POST /api/iam/auth/reset-password` | Set a new password with the token from the reset link; `400 INVALID_RESET_TOKEN` if it is unknown, expired or used | Permitted |
@@ -1014,16 +1082,31 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Account** | `GET /api/account/internal/accounts/{id}/validation-data` | Pre-trade validation data (account status, cash balance, holding in the instrument, saved price tolerance) for order-app | Bearer JWT (client or service) |
 | **Account** | `POST /api/account/internal/accounts/{id}/settlement` | Settle a filled order against cash and positions; called by order-app | Bearer JWT (client or service) |
 | **Account** | `GET /actuator/health` | Account service health check | Permitted |
-| **Order** | `POST /api/order/orders` | Place order (BUY/SELL) with immediate execution | Bearer JWT (client) |
+| **Order** | `POST /api/order/orders` | Place an order (BUY/SELL). `orderType` is `MARKET` (default, fills at once), `LIMIT`, `STOP`, `STOP_LIMIT` or `TRAILING_STOP`; the others wait `OPEN` for their price (`limitPrice`, `stopPrice`, `trailAmount`/`trailPercent`, `timeInForce` `DAY`/`GTC`). A BUY may carry `bracketTakeProfitPrice` and `bracketStopLossPrice` | Bearer JWT (client) |
+| **Order** | `GET /api/order/orders/open` | The client's open orders across accounts, newest first | Bearer JWT (client) |
+| **Order** | `PATCH /api/order/orders/{id}` | Change an open order's quantity, limit or stop price, trail or time in force; on a bracket's exit, the quantity changes on both legs | Bearer JWT (client) |
+| **Order** | `POST /api/order/orders/{id}/cancel` | Cancel an open order, releasing the cash or shares it held; `409` if it already filled | Bearer JWT (client) |
+| **Order** | `GET /api/order/orders/stream` | Server-Sent-Events push of open orders that ended on their own: filled, refused or expired | Bearer JWT (client) |
+| **Order** | `GET /api/order/templates` | The client's saved order templates, newest first | Bearer JWT (client) |
+| **Order** | `POST /api/order/templates` | Save a template as percent offsets from the market; `409` for a duplicate name or past 20 | Bearer JWT (client) |
+| **Order** | `DELETE /api/order/templates/{id}` | Delete one of the client's templates | Bearer JWT (client) |
 | **Order** | `GET /api/order/orders/history` | Paginated order history (`page`, `size`); optional `year`, `month` and `day` narrow it to a date | Bearer JWT (client) |
 | **Order** | `GET /actuator/health` | Order service health check | Permitted |
 | **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument (503 S&P 500 constituents plus the index/benchmark symbols) | Bearer JWT (client) |
+| **Market Data** | `GET /api/marketdata/instruments` | Instrument metadata, latest prices and performance; `period=today` (default), `week`, or `month` | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT (client or service) |
 | **Market Data** | `GET /api/marketdata/quotes` | Latest ingested quote (bid, ask, last, sizes) for every instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT (client) |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
+| **Reporting** | `GET /api/reporting/analyst/scorecard` | Volume, filled orders, average trade value, active clients and registrations per month, each with month-over-month and year-over-year % change | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/client-activity` | Active clients per month split into new, returning and reactivated, with clients who lapsed | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/retention` | Cohort matrix: each sign-up month's % of clients active in each month after | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/activation` | Each sign-up month's % ordering within 30 days and ever, and median days to a first order | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/concentration` | Share of each month's volume from the top 1, 10 and 20% of trading clients | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /api/reporting/analyst/order-sizes` | Filled orders per month by value band, with mean and median order value | Bearer JWT (commercial analyst) |
+| **Reporting** | `GET /actuator/health` | Reporting service health check | Permitted |
 
 ---
 
@@ -1072,11 +1155,48 @@ to its own dashboard, and a client who opens `/reporting` is redirected home.
 | --- | --- | --- |
 | `TRADING_OPERATIONS` | `/reporting` | **Order Audit**: orders submitted, filled, rejected and awaiting execution, with audit filters |
 | `TRADING_OPERATIONS` | `/reporting/orders/:orderId` | **Order lifecycle**: one order retraced through its executions and the cash and holdings ledgers |
-| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: trading volume, average order value, new registrations and active clients over a period (1W, 1M, 3M, YTD, 1Y or custom) |
+| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: headline tiles for a period (1W, 1M, 3M, YTD, 1Y or custom); the **activity report** by instrument, with its own dates and daily or weekly breakdown; and six **12-month reports**: monthly scorecard, client activity, activation, retention by sign-up month, volume from top clients and orders by value |
 
 > [!NOTE]
-> The dashboards are built, routed, filtered and tested, but the report panels are still
-> placeholders: no reporting API exists yet, so the pages show the layout and filters without data.
+> The Order Audit panels and the analyst's headline tiles are still placeholders, so they show the
+> layout and filters without data. On Trading Activity, the activity report and the six 12-month
+> reports are live. The 12-month reports always cover the last 12 complete months, whatever period
+> the page's filter is on, and say which months in each panel. They are tables with CSS-drawn bars
+> and heat cells, with no chart library.
+
+#### Analyst reports (`reporting-app`)
+
+Six reports under `/api/reporting/analyst/`, listed in the [API Endpoints Summary](#api-endpoints-summary).
+Each covers the **last 12 complete UTC months** (on 12 October 2026: October 2025 to September 2026)
+and takes no parameters; the current month is left out so a half-finished month doesn't read as a
+drop. Every response names its window and has one entry per month (or sign-up month), zeros included.
+
+- **Active client**: had at least one order execute in the month, FILLED or REJECTED. CANCELLED and
+  EXPIRED orders never executed and don't count (an expired order's date is when it lapsed, not
+  anything the client did). Volume, filled orders and order value count FILLED orders only, valued
+  at quantity × fill price.
+- **Client activity**: *new* is a client's first ever active month; *returning* was also active the
+  month before; *reactivated* was active before but not the month before; *lapsed* was active the
+  month before but not this month.
+- **Retention**: cohorts are sign-up months in the window; each cohort runs from its sign-up month
+  (month 0) to the window's end.
+- **Activation**: a first order is the first executed one (FILLED or REJECTED), by when it was placed. A cohort is marked
+  `complete: false` until 30 days after its month ends, while its 30-day figure can still rise.
+- **Concentration**: clients ranked by filled value each month; each top slice is rounded up to a
+  whole client. Clients with only rejected orders aren't counted as trading.
+- **Order sizes**: bands include their lower bound: under 1,000 · 1,000–4,999.99 · 5,000–9,999.99 ·
+  10,000–24,999.99 · 25,000+.
+- **Changes** (scorecard) are `null` when there's nothing to compare: the earlier figure is zero or
+  before the data starts.
+
+Most reports read `reporting.client_months` (see *Reporting ETL*) rather than every order. To try
+them on a fresh local stack, load synthetic history (**dev only**: 24 months of made-up clients and
+orders written straight into the reporting tables; it rebuilds `client_months` itself, and a rerun
+adds nothing):
+
+```bash
+docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < scripts/seed-reporting-history.sql
+```
 > The data they will read is being collected in the `reporting.orders` and `reporting.clients`
 > tables by the ETL services described under [Reporting ETL](#reporting-etl).
 
@@ -1150,6 +1270,9 @@ mvn -pl order-app -am test
 
 # Test Market Data module (with dependency building)
 mvn -pl market-data-app -am test
+
+# Test Reporting module (with dependency building)
+mvn -pl reporting-app -am test
 ```
 
 ### End-to-end tests (Playwright)
@@ -1169,6 +1292,31 @@ conventions for writing new ones.
 
 ### Frontend unit tests
 
+The client Instruments page is at `/instruments`, with a header link on desktop and
+a profile-menu entry on mobile. Today compares against the previous completed UTC
+daily close; week and month use starts 7 and 30 days before midnight UTC today.
+Missing history displays unavailable changes and is excluded from movers. Top five
+gainers and losers cover the full universe; search and asset filters affect only
+the table. Prices update through the existing shared stream.
+
+After updating the source on your Docker host, rebuild the market-data backend:
+
+```bash
+docker compose up -d --build market-data-app frontend
+```
+
+No new schema migration is required for Instruments. In the browser, sign in as a
+client, open Instruments, change periods, combine search and asset filters, toggle
+sortable headers, and verify that movers stay market-wide. On a narrow screen,
+open Instruments through the profile menu and check the stacked mover cards and
+scrollable table. These are manual verification steps, not recorded test results.
+
+Run the focused Instruments and navigation tests from `frontend/`:
+
+```bash
+npm test -- --watch=false --include='src/app/instruments/*.spec.ts' --include=src/app/services/instruments.spec.ts --include=src/app/app.routes.spec.ts
+```
+
 ```bash
 cd frontend
 npx ng test --watch=false --coverage
@@ -1185,9 +1333,10 @@ The [Jenkinsfile](Jenkinsfile) runs these stages on every push:
 | Stage | What it does |
 | --- | --- |
 | Checkout, Configure Pipeline, Pull Images, Start Database | Set up the workspace, decide which optional stages run, and start the database |
-| Build and Test → Frontend | Install dependencies, build the Angular app and run its unit tests (Vitest, with coverage) |
+| Build and Test → Frontend | Install dependencies, build the Angular app and prepare the test-runner image |
 | Build and Test → Unit Tests | `mvn test` across all modules (JaCoCo coverage) and the `reporting-etl` pytest suite |
 | Build and Test → Service Stack | Build the Docker images, validate the database schema and seeds, start the services and check their health |
+| Frontend Unit Tests | Angular unit tests (Vitest in headless Chromium, with coverage), run on their own because Chromium and the image builds together starve a small agent |
 | Verify → Static Analysis | SonarQube analysis and Quality Gate (see below) |
 | Verify → Stack Tests | Playwright **E2E** tests, then the **Trade Recovery Tests** (`scripts/test-trade-recovery.sh`; background in [docs/trade-record-resilience.md](docs/trade-record-resilience.md)) |
 
@@ -1241,9 +1390,17 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-password-reset-tokens.sql` | `iam.password_reset_tokens` (password reset links) |
 | `migrate-notification-preferences.sql` | Client notification preferences (`notify_order_fills`, `notify_price_alerts`) |
 | `migrate-price-tolerance.sql` | Saved `max_slippage_pct` on accounts and the quoted price and tolerance on orders |
+| `migrate-order-types.sql` | Limit, stop and stop-limit orders: new order columns and statuses (`OPEN`, `CANCELLED`, `EXPIRED`) |
+| `migrate-trailing-stops.sql` | Trailing stop orders: `trail_amount`, `trail_percent`, `trail_peak`; run after `migrate-order-types.sql` |
+| `migrate-order-fill-notices.sql` | Order fill emails: `notice_pending`, `notified_at` on `trading.orders`; run after `migrate-order-types.sql` |
+| `migrate-bracket-orders.sql` | Bracket orders: `bracket_take_profit_price`, `bracket_stop_loss_price`, `parent_order_id`, `oco_group_id` on `trading.orders`; run after `migrate-order-types.sql` |
+| `migrate-order-templates.sql` | Order templates: new `trading.order_templates` table; run after `migrate-order-types.sql` |
+| `migrate-reporting-order-outcomes.sql` | `reporting.orders` also records `CANCELLED` and `EXPIRED` orders; skipped where there is no reporting schema |
+| `migrate-order-history-index.sql` | Index for the order history's completed-time sort; optional until order counts grow |
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |
+| `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders`; run once the new `reporting-etl` is deployed, rerun any time to rebuild (see *Reporting ETL*) |
 | `migrate-price-candles-key.sql` | Moves `marketdata.price_candles` to its natural primary key; stop market-data-app first |
 
 `reporting.orders` has no migration script; it needs `docker compose down -v` once (see *Reporting ETL*).
@@ -1299,7 +1456,7 @@ To update the live GitHub Pages documentation hosted on the `gh-pages` branch:
 ### 3. Launch Services via Docker Compose (Recommended)
 
 Compose reads configuration from `.env` (copy it from `.env.example` once). To launch every
-container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app` and `frontend`:
+container — `db`, `iam-app`, `account-app`, `order-app`, `market-data-app`, `reporting-app` and `frontend`:
 
 ```bash
 docker compose up -d --build
@@ -1317,6 +1474,7 @@ Services will be exposed on:
 - **Account Application**: `http://localhost:8082`
 - **Order Application**: `http://localhost:8084`
 - **Market Data Application**: `http://localhost:8083`
+- **Reporting Application**: `http://localhost:8085`
 - **PostgreSQL Database**: `localhost:5432`
 
 The dev server proxies API calls to backend services per `frontend/proxy.conf.js`.
@@ -1347,9 +1505,9 @@ docker compose up -d --build iam-app
 docker compose exec kafka /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server localhost:9092 --topic client-register --from-beginning
 ```
 
-Register a new client through the application to see an event. Existing clients are not
-automatically backfilled. The `user-etl` consumer described under *Reporting ETL* below loads
-these events into `reporting.clients`.
+Register a new client through the application, and follow the confirmation link it emails
+(see Mailpit below), to see an event. Existing clients are not automatically backfilled. 
+The `user-etl` consumer described under *Reporting ETL* below loads these events into `reporting.clients`.
 
 **Mailpit** (`mailpit`) catches every email the services send, so nothing reaches a real inbox
 and any address works, seeded ones included. iam-app and account-app send to it over SMTP at
@@ -1364,6 +1522,19 @@ The password reset email is sent by iam-app as soon as a registered client submi
 link opens `http://localhost:4200/reset-password` by default; set `PASSWORD_RESET_LINK_BASE_URL`
 in `.env` if the browser reaches the frontend on another address. It works once and expires
 after 30 minutes.
+
+Registration is confirmed by email. Submitting "Create account" opens nothing: iam-app stores
+the application and emails a link (`http://localhost:4200/verify-email` by default; set
+`REGISTRATION_LINK_BASE_URL` in `.env` for another address) that works once and expires after
+24 hours. Following it creates the client and their first account. An email address, phone
+number and SSN each belong to one client, and the sign-up page never says when one is already
+registered - the answer is always "check your email". What arrives there differs instead: a
+registered email address gets a note that it already has an account; an applicant reusing
+another client's phone number or SSN is told no account was opened but not why, and that
+client is warned someone applied with their details - one email listing everything of theirs
+that was used (email address, phone number, SSN), never the numbers themselves. Applications reserve nothing, so if two are waiting for
+the same phone number or SSN, the first link followed wins. An existing database needs
+`scripts/migrate-registration-verification.sql` (same usage as the reporting migration below).
 
 The inactive account email goes out only when account-app's inactive account check runs,
 nightly at 02:00 UTC, never on startup. Henry Taylor's second account is seeded already flagged
@@ -1423,9 +1594,10 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 bash scripts/test-client-events.sh
 ```
 
-The script builds and starts IAM, account-app, Kafka and user-etl. It registers a unique test
-client through HTTP, checks the Kafka key and two-field payload, compares the registration
-timestamp to IAM and the actual reporting row, and checks duplicate registration rejection.
+The script builds and starts IAM, account-app, Kafka, Mailpit and user-etl. It registers a unique
+test client through HTTP, confirming its email with the link read from Mailpit, checks the Kafka
+key and two-field payload, compares the registration timestamp to IAM and the actual reporting
+row, and checks that a duplicate registration is answered identically but opens nothing.
 It then republishes the event, waits for the running user-etl group's offset to advance past
 that replay, and verifies the reporting row and both timestamps remain unchanged. An independent
 observer reads Kafka without taking partitions from user-etl. Failed checks exit nonzero and
@@ -1440,7 +1612,9 @@ as the `reporting-etl` compose service (no port).
   is final - FILLED, or REJECTED after account-app refused its settlement. Orders rejected by
   validation never executed and publish nothing. Fields: `eventId`, `orderId`, `accountId`,
   `clientId`, `instrumentId`, `symbol`, `side`, `quantity`, `status`, `fillPrice` (null when
-  rejected), `rejectionReason`, `submittedAt`, `completedAt` (ISO-8601 with offset).
+  rejected), `rejectionReason`, `submittedAt`, `completedAt` (ISO-8601 with offset). `status` is
+  `FILLED`, `REJECTED` (refused at settlement) or, for an order that waited for its price and never
+  executed, `CANCELLED` or `EXPIRED`; `fillPrice` is null unless it filled.
 - **Delivery**: offsets are committed only after the row is stored, and the insert ignores an
   order it already has, so a restart or a replay never loses or duplicates a row. A message
   that breaks the contract is logged and skipped. While Postgres is down the ETL retries the
@@ -1451,6 +1625,12 @@ as the `reporting-etl` compose service (no port).
   broker. Known gap: an event is lost if order-app stops between the commit and the send - a
   transactional outbox would close it. `REPORTING_EVENTS_ENABLED=false` turns publishing off,
   as `scripts/start-local.ps1` does since no Kafka runs natively.
+- **Monthly rollup**: the same statement that inserts a new order also adds it to its client's
+  UTC month in `reporting.client_months` (orders of any status, filled orders, filled value),
+  which backs the analyst reports in `reporting-app`. A repeated order the insert ignores adds
+  nothing, so a replay never counts twice. `scripts/migrate-reporting-client-months.sql` adds
+  the table to an existing database and rebuilds it from `reporting.orders`; it locks out the
+  ETL's inserts while it runs, so it is safe against a live stack and safe to rerun.
 - **New schema**: `reporting.orders` is created by the schema file, which only runs on an empty
   database - run `docker compose down -v` once to pick it up.
 
@@ -1551,7 +1731,7 @@ PostgreSQL are all it needs.
 
 ```powershell
 .\scripts\setup-windows-db.ps1   # once: creates and seeds the paysprint database
-.\scripts\start-local.ps1        # builds, starts all five in their own windows, opens the browser
+.\scripts\start-local.ps1        # builds, starts all six in their own windows, opens the browser
 .\scripts\stop-local.ps1         # stops them again
 ```
 
@@ -1593,6 +1773,11 @@ mvn -pl order-app spring-boot:run
 Run Market Data App (in a separate terminal):
 ```bash
 mvn -pl market-data-app spring-boot:run
+```
+
+Run Reporting App (in a separate terminal):
+```bash
+mvn -pl reporting-app spring-boot:run
 ```
 
 ---

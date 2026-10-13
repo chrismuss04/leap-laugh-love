@@ -41,10 +41,11 @@
 
   <!-- Right Side: Sign In / Create Account -->
   <div class="auth-panel">
-    <!-- Password recovery takes over the panel; which screen comes from the URL. -->
+    <!-- Password recovery and email confirmation take over the panel; which screen comes from the URL. -->
     <div class="signin-form-wrapper" *ngIf="recoveryView() as view">
       <app-forgot-password *ngIf="view === 'forgot-password'"></app-forgot-password>
       <app-reset-password *ngIf="view === 'reset-password'"></app-reset-password>
+      <app-verify-email *ngIf="view === 'verify-email'"></app-verify-email>
     </div>
 
     <div class="signin-form-wrapper" *ngIf="!recoveryView()" [class.wide]="activeTab === 'create-account'">

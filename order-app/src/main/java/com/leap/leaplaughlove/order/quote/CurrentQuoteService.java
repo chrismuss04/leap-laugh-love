@@ -6,6 +6,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
  * Supplies the current market quote an order is priced against at execution time, rejecting
@@ -57,6 +59,24 @@ public class CurrentQuoteService {
         }
 
         return quote;
+    }
+
+    /**
+     * Retrieves the current quote of every instrument, leaving out any too old to act on.
+     * @param bearerToken a market-quotes service token
+     * @return the fresh quotes by symbol
+     * @throws QuoteUnavailableException if the market data service can't be reached
+     */
+    public Map<String, QuoteSnapshot> getFreshQuotes(String bearerToken) {
+        OffsetDateTime staleBefore = OffsetDateTime.now().minusSeconds(maxQuoteAgeSeconds);
+        Map<String, QuoteSnapshot> fresh = new HashMap<>();
+        for (QuoteSnapshot quote : quoteClient.fetchAllAs(bearerToken)) {
+            if (quote.symbol() != null && quote.quoteTimestamp() != null
+                    && !quote.quoteTimestamp().isBefore(staleBefore)) {
+                fresh.put(quote.symbol().toUpperCase(), quote);
+            }
+        }
+        return fresh;
     }
 }
 

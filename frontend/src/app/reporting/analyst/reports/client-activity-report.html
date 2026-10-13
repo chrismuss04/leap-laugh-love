@@ -1,0 +1,49 @@
+<app-report-panel heading="Client activity"
+                  description="Clients with an executed order each month. Lapsed clients were active the month before but not this one."
+                  [state]="state()" message="No client activity in the last 12 complete months." (retry)="load()">
+  <div *ngIf="report() as report">
+    <ul class="legend" aria-hidden="true">
+      <li><span class="swatch seg-new"></span>New</li>
+      <li><span class="swatch seg-returning"></span>Returning</li>
+      <li><span class="swatch seg-reactivated"></span>Reactivated</li>
+    </ul>
+    <div class="table-wrap">
+      <table class="report-table" data-testid="client-activity-table">
+        <caption class="sr-only">Active and lapsed clients per month, oldest month first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Month</th>
+            <th scope="col">Active</th>
+            <th scope="col" class="num">New</th>
+            <th scope="col" class="num">Returning</th>
+            <th scope="col" class="num">Reactivated</th>
+            <th scope="col" class="num">Lapsed</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let month of report.months" data-testid="client-activity-row">
+            <th scope="row">{{ monthLabel(month.month) }}</th>
+            <td>
+              <div class="bar-cell">
+                <span class="stack-track" aria-hidden="true">
+                  <span class="stack" [style.width.%]="barWidth(month.activeClients, maxActive())">
+                    <span *ngFor="let segment of segments(month)" class="segment" [ngClass]="'seg-' + segment.kind"
+                          [style.width.%]="segment.share" [attr.title]="segment.label + ': ' + count(segment.clients)"></span>
+                  </span>
+                </span>
+                <span class="bar-value" data-testid="active-clients">{{ count(month.activeClients) }}</span>
+              </div>
+            </td>
+            <td class="num">{{ count(month.newClients) }}</td>
+            <td class="num">{{ count(month.returningClients) }}</td>
+            <td class="num">{{ count(month.reactivatedClients) }}</td>
+            <td class="num muted" [class.lapsed-high]="month.lapsedClients > meanLapsed()"
+                [attr.title]="month.lapsedClients > meanLapsed() ? 'Above the 12-month average' : null">
+              {{ count(month.lapsedClients) }}<span class="sr-only" *ngIf="month.lapsedClients > meanLapsed()">, above the 12-month average</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</app-report-panel>

@@ -53,6 +53,13 @@ app:
   jwt:
     secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
     expiration-minutes: 60
+  registration:
+    # The frontend page the emailed confirmation link opens; the token is appended as ?token=...
+    link-base-url: ${REGISTRATION_LINK_BASE_URL:http://localhost:4200/verify-email}
+    # An application that isn't confirmed within this long is discarded.
+    token-ttl-minutes: 1440
+    email:
+      from: ${REGISTRATION_EMAIL_FROM:no-reply@example.com}
   password-reset:
     # The frontend page the emailed link opens; the token is appended as ?token=...
     link-base-url: ${PASSWORD_RESET_LINK_BASE_URL:http://localhost:4200/reset-password}

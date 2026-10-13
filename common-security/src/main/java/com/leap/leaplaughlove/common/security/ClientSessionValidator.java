@@ -14,6 +14,13 @@ import java.util.UUID;
 @Service
 public class ClientSessionValidator {
     public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);
+    /**
+     * How far ahead of this service's clock a session's last activity may be. iam-app records
+     * activity at its own "now", which can land between another request reading the clock and
+     * querying the session - a few milliseconds in that request's future. Without this slack that
+     * request was refused with a 401, and the frontend signed the client out mid-session.
+     */
+    static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
@@ -44,8 +51,10 @@ public class ClientSessionValidator {
      */
     public boolean isActive(Role role, UUID sessionId, UUID subjectId, Instant tokenExpiry) {
         Instant now = clock.instant();
-        if (role == null || sessionId == null || subjectId == null || tokenExpiry == null
-                || !tokenExpiry.isAfter(now)) {
+        if (role == null || sessionId == null || subjectId == null) {
+            return false;
+        }
+        if (tokenExpiry == null || !tokenExpiry.isAfter(now)) {
             return false;
         }
         // Table and column names are fixed per role, never taken from the token.
@@ -61,7 +70,7 @@ public class ClientSessionValidator {
                   AND last_activity_at <= ?
                 """;
         Integer count = jdbc.queryForObject(sql, Integer.class, sessionId, subjectId, now.atOffset(ZoneOffset.UTC),
-                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));
+                now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.plus(CLOCK_SKEW).atOffset(ZoneOffset.UTC));
         return count != null && count == 1;
     }
 }

@@ -21,6 +21,7 @@
         <module>account-app</module>
         <module>order-app</module>
         <module>market-data-app</module>
+        <module>reporting-app</module>
     </modules>
 
     <properties>

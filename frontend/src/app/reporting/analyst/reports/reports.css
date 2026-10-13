@@ -1,0 +1,178 @@
+/* Analyst reports: tables with CSS bars and heat cells, shared by the six 12-month reports.
+   Bars are decoration (aria-hidden); every figure is also printed as text in its cell. The
+   retention heat map is the section's one bold element; everything else stays quiet and dense. */
+
+:host {
+  display: block;
+  min-width: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--card);
+  font-size: 13px;
+}
+
+.report-table th,
+.report-table td {
+  padding: 7px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+  white-space: nowrap;
+}
+
+.report-table thead th {
+  background: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+
+.report-table tbody th {
+  font-weight: 500;
+}
+
+.report-table tbody tr:last-child > * {
+  border-bottom: none;
+}
+
+/* The month stays in view while a wide table scrolls sideways on a narrow screen. */
+.report-table tr > :first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--card);
+}
+
+.report-table thead tr > :first-child {
+  background: var(--muted);
+}
+
+.report-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.muted {
+  color: var(--muted-foreground);
+}
+
+/* Changes: muted by default; only notable ones are coloured, and always signed. */
+.change {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted-foreground);
+}
+
+.change.gain { color: var(--gain); }
+.change.loss { color: var(--loss); }
+
+/* A single bar. Block-level: an inline element ignores the width that draws it. */
+.bar-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+}
+
+.bar-track {
+  display: block;
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--muted);
+  overflow: hidden;
+}
+
+.bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--primary);
+}
+
+.bar-value {
+  min-width: 48px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stacked bars: segments share one track, in legend order, with hairline gaps between them. */
+.stack {
+  display: flex;
+  gap: 1px;
+  height: 8px;
+  min-width: 2px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.stack-track {
+  flex: 1;
+  min-width: 120px;
+}
+
+.segment {
+  display: block;
+  height: 100%;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+/* Client activity: what kind of active client. */
+.seg-new { background: var(--primary); }
+.seg-returning { background: var(--info); }
+.seg-reactivated { background: var(--warning); }
+
+/* Order sizes: one sequential scale in even steps, light (small orders) to full (large). */
+.band-0 { background: color-mix(in srgb, var(--primary) 15%, var(--card)); }
+.band-1 { background: color-mix(in srgb, var(--primary) 36%, var(--card)); }
+.band-2 { background: color-mix(in srgb, var(--primary) 57%, var(--card)); }
+.band-3 { background: color-mix(in srgb, var(--primary) 78%, var(--card)); }
+.band-4 { background: var(--primary); }
+
+/* Activation: a cohort still inside its first 30 days. */
+tr.incomplete > * {
+  color: var(--muted-foreground);
+}
+
+tr.incomplete .bar-fill {
+  opacity: 0.45;
+}
+
+.footnote {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}

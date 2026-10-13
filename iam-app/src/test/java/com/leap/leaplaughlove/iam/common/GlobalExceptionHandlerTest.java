@@ -3,6 +3,8 @@ package com.leap.leaplaughlove.iam.common;
 import com.leap.leaplaughlove.iam.auth.AccountLockedException;
 import com.leap.leaplaughlove.iam.auth.InvalidCredentialsException;
 import com.leap.leaplaughlove.iam.auth.InvalidResetTokenException;
+import com.leap.leaplaughlove.iam.client.DetailTakenException;
+import com.leap.leaplaughlove.iam.client.InvalidVerificationLinkException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,6 +64,30 @@ class GlobalExceptionHandlerTest {
         assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals("INVALID_RESET_TOKEN", response.getBody().get("error"));
+        assertEquals(ex.getMessage(), response.getBody().get("message"));
+    }
+
+    @Test
+    @DisplayName("handleDetailTaken returns 409 CONFLICT with the code naming the taken detail")
+    void testHandleDetailTaken() {
+        DetailTakenException ex = new DetailTakenException("EMAIL_TAKEN", "That email is already registered.");
+        ResponseEntity<Map<String, String>> response = handler.handleDetailTaken(ex);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("EMAIL_TAKEN", response.getBody().get("error"));
+        assertEquals(ex.getMessage(), response.getBody().get("message"));
+    }
+
+    @Test
+    @DisplayName("handleInvalidVerificationLink returns 400 BAD_REQUEST with INVALID_VERIFICATION_LINK error")
+    void testHandleInvalidVerificationLink() {
+        InvalidVerificationLinkException ex = new InvalidVerificationLinkException();
+        ResponseEntity<Map<String, String>> response = handler.handleInvalidVerificationLink(ex);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertNotNull(response.getBody());
+        assertEquals("INVALID_VERIFICATION_LINK", response.getBody().get("error"));
         assertEquals(ex.getMessage(), response.getBody().get("message"));
     }
 

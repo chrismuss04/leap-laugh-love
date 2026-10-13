@@ -3,6 +3,8 @@ package com.leap.leaplaughlove.iam.common;
 import com.leap.leaplaughlove.iam.auth.AccountLockedException;
 import com.leap.leaplaughlove.iam.auth.InvalidCredentialsException;
 import com.leap.leaplaughlove.iam.auth.InvalidResetTokenException;
+import com.leap.leaplaughlove.iam.client.DetailTakenException;
+import com.leap.leaplaughlove.iam.client.InvalidVerificationLinkException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -57,6 +59,30 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleInvalidResetToken(InvalidResetTokenException ex) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
                 "error", "INVALID_RESET_TOKEN",
+                "message", ex.getMessage()));
+    }
+
+    /**
+     * Handles the InvalidVerificationLinkException
+     * @param  ex the exception indicating the registration link cannot open an account
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(InvalidVerificationLinkException.class)
+    public ResponseEntity<Map<String, String>> handleInvalidVerificationLink(InvalidVerificationLinkException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(Map.of(
+                "error", "INVALID_VERIFICATION_LINK",
+                "message", ex.getMessage()));
+    }
+
+    /**
+     * Handles the DetailTakenException
+     * @param  ex the exception naming the email address or phone number that is already in use
+     * @return ResponseEntity the response entity containing the error details
+     */
+    @ExceptionHandler(DetailTakenException.class)
+    public ResponseEntity<Map<String, String>> handleDetailTaken(DetailTakenException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                "error", ex.getError(),
                 "message", ex.getMessage()));
     }
 

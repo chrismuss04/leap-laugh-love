@@ -1,0 +1,16 @@
+server:
+  port: 8085
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paysprint}
+    username: ${SPRING_DATASOURCE_USERNAME:paysprint}
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+    hikari:
+      # Reports only ever read; a read-only connection makes an accidental write fail loudly.
+      read-only: true
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
+    expiration-minutes: 60

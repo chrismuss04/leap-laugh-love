@@ -10,15 +10,13 @@ import { SignInComponent } from './sign-in/sign-in.component';
 import { CreateAccountComponent } from './create-account/create-account.component';
 import { ForgotPasswordComponent } from './forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from './reset-password/reset-password.component';
-import { OrderHistoryComponent } from './order-history/order-history';
-import { HoldingsComponent } from './holdings/holdings';
+import { VerifyEmailComponent } from './verify-email/verify-email.component';
 import { ShellComponent } from './shell/shell';
-import { ProfileComponent } from './profile/profile';
-import { SettingsComponent } from './settings/settings';
 import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
-// A signed-in user has no use for password recovery, and no sign-in screen to show it on.
+// A signed-in user has no use for password recovery or for confirming a registration, and no
+// sign-in screen to show them on.
 const signedOutOnly: CanActivateFn = () => {
   const auth = inject(AuthService);
   return !auth.isAuthenticated() || inject(Router).parseUrl(auth.homeUrl());
@@ -49,6 +47,8 @@ export const routes: Routes = [
   // link to the dashboard.
   { path: 'forgot-password', canActivate: [signedOutOnly], children: [] },
   { path: 'reset-password', canActivate: [signedOutOnly], children: [] },
+  // Registration: where the emailed confirmation link lands; rendered the same way.
+  { path: 'verify-email', canActivate: [signedOutOnly], children: [] },
   // Activity Reporting: staff sign in to this instead of the trading shell.
   {
     path: 'reporting',
@@ -86,13 +86,14 @@ export const routes: Routes = [
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       // The same dashboard scoped to one account; the overview above covers all of them.
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
-      { path: 'orders', component: OrderHistoryComponent },
-      { path: 'holdings', component: HoldingsComponent },
+      { path: 'instruments', loadComponent: () => import('./instruments/instruments').then(m => m.InstrumentsComponent) },
+      { path: 'orders', loadComponent: () => import('./order-history/order-history').then(m => m.OrderHistoryComponent) },
+      { path: 'holdings', loadComponent: () => import('./holdings/holdings').then(m => m.HoldingsComponent) },
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
       { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
-      { path: 'profile', component: ProfileComponent },
-      { path: 'settings', component: SettingsComponent },
+      { path: 'profile', loadComponent: () => import('./profile/profile').then(m => m.ProfileComponent) },
+      { path: 'settings', loadComponent: () => import('./settings/settings').then(m => m.SettingsComponent) },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -110,10 +111,9 @@ export const routes: Routes = [
         FormsModule,
         CommonModule,
         RouterModule.forRoot(routes),
-        OrderHistoryComponent,
-        HoldingsComponent,
         ForgotPasswordComponent,
-        ResetPasswordComponent], providers: [
+        ResetPasswordComponent,
+        VerifyEmailComponent], providers: [
         AuthService,
         {
             provide: HTTP_INTERCEPTORS,

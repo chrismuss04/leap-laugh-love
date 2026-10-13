@@ -101,6 +101,15 @@ public class JwtService {
         return generateServiceToken(clientId, "market-history");
     }
 
+    /**
+     * Generates a token that can only read all live quotes, for order-app's trigger engine, which
+     * watches every client's open orders at once and so acts for no one client.
+     * @return a short-lived market-quotes service token
+     */
+    public String generateQuoteToken() {
+        return generateServiceToken(new UUID(0L, 0L), "market-quotes");
+    }
+
     private String generateServiceToken(UUID clientId, String purpose) {
         Instant now = Instant.now();
         return Jwts.builder().subject(clientId.toString())

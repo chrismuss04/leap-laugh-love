@@ -34,6 +34,10 @@ services:
     depends_on: !reset {}
     environment: *external-datasource
 
+  reporting-app:
+    depends_on: !reset {}
+    environment: *external-datasource
+
   # Still waits for its Kafka topic, just not for the bundled db.
   reporting-etl:
     depends_on: !override

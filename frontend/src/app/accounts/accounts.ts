@@ -62,7 +62,7 @@ export class AccountsComponent implements OnInit {
       if (!this.loading()) {
         this.stream.watch(this.valuation.heldSymbols());
       }
-    }, { allowSignalWrites: true });
+    });
 
     // An account that isn't the client's, or has closed, falls back to the list.
     effect(() => {
