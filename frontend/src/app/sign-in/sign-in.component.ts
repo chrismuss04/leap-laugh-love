@@ -10,9 +10,9 @@ type RecoveryView = 'forgot-password' | 'reset-password' | 'verify-email';
 /** The emailed-link screen (password recovery, or confirming a registration) a URL asks for, if any. */
 function recoveryViewFor(url: string): RecoveryView | null {
   const path = url.split(/[?#]/)[0];
-  if (path === '/forgot-password') return 'forgot-password';
-  if (path === '/reset-password') return 'reset-password';
-  if (path === '/verify-email') return 'verify-email';
+  if (path === '/forgot-password') { return 'forgot-password'; }
+  if (path === '/reset-password') { return 'reset-password'; }
+  if (path === '/verify-email') { return 'verify-email'; }
   return null;
 }
 
