@@ -1154,12 +1154,14 @@ to its own dashboard, and a client who opens `/reporting` is redirected home.
 | --- | --- | --- |
 | `TRADING_OPERATIONS` | `/reporting` | **Order Audit**: orders submitted, filled, rejected and awaiting execution, with audit filters |
 | `TRADING_OPERATIONS` | `/reporting/orders/:orderId` | **Order lifecycle**: one order retraced through its executions and the cash and holdings ledgers |
-| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: trading volume, average order value, new registrations and active clients over a period (1W, 1M, 3M, YTD, 1Y or custom) |
+| `COMMERCIAL_ANALYST` | `/reporting` | **Trading Activity**: headline tiles for a period (1W, 1M, 3M, YTD, 1Y or custom); the **activity report** by instrument, with its own dates and daily or weekly breakdown; and six **12-month reports**: monthly scorecard, client activity, activation, retention by sign-up month, volume from top clients and orders by value |
 
 > [!NOTE]
-> The dashboards are built, routed, filtered and tested, but the report panels are still
-> placeholders, so the pages show the layout and filters without data. The analyst's long-range
-> reports are served by `reporting-app` (see below); the pages don't call them yet.
+> The Order Audit panels and the analyst's headline tiles are still placeholders, so they show the
+> layout and filters without data. On Trading Activity, the activity report and the six 12-month
+> reports are live. The 12-month reports always cover the last 12 complete months, whatever period
+> the page's filter is on, and say which months in each panel. They are tables with CSS-drawn bars
+> and heat cells, with no chart library.
 
 #### Analyst reports (`reporting-app`)
 
