@@ -328,10 +328,13 @@
       </div>
 
       <div *ngIf="bracketAvailable()" class="bracket" data-testid="bracket">
-        <label class="bracket-toggle">
-          <input type="checkbox" name="bracketOn" [ngModel]="bracketOn()" (ngModelChange)="setBracketOn($event)" />
-          <span><strong>Protect this trade</strong>
-            <span class="bracket-sub">Sell automatically to take profit or cut losses once this buy fills.</span></span>
+        <label class="bracket-toggle field-row">
+          <span class="bracket-text">
+            <span class="field-label">Protect this trade</span>
+            <span class="bracket-sub">Auto-sell to take profit or cut losses once this buy fills.</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" name="bracketOn"
+                 [ngModel]="bracketOn()" (ngModelChange)="setBracketOn($event)" />
         </label>
         <ng-container *ngIf="bracketOn()">
           <div class="price-field">
