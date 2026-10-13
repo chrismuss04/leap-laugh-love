@@ -10,11 +10,13 @@ import { SignInComponent } from './sign-in/sign-in.component';
 import { CreateAccountComponent } from './create-account/create-account.component';
 import { ForgotPasswordComponent } from './forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from './reset-password/reset-password.component';
+import { VerifyEmailComponent } from './verify-email/verify-email.component';
 import { ShellComponent } from './shell/shell';
 import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
-// A signed-in user has no use for password recovery, and no sign-in screen to show it on.
+// A signed-in user has no use for password recovery or for confirming a registration, and no
+// sign-in screen to show them on.
 const signedOutOnly: CanActivateFn = () => {
   const auth = inject(AuthService);
   return !auth.isAuthenticated() || inject(Router).parseUrl(auth.homeUrl());
@@ -45,6 +47,8 @@ export const routes: Routes = [
   // link to the dashboard.
   { path: 'forgot-password', canActivate: [signedOutOnly], children: [] },
   { path: 'reset-password', canActivate: [signedOutOnly], children: [] },
+  // Registration: where the emailed confirmation link lands; rendered the same way.
+  { path: 'verify-email', canActivate: [signedOutOnly], children: [] },
   // Activity Reporting: staff sign in to this instead of the trading shell.
   {
     path: 'reporting',
@@ -108,7 +112,8 @@ export const routes: Routes = [
         CommonModule,
         RouterModule.forRoot(routes),
         ForgotPasswordComponent,
-        ResetPasswordComponent], providers: [
+        ResetPasswordComponent,
+        VerifyEmailComponent], providers: [
         AuthService,
         {
             provide: HTTP_INTERCEPTORS,

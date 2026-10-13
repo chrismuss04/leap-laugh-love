@@ -139,7 +139,7 @@ describe('Commercial analyst dashboard', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('opens at /reporting with a place for every business report, and loads nothing yet', async () => {
+  it('opens at /reporting with a place for every business report, and loads only the activity report', async () => {
     const { el } = await open('/reporting', AnalystDashboardComponent);
 
     expect(router.url).toBe('/reporting');
@@ -150,6 +150,9 @@ describe('Commercial analyst dashboard', () => {
     expect(Array.from(el.querySelectorAll('.stat-label')).map(l => l.textContent))
       .toEqual(['Trading volume', 'Average order value', 'New registrations', 'Active clients']);
     expect(text(el.querySelector('[data-testid="period-summary"]')!)).toMatch(/^Past month: /);
+    expect(el.querySelector('app-activity-report')).not.toBeNull();
+    http.expectOne('/api/order/reports/instruments');
+    http.expectOne(request => request.url === '/api/order/reports/activity');
     http.expectNone(() => true);
   });
 

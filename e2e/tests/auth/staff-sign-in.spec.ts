@@ -9,7 +9,8 @@ test.describe('Staff sign in', () => {
     test(`${member.roleLabel} lands on reporting, never on trading`, async ({ page }) => {
       const trading: string[] = [];
       page.on('request', request => {
-        if (/\/api\/(account|order|marketdata)\/|\/api\/iam\/v1\/clients\/me/.test(request.url())) {
+        // Activity reports (/api/order/reports/) are the analyst's own, not trading.
+        if (/\/api\/(account|order(?!\/reports\/)|marketdata)\/|\/api\/iam\/v1\/clients\/me/.test(request.url())) {
           trading.push(request.url());
         }
       });
