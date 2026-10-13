@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -68,6 +70,24 @@ public class OrderEventPublisher {
         publish(order, null, order.getRejectedAt());
     }
 
+    /**
+     * Publishes an order the client cancelled, or that a bracket cancelled because its other exit
+     * executed. Sent once the transaction that cancelled it commits, if there is one.
+     * @param order the order, marked CANCELLED, with its instrument loaded
+     */
+    public void publishCancelled(Order order) {
+        publish(order, null, order.getCancelledAt());
+    }
+
+    /**
+     * Publishes an order that expired unfilled. Sent once the transaction that expired it commits,
+     * if there is one.
+     * @param order the order, marked EXPIRED, with its instrument loaded
+     */
+    public void publishExpired(Order order) {
+        publish(order, null, order.getExpiredAt());
+    }
+
     private void publish(Order order, BigDecimal fillPrice, OffsetDateTime completedAt) {
         if (!enabled) {
             return;
@@ -87,8 +107,18 @@ public class OrderEventPublisher {
                     fillPrice,
                     order.getRejectionReason(),
                     order.getSubmittedAt(),
-                    completedAt);
-            // Keyed by order, so any later event for the same order lands on the same partition.
+                    completedAt,
+                    order.getOrderType().name());
+            // Built now, while the order is loaded; sent once what made it final has committed.
+            afterCommit(() -> send(orderId, event));
+        } catch (RuntimeException ex) {
+            log.warn("Could not publish order event for order {}: {}", orderId, ex.getMessage());
+        }
+    }
+
+    /** Keyed by order, so any later event for the same order lands on the same partition. */
+    private void send(UUID orderId, OrderCompletedEvent event) {
+        try {
             kafkaTemplate.send(topic, orderId.toString(), event)
                     .whenComplete((result, failure) -> {
                         if (failure != null) {
@@ -98,6 +128,24 @@ public class OrderEventPublisher {
         } catch (RuntimeException ex) {
             log.warn("Could not publish order event for order {}: {}", orderId, ex.getMessage());
         }
+    }
+
+    /**
+     * Runs the action once the current transaction commits, so a cancel that rolls back is never
+     * reported; at once when there is no transaction, as for the fills and rejections, which are
+     * published after theirs has committed.
+     */
+    private static void afterCommit(Runnable action) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            action.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                action.run();
+            }
+        });
     }
 
     /**

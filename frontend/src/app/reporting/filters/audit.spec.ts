@@ -17,8 +17,14 @@ describe('Audit filter', () => {
 
   it('drops values the filter bar could not have produced', () => {
     expect(parseAudit(convertToParamMap({
-      from: 'yesterday', to: '2026-10-08', side: 'SHORT', status: 'CANCELLED'
+      from: 'yesterday', to: '2026-10-08', side: 'SHORT', status: 'PENDING'
     }))).toEqual(EMPTY_AUDIT_FILTER);
+  });
+
+  it('knows every status an order can have, including those of orders that wait for their price', () => {
+    for (const status of ['SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED']) {
+      expect(parseAudit(convertToParamMap({ status })).status).toBe(status);
+    }
   });
 
   it('trims text, upper-cases symbols, and treats blanks as no filter', () => {

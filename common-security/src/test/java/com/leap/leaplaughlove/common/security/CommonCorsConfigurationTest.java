@@ -28,7 +28,7 @@ class CommonCorsConfigurationTest {
 
         assertNotNull(config);
         assertEquals(List.of("*"), config.getAllowedOriginPatterns());
-        assertEquals(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"), config.getAllowedMethods());
+        assertEquals(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"), config.getAllowedMethods());
         assertEquals(List.of("*"), config.getAllowedHeaders());
         assertEquals(Boolean.TRUE, config.getAllowCredentials());
     }

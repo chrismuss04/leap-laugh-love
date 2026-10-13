@@ -25,6 +25,12 @@
         <span class="identity">
           <span class="symbol">{{ h.symbol }}</span>
           <span class="sub">{{ h.quantity | number }} {{ h.quantity === 1 ? 'share' : 'shares' }}</span>
+          <span *ngIf="orderPill(h.symbol) as pill" class="order-pill num" [attr.aria-label]="pill.label" [title]="pill.label">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.4" />
+              <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" />
+            </svg>{{ pill.text }}
+          </span>
         </span>
 
         <app-sparkline class="spark" [values]="h.intraday" [baseline]="h.previousClose"></app-sparkline>

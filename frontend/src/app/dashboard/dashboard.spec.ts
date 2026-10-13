@@ -4,8 +4,9 @@ import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angul
 import { BehaviorSubject, Subject, of, throwError } from 'rxjs';
 import { BalanceService } from '../services/balance';
 import { HoldingsService } from '../services/holdings';
-import { MarketDataService } from '../services/market-data';
-import { OrderHistoryPage, OrderService } from '../services/order';
+import { MarketDataService, Quote } from '../services/market-data';
+import { OpenOrder, OrderHistoryPage, OrderService, OrderUpdate } from '../services/order';
+import { OrderStreamService } from '../services/order-stream';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
 import { DashboardComponent } from './dashboard';
@@ -48,6 +49,7 @@ describe('DashboardComponent', () => {
   let orderApi: MockedObject<OrderService>;
   let portfolioApi: MockedObject<PortfolioService>;
   let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: Mock };
+  let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -61,10 +63,11 @@ describe('DashboardComponent', () => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
     marketApi = createSpyObj('MarketDataService',
-      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    orderApi = createSpyObj('OrderService', ['getOrderHistory']);
+      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
+    orderApi = createSpyObj('OrderService', ['getOrderHistory', 'getOpenOrders']);
     portfolioApi = createSpyObj('PortfolioService', ['getHistory']);
     stream = { prices: signal<Record<string, number>>({ SPX: 5100 }), watch: vi.fn().mockName('watch') };
+    orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of(summaries));
@@ -76,6 +79,8 @@ describe('DashboardComponent', () => {
     marketApi.getPreviousClose.mockImplementation(symbol => of(symbol === 'SPX' ? 5000 : 140));
     marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
     orderApi.getOrderHistory.mockReturnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
+    orderApi.getOpenOrders.mockReturnValue(of([]));
+    marketApi.getQuote.mockReturnValue(of({ symbol: 'AAPL', bidPrice: 149.9, askPrice: 150.1, lastPrice: 150 } as Quote));
     portfolioApi.getHistory.mockReturnValue(of(history));
 
     TestBed.configureTestingModule({
@@ -87,7 +92,8 @@ describe('DashboardComponent', () => {
         { provide: MarketDataService, useValue: marketApi },
         { provide: OrderService, useValue: orderApi },
         { provide: PortfolioService, useValue: portfolioApi },
-        { provide: PriceStreamService, useValue: stream }
+        { provide: PriceStreamService, useValue: stream },
+        { provide: OrderStreamService, useValue: orderStream }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -223,10 +229,131 @@ describe('DashboardComponent', () => {
       holdingsApi.getHoldings.mockClear();
       portfolioApi.getHistory.mockClear();
       orderApi.getOrderHistory.mockClear();
+      orderApi.getOpenOrders.mockClear();
       dashboard.onOrderPlaced();
       expect(holdingsApi.getHoldings).toHaveBeenCalled();
       expect(portfolioApi.getHistory).toHaveBeenCalled();
       expect(orderApi.getOrderHistory).toHaveBeenCalled();
+      expect(orderApi.getOpenOrders).toHaveBeenCalled();
+    });
+
+    describe('open orders', () => {
+      const openOrder = (overrides: Partial<OpenOrder>): OpenOrder => ({
+        orderId: 'open-1', accountId: 'a1', symbol: 'AAPL', side: 'BUY', quantity: 2, status: 'OPEN',
+        orderType: 'LIMIT', limitPrice: 140, stopPrice: null, timeInForce: 'DAY', submittedAt: '',
+        expiresAt: null, triggeredAt: null, reservedCash: 280, ...overrides
+      });
+
+      it('takes what open orders hold out of buying power and free shares', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([
+          openOrder({}),
+          openOrder({ orderId: 'open-2', side: 'SELL', quantity: 4, orderType: 'STOP', limitPrice: null,
+            stopPrice: 120, reservedCash: null })
+        ]));
+        dashboard.loadOpenOrders();
+
+        const [first] = dashboard.tradeAccounts();
+        expect(first.buyingPower).toBe(720);
+        expect(first.cashOnHold).toBe(280);
+        expect(first.sharesOnHold).toEqual({ AAPL: 4 });
+        expect(first.averageCost).toEqual({ AAPL: 100 });
+        // Cash still counts in the portfolio's value; buying power doesn't include what's held.
+        expect(dashboard.cash()).toBe(1500);
+        expect(dashboard.buyingPower()).toBe(1220);
+      });
+
+      it('reloads and announces an open order that filled', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        holdingsApi.getHoldings.mockClear();
+        orderApi.getOrderHistory.mockReturnValue(of({ content: [{
+          orderId: 'open-1', symbol: 'AAPL', side: 'BUY', quantity: 2, status: 'FILLED', submittedAt: '',
+          filledAt: '', executions: [{ executionId: 'e1', quantity: 2, price: 139.5, executedAt: '' }]
+        }] } as OrderHistoryPage));
+
+        orderApi.getOpenOrders.mockReturnValue(of([]));
+        dashboard.loadOpenOrders();
+
+        expect(dashboard.openOrders()).toEqual([]);
+        expect(holdingsApi.getHoldings).toHaveBeenCalled();
+        expect(dashboard.notice()).toEqual({ text: 'Limit buy of 2 AAPL filled at $139.50', tone: 'gain' });
+        dashboard.dismissNotice();
+        expect(dashboard.notice()).toBeNull();
+      });
+
+      it('drops a cancelled order at once, without announcing it', () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        orderApi.getOpenOrders.mockReturnValue(of([]));
+
+        dashboard.onOpenOrderCancelled(openOrder({}));
+
+        expect(dashboard.openOrders()).toEqual([]);
+        expect(dashboard.notice()).toBeNull();
+      });
+
+      it("reads open orders' quotes, for how far ask and bid sit from the last trade", () => {
+        orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+        dashboard.loadOpenOrders();
+        expect(marketApi.getQuote).toHaveBeenCalledWith('AAPL');
+        expect(dashboard.quoteOffsets()['AAPL'].ask).toBeCloseTo(0.1);
+        expect(dashboard.quoteOffsets()['AAPL'].bid).toBeCloseTo(-0.1);
+      });
+
+      it("loads the traded symbol's recent closes for the order chart", () => {
+        expect(marketApi.getIntradayCloses).toHaveBeenCalledWith('AAPL');
+        expect(dashboard.selectedHistory()).toEqual([145, 150]);
+      });
+
+      describe('order stream', () => {
+        const update = (overrides: Partial<OrderUpdate>): OrderUpdate => ({
+          orderId: 'open-1', symbol: 'AAPL', side: 'BUY', quantity: 2, orderType: 'LIMIT', status: 'FILLED',
+          fillPrice: 139.5, reason: null, at: '', ...overrides
+        });
+
+        it('listens while the dashboard is open, and stops when it closes', () => {
+          expect(orderStream.start).toHaveBeenCalled();
+          fixture.destroy();
+          expect(orderStream.stop).toHaveBeenCalled();
+        });
+
+        it('announces a fill at once and brings the page up to date', () => {
+          holdingsApi.getHoldings.mockClear();
+          orderApi.getOpenOrders.mockClear();
+          orderStream.updates.next(update({}));
+
+          expect(dashboard.notice()).toEqual({ text: 'Limit buy of 2 AAPL filled at $139.50', tone: 'gain' });
+          expect(holdingsApi.getHoldings).toHaveBeenCalled();
+          expect(orderApi.getOpenOrders).toHaveBeenCalled();
+        });
+
+        it('says why an order was refused, and when one expired', () => {
+          orderStream.updates.next(update({ status: 'REJECTED', fillPrice: null, reason: 'Insufficient funds - order rejected' }));
+          expect(dashboard.notice()).toEqual({
+            text: 'Limit buy of 2 AAPL couldn\u2019t be filled \u2014 Insufficient funds - order rejected', tone: 'loss'
+          });
+          orderStream.updates.next(update({ status: 'EXPIRED', fillPrice: null, orderType: 'TRAILING_STOP', side: 'SELL' }));
+          expect(dashboard.notice()).toEqual({ text: 'Trailing stop sell of 2 AAPL expired', tone: 'flat' });
+        });
+
+        it('does not announce the same fill again when the next poll finds the order gone', () => {
+          orderApi.getOpenOrders.mockReturnValue(of([openOrder({})]));
+          dashboard.loadOpenOrders();
+          orderStream.updates.next(update({}));
+          dashboard.dismissNotice();
+
+          orderApi.getOpenOrders.mockReturnValue(of([]));
+          dashboard.loadOpenOrders();
+
+          expect(dashboard.notice()).toBeNull();
+        });
+      });
+
+      it('carries on without open orders when they cannot be loaded', () => {
+        orderApi.getOpenOrders.mockReturnValue(throwError(() => ({ status: 503 })));
+        dashboard.loadOpenOrders();
+        expect(dashboard.openOrders()).toEqual([]);
+      });
     });
 
     it('selects a symbol and loads its daily context', () => {

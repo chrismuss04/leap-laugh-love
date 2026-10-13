@@ -11,11 +11,7 @@ import { CreateAccountComponent } from './create-account/create-account.componen
 import { ForgotPasswordComponent } from './forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from './reset-password/reset-password.component';
 import { VerifyEmailComponent } from './verify-email/verify-email.component';
-import { OrderHistoryComponent } from './order-history/order-history';
-import { HoldingsComponent } from './holdings/holdings';
 import { ShellComponent } from './shell/shell';
-import { ProfileComponent } from './profile/profile';
-import { SettingsComponent } from './settings/settings';
 import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
 
@@ -91,13 +87,13 @@ export const routes: Routes = [
       // The same dashboard scoped to one account; the overview above covers all of them.
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       { path: 'instruments', loadComponent: () => import('./instruments/instruments').then(m => m.InstrumentsComponent) },
-      { path: 'orders', component: OrderHistoryComponent },
-      { path: 'holdings', component: HoldingsComponent },
+      { path: 'orders', loadComponent: () => import('./order-history/order-history').then(m => m.OrderHistoryComponent) },
+      { path: 'holdings', loadComponent: () => import('./holdings/holdings').then(m => m.HoldingsComponent) },
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
       { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
-      { path: 'profile', component: ProfileComponent },
-      { path: 'settings', component: SettingsComponent },
+      { path: 'profile', loadComponent: () => import('./profile/profile').then(m => m.ProfileComponent) },
+      { path: 'settings', loadComponent: () => import('./settings/settings').then(m => m.SettingsComponent) },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },
@@ -115,8 +111,6 @@ export const routes: Routes = [
         FormsModule,
         CommonModule,
         RouterModule.forRoot(routes),
-        OrderHistoryComponent,
-        HoldingsComponent,
         ForgotPasswordComponent,
         ResetPasswordComponent,
         VerifyEmailComponent], providers: [

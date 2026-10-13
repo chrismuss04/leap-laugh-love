@@ -4,7 +4,9 @@ import { ParamMap, Params } from '@angular/router';
  * Staff Dashboards: what trading operations narrows the order audit to. Every field is optional
  * and kept in the URL under its own name, so an audit view can be bookmarked or shared.
  */
-export const ORDER_STATUSES = ['SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED'] as const;
+export const ORDER_STATUSES = [
+  'SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED'
+] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const ORDER_SIDES = ['BUY', 'SELL'] as const;

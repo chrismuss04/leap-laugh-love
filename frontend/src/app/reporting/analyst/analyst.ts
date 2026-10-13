@@ -5,15 +5,17 @@ import { PeriodFilterComponent } from '../filters/period-filter';
 import { PERIODS, PeriodFilter } from '../filters/period';
 import { ReportPanelComponent } from '../shared/report-panel';
 import { StatTileComponent } from '../shared/stat-tile';
+import { ActivityReportComponent } from '../activity-report';
 
 /**
  * Staff Dashboards: the commercial analyst's home - trading volume, popular instruments, client
- * growth and order size over a chosen period. Reports aren't built yet; each panel marks where one
- * goes and reads the period from PeriodFilterState, which this page provides.
+ * growth and order size over a chosen period. The activity report is live, with its own filters;
+ * the other reports aren't built yet - each panel marks where one goes and reads the period from
+ * PeriodFilterState, which this page provides.
  */
 @Component({
   selector: 'app-analyst-dashboard',
-  imports: [CommonModule, PeriodFilterComponent, ReportPanelComponent, StatTileComponent],
+  imports: [CommonModule, PeriodFilterComponent, ReportPanelComponent, StatTileComponent, ActivityReportComponent],
   providers: [PeriodFilterState],
   templateUrl: './analyst.html',
   styleUrl: '../shared/dashboard.css'

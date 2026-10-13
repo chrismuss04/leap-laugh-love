@@ -9,8 +9,9 @@ test.describe('Order history', () => {
 
     test('lists orders newest first, and a rejected order has no fills @smoke', async ({ page, api, tokenFor }) => {
       const { content } = await api.as(await tokenFor(personas.alice.email)).orderHistory(0, 20);
-      const times = content.map(o => Date.parse(o.submittedAt));
-      expect(times, 'API order, newest first').toEqual([...times].sort((a, b) => b - a));
+      // Listed by when each order filled or was rejected (completedAt), not when it was placed.
+      const times = content.map(o => Date.parse(o.completedAt ?? o.submittedAt));
+      expect(times, 'API order, most recently completed first').toEqual([...times].sort((a, b) => b - a));
 
       const history = new OrderHistoryPage(page);
       await history.goto();

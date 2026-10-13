@@ -31,7 +31,7 @@ The repository is a **Multi-Module Maven Project** splitting identity and tradin
 1. **`common-security` (Shared Security Library)**: Contains reusable JWT token handling (`JwtService`, `JwtAuthenticationFilter`), the `Role` model (client, trading operations, commercial analyst), per-request session checks against the database (`ClientSessionValidator`), 401 JSON error formatting (`JwtAuthenticationEntryPoint`), and shared CORS configuration (`CommonCorsConfiguration`). Packaged as a standard library JAR.
 2. **`iam-app` (Identity Access Management)**: Handles client registration, client and staff sign-in, JWT token issuance, login sessions (activity and logout), password reset by email, and the client profile and notification settings. On registration it opens the client's first account and funds it through `account-app`, and publishes a `client-register` event to Kafka. Runs on port `8081`.
 3. **`account-app` (Account & Portfolio Services)**: Handles client accounts and trade settings, cash balances, deposits, withdrawals, transfers between accounts, portfolio holdings/positions, portfolio value history, and the internal validation and settlement endpoints that `order-app` calls. A nightly job flags inactive accounts and emails their clients. Runs on port `8082`.
-4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Background jobs finish interrupted fills and book the seeded order history, and every completed order is published to the `order-events` Kafka topic. Runs on port `8084`.
+4. **`order-app` (Order Management Services)**: Handles order creation, pre-trade validation against a fresh quote, execution processing, position movements audit trail, and order history. Beyond market orders it takes limit, stop, stop-limit and trailing-stop orders that wait `OPEN` until the market reaches their price (the `OrderTriggerEngine`), lets a buy carry a take-profit and stop-loss bracket, saves order templates, and emails clients how an order that waited ended. Background jobs finish interrupted fills and book the seeded order history, and every finished order is published to the `order-events` Kafka topic. Runs on port `8084`.
 5. **`market-data-app` (Market Simulation)**: Simulates instrument prices with Geometric Brownian Motion (no external market-data API), keeping a live in-memory price per instrument, a validated quote (bid, ask, last) for each tick, and OHLC candle history with scheduled retention, exposed via REST and an SSE push stream. Runs on port `8083`.
 6. **`frontend` (Angular UI)**: The client trading app and the staff `/reporting` area (see [Roles, Sessions and Staff Dashboards](#roles-sessions-and-staff-dashboards)). Served on port `4200`, with API calls proxied to the services.
 7. **`reporting-etl` (Python ETL)**: Consumes the `order-events` and `client-register` Kafka topics and loads the `reporting.orders` and `reporting.clients` read models (see [Reporting ETL](#reporting-etl)). Runs as the `reporting-etl` and `user-etl` Compose services, with no port.
@@ -79,6 +79,11 @@ flowchart TB
             OrderSec["OrderSecurityConfig (CORS Enabled)"]
             OrderSubC["OrderSubmissionController<br/>/api/order/orders"]
             OrderHistC["OrderHistoryController<br/>/api/order/orders/history"]
+            OpenOrdC["OpenOrderController & OrderStreamController<br/>/api/order/orders/open, /{id}, /cancel, /stream"]
+            TriggerEng["OrderTriggerEngine<br/>(1s @Scheduled: fills open orders at their price)"]
+            BracketSvc["BracketService<br/>(one exit cancels the other)"]
+            TemplateC["OrderTemplateController<br/>/api/order/templates"]
+            FillMailer["OrderFillMailer<br/>(15s @Scheduled sweep, JavaMailSender)"]
             QuoteSvc["CurrentQuoteService<br/>(non-stale quote at execution)"]
             AcctClient["AccountClient<br/>(REST to account-app)"]
             FillRec["PendingFillRecovery &<br/>SeededFillService"]
@@ -812,7 +817,17 @@ classDiagram
 
 ### Order Management — `order-app`
 
-`com.leap.leaplaughlove.order.{order, execution, submission, history, validation, instrument, position, account, client, quote, events, security}` — handles pre-trade validation, order submission, execution against live market quotes, position movements audit logging, and paginated order history; coordinates with `account-app` via internal REST client and `market-data-app` for quotes. Background jobs complete interrupted fills and book the seeded order history, and every finished order is published to Kafka for reporting.
+`com.leap.leaplaughlove.order.{order, execution, submission, history, working, notification, template, validation, instrument, position, account, client, quote, events, security}` — handles pre-trade validation, order submission, execution against live market quotes, position movements audit logging, and paginated order history; coordinates with `account-app` via internal REST client and `market-data-app` for quotes. Background jobs complete interrupted fills and book the seeded order history, and every finished order is published to Kafka for reporting.
+
+**Order types and the trigger engine.** A market order fills at once at the live ask (buy) or bid (sell). `LIMIT`, `STOP`, `STOP_LIMIT` and `TRAILING_STOP` orders that can't fill yet are stored `OPEN`, holding back the cash or shares they may need (`ReservationService`). `OrderTriggerEngine` (package `working`) reads every live quote once a second and fills each open order whose price was reached through `OrderSubmissionService.fillOpenOrder`, the same validation, settlement and recovery path a market order takes; a separate, slower pass expires `DAY` and `GTC` orders past their time in force. A client can edit (`PATCH`) or cancel an open order, and the order stream pushes fills, refusals and expiries to the browser. A `DAY` order expires at midnight US Eastern; a `GTC` order after 90 days.
+
+**Bracket orders.** A buy can carry `bracketTakeProfitPrice` (above its entry) and `bracketStopLossPrice` (below it). When the buy fills, `FillRecorder.completeFill` opens two `OPEN`, good-till-cancelled sells for the same shares: a `LIMIT` at the take-profit and a `STOP` at the stop-loss, sharing one `oco_group_id` and pointing back at the buy through `parent_order_id`. The first to execute cancels the other (`BracketService`, locking the group lowest ID first); a leg is never filled once its sibling has executed. Both legs sell the same shares, so holds count them once per group, a quantity edit applies to both, and cancelling one by hand leaves the other as a normal order. If the price has already fallen through the stop-loss when the exits open, the engine sells on its next pass.
+
+**Order templates.** A client can save a ticket setup as percent offsets from the market (`trading.order_templates`, at most 20 each) and apply it in one tap on any device.
+
+**Fill emails.** Orders that wait set `notice_pending`; `OrderFillMailer` sweeps every 15 seconds for those that filled, were refused when their price was reached, or expired (not cancelled, and not orders that filled the moment they were placed), reads the client's address and `notify_order_fills` setting from the shared `iam.clients` and `iam.client_profile` tables, sends a plain-text email, and marks it sent in its own transaction. A mail failure is retried on the next sweep. Configure with `SPRING_MAIL_HOST`/`SPRING_MAIL_PORT` (Mailpit in Compose), `ORDER_NOTIFICATIONS_EMAIL_ENABLED`, `ORDER_NOTIFICATIONS_EMAIL_FROM` and `ORDER_NOTIFICATIONS_HISTORY_URL`.
+
+**Running more than one order-app.** `OrderTriggerEngine` assumes it is the only instance: two copies would each evaluate every open order, and the row lock in `acceptOpenOrder` would make one of them wait and then find the order already filled. Before scaling out, claim orders with `SELECT ... FOR UPDATE SKIP LOCKED` in `findOpen` or elect a leader, and do the same for `OrderFillMailer`'s sweep.
 
 ```mermaid
 classDiagram
@@ -929,9 +944,39 @@ classDiagram
     class OrderEventPublisher {
         +publishFilled(Order, Execution)
         +publishRejected(Order)
+        +publishCancelled(Order)
+        +publishExpired(Order)
+    }
+    class OrderTriggerEngine {
+        +run()
+        +expire()
+        +evaluateOpenOrders() int
+    }
+    class BracketService {
+        +cancelSiblings(UUID, UUID) int
+    }
+    class OpenOrderService {
+        +listOpen(UUID) List~OpenOrderItem~
+        +cancel(UUID, UUID) OpenOrderItem
+        +expireDue() int
+    }
+    class OrderModificationService {
+        +modify(UUID, UUID, ModifyOrderRequest) OpenOrderItem
+    }
+    class OrderFillMailer {
+        +run()
+        +notifyClients() int
+    }
+    class OrderTemplateService {
+        +list(UUID) List~OrderTemplateItem~
+        +create(UUID, OrderTemplateRequest) OrderTemplateItem
+        +delete(UUID, UUID)
     }
     class OrderCompletedEvent {
         <<record>>
+    }
+    class OrderTemplateRepository {
+        <<interface>>
     }
     class OrderSecurityConfig {
         +filterChain(...) SecurityFilterChain
@@ -958,6 +1003,14 @@ classDiagram
     OrderSubmissionService --> FillRecorder : uses
     OrderSubmissionService --> OrderEventPublisher : uses
     OrderSubmissionController --> OrderSubmissionService : uses
+    OrderTriggerEngine --> OrderSubmissionService : fills open orders
+    OrderTriggerEngine --> OpenOrderService : expires orders
+    OrderModificationService --> OpenOrderService : locks the order
+    FillRecorder --> BracketService : cancels the other exit
+    FillRecorder --> OrderRepository : opens a bracket's exits
+    BracketService --> OrderRepository : locks the group
+    OrderFillMailer ..> OrderRepository : sweeps notice_pending
+    OrderTemplateService --> OrderTemplateRepository : uses
     FillRecorder --> ExecutionRepository : uses
     FillRecorder --> PositionMovementRepository : uses
     FillRecorder --> AccountClient : settles via
@@ -1017,7 +1070,14 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Account** | `GET /api/account/internal/accounts/{id}/validation-data` | Pre-trade validation data (account status, cash balance, holding in the instrument, saved price tolerance) for order-app | Bearer JWT (client or service) |
 | **Account** | `POST /api/account/internal/accounts/{id}/settlement` | Settle a filled order against cash and positions; called by order-app | Bearer JWT (client or service) |
 | **Account** | `GET /actuator/health` | Account service health check | Permitted |
-| **Order** | `POST /api/order/orders` | Place order (BUY/SELL) with immediate execution | Bearer JWT (client) |
+| **Order** | `POST /api/order/orders` | Place an order (BUY/SELL). `orderType` is `MARKET` (default, fills at once), `LIMIT`, `STOP`, `STOP_LIMIT` or `TRAILING_STOP`; the others wait `OPEN` for their price (`limitPrice`, `stopPrice`, `trailAmount`/`trailPercent`, `timeInForce` `DAY`/`GTC`). A BUY may carry `bracketTakeProfitPrice` and `bracketStopLossPrice` | Bearer JWT (client) |
+| **Order** | `GET /api/order/orders/open` | The client's open orders across accounts, newest first | Bearer JWT (client) |
+| **Order** | `PATCH /api/order/orders/{id}` | Change an open order's quantity, limit or stop price, trail or time in force; on a bracket's exit, the quantity changes on both legs | Bearer JWT (client) |
+| **Order** | `POST /api/order/orders/{id}/cancel` | Cancel an open order, releasing the cash or shares it held; `409` if it already filled | Bearer JWT (client) |
+| **Order** | `GET /api/order/orders/stream` | Server-Sent-Events push of open orders that ended on their own: filled, refused or expired | Bearer JWT (client) |
+| **Order** | `GET /api/order/templates` | The client's saved order templates, newest first | Bearer JWT (client) |
+| **Order** | `POST /api/order/templates` | Save a template as percent offsets from the market; `409` for a duplicate name or past 20 | Bearer JWT (client) |
+| **Order** | `DELETE /api/order/templates/{id}` | Delete one of the client's templates | Bearer JWT (client) |
 | **Order** | `GET /api/order/orders/history` | Paginated order history (`page`, `size`); optional `year`, `month` and `day` narrow it to a date | Bearer JWT (client) |
 | **Order** | `GET /actuator/health` | Order service health check | Permitted |
 | **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument (503 S&P 500 constituents plus the index/benchmark symbols) | Bearer JWT (client) |
@@ -1214,9 +1274,10 @@ The [Jenkinsfile](Jenkinsfile) runs these stages on every push:
 | Stage | What it does |
 | --- | --- |
 | Checkout, Configure Pipeline, Pull Images, Start Database | Set up the workspace, decide which optional stages run, and start the database |
-| Build and Test → Frontend | Install dependencies, build the Angular app and run its unit tests (Vitest, with coverage) |
+| Build and Test → Frontend | Install dependencies, build the Angular app and prepare the test-runner image |
 | Build and Test → Unit Tests | `mvn test` across all modules (JaCoCo coverage) and the `reporting-etl` pytest suite |
 | Build and Test → Service Stack | Build the Docker images, validate the database schema and seeds, start the services and check their health |
+| Frontend Unit Tests | Angular unit tests (Vitest in headless Chromium, with coverage), run on their own because Chromium and the image builds together starve a small agent |
 | Verify → Static Analysis | SonarQube analysis and Quality Gate (see below) |
 | Verify → Stack Tests | Playwright **E2E** tests, then the **Trade Recovery Tests** (`scripts/test-trade-recovery.sh`; background in [docs/trade-record-resilience.md](docs/trade-record-resilience.md)) |
 
@@ -1270,6 +1331,13 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-password-reset-tokens.sql` | `iam.password_reset_tokens` (password reset links) |
 | `migrate-notification-preferences.sql` | Client notification preferences (`notify_order_fills`, `notify_price_alerts`) |
 | `migrate-price-tolerance.sql` | Saved `max_slippage_pct` on accounts and the quoted price and tolerance on orders |
+| `migrate-order-types.sql` | Limit, stop and stop-limit orders: new order columns and statuses (`OPEN`, `CANCELLED`, `EXPIRED`) |
+| `migrate-trailing-stops.sql` | Trailing stop orders: `trail_amount`, `trail_percent`, `trail_peak`; run after `migrate-order-types.sql` |
+| `migrate-order-fill-notices.sql` | Order fill emails: `notice_pending`, `notified_at` on `trading.orders`; run after `migrate-order-types.sql` |
+| `migrate-bracket-orders.sql` | Bracket orders: `bracket_take_profit_price`, `bracket_stop_loss_price`, `parent_order_id`, `oco_group_id` on `trading.orders`; run after `migrate-order-types.sql` |
+| `migrate-order-templates.sql` | Order templates: new `trading.order_templates` table; run after `migrate-order-types.sql` |
+| `migrate-reporting-order-outcomes.sql` | `reporting.orders` also records `CANCELLED` and `EXPIRED` orders; skipped where there is no reporting schema |
+| `migrate-order-history-index.sql` | Index for the order history's completed-time sort; optional until order counts grow |
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
 | `migrate-reporting-clients.sql` | `reporting.clients` (see *Reporting ETL*) |
@@ -1483,7 +1551,9 @@ as the `reporting-etl` compose service (no port).
   is final - FILLED, or REJECTED after account-app refused its settlement. Orders rejected by
   validation never executed and publish nothing. Fields: `eventId`, `orderId`, `accountId`,
   `clientId`, `instrumentId`, `symbol`, `side`, `quantity`, `status`, `fillPrice` (null when
-  rejected), `rejectionReason`, `submittedAt`, `completedAt` (ISO-8601 with offset).
+  rejected), `rejectionReason`, `submittedAt`, `completedAt` (ISO-8601 with offset). `status` is
+  `FILLED`, `REJECTED` (refused at settlement) or, for an order that waited for its price and never
+  executed, `CANCELLED` or `EXPIRED`; `fillPrice` is null unless it filled.
 - **Delivery**: offsets are committed only after the row is stored, and the insert ignores an
   order it already has, so a restart or a replay never loses or duplicates a row. A message
   that breaks the contract is logged and skipped. While Postgres is down the ETL retries the
