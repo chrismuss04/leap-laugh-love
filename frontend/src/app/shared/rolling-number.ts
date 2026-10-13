@@ -82,7 +82,10 @@ export class RollingNumberComponent implements OnDestroy {
       this.previousText = text;
       this.wasAnimated = animate;
       // Animate only a visible change to a live figure, not the jump back from a scrubbed one.
-      if (!animate || !wasAnimated || previous == null || current == null || previousText === text) {
+      if (!animate || !wasAnimated) {
+        return;
+      }
+      if (previous == null || current == null || previousText === text) {
         return;
       }
       this.tone.set(current > previous ? 'up' : 'down');

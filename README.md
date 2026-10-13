@@ -1081,6 +1081,7 @@ and every protected endpoint below requires `CLIENT` unless the Auth column says
 | **Order** | `GET /api/order/orders/history` | Paginated order history (`page`, `size`); optional `year`, `month` and `day` narrow it to a date | Bearer JWT (client) |
 | **Order** | `GET /actuator/health` | Order service health check | Permitted |
 | **Market Data** | `GET /api/marketdata/prices` | Latest simulated price for every active instrument (503 S&P 500 constituents plus the index/benchmark symbols) | Bearer JWT (client) |
+| **Market Data** | `GET /api/marketdata/instruments` | Instrument metadata, latest prices and performance; `period=today` (default), `week`, or `month` | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT (client or service) |
 | **Market Data** | `GET /api/marketdata/quotes` | Latest ingested quote (bid, ask, last, sizes) for every instrument | Bearer JWT (client) |
@@ -1236,6 +1237,31 @@ See [e2e/README.md](e2e/README.md) for running without Docker, how tests stay is
 conventions for writing new ones.
 
 ### Frontend unit tests
+
+The client Instruments page is at `/instruments`, with a header link on desktop and
+a profile-menu entry on mobile. Today compares against the previous completed UTC
+daily close; week and month use starts 7 and 30 days before midnight UTC today.
+Missing history displays unavailable changes and is excluded from movers. Top five
+gainers and losers cover the full universe; search and asset filters affect only
+the table. Prices update through the existing shared stream.
+
+After updating the source on your Docker host, rebuild the market-data backend:
+
+```bash
+docker compose up -d --build market-data-app frontend
+```
+
+No new schema migration is required for Instruments. In the browser, sign in as a
+client, open Instruments, change periods, combine search and asset filters, toggle
+sortable headers, and verify that movers stay market-wide. On a narrow screen,
+open Instruments through the profile menu and check the stacked mover cards and
+scrollable table. These are manual verification steps, not recorded test results.
+
+Run the focused Instruments and navigation tests from `frontend/`:
+
+```bash
+npm test -- --watch=false --include='src/app/instruments/*.spec.ts' --include=src/app/services/instruments.spec.ts --include=src/app/app.routes.spec.ts
+```
 
 ```bash
 cd frontend

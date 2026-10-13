@@ -51,8 +51,10 @@ public class ClientSessionValidator {
      */
     public boolean isActive(Role role, UUID sessionId, UUID subjectId, Instant tokenExpiry) {
         Instant now = clock.instant();
-        if (role == null || sessionId == null || subjectId == null || tokenExpiry == null
-                || !tokenExpiry.isAfter(now)) {
+        if (role == null || sessionId == null || subjectId == null) {
+            return false;
+        }
+        if (tokenExpiry == null || !tokenExpiry.isAfter(now)) {
             return false;
         }
         // Table and column names are fixed per role, never taken from the token.

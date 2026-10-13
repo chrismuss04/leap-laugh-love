@@ -15,6 +15,7 @@
 
       <nav class="main-nav" aria-label="Main">
         <a routerLink="/dashboard" routerLinkActive="active" class="nav-link">Dashboard</a>
+        <a routerLink="/instruments" routerLinkActive="active" class="nav-link wide-only">Instruments</a>
         <a routerLink="/orders" routerLinkActive="active" class="nav-link">Orders</a>
         <a routerLink="/holdings" routerLinkActive="active" class="nav-link">Holdings</a>
         <!-- No room on phones; the profile menu carries it there. -->
@@ -57,6 +58,9 @@
               Profile
             </button>
             <!-- The header's Accounts link is hidden on narrow screens, so the menu carries it there. -->
+            <button type="button" class="menu-item narrow-only" role="menuitem" routerLink="/instruments" (click)="closeMenu()">
+              Instruments
+            </button>
             <button type="button" class="menu-item narrow-only" role="menuitem" routerLink="/accounts" (click)="closeMenu()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
                 <rect x="1.75" y="4.25" width="12.5" height="9" rx="1.5" />
