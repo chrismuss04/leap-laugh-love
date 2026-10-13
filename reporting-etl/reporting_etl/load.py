@@ -22,11 +22,11 @@ log = logging.getLogger(__name__)
 INSERT_ORDER = """
 INSERT INTO reporting.orders (
     order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
-    fill_price, rejection_reason, submitted_at, completed_at)
+    fill_price, rejection_reason, submitted_at, completed_at, order_type)
 VALUES (
     %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
     %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
-    %(completed_at)s)
+    %(completed_at)s, %(order_type)s)
 ON CONFLICT (order_id) DO NOTHING
 """
 

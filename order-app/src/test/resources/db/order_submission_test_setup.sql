@@ -7,14 +7,23 @@ DROP TABLE IF EXISTS trading.positions CASCADE;
 DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
 DROP TABLE IF EXISTS trading.executions CASCADE;
 DROP TABLE IF EXISTS trading.orders CASCADE;
+DROP TABLE IF EXISTS trading.order_templates CASCADE;
 DROP TABLE IF EXISTS trading.instruments CASCADE;
 DROP TABLE IF EXISTS trading.accounts CASCADE;
+DROP TABLE IF EXISTS iam.client_profile CASCADE;
 DROP TABLE IF EXISTS iam.clients CASCADE;
 
 CREATE TABLE iam.clients (
     client_id UUID PRIMARY KEY,
     email VARCHAR(255) NOT NULL UNIQUE,
     status VARCHAR(20) NOT NULL
+);
+
+-- As in the real schema, the notification choice lives in the profile, not on the client row.
+CREATE TABLE iam.client_profile (
+    client_id UUID PRIMARY KEY,
+    notify_order_fills BOOLEAN NOT NULL DEFAULT TRUE,
+    FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 
 CREATE TABLE trading.accounts (
@@ -46,7 +55,7 @@ CREATE TABLE trading.orders (
     instrument_id UUID NOT NULL,
     side VARCHAR(10) NOT NULL CHECK (side IN ('BUY', 'SELL')),
     quantity BIGINT NOT NULL CHECK (quantity > 0),
-    status VARCHAR(20) NOT NULL CHECK (status IN ('SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED')),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED')),
     submitted_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     accepted_at TIMESTAMP WITH TIME ZONE,
     rejected_at TIMESTAMP WITH TIME ZONE,
@@ -54,8 +63,43 @@ CREATE TABLE trading.orders (
     rejection_reason VARCHAR(500),
     quoted_price NUMERIC(18,6),
     max_slippage_pct NUMERIC(5,2),
+    order_type VARCHAR(20) NOT NULL DEFAULT 'MARKET' CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP')),
+    limit_price NUMERIC(18,6),
+    stop_price NUMERIC(18,6),
+    time_in_force VARCHAR(10),
+    expires_at TIMESTAMP WITH TIME ZONE,
+    triggered_at TIMESTAMP WITH TIME ZONE,
+    cancelled_at TIMESTAMP WITH TIME ZONE,
+    expired_at TIMESTAMP WITH TIME ZONE,
+    reserved_cash NUMERIC(18,2),
+    trail_amount NUMERIC(18,6),
+    trail_percent NUMERIC(5,2),
+    trail_peak NUMERIC(18,6),
+    notice_pending BOOLEAN NOT NULL DEFAULT FALSE,
+    notified_at TIMESTAMP WITH TIME ZONE,
+    bracket_take_profit_price NUMERIC(18,6),
+    bracket_stop_loss_price NUMERIC(18,6),
+    parent_order_id UUID,
+    oco_group_id UUID,
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
+);
+
+CREATE TABLE trading.order_templates (
+    template_id UUID PRIMARY KEY,
+    client_id UUID NOT NULL,
+    name VARCHAR(40) NOT NULL,
+    side VARCHAR(10) NOT NULL,
+    order_type VARCHAR(20) NOT NULL,
+    time_in_force VARCHAR(10) NOT NULL DEFAULT 'DAY',
+    limit_offset_pct NUMERIC(7,2),
+    stop_offset_pct NUMERIC(7,2),
+    trail_percent NUMERIC(5,2),
+    take_profit_pct NUMERIC(7,2),
+    stop_loss_pct NUMERIC(5,2),
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (client_id) REFERENCES iam.clients (client_id),
+    CONSTRAINT order_templates_name_unique UNIQUE (client_id, name)
 );
 
 CREATE TABLE trading.executions (
@@ -129,6 +173,11 @@ INSERT INTO iam.clients (client_id, email, status)
 VALUES
     ('11111111-1111-1111-1111-111111111111', 'owner@example.com', 'ACTIVE'),
     ('22222222-2222-2222-2222-222222222222', 'other@example.com', 'ACTIVE');
+
+INSERT INTO iam.client_profile (client_id)
+VALUES
+    ('11111111-1111-1111-1111-111111111111'),
+    ('22222222-2222-2222-2222-222222222222');
 
 INSERT INTO trading.accounts (account_id, client_id, account_number, status, base_currency, trading_enabled, created_at)
 VALUES

@@ -244,3 +244,57 @@ app-line-chart.stale {
     padding: 6px 0;
   }
 }
+
+/* Order types: a notice when an open order fills, is rejected or expires in the background. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 12px 12px 12px 16px;
+  transform: translateX(-50%);
+  background: var(--surface-hover);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  font-size: 14px;
+  font-weight: 500;
+  animation: toast-in 0.25s ease;
+}
+
+.toast-dot {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--muted-foreground);
+}
+
+.toast[data-tone='gain'] .toast-dot { background: var(--gain); box-shadow: 0 0 0 4px var(--gain-muted); }
+.toast[data-tone='loss'] .toast-dot { background: var(--loss); box-shadow: 0 0 0 4px var(--loss-muted); }
+
+.toast-close {
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted-foreground);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.toast-close:hover { background: var(--muted); color: var(--foreground); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast { animation: none; }
+}

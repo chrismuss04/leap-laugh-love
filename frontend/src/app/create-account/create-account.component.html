@@ -39,6 +39,7 @@
   <div class="section-divider"><span>Date of Birth</span></div>
 
   <div class="form-group">
+    <label for="dateOfBirth" class="form-label">Date of Birth</label>
     <input
       type="date"
       id="dateOfBirth"
@@ -291,8 +292,8 @@
   <label class="checkbox-label terms-row">
     <input type="checkbox" formControlName="agreeToTerms" />
     <span>
-      I agree to the <a href="#" (click)="$event.stopPropagation()">Terms of Service</a> and
-      <a href="#" (click)="$event.stopPropagation()">Privacy Policy</a> and consent to the collection of my
+      I agree to the <span class="terms-doc">Terms of Service</span> and
+      <span class="terms-doc">Privacy Policy</span> and consent to the collection of my
       personal information for account verification purposes.
     </span>
   </label>

@@ -88,8 +88,8 @@ export class SettingsComponent {
   private readonly credentialsValidator: ValidatorFn = group => {
     const { email, currentPassword, password, confirmPassword } = group.value;
     const errors: ValidationErrors = {};
-    if (password !== confirmPassword) errors['passwordsMismatch'] = true;
-    if ((password || email !== this.shell.profile()?.email) && !currentPassword) errors['currentPasswordRequired'] = true;
+    if (password !== confirmPassword) { errors['passwordsMismatch'] = true; }
+    if ((password || email !== this.shell.profile()?.email) && !currentPassword) { errors['currentPasswordRequired'] = true; }
     return Object.keys(errors).length ? errors : null;
   };
 
@@ -159,7 +159,7 @@ export class SettingsComponent {
 
   saveTrading(): void {
     const changed = this.changedAccounts();
-    if (!changed.length || this.tradingInvalid() || this.tradingSaving()) return;
+    if (!changed.length || this.tradingInvalid() || this.tradingSaving()) { return; }
 
     this.tradingSaving.set(true);
     this.tradingSaved.set(false);
@@ -192,7 +192,7 @@ export class SettingsComponent {
     this.saved.set(false);
     this.error.set(null);
     this.taken.set(null);
-    if (this.form.invalid) return;
+    if (this.form.invalid) { return; }
 
     const { currentPassword, password, confirmPassword, ...settings } = this.form.getRawValue();
     this.saving.set(true);

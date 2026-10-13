@@ -8,5 +8,9 @@ export default defineConfig({
     // globals (document, window.fetch, Date) leaked into later tests. Vitest applies this itself
     // before every test.
     restoreMocks: true,
+    // CI runs the browser alongside Docker image builds on a shared agent. Tests that only
+    // navigate a router or draw a tiny component then occasionally stall past the 15 s default
+    // (the pipeline log shows "Failed to take a screenshot ... Timeout" in the same window).
+    testTimeout: 30_000,
   },
 });

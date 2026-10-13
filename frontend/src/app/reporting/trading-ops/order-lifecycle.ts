@@ -30,8 +30,10 @@ export class OrderLifecycleComponent {
   readonly recorded = signal<LifecycleStage[]>(emptyLifecycle());
   /** The order's final status, once known; it decides which stages apply. */
   readonly outcome = signal<OrderOutcome | null>(null);
+  /** The order's type, once known: a market order never waits for its price. */
+  readonly orderType = signal<string | null>(null);
 
-  readonly stages = computed(() => withOutcome(this.recorded(), this.outcome()));
+  readonly stages = computed(() => withOutcome(this.recorded(), this.outcome(), this.orderType()));
 
   readonly downloading = signal(false);
   readonly downloadError = signal('');

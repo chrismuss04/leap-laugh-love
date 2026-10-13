@@ -142,17 +142,8 @@ public class PortfolioHistoryService {
         // Today's holdings and cash: the known end state the walk starts from.
         Map<UUID, Long> quantities = new HashMap<>();
         Map<UUID, String> symbols = new HashMap<>();
-        for (UUID accountId : accountIds) {
-            positionRepository.findPositionsByAccountId(accountId).forEach(row -> {
-                UUID instrumentId = UUID.fromString(row.getInstrumentId());
-                quantities.merge(instrumentId, row.getQuantity(), Long::sum);
-                symbols.put(instrumentId, row.getSymbol());
-            });
-        }
-        BigDecimal cash = cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()
-                .filter(total -> total.getCurrency().equals(baseCurrencies.get(total.getAccountId())))
-                .map(CashLedgerRepository.AccountTotal::getTotal)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        loadHoldings(accountIds, quantities, symbols);
+        BigDecimal cash = currentCash(accountIds, baseCurrencies);
 
         // Everything that happened inside the range, newest first, to undo on the way
         // back.
@@ -164,7 +155,33 @@ public class PortfolioHistoryService {
         entries.removeIf(entry -> !entry.getCurrency().equals(baseCurrencies.get(entry.getAccountId())));
         entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());
 
-        // Only instruments held at some point in the range need pricing.
+        Map<UUID, BigDecimal[]> prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);
+        BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);
+        return toResponse(range, window, timeline, values);
+    }
+
+    /** Today's quantity and symbol of every instrument held across the accounts. */
+    private void loadHoldings(List<UUID> accountIds, Map<UUID, Long> quantities, Map<UUID, String> symbols) {
+        for (UUID accountId : accountIds) {
+            positionRepository.findPositionsByAccountId(accountId).forEach(row -> {
+                UUID instrumentId = UUID.fromString(row.getInstrumentId());
+                quantities.merge(instrumentId, row.getQuantity(), Long::sum);
+                symbols.put(instrumentId, row.getSymbol());
+            });
+        }
+    }
+
+    /** Today's cash across the accounts, counting only each account's base currency. */
+    private BigDecimal currentCash(List<UUID> accountIds, Map<UUID, String> baseCurrencies) {
+        return cashLedgerRepository.sumAmountsByAccountIds(accountIds).stream()
+                .filter(total -> total.getCurrency().equals(baseCurrencies.get(total.getAccountId())))
+                .map(CashLedgerRepository.AccountTotal::getTotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /** Prices every instrument held at some point in the range; the rest need none. */
+    private Map<UUID, BigDecimal[]> priceHeldInstruments(Map<UUID, Long> quantities, Map<UUID, String> symbols,
+            List<PositionMovement> movements, PortfolioRange.Window window, List<OffsetDateTime> timeline) {
         Set<UUID> priced = new HashSet<>();
         quantities.forEach((instrumentId, quantity) -> {
             if (quantity != 0) {
@@ -187,7 +204,13 @@ public class PortfolioHistoryService {
                         quantities.getOrDefault(instrumentId, 0L) != 0));
             }
         }
+        return prices;
+    }
 
+    /** Walks the timeline back from today, undoing movements and cash entries to value each point. */
+    private static BigDecimal[] walkBack(List<OffsetDateTime> timeline, Map<UUID, Long> quantities,
+            BigDecimal cash, List<PositionMovement> movements, List<CashLedgerEntry> entries,
+            Map<UUID, BigDecimal[]> prices) {
         BigDecimal[] values = new BigDecimal[timeline.size()];
         int movementIndex = 0;
         int entryIndex = 0;
@@ -200,17 +223,22 @@ public class PortfolioHistoryService {
             while (entryIndex < entries.size() && entries.get(entryIndex).getCreatedAt().isAfter(at)) {
                 cash = cash.subtract(entries.get(entryIndex++).getAmount());
             }
-            BigDecimal value = cash;
-            for (Map.Entry<UUID, BigDecimal[]> price : prices.entrySet()) {
-                long quantity = quantities.getOrDefault(price.getKey(), 0L);
-                BigDecimal unitPrice = price.getValue()[k];
-                if (quantity != 0 && unitPrice != null) {
-                    value = value.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));
-                }
-            }
-            values[k] = value.setScale(2, RoundingMode.HALF_UP);
+            values[k] = valueAt(cash, quantities, prices, k).setScale(2, RoundingMode.HALF_UP);
         }
-        return toResponse(range, window, timeline, values);
+        return values;
+    }
+
+    private static BigDecimal valueAt(BigDecimal cash, Map<UUID, Long> quantities,
+            Map<UUID, BigDecimal[]> prices, int k) {
+        BigDecimal value = cash;
+        for (Map.Entry<UUID, BigDecimal[]> price : prices.entrySet()) {
+            long quantity = quantities.getOrDefault(price.getKey(), 0L);
+            BigDecimal unitPrice = price.getValue()[k];
+            if (quantity != 0 && unitPrice != null) {
+                value = value.add(unitPrice.multiply(BigDecimal.valueOf(quantity)));
+            }
+        }
+        return value;
     }
 
     /**

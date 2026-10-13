@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.submission;
 
 import com.leap.leaplaughlove.order.order.Order;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,7 +31,7 @@ public class OrderSubmissionController {
      * Submits an order for execution under the specified account.
      * @param request the order submission request containing order details
      * @return the result of the order submission: 200 once filled or rejected, 202 while the
-     *         fill is still being settled
+     *         fill is still being settled, 201 when the order is OPEN, waiting for its price
      */
     @PostMapping
     public ResponseEntity<OrderSubmissionResponse> submitOrder(
@@ -39,6 +40,10 @@ public class OrderSubmissionController {
         // ACCEPTED means the fill is still being settled (see PendingFillRecovery).
         if (Order.Status.ACCEPTED.name().equals(response.status())) {
             return ResponseEntity.accepted().body(response);
+        }
+        // OPEN: created and working, but nothing has executed yet.
+        if (Order.Status.OPEN.name().equals(response.status())) {
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
         }
         return ResponseEntity.ok(response);
     }

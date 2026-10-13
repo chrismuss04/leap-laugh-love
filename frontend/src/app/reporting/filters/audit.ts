@@ -6,7 +6,9 @@ import { TradeSearch } from '../../services/trade-ops';
  * field's own name so an audit view can be bookmarked or shared. A search needs the period and the
  * client (by id or email); every other field is optional.
  */
-export const ORDER_STATUSES = ['SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED'] as const;
+export const ORDER_STATUSES = [
+  'SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED'
+] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export const ORDER_SIDES = ['BUY', 'SELL'] as const;

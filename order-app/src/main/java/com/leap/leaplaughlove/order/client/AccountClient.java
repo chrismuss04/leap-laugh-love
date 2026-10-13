@@ -45,6 +45,25 @@ public class AccountClient {
     }
 
     /**
+     * Retrieves the account validation data, authenticating with the given token rather than the
+     * current request's - for work with no request behind it, such as filling an open order.
+     * @param accountId the ID of the account
+     * @param instrumentId the ID of the instrument
+     * @param bearerToken the JWT to send, issued to the account's owner
+     * @return the account validation data for the specified account and instrument
+     */
+    public AccountValidationDto getValidationDataAs(UUID accountId, UUID instrumentId, String bearerToken) {
+        return restClient.get()
+                .uri(uriBuilder -> uriBuilder
+                        .path("/api/account/internal/accounts/{accountId}/validation-data")
+                        .queryParam("instrumentId", instrumentId)
+                        .build(accountId))
+                .headers(headers -> headers.setBearerAuth(bearerToken))
+                .retrieve()
+                .body(AccountValidationDto.class);
+    }
+
+    /**
      * Settles an order for the specified account.
      * @param accountId the ID of the account
      * @param request the settlement request containing order details

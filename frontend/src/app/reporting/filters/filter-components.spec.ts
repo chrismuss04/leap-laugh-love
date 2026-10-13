@@ -105,7 +105,7 @@ describe('AuditFilterComponent', () => {
     ]);
     const statuses = Array.from(fixture.nativeElement.querySelectorAll('select[formControlName="status"] option'))
       .map(option => (option as HTMLOptionElement).value);
-    expect(statuses).toEqual(['', 'SUBMITTED', 'ACCEPTED', 'REJECTED', 'FILLED']);
+    expect(statuses).toEqual(['', 'SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED']);
   });
 
   it('applies the filled-in fields together, tidied', () => {

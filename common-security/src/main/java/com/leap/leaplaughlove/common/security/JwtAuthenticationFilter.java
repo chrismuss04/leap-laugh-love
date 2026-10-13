@@ -14,8 +14,12 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 /**
  * Filter that authenticates requests using JWT tokens
@@ -30,22 +34,23 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtService jwtService;
     // Session Timeout & Revocation
     private final ClientSessionValidator sessions;
-    private final String allowedServicePurpose;
+    private final Set<String> allowedServicePurposes;
 
     /**
      * Constructs a new JwtAuthenticationFilter with the specified JwtService.
      * @param jwtService the JwtService used to parse and validate JWT tokens
      */
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions) {
-        this(jwtService, sessions, null);
+        this(jwtService, sessions, new String[0]);
     }
 
-    // Session Timeout & Revocation: each service explicitly allows only its own background token purpose.
+    // Session Timeout & Revocation: each service explicitly allows only its own background token purposes.
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions,
-                                   String allowedServicePurpose) {
+                                   String... allowedServicePurposes) {
         this.jwtService = jwtService;
         this.sessions = sessions;
-        this.allowedServicePurpose = allowedServicePurpose;
+        this.allowedServicePurposes = allowedServicePurposes == null ? Set.of()
+                : Arrays.stream(allowedServicePurposes).filter(Objects::nonNull).collect(Collectors.toUnmodifiableSet());
     }
 
     /**
@@ -97,11 +102,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     // Session Timeout & Revocation: these tokens cannot access client-facing APIs or other services.
     private boolean isAllowedServiceRequest(JwtService.TokenIdentity identity, HttpServletRequest request) {
-        if (allowedServicePurpose == null || !allowedServicePurpose.equals(identity.purpose())) return false;
+        if (!allowedServicePurposes.contains(identity.purpose())) return false;
         String path = request.getRequestURI().substring(request.getContextPath().length());
         if ("market-history".equals(identity.purpose())) {
             return "GET".equals(request.getMethod())
                     && path.matches("/api/marketdata/prices/[^/]+/history");
+        }
+        // Order types: order-app's trigger engine reads every live quote to watch open orders.
+        if ("market-quotes".equals(identity.purpose())) {
+            return "GET".equals(request.getMethod()) && path.equals("/api/marketdata/quotes");
         }
         String endpoint = "GET".equals(request.getMethod()) ? "validation-data"
                 : "POST".equals(request.getMethod()) ? "settlement" : "";
