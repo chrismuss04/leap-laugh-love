@@ -91,6 +91,15 @@ class RoleAccessTest {
                 .andExpect(status().isOk());
     }
 
+    @Test
+    @Sql({"/db/reporting_orders_test_setup.sql", "/db/reporting_clients_test_setup.sql"})
+    @DisplayName("a commercial analyst can read business insights")
+    void analystCanReadBusinessInsights() throws Exception {
+        mockMvc.perform(get("/api/order/reports/insights").header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST))
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
+                .andExpect(status().isOk());
+    }
+
     @ParameterizedTest
     @EnumSource(value = Role.class, names = {"CLIENT", "TRADING_OPERATIONS"})
     @DisplayName("clients and trading operations can't read activity reports")
@@ -100,6 +109,9 @@ class RoleAccessTest {
                         .param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/order/reports/instruments").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/reports/insights").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isForbidden());
     }
 
