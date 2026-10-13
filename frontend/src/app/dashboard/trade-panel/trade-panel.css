@@ -31,6 +31,26 @@ h2 {
   margin-top: 2px;
 }
 
+.prices {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+/* The side this order fills at is highlighted: the ask for a buy, the bid for a sell. */
+.bid-ask {
+  display: inline-flex;
+  font-size: 11.5px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.bid-ask .active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
 .live-price {
   font-size: 18px;
   font-weight: 600;
@@ -314,6 +334,7 @@ h2 {
 .result-icon.ok { background: var(--gain-muted); color: var(--gain); }
 .result-icon.bad { background: var(--loss-muted); color: var(--loss); }
 .result-icon.pending { background: var(--info-muted); color: var(--info); }
+.result-icon.open { background: var(--accent-muted); color: var(--accent); }
 
 .result-title {
   font-size: 16px;

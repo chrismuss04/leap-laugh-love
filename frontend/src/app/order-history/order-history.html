@@ -4,7 +4,7 @@
     <div class="page-header">
       <p class="eyebrow">Account Activity</p>
       <h1 class="font-display headline-page">Order <em>History</em></h1>
-      <p class="page-subtext">Review your recent trades and fills.</p>
+      <p class="page-subtext">Review your recent trades and fills, most recently completed first.</p>
     </div>
 
     <div class="filter-bar">
@@ -51,10 +51,11 @@
             <th></th>
             <th>Symbol</th>
             <th>Side</th>
+            <th>Type</th>
             <th>Quantity</th>
             <th>Status</th>
             <th>Submitted</th>
-            <th>Filled At</th>
+            <th>Completed</th>
             <th>Fills</th>
           </tr>
         </thead>
@@ -71,16 +72,20 @@
               </td>
               <td>{{ order.symbol }}</td>
               <td>{{ order.side }}</td>
+              <td>
+                {{ typeLabel(order.orderType) }}
+                <span *ngIf="conditionText(order) as condition" class="condition">{{ condition }}</span>
+              </td>
               <td>{{ order.quantity | number: '1.0-0' }}</td>
-              <td>{{ order.status }}</td>
+              <td><span class="status-badge" [attr.data-status]="order.status">{{ order.status }}</span></td>
               <td>{{ order.submittedAt | date: 'short' }}</td>
-              <td>{{ (order.filledAt | date: 'short') ?? '--' }}</td>
+              <td>{{ order.status === 'OPEN' ? '--' : ((order.completedAt ?? order.filledAt) | date: 'short') ?? '--' }}</td>
               <td>{{ order.executions.length }}</td>
             </tr>
 
             <!-- Fills row -->
             <tr *ngIf="expandedOrderId() === order.orderId" class="fills-row" data-testid="order-fills">
-              <td colspan="8">
+              <td colspan="9">
                 <div *ngIf="order.executions.length === 0" class="no-fills">
                   No fills for this order
                 </div>

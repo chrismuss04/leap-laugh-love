@@ -168,7 +168,7 @@ class OrderHistoryStoryTest {
 
     private Page<Order> filteredHistory(UUID clientId, OffsetDateTime from, OffsetDateTime to) {
         return orderRepository
-                .findByClientIdSubmittedBetween(
+                .findByClientIdCompletedBetween(
                         eq(clientId), eq(from), eq(to), eq(PageRequest.of(0, 20)));
     }
 
@@ -254,9 +254,9 @@ class OrderHistoryStoryTest {
 
         orderHistoryService.getOrderHistory(aliceClientId, 0, 20, 2025, null, null);
 
-        verify(orderRepository).findByClientIdSubmittedBetween(
+        verify(orderRepository).findByClientIdCompletedBetween(
                 eq(aliceClientId), any(), any(), any());
-        verify(orderRepository, never()).findByClientIdSubmittedBetween(
+        verify(orderRepository, never()).findByClientIdCompletedBetween(
                 eq(otherClientId), any(), any(), any());
     }
 }

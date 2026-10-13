@@ -172,3 +172,28 @@
   text-align: center;
   font-size: 14px;
 }
+
+/* Order types: the prices a limit or stop order was placed with, under its type. */
+.condition {
+  display: block;
+  font-size: 11px;
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  background: var(--muted);
+  color: var(--muted-foreground);
+}
+
+.status-badge[data-status='FILLED'] { background: var(--gain-muted); color: var(--gain); }
+.status-badge[data-status='REJECTED'] { background: var(--loss-muted); color: var(--loss); }
+.status-badge[data-status='OPEN'] { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
+.status-badge[data-status='SUBMITTED'],
+.status-badge[data-status='ACCEPTED'] { background: var(--info-muted); color: var(--info); }
