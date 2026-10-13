@@ -86,7 +86,7 @@ export const routes: Routes = [
       { path: 'dashboard', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
       // The same dashboard scoped to one account; the overview above covers all of them.
       { path: 'dashboard/:accountId', loadComponent: () => import('./dashboard/dashboard').then(m => m.DashboardComponent) },
-      // Lazy, like the pages above: sign-in and the first page load don't need them.
+      { path: 'instruments', loadComponent: () => import('./instruments/instruments').then(m => m.InstrumentsComponent) },
       { path: 'orders', loadComponent: () => import('./order-history/order-history').then(m => m.OrderHistoryComponent) },
       { path: 'holdings', loadComponent: () => import('./holdings/holdings').then(m => m.HoldingsComponent) },
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.

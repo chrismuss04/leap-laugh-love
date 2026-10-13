@@ -1,0 +1,102 @@
+<div class="instruments fade-in">
+  <header class="page-heading">
+    <h1>Instruments</h1>
+    <p>Browse financial instruments, compare performance, and discover market movers.</p>
+    <label class="period-control">Performance period
+      <select #periodSelect [value]="period()" (change)="selectPeriod(periodSelect.value)">
+        <option value="today">Today</option>
+        <option value="week">1 week</option>
+        <option value="month">1 month</option>
+      </select>
+    </label>
+    <p class="period-context">Simulated market · UTC periods. Changes compare against the last completed daily close before the period.</p>
+    <p class="period-context" *ngIf="overview()">{{ stream.status() === 'live' ? 'Prices update live.' : 'Live prices are connecting. Showing the last available prices.' }} Movers cover all instruments.</p>
+  </header>
+
+  <div class="movers">
+    <section class="panel" aria-labelledby="gainers-title">
+      <h2 id="gainers-title">Top Gainers</h2>
+      <p class="pending" *ngIf="loading()">Loading market movers…</p>
+      <p class="pending" *ngIf="error()">Market movers are unavailable.</p>
+      <ol class="mover-list" *ngIf="overview()">
+        <li *ngFor="let instrument of gainers()">
+          <div><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></div>
+          <div class="mover-price num"><span>{{ number(instrument.price) }} <span class="currency">{{ instrument.currency }}</span></span><span class="text-gain">{{ percent(instrument.changePercent) }}</span></div>
+        </li>
+      </ol>
+      <p class="pending" *ngIf="overview() && !gainers().length">No gainers with available performance for this period.</p>
+    </section>
+    <section class="panel" aria-labelledby="losers-title">
+      <h2 id="losers-title">Top Losers</h2>
+      <p class="pending" *ngIf="loading()">Loading market movers…</p>
+      <p class="pending" *ngIf="error()">Market movers are unavailable.</p>
+      <ol class="mover-list" *ngIf="overview()">
+        <li *ngFor="let instrument of losers()">
+          <div><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></div>
+          <div class="mover-price num"><span>{{ number(instrument.price) }} <span class="currency">{{ instrument.currency }}</span></span><span class="text-loss">{{ percent(instrument.changePercent) }}</span></div>
+        </li>
+      </ol>
+      <p class="pending" *ngIf="overview() && !losers().length">No losers with available performance for this period.</p>
+    </section>
+  </div>
+
+  <section class="panel" aria-labelledby="all-instruments-title">
+    <h2 id="all-instruments-title">All instruments</h2>
+    <div class="list-controls">
+      <label class="search-control">Search instruments
+        <input #searchInput type="search" placeholder="Name or symbol" [value]="query()" (input)="query.set(searchInput.value)">
+      </label>
+      <label>Asset type
+        <select #assetSelect [value]="asset()" (change)="asset.set(assetSelect.value)">
+          <option value="">All asset types</option>
+          <option *ngFor="let type of assetOptions()" [value]="type">{{ assetLabel(type) }}</option>
+        </select>
+      </label>
+      <button *ngIf="query() || asset()" type="button" class="clear-filters" (click)="clearFilters()">Clear filters</button>
+    </div>
+    <div *ngIf="error()" class="banner" role="alert">
+      <span>{{ error() }}</span><button type="button" (click)="retry()">Try again</button>
+    </div>
+    <div *ngIf="loading()" class="loading" role="status">
+      <span class="sr-only">Loading instruments</span>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+      <div class="skeleton" aria-hidden="true"></div>
+    </div>
+    <ng-container *ngIf="overview() as data">
+    <p class="result-count" role="status">Showing {{ pageStart() }}–{{ pageEnd() }} of {{ visibleInstruments().length }} matching instruments ({{ data.instruments.length }} total)</p>
+    <p class="pending">{{ data.instruments.length }} instruments · Snapshot fetched {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
+    <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
+    <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
+      <table>
+        <caption class="sr-only">Instrument prices and performance for the selected UTC period.</caption>
+        <thead>
+          <tr>
+            <th scope="col" [attr.aria-sort]="sortState('name')"><button class="sort-button" type="button" (click)="sortBy('name')">Instrument <span aria-hidden="true">{{ sortIndicator('name') }}</span><span class="sr-only">, sort by name</span></button></th>
+            <th scope="col">Asset type</th>
+            <th scope="col" class="numeric" [attr.aria-sort]="sortState('price')"><button class="sort-button" type="button" (click)="sortBy('price')">Latest price <span aria-hidden="true">{{ sortIndicator('price') }}</span></button></th>
+            <th scope="col" class="numeric">Change</th>
+            <th scope="col" class="numeric" [attr.aria-sort]="sortState('changePercent')"><button class="sort-button" type="button" (click)="sortBy('changePercent')">Change % <span aria-hidden="true">{{ sortIndicator('changePercent') }}</span></button></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let instrument of pagedInstruments()">
+            <th scope="row"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></th>
+            <td>{{ assetLabel(instrument.assetClass) }}</td>
+            <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span></td>
+            <td class="numeric num" [ngClass]="'text-' + direction(instrument.change)">{{ signed(instrument.change) }}</td>
+            <td class="numeric num" [ngClass]="'text-' + direction(instrument.changePercent)">{{ percent(instrument.changePercent) }}</td>
+          </tr>
+          <tr *ngIf="!data.instruments.length"><td colspan="5" class="placeholder">No instruments are currently available.</td></tr>
+          <tr *ngIf="data.instruments.length && !visibleInstruments().length"><td colspan="5" class="placeholder">No instruments match your search and filters.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <nav class="pagination" aria-label="Instrument table pages" *ngIf="visibleInstruments().length">
+      <button type="button" (click)="previousPage()" [disabled]="page() === 1">Previous</button>
+      <span class="num">Page {{ page() }} of {{ pageCount() }}</span>
+      <button type="button" (click)="nextPage()" [disabled]="page() === pageCount()">Next</button>
+    </nav>
+    </ng-container>
+  </section>
+</div>
