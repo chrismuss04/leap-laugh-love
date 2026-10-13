@@ -75,7 +75,8 @@ export class ProtectionPickerComponent {
   /** The presets, plus a saved non-preset value when it can't be shown as Custom. */
   readonly options = computed(() => {
     const value = this.value();
-    return !this.allowCustom() && value != null && !Number.isNaN(value) && !PROTECTION_PRESETS.includes(value)
+    const offPreset = value != null && !Number.isNaN(value) && !PROTECTION_PRESETS.includes(value);
+    return !this.allowCustom() && offPreset
       ? [...PROTECTION_PRESETS, value].sort((a, b) => a - b)
       : PROTECTION_PRESETS;
   });
