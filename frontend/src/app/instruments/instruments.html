@@ -64,7 +64,7 @@
       <div class="skeleton" aria-hidden="true"></div>
     </div>
     <ng-container *ngIf="overview() as data">
-    <p class="result-count" role="status">Showing {{ visibleInstruments().length }} of {{ data.instruments.length }} instruments</p>
+    <p class="result-count" role="status">Showing {{ pageStart() }}–{{ pageEnd() }} of {{ visibleInstruments().length }} matching instruments ({{ data.instruments.length }} total)</p>
     <p class="pending">{{ data.instruments.length }} instruments · Snapshot fetched {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
     <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
     <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
@@ -80,7 +80,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr *ngFor="let instrument of visibleInstruments()">
+          <tr *ngFor="let instrument of pagedInstruments()">
             <th scope="row"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></th>
             <td>{{ assetLabel(instrument.assetClass) }}</td>
             <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span></td>
@@ -92,6 +92,11 @@
         </tbody>
       </table>
     </div>
+    <nav class="pagination" aria-label="Instrument table pages" *ngIf="visibleInstruments().length">
+      <button type="button" (click)="previousPage()" [disabled]="page() === 1">Previous</button>
+      <span class="num">Page {{ page() }} of {{ pageCount() }}</span>
+      <button type="button" (click)="nextPage()" [disabled]="page() === pageCount()">Next</button>
+    </nav>
     </ng-container>
   </section>
 </div>

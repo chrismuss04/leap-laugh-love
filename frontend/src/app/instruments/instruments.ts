@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, effect, inject, linkedSignal, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, catchError, EMPTY, interval, switchMap, tap } from 'rxjs';
@@ -34,6 +34,17 @@ export class InstrumentsComponent {
   )].sort());
   readonly visibleInstruments = computed(() => instrumentList(this.instruments(),
     this.query(), this.asset(), this.sort(), this.sortDirection()));
+  readonly pageSize = 10;
+  private readonly requestedPage = linkedSignal({
+    source: () => [this.query(), this.asset(), this.sort(), this.sortDirection(), this.period()],
+    computation: () => 1
+  });
+  readonly pageCount = computed(() => Math.max(1, Math.ceil(this.visibleInstruments().length / this.pageSize)));
+  readonly page = computed(() => Math.min(this.requestedPage(), this.pageCount()));
+  readonly pageStart = computed(() => this.visibleInstruments().length ? (this.page() - 1) * this.pageSize + 1 : 0);
+  readonly pageEnd = computed(() => Math.min(this.page() * this.pageSize, this.visibleInstruments().length));
+  readonly pagedInstruments = computed(() => this.visibleInstruments().slice(
+    (this.page() - 1) * this.pageSize, this.page() * this.pageSize));
   readonly direction = direction;
   readonly number = formatNumber;
   readonly percent = formatSignedPercent;
@@ -93,6 +104,9 @@ export class InstrumentsComponent {
   }
 
   retry(): void { this.requests.next(this.period()); }
+
+  previousPage(): void { this.requestedPage.set(Math.max(1, this.page() - 1)); }
+  nextPage(): void { this.requestedPage.set(Math.min(this.pageCount(), this.page() + 1)); }
 
   sortBy(column: InstrumentSort): void {
     this.sortDirection.set(this.sort() === column && this.sortDirection() === 'ascending'

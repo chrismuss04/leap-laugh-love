@@ -30,6 +30,48 @@ describe('Instruments page integration', () => {
   render();
  });
  afterEach(() => { fixture.destroy(); http.verify(); });
+ it('renders ten rows per page with a partial last page and disabled boundaries', () => {
+  load({ ...overview(), instruments: Array.from({ length: 23 }, (_, i) => row(`S${String(i).padStart(2, '0')}`, i)) });
+  const buttons = () => fixture.nativeElement.querySelectorAll('.pagination button') as NodeListOf<HTMLButtonElement>;
+  const count = () => fixture.nativeElement.querySelectorAll('tbody tr').length;
+  expect(count()).toBe(10);
+  expect(buttons()[0].disabled).toBe(true);
+  buttons()[1].click(); render();
+  expect(count()).toBe(10);
+  expect(fixture.componentInstance.pagedInstruments()[0].symbol).toBe('S10');
+  buttons()[1].click(); render();
+  expect(count()).toBe(3);
+  expect(text()).toContain('Showing 21–23 of 23');
+  expect(buttons()[1].disabled).toBe(true);
+  buttons()[0].click(); render();
+  expect(fixture.componentInstance.page()).toBe(2);
+ });
+ it('resets pagination on search, filter, sorting and period changes', () => {
+  load({ ...overview(), instruments: Array.from({ length: 21 }, (_, i) => row(`S${i}`, i)) });
+  const component = fixture.componentInstance;
+  component.nextPage(); component.query.set('S1'); render();
+  expect(component.page()).toBe(1);
+  component.clearFilters(); component.nextPage(); component.asset.set('EQUITY'); render();
+  expect(component.page()).toBe(1);
+  component.nextPage(); component.sortBy('price'); render();
+  expect(component.page()).toBe(1);
+  component.nextPage(); component.selectPeriod('week');
+  http.expectOne(url + 'week').flush({ ...overview(), period: 'week' }); render();
+  expect(component.page()).toBe(1);
+ });
+ it('paginates after sorting and filtering while keeping movers market-wide', () => {
+  load({ ...overview(), instruments: Array.from({ length: 21 }, (_, i) => row(`S${i}`, i)) });
+  const component = fixture.componentInstance;
+  component.sortBy('price'); component.sortBy('price'); render();
+  expect(component.pagedInstruments()[0].price).toBe(120);
+  component.nextPage(); render();
+  expect(component.pagedInstruments()[0].price).toBe(110);
+  expect(component.gainers()[0].price).toBe(120);
+  component.query.set('missing'); render();
+  expect(component.pagedInstruments()).toEqual([]);
+  expect(fixture.nativeElement.querySelector('.pagination')).toBeNull();
+  expect(component.gainers()[0].price).toBe(120);
+ });
  it('loads today and displays instrument data and market-wide movers', () => {
   expect(text()).toContain('Loading instruments');
   load();

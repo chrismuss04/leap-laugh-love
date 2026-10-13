@@ -48,6 +48,10 @@ tbody th { color: var(--foreground); font-size: 14px; }
 .mover-list li { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); font-size: 14px; }
 .mover-list li > div:first-child { min-width: 0; overflow-wrap: anywhere; }
 .mover-price { display: grid; gap: 4px; text-align: right; flex-shrink: 0; }
+.pagination { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 12px; margin-top: 20px; font-size: 12px; color: var(--muted-foreground); }
+.pagination button { padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); color: var(--foreground); font: inherit; cursor: pointer; }
+.pagination button:hover:not(:disabled) { background: var(--surface-hover); }
+.pagination button:disabled { opacity: 0.45; cursor: default; }
 
 @media (max-width: 760px) {
   .instruments { padding: 24px 16px 40px; gap: 16px; }
