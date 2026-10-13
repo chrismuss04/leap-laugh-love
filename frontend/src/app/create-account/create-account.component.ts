@@ -104,6 +104,8 @@ export class CreateAccountComponent implements OnInit {
       formatted = `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
     } else if (digits.length > 3) {
       formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    } else {
+      // Up to three digits need no separators; keep the original digits.
     }
 
     this.registrationForm.get('ssn')?.setValue(formatted);

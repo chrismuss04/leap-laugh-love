@@ -442,6 +442,11 @@ export class DashboardComponent implements OnInit {
       case 'EXPIRED':
         this.showNotice(`${what} expired`, 'flat');
         break;
+      case 'SUBMITTED':
+      case 'OPEN':
+      case 'CANCELLED':
+        // These updates refresh the page without announcing a fill outcome.
+        break;
     }
     this.onOrderPlaced();
   }
@@ -542,6 +547,8 @@ export class DashboardComponent implements OnInit {
         this.showNotice(`${what} couldn’t be filled — see Recent activity`, 'loss');
       } else if (outcome?.status === 'EXPIRED') {
         this.showNotice(`${what} expired`, 'flat');
+      } else {
+        // Missing activity or other statuses do not announce a fill outcome.
       }
     }
   }

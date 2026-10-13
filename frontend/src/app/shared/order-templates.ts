@@ -125,6 +125,8 @@ export function suggestedTemplateName(template: OrderTemplateRequest): string {
     parts.push(`${type} ${signed(template.stopOffsetPercent)}`);
   } else if (template.orderType === 'TRAILING_STOP' && template.trailPercent != null) {
     parts.push(`${type} ${+template.trailPercent.toFixed(2)}%`);
+  } else {
+    // Market orders and templates without an offset add no price description.
   }
   if (template.stopLossPercent != null) {
     parts.push(`stop-loss ${signed(-template.stopLossPercent)}`);
