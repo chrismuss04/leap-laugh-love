@@ -42,7 +42,7 @@ export class OrderHistoryPage {
   /** The cells of a row, keyed by column. */
   async row(index: number): Promise<{ symbol: string; side: string; quantity: string; status: string; fills: string }> {
     const cells = await this.rows.nth(index).getByRole('cell').allTextContents();
-    const [, symbol, side, quantity, status, , , fills] = cells.map(c => c.trim());
+    const [, symbol, side, , quantity, status, , , fills] = cells.map(c => c.trim());
     return { symbol, side, quantity, status, fills };
   }
 }

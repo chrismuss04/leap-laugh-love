@@ -22,6 +22,24 @@ export class TradePanel {
   readonly result: Locator;
   readonly unconfirmed: Locator;
   readonly done: Locator;
+  // Order types
+  readonly limitPrice: Locator;
+  readonly stopPrice: Locator;
+  readonly trail: Locator;
+  readonly untilCancelled: Locator;
+  readonly sentence: Locator;
+  readonly hitRate: Locator;
+  readonly impact: Locator;
+  // Bracket ("Protect this trade")
+  readonly bracketToggle: Locator;
+  readonly takeProfit: Locator;
+  readonly stopLoss: Locator;
+  readonly riskReward: Locator;
+  // Templates
+  readonly templates: Locator;
+  readonly saveAsTemplate: Locator;
+  readonly templateName: Locator;
+  readonly templateMessage: Locator;
 
   constructor(readonly page: Page) {
     this.root = page.locator('app-trade-panel');
@@ -44,6 +62,26 @@ export class TradePanel {
     this.result = page.getByTestId('trade-result');
     this.unconfirmed = page.getByTestId('trade-unconfirmed');
     this.done = this.root.getByRole('button', { name: 'Done' });
+    this.limitPrice = this.root.locator('#trade-limit');
+    this.stopPrice = this.root.locator('#trade-stop');
+    this.trail = this.root.locator('#trade-trail');
+    this.untilCancelled = this.root.getByRole('radio', { name: 'Until cancelled' });
+    this.sentence = page.getByTestId('order-sentence');
+    this.hitRate = page.getByTestId('hit-rate');
+    this.impact = page.getByTestId('order-impact');
+    this.bracketToggle = this.root.getByLabel('Protect this trade');
+    this.takeProfit = this.root.locator('#trade-take-profit');
+    this.stopLoss = this.root.locator('#trade-stop-loss');
+    this.riskReward = page.getByTestId('risk-reward');
+    this.templates = page.getByTestId('templates');
+    this.saveAsTemplate = this.root.getByRole('button', { name: 'Save as template' });
+    this.templateName = this.root.getByLabel('Template name');
+    this.templateMessage = page.getByTestId('save-template').locator('.template-message');
+  }
+
+  /** Picks an order type: Market, Limit, Stop, Stop limit or Trailing stop. */
+  async chooseType(label: 'Market' | 'Limit' | 'Stop' | 'Stop limit' | 'Trailing stop'): Promise<void> {
+    await this.root.getByRole('radio', { name: label, exact: true }).click();
   }
 
   /** Waits until the ticket has a live price for its symbol, so estimates can be checked. */

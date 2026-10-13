@@ -2,12 +2,57 @@
 # docker-compose.e2e.yml. Not meant for local use: the volume below is external, so compose
 # refuses to start without it, and the Jenkinsfile is what creates it.
 services:
+  # Memory and CPU caps for the CI stack, so it cannot starve the agent (which also hosts Jenkins
+  # and the SonarQube server) when E2E runs. The JVM heaps sit well under their container limits
+  # to leave room for metaspace, thread stacks and the CDS archive. Raise a limit if a service is
+  # OOM-killed ("docker inspect" shows OOMKilled), rather than removing it.
+  iam-app:
+    mem_limit: 640m
+    cpus: 1.0
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
+  account-app:
+    mem_limit: 640m
+    cpus: 1.0
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
+  order-app:
+    mem_limit: 640m
+    cpus: 1.0
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
+  market-data-app:
+    # Also runs the history backfill, so a little more headroom than the others.
+    mem_limit: 768m
+    cpus: 1.0
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx512m -XX:+UseSerialGC"
+  kafka:
+    # Heap is 512m (KAFKA_HEAP_OPTS in docker-compose.yml) plus off-heap buffers.
+    mem_limit: 768m
+    cpus: 1.0
+  reporting-etl:
+    mem_limit: 256m
+    cpus: 0.5
+  user-etl:
+    mem_limit: 256m
+    cpus: 0.5
+  mailpit:
+    mem_limit: 128m
+    cpus: 0.25
   db:
+    mem_limit: 768m
+    cpus: 1.0
     # Every CI database is seeded from scratch and destroyed by "down -v" at the end of the
     # build, so durability buys nothing. With fsync off the S&P 500 seed loads noticeably faster.
     command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
 
   frontend:
+    # ng serve (esbuild) is the hungriest non-JVM process in the stack.
+    mem_limit: 1536m
+    cpus: 1.5
+    environment:
+      NODE_OPTIONS: "--max-old-space-size=1024"
     volumes:
       # The frontend container still runs "npm ci" into its own per-build node_modules volume,
       # but from this download cache instead of the network. Sharing the cache rather than

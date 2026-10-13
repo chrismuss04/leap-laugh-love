@@ -432,7 +432,7 @@ class OrderSubmissionIntegrationTest {
         assertNotNull(page);
 
         OffsetDateTime now = OffsetDateTime.now();
-        var pageBetween = orderRepository.findByClientIdSubmittedBetween(
+        var pageBetween = orderRepository.findByClientIdCompletedBetween(
                 clientId, now.minusDays(1), now.plusDays(1), org.springframework.data.domain.PageRequest.of(0, 10));
         assertNotNull(pageBetween);
 

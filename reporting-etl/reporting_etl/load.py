@@ -26,28 +26,14 @@ log = logging.getLogger(__name__)
 # RETURNING yields a row only when the order was new, so the rollup insert below adds nothing for
 # a repeat, and the statement's row count is 1 for a new order and 0 for one already loaded.
 INSERT_ORDER = """
-WITH inserted AS (
-    INSERT INTO reporting.orders (
-        order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
-        fill_price, rejection_reason, submitted_at, completed_at)
-    VALUES (
-        %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
-        %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
-        %(completed_at)s)
-    ON CONFLICT (order_id) DO NOTHING
-    RETURNING client_id, status, quantity, fill_price, completed_at
-)
-INSERT INTO reporting.client_months AS cm (client_id, month, order_count, filled_count, filled_value)
-SELECT client_id,
-       date_trunc('month', completed_at AT TIME ZONE 'UTC')::date,
-       1,
-       CASE WHEN status = 'FILLED' THEN 1 ELSE 0 END,
-       CASE WHEN status = 'FILLED' THEN quantity * fill_price ELSE 0 END
-FROM inserted
-ON CONFLICT (client_id, month) DO UPDATE SET
-    order_count = cm.order_count + EXCLUDED.order_count,
-    filled_count = cm.filled_count + EXCLUDED.filled_count,
-    filled_value = cm.filled_value + EXCLUDED.filled_value
+INSERT INTO reporting.orders (
+    order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
+    fill_price, rejection_reason, submitted_at, completed_at, order_type)
+VALUES (
+    %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
+    %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
+    %(completed_at)s, %(order_type)s)
+ON CONFLICT (order_id) DO NOTHING
 """
 
 

@@ -280,7 +280,7 @@ class OrderHistoryServiceTest {
 
     private Page<Order> filteredQuery(OffsetDateTime from, OffsetDateTime to) {
         return orderRepository
-                .findByClientIdSubmittedBetween(
+                .findByClientIdCompletedBetween(
                         clientId, from, to, PageRequest.of(0, 20));
     }
 
