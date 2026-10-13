@@ -59,7 +59,7 @@ export class ReportsService {
       to: query.to,
       granularity: query.granularity
     };
-    if (query.instrumentId) params['instrumentId'] = query.instrumentId;
+    if (query.instrumentId) { params['instrumentId'] = query.instrumentId; }
 
     return this.http.get<ActivityReport>(`${this.API_URL}/activity`, { params });
   }

@@ -24,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -133,16 +135,34 @@ class OrderSubmissionServiceEdgeTest {
     }
 
     @Test
-    @DisplayName("passes an account-app status error through, and turns any other failure into a 400")
+    @DisplayName("passes account-app 404/403 through, turns other 4xx into 400 and an unreachable account-app into 503")
     void accountValidationFailures() {
-        doThrow(new ResponseStatusException(HttpStatus.FORBIDDEN, "not yours"))
+        doThrow(HttpClientErrorException.create(HttpStatus.NOT_FOUND, "Not Found", null, null, null))
+                .when(accountClient).getValidationData(any(), any());
+        ResponseStatusException notFound = rejected(() -> service.submitOrder(buy("AAPL", null, null, null)));
+        assertEquals(HttpStatus.NOT_FOUND, notFound.getStatusCode());
+        assertEquals("Failed to validate account", notFound.getReason());
+
+        doThrow(HttpClientErrorException.create(HttpStatus.FORBIDDEN, "Forbidden", null, null, null))
                 .when(accountClient).getValidationData(any(), any());
         assertEquals(HttpStatus.FORBIDDEN, rejected(() -> service.submitOrder(buy("AAPL", null, null, null))).getStatusCode());
 
+        doThrow(new HttpClientErrorException(HttpStatus.CONFLICT))
+                .when(accountClient).getValidationData(any(), any());
+        assertEquals(HttpStatus.BAD_REQUEST, rejected(() -> service.submitOrder(buy("AAPL", null, null, null))).getStatusCode());
+
+        doThrow(new ResourceAccessException("Read timed out http://account-app:8082"))
+                .when(accountClient).getValidationData(any(), any());
+        ResponseStatusException unavailable = rejected(() -> service.submitOrder(buy("AAPL", null, null, null)));
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, unavailable.getStatusCode());
+        assertEquals("Account service unavailable, please try again", unavailable.getReason());
+    }
+
+    @Test
+    @DisplayName("lets a failure that isn't from the account-app call pass through unwrapped")
+    void accountValidationUnexpectedFailurePassesThrough() {
         doThrow(new IllegalStateException("boom")).when(accountClient).getValidationData(any(), any());
-        ResponseStatusException ex = rejected(() -> service.submitOrder(buy("AAPL", null, null, null)));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("Failed to validate account: boom", ex.getReason());
+        assertThrows(IllegalStateException.class, () -> service.submitOrder(buy("AAPL", null, null, null)));
     }
 
     @Test

@@ -46,6 +46,18 @@ class ClientSessionValidatorTest {
         }
     }
 
+    // Regression: activity recorded by iam-app while this request was being checked sat a few
+    // milliseconds in its future, and the 401 signed the client out.
+    @Test void acceptsActivityRecordedJustAfterThisRequestReadTheClock() {
+        jdbc.update("UPDATE iam.client_sessions SET last_activity_at = ?", now.plusMillis(40).atOffset(ZoneOffset.UTC));
+        assertTrue(active());
+    }
+
+    @Test void rejectsActivityFarInTheFuture() {
+        jdbc.update("UPDATE iam.client_sessions SET last_activity_at = ?", now.plusSeconds(31).atOffset(ZoneOffset.UTC));
+        assertFalse(active());
+    }
+
     @Test void rejectsRevokedSession() {
         jdbc.update("UPDATE iam.client_sessions SET revoked_at = ?", now.atOffset(ZoneOffset.UTC));
         assertFalse(active());

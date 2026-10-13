@@ -35,5 +35,17 @@ def rejected_event(**overrides) -> dict:
     return event
 
 
+def cancelled_event(**overrides) -> dict:
+    event = filled_event(status="CANCELLED", fillPrice=None, orderType="LIMIT")
+    event.update(overrides)
+    return event
+
+
+def expired_event(**overrides) -> dict:
+    event = filled_event(status="EXPIRED", fillPrice=None, orderType="STOP")
+    event.update(overrides)
+    return event
+
+
 def encode(event: dict) -> bytes:
     return json.dumps(event).encode("utf-8")

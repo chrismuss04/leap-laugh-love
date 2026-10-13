@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.order.quote;
 
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
@@ -8,6 +9,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.context.request.RequestContextHolder;
 import org.springframework.web.context.request.ServletRequestAttributes;
 
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -43,6 +45,26 @@ public class CurrentQuoteClient {
         } catch (RestClientException ex) {
             throw new QuoteUnavailableException(
                     "Failed to fetch current quote for symbol " + symbol, ex);
+        }
+    }
+
+    /**
+     * Fetches the latest quote for every instrument in one call, authenticating with the given
+     * token - for work with no request behind it, such as watching open orders.
+     * @param bearerToken a market-quotes service token
+     * @return the latest quotes, empty if the market data service has none
+     * @throws QuoteUnavailableException if the market data service can't be reached
+     */
+    public List<QuoteSnapshot> fetchAllAs(String bearerToken) {
+        try {
+            List<QuoteSnapshot> quotes = restClient.get()
+                    .uri("/api/marketdata/quotes")
+                    .headers(headers -> headers.setBearerAuth(bearerToken))
+                    .retrieve()
+                    .body(new ParameterizedTypeReference<List<QuoteSnapshot>>() {});
+            return quotes != null ? quotes : List.of();
+        } catch (RestClientException ex) {
+            throw new QuoteUnavailableException("Failed to fetch current quotes", ex);
         }
     }
 
