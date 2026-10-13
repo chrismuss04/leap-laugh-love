@@ -13,11 +13,13 @@
     –
     <time class="num" [attr.datetime]="filters.range().to">{{ filters.range().to | date: 'd MMM y' }}</time>
   </p>
-  <div class="stats">
-    <app-stat-tile label="Trading volume" hint="Value of filled orders"></app-stat-tile>
-    <app-stat-tile label="Average order value" hint="Per filled order"></app-stat-tile>
-    <app-stat-tile label="New registrations" hint="Clients who signed up"></app-stat-tile>
-    <app-stat-tile label="Active clients" hint="Placed at least one order"></app-stat-tile>
+  <div class="stats stats-5" data-testid="insights" [attr.aria-busy]="insightsState() === 'loading'">
+    <app-stat-tile *ngFor="let tile of tiles()" [label]="tile.label" [value]="tile.value" [hint]="tile.hint"
+                   [trend]="tile.trend" [trendDirection]="tile.direction"></app-stat-tile>
+  </div>
+  <div *ngIf="insightsState() === 'error'" class="stats-error" role="alert">
+    <p>Couldn't load the figures for this period.</p>
+    <button type="button" (click)="retryInsights()">Try again</button>
   </div>
 </section>
 
