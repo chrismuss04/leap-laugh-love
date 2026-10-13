@@ -43,7 +43,7 @@ export class AuthService implements OnDestroy {
   readonly sessionMessage = signal('');
   private sessionGeneration = 0;
   private readonly onStorage = (event: StorageEvent) => {
-    if (event.key !== 'auth_token' && event.key !== null) return;
+    if (event.key !== 'auth_token' && event.key !== null) { return; }
     if (!this.getToken()) {
       this.sessionGeneration++;
       this.sessionMessage.set('You have been signed out in another tab. Please sign in again.');
@@ -112,7 +112,7 @@ export class AuthService implements OnDestroy {
   }
 
   expireSession(expectedToken: string | null, reason: 'inactivity' | 'expired' = 'expired'): void {
-    if (!expectedToken || this.getToken() !== expectedToken) return;
+    if (!expectedToken || this.getToken() !== expectedToken) { return; }
     this.endSession(reason === 'inactivity'
       ? 'Your session expired after 10 minutes of inactivity. Please sign in again.'
       : 'Your session has expired or is no longer valid. Please sign in again.');
@@ -164,7 +164,7 @@ export class AuthService implements OnDestroy {
    */
   getRole(): Role | null {
     const claims = this.getClaims();
-    if (!claims) return null;
+    if (!claims) { return null; }
     return claims['role'] === 'TRADING_OPERATIONS' || claims['role'] === 'COMMERCIAL_ANALYST'
       ? claims['role'] : 'CLIENT';
   }
@@ -254,7 +254,7 @@ export class AuthService implements OnDestroy {
    */
   private getClaims(): Record<string, unknown> | null {
     const token = this.getToken();
-    if (!token) return null;
+    if (!token) { return null; }
     try {
       const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
       return JSON.parse(atob(payload.padEnd(Math.ceil(payload.length / 4) * 4, '=')));

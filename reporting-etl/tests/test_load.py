@@ -14,7 +14,7 @@ import pytest
 
 from reporting_etl.load import DatabaseUnavailable, OrderLoader, RowRejected
 from reporting_etl.transform import to_order_row
-from tests.events import encode, filled_event, rejected_event
+from tests.events import cancelled_event, expired_event, encode, filled_event, rejected_event
 
 DB_URL = os.environ.get("REPORTING_TEST_DB_URL")
 
@@ -66,6 +66,16 @@ def test_inserts_a_rejected_order_without_a_price(loader, order_ids):
     assert loader.load(row) is True
 
     assert stored(row.order_id)[3:6] == ("REJECTED", None, row.rejection_reason)
+
+
+@pytest.mark.parametrize("make_event, status", [(cancelled_event, "CANCELLED"), (expired_event, "EXPIRED")])
+def test_inserts_an_order_that_never_executed(loader, order_ids, make_event, status):
+    row = to_order_row(encode(make_event()))
+    order_ids.append(row.order_id)
+
+    assert loader.load(row) is True
+
+    assert stored(row.order_id)[3:6] == (status, None, None)
 
 
 def test_a_repeated_order_is_ignored(loader, order_ids):

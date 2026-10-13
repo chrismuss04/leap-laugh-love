@@ -23,6 +23,14 @@ export interface TradeAccount {
   shares: Record<string, number>;
   /** The account's saved price protection in percent, or null when off. */
   maxSlippagePercent: number | null;
+  /** Shares per symbol already promised to open sell orders, so not free to sell again. */
+  sharesOnHold?: Record<string, number>;
+  /** Cash open buy orders hold back; buyingPower already excludes it. */
+  cashOnHold?: number;
+  /** Average cost per share per symbol, for the break-even stop. */
+  averageCost?: Record<string, number>;
+  /** The account's total value (cash plus shares at live prices), for the order impact preview. */
+  totalValue?: number | null;
 }
 
 export interface MarketIndex {

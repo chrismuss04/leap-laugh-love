@@ -30,7 +30,7 @@ export class SessionActivityService implements OnDestroy {
   start(): void {
     this.stop();
     const token = this.auth.getToken();
-    if (!token) return;
+    if (!token) { return; }
     try {
       // Decoding is only for local timing; the backend verifies the signature and session state.
       const payload = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -58,7 +58,7 @@ export class SessionActivityService implements OnDestroy {
       this.subscriptions.add(merge(...events.map(name =>
         fromEvent<Event>(this.document, name, { passive: true })
       )).pipe(throttleTime(1000)).subscribe(event => {
-        if (event.isTrusted && this.document.visibilityState === 'visible') this.interact();
+        if (event.isTrusted && this.document.visibilityState === 'visible') { this.interact(); }
       }));
       // Returning to a tab checks elapsed time; it doesn't count as activity or revive a session.
       this.subscriptions.add(fromEvent(this.document, 'visibilitychange').subscribe(() => this.checkTime()));
@@ -76,7 +76,7 @@ export class SessionActivityService implements OnDestroy {
       this.schedule();
     });
     this.subscriptions.add(this.auth.isAuthenticated$.subscribe(authenticated => {
-      if (!authenticated) this.stop();
+      if (!authenticated) { this.stop(); }
     }));
   }
 
@@ -90,7 +90,7 @@ export class SessionActivityService implements OnDestroy {
       this.expire();
       return;
     }
-    if (this.reporting) return;
+    if (this.reporting) { return; }
     const activityTime = Date.now();
     this.reporting = true;
     this.subscriptions.add(this.http.post<void>('/api/iam/session/activity', {}).subscribe({
@@ -107,7 +107,7 @@ export class SessionActivityService implements OnDestroy {
       },
       error: error => {
         this.reporting = false;
-        if (error.status === 401) this.expire('expired');
+        if (error.status === 401) { this.expire('expired'); }
         // Network/503 failures do not count as accepted activity; the next interaction can retry.
       }
     }));
@@ -128,14 +128,14 @@ export class SessionActivityService implements OnDestroy {
   }
 
   private checkTime(): void {
-    if (!this.token) return;
+    if (!this.token) { return; }
     this.readSharedActivity();
-    if (this.isExpired()) this.expire();
-    else this.schedule();
+    if (this.isExpired()) { this.expire(); }
+    else { this.schedule(); }
   }
 
   private schedule(): void {
-    if (this.timer !== undefined) clearTimeout(this.timer);
+    if (this.timer !== undefined) { clearTimeout(this.timer); }
     const remaining = Math.min(this.lastActivity + this.idleMs, this.expiresAt) - Date.now();
     this.timer = setTimeout(() => this.checkTime(), Math.max(0, remaining));
   }
@@ -148,7 +148,7 @@ export class SessionActivityService implements OnDestroy {
   stop(): void {
     this.subscriptions.unsubscribe();
     this.subscriptions = new Subscription();
-    if (this.timer !== undefined) clearTimeout(this.timer);
+    if (this.timer !== undefined) { clearTimeout(this.timer); }
     this.timer = undefined;
     this.token = null;
     this.sessionId = null;

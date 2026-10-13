@@ -38,6 +38,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- Fill alert emails (see OrderFillMailer). -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-mail</artifactId>
+        </dependency>
         <!-- Order Reporting: publishes completed orders to the order-events topic. -->
         <dependency>
             <groupId>org.springframework.kafka</groupId>

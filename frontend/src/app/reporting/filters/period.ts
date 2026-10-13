@@ -73,7 +73,7 @@ export function resolvePeriod(filter: PeriodFilter, today = new Date()): DateRan
 
 /** A yyyy-mm-dd day that exists on the calendar, or null. */
 export function validDay(value: string | null): string | null {
-  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) { return null; }
   const [year, month, day] = value.split('-').map(Number);
   const date = new Date(year, month - 1, day);
   return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day ? value : null;

@@ -88,6 +88,36 @@ class OrderEventPublisherTest {
     }
 
     @Test
+    @DisplayName("publishes a CANCELLED order with no fill price, completed when it was cancelled")
+    void publishesCancelledOrder() {
+        Order order = new Order(UUID.randomUUID(), account, aapl, Order.Side.BUY, 10L, Order.Status.OPEN,
+                SUBMITTED_AT, null, null, null, null);
+        order.markCancelled(COMPLETED_AT);
+
+        publisher.publishCancelled(order);
+
+        OrderCompletedEvent event = sentEvent(order.getOrderId().toString());
+        assertEquals("CANCELLED", event.status());
+        assertNull(event.fillPrice());
+        assertEquals(COMPLETED_AT, event.completedAt());
+    }
+
+    @Test
+    @DisplayName("publishes an EXPIRED order with no fill price, completed when it expired")
+    void publishesExpiredOrder() {
+        Order order = new Order(UUID.randomUUID(), account, aapl, Order.Side.BUY, 10L, Order.Status.OPEN,
+                SUBMITTED_AT, null, null, null, null);
+        order.markExpired(COMPLETED_AT);
+
+        publisher.publishExpired(order);
+
+        OrderCompletedEvent event = sentEvent(order.getOrderId().toString());
+        assertEquals("EXPIRED", event.status());
+        assertNull(event.fillPrice());
+        assertEquals(COMPLETED_AT, event.completedAt());
+    }
+
+    @Test
     @DisplayName("publishes a FILLED order keyed by its id, with its owner and fill price")
     void publishesFilledOrder() {
         Order order = filledOrder();
@@ -184,7 +214,7 @@ class OrderEventPublisherTest {
         Order order = filledOrder();
         OrderCompletedEvent event = new OrderCompletedEvent(UUID.randomUUID(), order.getOrderId(),
                 account.getAccountId(), account.getClientId(), aapl.getInstrumentId(), "AAPL", "BUY", 10L,
-                "FILLED", new BigDecimal("187.4200"), null, SUBMITTED_AT, COMPLETED_AT);
+                "FILLED", new BigDecimal("187.4200"), null, SUBMITTED_AT, COMPLETED_AT, "MARKET");
         RecordHeaders headers = new RecordHeaders();
 
         // The producer's own serializer. Given a mapper that still writes dates as timestamps

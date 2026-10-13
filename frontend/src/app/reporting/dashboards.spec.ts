@@ -113,7 +113,7 @@ describe('Trading operations dashboard', () => {
     const { el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
 
     expect(el.querySelector('[data-testid="lifecycle-order-id"]')!.textContent).toContain(ORDER_ID);
-    expect(el.querySelectorAll('[data-testid="lifecycle-stage"]').length).toBe(7);
+    expect(el.querySelectorAll('[data-testid="lifecycle-stage"]').length).toBe(8);
     expect(panelTitles(el)).toEqual(['Order summary', 'Lifecycle timeline', 'Executions', 'Cash entries', 'Position movements']);
     expect(el.querySelector('[role="alert"]')).toBeNull();
     http.expectNone(() => true);

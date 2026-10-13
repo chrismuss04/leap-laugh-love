@@ -72,7 +72,7 @@ class EventsConsumer:
                 inserted = self._loader.load(row)
                 break
             except RowRejected as ex:
-                log.error("Database refused event from %s; skipping: %s", where, ex)
+                log.exception("Database refused event from %s; skipping: %s", where, ex)
                 self._commit(message)
                 return
             except DatabaseUnavailable as ex:

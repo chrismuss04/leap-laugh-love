@@ -14,7 +14,10 @@ from decimal import Decimal
 from typing import Any, Optional
 
 SIDES = frozenset({"BUY", "SELL"})
-STATUSES = frozenset({"FILLED", "REJECTED"})
+# FILLED and REJECTED executed (a rejection is a settlement refusal); CANCELLED and EXPIRED are orders
+# that waited for their price and never did.
+STATUSES = frozenset({"FILLED", "REJECTED", "CANCELLED", "EXPIRED"})
+ORDER_TYPES = frozenset({"MARKET", "LIMIT", "STOP", "STOP_LIMIT", "TRAILING_STOP"})
 
 
 class InvalidEvent(ValueError):
@@ -35,6 +38,8 @@ class OrderRow:
     rejection_reason: Optional[str]
     submitted_at: datetime
     completed_at: datetime
+    # Events published before order types existed don't carry one; they were all market orders.
+    order_type: str = "MARKET"
 
 
 def to_order_row(payload: bytes | str | None) -> OrderRow:
@@ -70,6 +75,7 @@ def to_order_row(payload: bytes | str | None) -> OrderRow:
         rejection_reason=_optional_text(event, "rejectionReason"),
         submitted_at=_timestamp(event, "submittedAt"),
         completed_at=_timestamp(event, "completedAt"),
+        order_type=_one_of(event, "orderType", ORDER_TYPES) if event.get("orderType") is not None else "MARKET",
     )
 
 
