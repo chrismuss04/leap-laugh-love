@@ -16,5 +16,6 @@ module.exports = {
   '/api/iam': target('IAM_PROXY_TARGET', 'http://localhost:8081'),
   '/api/account': target('ACCOUNT_PROXY_TARGET', 'http://localhost:8082'),
   '/api/order': target('ORDER_PROXY_TARGET', 'http://localhost:8084'),
-  '/api/marketdata': target('MARKETDATA_PROXY_TARGET', 'http://localhost:8083')
+  '/api/marketdata': target('MARKETDATA_PROXY_TARGET', 'http://localhost:8083'),
+  '/api/reporting': target('REPORTING_PROXY_TARGET', 'http://localhost:8085')
 };

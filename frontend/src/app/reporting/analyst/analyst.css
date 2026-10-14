@@ -1,0 +1,25 @@
+/* Trading Activity: the heading over the six 12-month reports. Fraunces, like the page title, so
+   the section reads as its own part of the page rather than more cards under Order Insights. */
+
+.year-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+
+.year-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 400;
+  color: var(--foreground);
+}
+
+.year-range {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}

@@ -1,0 +1,43 @@
+<app-report-panel heading="Activation"
+                  description="Of each month's sign-ups, the share whose first executed order came within 30 days, or at all."
+                  [state]="state()" message="Nobody signed up in the last 12 complete months." (retry)="load()">
+  <div *ngIf="report() as report">
+    <div class="table-wrap">
+      <table class="report-table" data-testid="activation-table">
+        <caption class="sr-only">First orders by sign-up month, oldest first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Signed up</th>
+            <th scope="col" class="num">Clients</th>
+            <th scope="col">Within 30 days</th>
+            <th scope="col" class="num">Ever</th>
+            <th scope="col" class="num">Median wait</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let cohort of report.cohorts" data-testid="activation-row"
+              [class.incomplete]="!cohort.complete && cohort.registered > 0">
+            <th scope="row">
+              {{ monthLabel(cohort.cohort) }}<ng-container *ngIf="!cohort.complete && cohort.registered > 0"><span
+                aria-hidden="true">*</span><span class="sr-only"> (still inside its first 30 days)</span></ng-container>
+            </th>
+            <td class="num">{{ count(cohort.registered) }}</td>
+            <td>
+              <div class="bar-cell">
+                <span class="bar-track" aria-hidden="true">
+                  <span class="bar-fill" [style.width.%]="cohort.orderedWithin30DaysPct ?? 0"></span>
+                </span>
+                <span class="bar-value" data-testid="within-30-days">{{ percent(cohort.orderedWithin30DaysPct) }}</span>
+              </div>
+            </td>
+            <td class="num">{{ percent(cohort.orderedEverPct) }}</td>
+            <td class="num">{{ days(cohort.medianDaysToFirstOrder) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="footnote" *ngIf="anyIncomplete()" data-testid="activation-footnote">
+      * Some of this month's clients are still inside their first 30 days, so its figures can still rise.
+    </p>
+  </div>
+</app-report-panel>

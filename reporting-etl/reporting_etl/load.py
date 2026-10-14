@@ -4,6 +4,12 @@ Writes reporting rows using shared connection and error handling.
 The insert ignores an order that is already there. Kafka delivers at least once - a message is
 re-read if the ETL stops after loading it but before committing its offset - and each order
 publishes once, at its final status, so a repeat is always the same row.
+
+A new order that executed (FILLED or REJECTED) also adds itself to its client's month in
+reporting.client_months, in the same statement: the rollup only sees the orders the insert
+actually stored, so a repeat that the insert ignores never counts twice, and the two tables can't
+disagree after a failure. CANCELLED and EXPIRED orders never executed, so they load without
+touching the rollup: an expired order's completed_at is when it lapsed, not anything the client did.
 """
 
 import logging
@@ -19,15 +25,36 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# RETURNING yields a row only when the order was new, so the rollup adds nothing for a repeat. The
+# final SELECT gives the statement its row count: 1 for a new order, 0 for one already loaded,
+# whether or not the rollup took it. Postgres runs every data-modifying CTE, read or not.
 INSERT_ORDER = """
-INSERT INTO reporting.orders (
-    order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
-    fill_price, rejection_reason, submitted_at, completed_at, order_type)
-VALUES (
-    %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
-    %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
-    %(completed_at)s, %(order_type)s)
-ON CONFLICT (order_id) DO NOTHING
+WITH inserted AS (
+    INSERT INTO reporting.orders (
+        order_id, account_id, client_id, instrument_id, symbol, side, quantity, status,
+        fill_price, rejection_reason, submitted_at, completed_at, order_type)
+    VALUES (
+        %(order_id)s, %(account_id)s, %(client_id)s, %(instrument_id)s, %(symbol)s, %(side)s,
+        %(quantity)s, %(status)s, %(fill_price)s, %(rejection_reason)s, %(submitted_at)s,
+        %(completed_at)s, %(order_type)s)
+    ON CONFLICT (order_id) DO NOTHING
+    RETURNING order_id, client_id, status, quantity, fill_price, completed_at
+),
+rolled_up AS (
+    INSERT INTO reporting.client_months AS cm (client_id, month, order_count, filled_count, filled_value)
+    SELECT client_id,
+           date_trunc('month', completed_at AT TIME ZONE 'UTC')::date,
+           1,
+           CASE WHEN status = 'FILLED' THEN 1 ELSE 0 END,
+           CASE WHEN status = 'FILLED' THEN quantity * fill_price ELSE 0 END
+    FROM inserted
+    WHERE status IN ('FILLED', 'REJECTED')
+    ON CONFLICT (client_id, month) DO UPDATE SET
+        order_count = cm.order_count + EXCLUDED.order_count,
+        filled_count = cm.filled_count + EXCLUDED.filled_count,
+        filled_value = cm.filled_value + EXCLUDED.filled_value
+)
+SELECT order_id FROM inserted
 """
 
 

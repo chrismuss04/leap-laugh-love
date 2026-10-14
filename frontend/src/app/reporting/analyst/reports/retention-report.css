@@ -1,0 +1,44 @@
+/* Retention: the section's signature. Larger cells on a continuous ramp from the card to the
+   primary colour; --heat is the active share, 0-100. */
+
+.retention .heat {
+  min-width: 56px;
+  padding: 11px 8px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  border-bottom-color: var(--card);
+  background: color-mix(in srgb, var(--primary) calc(var(--heat, 0) * 0.92%), var(--card));
+  transition: filter 120ms ease-out;
+}
+
+.retention .heat.strong {
+  color: var(--primary-foreground);
+  font-weight: 600;
+}
+
+.retention .heat.none {
+  background: var(--card);
+}
+
+/* The sign-up month is a different kind of figure from the months after it. */
+.retention .m0 {
+  border-right: 3px solid var(--surface);
+}
+
+/* The lit row and column: brighter cells and labels, so a cohort or a month reads at a glance. */
+.retention .heat.cross:not(.none) {
+  filter: brightness(1.22);
+}
+
+.retention .lit {
+  color: var(--primary);
+}
+
+.retention .heat:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .retention .heat { transition: none; }
+}
