@@ -43,6 +43,12 @@ marketdata:
     # over, so the wide widths cost a handful of inserts a day.
     candle-bucket-seconds: 60,300,3600,86400
     candle-flush-interval-ms: 5000
+    # Market hours (see market.hours below): pre-market and after-hours trading is thin, so prices
+    # move at this fraction of their usual volatility. While closed they don't move at all; when
+    # trading resumes each price gaps once by what it would have moved meanwhile, at most this
+    # many percent either way.
+    extended-vol-factor: 0.4
+    gap-cap-pct: 3
   history:
     backfill:
       # Generates synthetic history on first boot for instruments that have none, so charts
@@ -65,6 +71,8 @@ marketdata:
       initial-delay-ms: 300000
   ingestion:
     spread-bps: 5
+    # The spread is this many times wider in pre-market and after-hours.
+    extended-spread-factor: 4
     default-lot-size: 100
     exchange: SIMULATED
     max-clock-skew-seconds: 5

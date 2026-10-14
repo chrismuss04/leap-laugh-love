@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.marketdata.history;
 
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +41,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  * class's monitor - at every minute boundary that is one serialised write per instrument
  * competing with the tick interval. The queue puts all I/O on the flush thread and lets it
  * batch. The cost is that a crash can lose up to one flush interval of completed candles.
+ *
+ * <p>Ticks made while the market is closed carry the frozen last price, not trades, so they are
+ * left out: charts skip the night instead of drawing a flat line across it.
  */
 @Component
 public class PriceCandleAccumulator {
@@ -92,6 +96,9 @@ public class PriceCandleAccumulator {
     @EventListener
     public synchronized void onPriceTick(PriceTickEvent event) {
         PriceState state = event.priceState();
+        if (state.session() == MarketSession.CLOSED) {
+            return;
+        }
         for (int width : candleBucketSeconds) {
             BucketKey key = new BucketKey(state.symbol(), width);
             OffsetDateTime bucketStart = bucketStart(state.asOf(), width);

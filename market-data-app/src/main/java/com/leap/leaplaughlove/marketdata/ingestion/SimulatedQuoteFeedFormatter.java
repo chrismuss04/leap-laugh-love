@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.marketdata.ingestion;
 
 import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -15,6 +16,9 @@ import java.util.concurrent.atomic.AtomicLong;
  * simulation engine's last price (which has no spread of its own). Isolated so this is the
  * one class to replace if a real feed is wired in later - everything downstream of it only
  * ever sees the raw wire format.
+ *
+ * <p>Pre-market and after-hours trading is thin, so the spread there is
+ * {@code extended-spread-factor} times wider.
  */
 @Component
 public class SimulatedQuoteFeedFormatter {
@@ -23,6 +27,7 @@ public class SimulatedQuoteFeedFormatter {
     private static final String DELIMITER = "|";
 
     private final BigDecimal halfSpreadFraction;
+    private final BigDecimal extendedHalfSpreadFraction;
     private final long lotSize;
     private final String exchange;
 
@@ -35,13 +40,30 @@ public class SimulatedQuoteFeedFormatter {
      * @param lotSize the size to report for every bid/ask/last quote
      * @param exchange the exchange tag to report on every formatted line
      */
+    public SimulatedQuoteFeedFormatter(long spreadBps, long lotSize, String exchange) {
+        this(spreadBps, lotSize, exchange, 1);
+    }
+
+    /**
+     * Creates a new SimulatedQuoteFeedFormatter whose spread widens in extended hours.
+     * @param spreadBps the full bid/ask spread to apply in regular hours, in basis points of the last price
+     * @param lotSize the size to report for every bid/ask/last quote
+     * @param exchange the exchange tag to report on every formatted line
+     * @param extendedSpreadFactor how many times wider the spread is in pre-market and after-hours
+     */
+    @Autowired
     public SimulatedQuoteFeedFormatter(
             @Value("${marketdata.ingestion.spread-bps:5}") long spreadBps,
             @Value("${marketdata.ingestion.default-lot-size:100}") long lotSize,
-            @Value("${marketdata.ingestion.exchange:SIMULATED}") String exchange) {
+            @Value("${marketdata.ingestion.exchange:SIMULATED}") String exchange,
+            @Value("${marketdata.ingestion.extended-spread-factor:4}") long extendedSpreadFactor) {
+        if (extendedSpreadFactor < 1) {
+            throw new IllegalArgumentException("extended-spread-factor must be at least 1");
+        }
         this.halfSpreadFraction = BigDecimal.valueOf(spreadBps)
                 .divide(BigDecimal.valueOf(10_000L), 10, RoundingMode.HALF_UP)
                 .divide(BigDecimal.valueOf(2), 10, RoundingMode.HALF_UP);
+        this.extendedHalfSpreadFraction = halfSpreadFraction.multiply(BigDecimal.valueOf(extendedSpreadFactor));
         this.lotSize = lotSize;
         this.exchange = exchange;
     }
@@ -54,7 +76,8 @@ public class SimulatedQuoteFeedFormatter {
      */
     public String format(PriceState state) {
         BigDecimal lastPrice = state.price();
-        BigDecimal spread = lastPrice.multiply(halfSpreadFraction).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+        BigDecimal halfSpread = state.session().isExtendedHours() ? extendedHalfSpreadFraction : halfSpreadFraction;
+        BigDecimal spread = lastPrice.multiply(halfSpread).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
         BigDecimal bidPrice = lastPrice.subtract(spread).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
         BigDecimal askPrice = lastPrice.add(spread).setScale(PRICE_SCALE, RoundingMode.HALF_UP);
         long sequenceNumber = sequenceBySymbol
