@@ -79,7 +79,7 @@ class TradeTimelineServiceTest {
     @Test
     @DisplayName("A filled order reads placement, pricing, acceptance, execution, settlement and fill in order")
     void filledOrder() {
-        givenOrder(new OrderRecord(summary("FILLED"), ACCEPTED, null, EXECUTED, null,
+        givenOrder(new OrderRecord(summary("FILLED"), "MARKET", ACCEPTED, null, EXECUTED, null,
                 new BigDecimal("150.00"), new BigDecimal("1.00")));
         when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(new ExecutionRecord(EXECUTION_ID, "FILLED", 10L,
                 new BigDecimal("150.050000"), EXECUTED, "Executed at market price", quote("149.95", "150.05"))));
@@ -111,7 +111,7 @@ class TradeTimelineServiceTest {
     @DisplayName("A price-tolerance rejection shows the quote that broke the tolerance, once")
     void toleranceRejection() {
         String reason = "Price moved 1.33% from your quoted $150.00 to $152.00, beyond your 1.00% tolerance - order rejected";
-        givenOrder(new OrderRecord(summary("REJECTED"), null, REJECTED, null, reason,
+        givenOrder(new OrderRecord(summary("REJECTED"), "MARKET", null, REJECTED, null, reason,
                 new BigDecimal("150.00"), new BigDecimal("1.00")));
         when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(
                 new ExecutionRecord(EXECUTION_ID, "REJECTED", null, null, REJECTED, reason, quote("151.90", "152.00"))));
@@ -128,7 +128,7 @@ class TradeTimelineServiceTest {
     @DisplayName("A settlement refusal shows the execution, then the rejection with account-app's reason")
     void settlementRefusal() {
         String reason = "Settlement failed: Cannot settle sell: insufficient position quantity";
-        givenOrder(new OrderRecord(summary("REJECTED"), ACCEPTED, REJECTED, null, reason, null, null));
+        givenOrder(new OrderRecord(summary("REJECTED"), "MARKET", ACCEPTED, REJECTED, null, reason, null, null));
         when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(new ExecutionRecord(EXECUTION_ID, "FILLED", 10L,
                 new BigDecimal("150.05"), EXECUTED, "Executed at market price", quote("149.95", "150.05"))));
 
@@ -143,7 +143,7 @@ class TradeTimelineServiceTest {
     @Test
     @DisplayName("A rejected execution whose reason differs from the order's is shown on its own")
     void separateExecutionRejection() {
-        givenOrder(new OrderRecord(summary("REJECTED"), null, REJECTED, null, "Market quote unavailable", null, null));
+        givenOrder(new OrderRecord(summary("REJECTED"), "MARKET", null, REJECTED, null, "Market quote unavailable", null, null));
         when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(
                 new ExecutionRecord(EXECUTION_ID, "REJECTED", null, null, REJECTED, "Venue closed", null)));
 
@@ -156,7 +156,7 @@ class TradeTimelineServiceTest {
     @Test
     @DisplayName("A fill with no stored quote says the quote wasn't recorded")
     void fillWithoutQuote() {
-        givenOrder(new OrderRecord(summary("FILLED"), ACCEPTED, null, EXECUTED, null, null, null));
+        givenOrder(new OrderRecord(summary("FILLED"), "MARKET", ACCEPTED, null, EXECUTED, null, null, null));
         when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(new ExecutionRecord(EXECUTION_ID, "FILLED", 10L,
                 new BigDecimal("150.0000"), EXECUTED, "Executed at market price", null)));
 
@@ -236,5 +236,65 @@ class TradeTimelineServiceTest {
         assertThrows(IllegalArgumentException.class, () -> service.search(criteria(null, "alice.johnson@leap.com",
                 OffsetDateTime.parse("2026-10-08T00:00:00Z"), OffsetDateTime.parse("2026-10-01T00:00:00Z"))));
         verifyNoInteractions(repository);
+    }
+
+    @Test
+    @DisplayName("Counts the same trimmed search as the audit log")
+    void countByStatus() {
+        OrderCounts counts = new OrderCounts(4, 2, 1, 1);
+        when(repository.countByStatus(any())).thenReturn(counts);
+
+        assertEquals(counts, service.countByStatus(criteria(null, "  alice.johnson@leap.com ",
+                OffsetDateTime.parse("2026-10-01T09:00:00Z"), OffsetDateTime.parse("2026-10-08T17:31:00Z"))));
+
+        ArgumentCaptor<TradeSearch> captor = ArgumentCaptor.forClass(TradeSearch.class);
+        verify(repository).countByStatus(captor.capture());
+        assertEquals("alice.johnson@leap.com", captor.getValue().clientEmail());
+        assertNull(captor.getValue().accountNumber());
+    }
+
+    @Test
+    @DisplayName("Counting needs the same period and client as searching")
+    void countByStatusNeedsCriteria() {
+        OffsetDateTime from = OffsetDateTime.parse("2026-10-01T00:00:00Z");
+        OffsetDateTime to = OffsetDateTime.parse("2026-10-08T00:00:00Z");
+
+        assertEquals("Give a time period to search", assertThrows(IllegalArgumentException.class,
+                () -> service.countByStatus(criteria(UUID.randomUUID(), null, null, to))).getMessage());
+        assertEquals("Give a client id or client email to search", assertThrows(IllegalArgumentException.class,
+                () -> service.countByStatus(criteria(null, null, from, to))).getMessage());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.countByStatus(criteria(UUID.randomUUID(), null, to, from)));
+        verifyNoInteractions(repository);
+    }
+
+    @Test
+    @DisplayName("Loads an order's records: the order, executions, cash entries and position movements")
+    void records() {
+        OrderRecord order = new OrderRecord(summary("FILLED"), "LIMIT", ACCEPTED, null, EXECUTED, null, null, null);
+        ExecutionRecord execution = new ExecutionRecord(EXECUTION_ID, "FILLED", 10L, new BigDecimal("150.05"),
+                EXECUTED, "Executed at market price", null);
+        CashEntryRecord cash = new CashEntryRecord("BUY_SETTLEMENT", new BigDecimal("-1500.50"), "USD", SETTLED);
+        PositionMovementRecord movement = new PositionMovementRecord("BUY_FILL", 10, new BigDecimal("1500.50"), SETTLED);
+        givenOrder(order);
+        when(repository.findExecutions(ORDER_ID)).thenReturn(List.of(execution));
+        when(repository.findCashEntries(ORDER_ID)).thenReturn(List.of(cash));
+        when(repository.findPositionMovements(ORDER_ID)).thenReturn(List.of(movement));
+
+        TradeRecords records = service.getRecords(ORDER_ID);
+
+        assertEquals(order, records.order());
+        assertEquals(List.of(execution), records.executions());
+        assertEquals(List.of(cash), records.cashEntries());
+        assertEquals(List.of(movement), records.positionMovements());
+    }
+
+    @Test
+    @DisplayName("Loading the records of an unknown order is a 404")
+    void recordsUnknownOrder() {
+        when(repository.findOrder(ORDER_ID)).thenReturn(Optional.empty());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.getRecords(ORDER_ID));
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
     }
 }
