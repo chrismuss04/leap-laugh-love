@@ -13,11 +13,16 @@
   <p class="page-subtext" data-testid="filter-summary">
     {{ activeFilters() === 0 ? 'Showing all orders.' : 'Showing orders matching ' + activeFilters() + (activeFilters() === 1 ? ' filter.' : ' filters.') }}
   </p>
-  <div class="stats">
-    <app-stat-tile label="Orders submitted"></app-stat-tile>
-    <app-stat-tile label="Filled"></app-stat-tile>
-    <app-stat-tile label="Rejected"></app-stat-tile>
-    <app-stat-tile label="Awaiting execution"></app-stat-tile>
+  <div class="stats" data-testid="order-counts" [attr.aria-busy]="countsState() === 'loading'">
+    <app-stat-tile *ngFor="let tile of tiles()" [label]="tile.label" [value]="tile.value" [hint]="tile.hint ?? ''"
+                   [loading]="countsState() === 'loading'"></app-stat-tile>
+  </div>
+  <p *ngIf="countsState() === 'idle'" class="page-subtext" data-testid="counts-hint">
+    Enter a time period and a client id or email in the filters above to count orders.
+  </p>
+  <div *ngIf="countsState() === 'error'" class="stats-error" role="alert">
+    <p>Couldn't count the orders for these filters.</p>
+    <button type="button" (click)="retryCounts()">Try again</button>
   </div>
 </section>
 
@@ -44,10 +49,47 @@
   </app-report-panel>
 
   <app-report-panel eyebrow="Exceptions" heading="Rejections by reason"
-                    description="Rejected orders grouped by rejection reason, to spot recurring failures."
-                    source="trading.orders.rejection_reason"></app-report-panel>
+                    description="Orders submitted in the filter's period and rejected, grouped by rejection reason to spot recurring failures. The client and other filters don't apply."
+                    [scope]="rejectionsScope()"
+                    source="trading.orders.rejection_reason"
+                    [state]="rejectionsState()" [message]="rejectionsMessage()" (retry)="retryRejections()">
+    <div class="table-scroll">
+      <table class="audit-log">
+        <thead>
+          <tr><th>Reason</th><th class="num">Orders</th><th>Last rejected (UTC)</th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let rejection of rejections()" data-testid="rejection-row">
+            <td [class.text-muted]="!rejection.reason">{{ rejection.reason ?? 'No reason recorded' }}</td>
+            <td class="num">{{ rejection.count | number }}</td>
+            <td class="num">{{ rejection.lastRejectedAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </app-report-panel>
 
   <app-report-panel eyebrow="Exceptions" heading="Stuck orders"
-                    description="Orders submitted or accepted that never reached a final status, oldest first."
-                    source="trading.orders.status"></app-report-panel>
+                    description="Orders still submitted or accepted minutes after they were placed, oldest first. Limit, stop and trailing orders waiting for their price aren't stuck, so aren't listed. The filters don't apply."
+                    scope="All clients · Right now"
+                    source="trading.orders.status"
+                    [state]="stuckState()" [message]="stuckMessage()" (retry)="retryStuckOrders()">
+    <div class="table-scroll">
+      <table class="audit-log">
+        <thead>
+          <tr><th>Submitted (UTC)</th><th>Waiting</th><th>Client</th><th>Order</th><th>Status</th><th></th></tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let order of stuckOrders(); trackBy: trackOrder" data-testid="stuck-order-row">
+            <td class="num">{{ order.submittedAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</td>
+            <td class="num">{{ waitingFor(order) }}</td>
+            <td>{{ order.clientEmail }}</td>
+            <td>{{ order.side }} {{ order.quantity }} {{ order.symbol }}</td>
+            <td>{{ order.status | titlecase }}</td>
+            <td><a [routerLink]="['/reporting/orders', order.orderId]" queryParamsHandling="preserve">Trace</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </app-report-panel>
 </section>

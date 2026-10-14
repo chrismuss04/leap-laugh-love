@@ -23,3 +23,12 @@
   color: var(--primary);
   font-weight: 600;
 }
+
+.audit-log td.text-muted {
+  color: var(--muted-foreground);
+}
+
+/* The exception tables sit in half-width panels: they scroll rather than overflow on narrow screens. */
+.table-scroll {
+  overflow-x: auto;
+}
