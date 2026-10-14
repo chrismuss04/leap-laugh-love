@@ -27,3 +27,35 @@
   color: var(--loss);
   font-size: 14px;
 }
+
+.download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.btn-download {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  transition: filter 0.15s ease;
+}
+
+.btn-download:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-download:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.download-error {
+  color: var(--loss);
+  font-size: 13px;
+}

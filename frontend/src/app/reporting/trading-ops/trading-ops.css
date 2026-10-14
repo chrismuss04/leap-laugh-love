@@ -1,0 +1,25 @@
+.audit-log {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.audit-log th,
+.audit-log td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  color: var(--foreground);
+}
+
+.audit-log th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+
+.audit-log a {
+  color: var(--primary);
+  font-weight: 600;
+}

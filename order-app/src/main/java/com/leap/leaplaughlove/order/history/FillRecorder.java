@@ -4,6 +4,7 @@ import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.SettlementRequest;
 import com.leap.leaplaughlove.order.client.SettlementResponse;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.position.PositionMovement;
@@ -43,6 +44,8 @@ import java.util.UUID;
  */
 @Component
 public class FillRecorder {
+
+    private static final String MARKET_PRICE_REASON = "Executed at market price";
 
     private final ExecutionRepository executionRepository;
     private final PositionMovementRepository positionMovementRepository;
@@ -95,7 +98,12 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time) {
-        return recordExecution(order, price, time, "Executed at market price");
+        return recordExecution(order, price, time, MARKET_PRICE_REASON, null);
+    }
+
+    /** As {@link #recordExecution(Order, BigDecimal, OffsetDateTime)}, keeping the quote the price came from. */
+    public Execution recordExecution(Order order, BigDecimal price, ExecutionQuote quote, OffsetDateTime time) {
+        return recordExecution(order, price, time, MARKET_PRICE_REASON, quote);
     }
 
     /**
@@ -108,8 +116,13 @@ public class FillRecorder {
      * @return the saved FILLED execution
      */
     public Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time, String reason) {
+        return recordExecution(order, price, time, reason, null);
+    }
+
+    private Execution recordExecution(Order order, BigDecimal price, OffsetDateTime time, String reason,
+                                      ExecutionQuote quote) {
         return executionRepository.saveAndFlush(new Execution(
-                order, order.getQuantity(), price, Execution.Status.FILLED, reason, time));
+                order, order.getQuantity(), price, Execution.Status.FILLED, reason, time, quote));
     }
 
     /**

@@ -644,4 +644,84 @@ class OrderSubmissionServiceTest {
 
         verifyNoInteractions(orderEventPublisher);
     }
+    private Execution savedExecution() {
+        ArgumentCaptor<Execution> captor = ArgumentCaptor.forClass(Execution.class);
+        verify(executionRepository).saveAndFlush(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    @DisplayName("Trade Reconstruction: a filled order's execution keeps the market quote it was priced from")
+    void testFilledExecution_KeepsQuote() {
+        OffsetDateTime quotedAt = OffsetDateTime.parse("2026-10-08T14:02:05Z");
+        when(currentQuoteService.getCurrentQuote("AAPL")).thenReturn(new QuoteSnapshot(
+                "AAPL", new BigDecimal("149.95"), 100L, new BigDecimal("150.05"), 100L,
+                new BigDecimal("150.00"), 50L, "NASDAQ", quotedAt));
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.accepted());
+        when(accountClient.settleOrder(eq(accountId), any(SettlementRequest.class)))
+                .thenReturn(new SettlementResponse(UUID.randomUUID(), new BigDecimal("8499.50"), 10L, new BigDecimal("150.05")));
+
+        orderSubmissionService.submitOrder(
+                new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 10, null, null));
+
+        Execution execution = savedExecution();
+        assertEquals(new BigDecimal("150.0500"), execution.getFillPrice());
+        assertNotNull(execution.getQuote());
+        assertEquals(new BigDecimal("149.95"), execution.getQuote().getBid());
+        assertEquals(new BigDecimal("150.05"), execution.getQuote().getAsk());
+        assertEquals(new BigDecimal("150.00"), execution.getQuote().getLast());
+        assertEquals(quotedAt, execution.getQuote().getQuotedAt());
+        assertEquals("NASDAQ", execution.getQuote().getExchange());
+    }
+
+    @Test
+    @DisplayName("Trade Reconstruction: a price-tolerance rejection keeps the quote that broke the tolerance")
+    void testToleranceRejection_KeepsQuote() {
+        quoteAt("152.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.checkPriceTolerance(any(), any(), any()))
+                .thenReturn(TradeValidationResult.rejected("Price moved beyond your tolerance"));
+
+        orderSubmissionService.submitOrder(new OrderSubmissionRequest(
+                accountId, "AAPL", null, Order.Side.BUY, 10, new BigDecimal("150.00"), new BigDecimal("1.00")));
+
+        Execution execution = savedExecution();
+        assertEquals(Execution.Status.REJECTED, execution.getStatus());
+        assertEquals(new BigDecimal("152.00"), execution.getQuote().getAsk());
+    }
+
+    @Test
+    @DisplayName("Trade Reconstruction: a validation rejection keeps the quote it was priced from")
+    void testValidationRejection_KeepsQuote() {
+        quoteAt("150.00");
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(tradeValidationService.validateTrade(any(), any(), any(), anyLong(), any()))
+                .thenReturn(TradeValidationResult.rejected("Insufficient funds"));
+
+        orderSubmissionService.submitOrder(
+                new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 1000, null, null));
+
+        Execution execution = savedExecution();
+        assertEquals(Execution.Status.REJECTED, execution.getStatus());
+        assertEquals(new BigDecimal("150.00"), execution.getQuote().getAsk());
+    }
+
+    @Test
+    @DisplayName("Trade Reconstruction: a quote-unavailable rejection has no quote to keep")
+    void testQuoteUnavailableRejection_HasNoQuote() {
+        when(accountClient.getValidationData(eq(accountId), eq(instrument.getInstrumentId())))
+                .thenReturn(validationDto);
+        when(currentQuoteService.getCurrentQuote("AAPL"))
+                .thenThrow(new QuoteUnavailableException("Market data service offline"));
+
+        orderSubmissionService.submitOrder(
+                new OrderSubmissionRequest(accountId, "AAPL", null, Order.Side.BUY, 10, null, null));
+
+        assertNull(savedExecution().getQuote());
+    }
 }

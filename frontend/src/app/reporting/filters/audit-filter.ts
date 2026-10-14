@@ -2,13 +2,14 @@ import { Component, EventEmitter, Input, OnChanges, Output, signal } from '@angu
 import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
-  AuditFilter, EMPTY_AUDIT_FILTER, ORDER_SIDES, ORDER_STATUSES, OrderSide, OrderStatus, isOrderId, normalizeAudit
+  AuditFilter, EMPTY_AUDIT_FILTER, ORDER_SIDES, ORDER_STATUSES, OrderSide, OrderStatus, isOrderId, isUuid,
+  missingAuditCriteria, normalizeAudit
 } from './audit';
 
 /**
  * Staff Dashboards: trading operations' audit filter, plus an order lookup that jumps straight to
  * one order's lifecycle trace. Filters apply together on Apply, so a half-typed id never narrows
- * the audit; Reset clears them all.
+ * the audit, and only once the period and a client id or email are filled in; Reset clears them all.
  */
 @Component({
   selector: 'app-audit-filter',
@@ -18,18 +19,22 @@ import {
       <form class="filter-bar" [formGroup]="form" (ngSubmit)="submit()" aria-label="Audit filters">
         <label class="filter-field">
           <span class="filter-label">Submitted from</span>
-          <input type="datetime-local" class="filter-input" formControlName="from" [class.invalid]="rangeError()" />
+          <input type="datetime-local" class="filter-input" formControlName="from" required [class.invalid]="formError()" />
         </label>
         <label class="filter-field">
           <span class="filter-label">Submitted to</span>
-          <input type="datetime-local" class="filter-input" formControlName="to" [class.invalid]="rangeError()" />
+          <input type="datetime-local" class="filter-input" formControlName="to" required [class.invalid]="formError()" />
         </label>
         <label class="filter-field">
           <span class="filter-label">Client id</span>
-          <input type="text" class="filter-input" formControlName="clientId" placeholder="Any client" autocomplete="off" />
+          <input type="text" class="filter-input" formControlName="clientId" placeholder="Or use email" autocomplete="off" />
         </label>
         <label class="filter-field">
-          <span class="filter-label">Account id</span>
+          <span class="filter-label">Client email</span>
+          <input type="email" class="filter-input" formControlName="clientEmail" placeholder="Or use id" autocomplete="off" />
+        </label>
+        <label class="filter-field">
+          <span class="filter-label">Account id or number</span>
           <input type="text" class="filter-input" formControlName="accountId" placeholder="Any account" autocomplete="off" />
         </label>
         <label class="filter-field narrow">
@@ -54,7 +59,7 @@ import {
           <button type="button" class="btn-reset" (click)="reset()">Reset</button>
           <button type="submit" class="btn-apply">Apply</button>
         </div>
-        <span class="filter-error" *ngIf="rangeError()" role="alert">{{ rangeError() }}</span>
+        <span class="filter-error" *ngIf="formError()" role="alert">{{ formError() }}</span>
       </form>
 
       <form class="filter-bar lookup" [formGroup]="lookup" (ngSubmit)="traceOrder()" aria-label="Trace an order">
@@ -87,13 +92,14 @@ export class AuditFilterComponent implements OnChanges {
 
   readonly sides = ORDER_SIDES;
   readonly statuses = ORDER_STATUSES;
-  readonly rangeError = signal('');
+  readonly formError = signal('');
   readonly lookupError = signal('');
 
   readonly form = new FormGroup({
     from: new FormControl('', { nonNullable: true }),
     to: new FormControl('', { nonNullable: true }),
     clientId: new FormControl('', { nonNullable: true }),
+    clientEmail: new FormControl('', { nonNullable: true }),
     accountId: new FormControl('', { nonNullable: true }),
     symbol: new FormControl('', { nonNullable: true }),
     side: new FormControl('', { nonNullable: true }),
@@ -106,29 +112,34 @@ export class AuditFilterComponent implements OnChanges {
   ngOnChanges(): void {
     const v = this.value;
     this.form.setValue({
-      from: v.from ?? '', to: v.to ?? '', clientId: v.clientId ?? '', accountId: v.accountId ?? '',
+      from: v.from ?? '', to: v.to ?? '', clientId: v.clientId ?? '', clientEmail: v.clientEmail ?? '',
+      accountId: v.accountId ?? '',
       symbol: v.symbol ?? '', side: v.side ?? '', status: v.status ?? ''
     });
-    this.rangeError.set('');
+    this.formError.set('');
   }
 
   submit(): void {
     const v = this.form.getRawValue();
     const filter = normalizeAudit({
-      from: v.from || null, to: v.to || null, clientId: v.clientId, accountId: v.accountId,
-      symbol: v.symbol, side: (v.side || null) as OrderSide | null, status: (v.status || null) as OrderStatus | null
+      from: v.from || null, to: v.to || null, clientId: v.clientId, clientEmail: v.clientEmail,
+      accountId: v.accountId, symbol: v.symbol,
+      side: (v.side || null) as OrderSide | null, status: (v.status || null) as OrderStatus | null
     });
-    if (filter.from && filter.to && filter.from > filter.to) {
-      this.rangeError.set('"Submitted from" must be on or before "Submitted to".');
+    const error = missingAuditCriteria(filter)
+      ?? (filter.from! > filter.to! ? '"Submitted from" must be on or before "Submitted to".' : null)
+      ?? (filter.clientId && !isUuid(filter.clientId) ? 'Enter a full client id, or search by email instead.' : null);
+    if (error) {
+      this.formError.set(error);
       return;
     }
-    this.rangeError.set('');
+    this.formError.set('');
     this.apply.emit(filter);
   }
 
   reset(): void {
     this.form.reset();
-    this.rangeError.set('');
+    this.formError.set('');
     this.apply.emit(EMPTY_AUDIT_FILTER);
   }
 

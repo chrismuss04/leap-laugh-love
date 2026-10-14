@@ -2,6 +2,7 @@ package com.leap.leaplaughlove.order.execution;
 
 import com.leap.leaplaughlove.order.order.Order;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -56,6 +57,9 @@ public class Execution {
     @Column(name = "reason")
     private String reason;
 
+    @Embedded
+    private ExecutionQuote quote;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -98,6 +102,15 @@ public class Execution {
     public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
             Status status, String reason, OffsetDateTime executedAt) {
         this(null, order, fillQuantity, fillPrice, status, reason, executedAt);
+    }
+
+    /**
+     * @param quote the market quote the order was priced from, or null if none was used
+     */
+    public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
+            Status status, String reason, OffsetDateTime executedAt, ExecutionQuote quote) {
+        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);
+        this.quote = quote;
     }
 
     /**
@@ -161,5 +174,10 @@ public class Execution {
      */
     public String getReason() {
         return reason;
+    }
+
+    /** Null if no quote was used, or the execution predates quotes being stored. */
+    public ExecutionQuote getQuote() {
+        return quote;
     }
 }

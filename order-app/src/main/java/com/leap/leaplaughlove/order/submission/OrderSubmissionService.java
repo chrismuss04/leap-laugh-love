@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
@@ -316,20 +317,22 @@ public class OrderSubmissionService {
                 newOrder(request, instrument, accountValidation, maxSlippagePercent));
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
+        ExecutionQuote quote;
         BigDecimal executionPrice;
         try {
-            executionPrice = resolvePrice(request.side(), instrument);
+            quote = resolveQuote(instrument);
+            executionPrice = resolvePrice(request.side(), quote, instrument);
         } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {
             String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();
             return new FirstStep(rejectOrder(order, accountValidation,
-                    rejectReason != null ? rejectReason : "Market quote unavailable"), null, null);
+                    rejectReason != null ? rejectReason : "Market quote unavailable", null), null, null);
         }
 
         if (orderType != Order.OrderType.MARKET) {
             return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);
         }
 
-        return fillMarketOrder(request, order, accountValidation, available, holds, executionPrice,
+        return fillMarketOrder(request, order, accountValidation, available, holds, quote, executionPrice,
                 maxSlippagePercent);
     }
 
@@ -341,18 +344,19 @@ public class OrderSubmissionService {
      * @param accountValidation the account's validation data from account-app
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
+     * @param quote the live quote the order is priced from
      * @param executionPrice the side's live executable price
      * @param maxSlippagePercent the price tolerance in force, or null if none
      * @return the rejection, or the accepted order and its execution
      */
     private FirstStep fillMarketOrder(OrderSubmissionRequest request, Order order,
                                       AccountValidationDto accountValidation, AccountValidationDto available,
-                                      ReservationService.Holds holds, BigDecimal executionPrice,
-                                      BigDecimal maxSlippagePercent) {
+                                      ReservationService.Holds holds, ExecutionQuote quote,
+                                      BigDecimal executionPrice, BigDecimal maxSlippagePercent) {
         Instrument instrument = order.getInstrument();
         String bracketProblem = bracketProblem(order, executionPrice);
         if (bracketProblem != null) {
-            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem, quote), null, null);
         }
 
         // 5. Price tolerance: reject if the market moved too far from the client's quote
@@ -360,7 +364,7 @@ public class OrderSubmissionService {
             TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(
                     request.quotedPrice(), executionPrice, maxSlippagePercent);
             if (!toleranceResult.isValid()) {
-                return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason()), null, null);
+                return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason(), quote), null, null);
             }
         }
 
@@ -370,7 +374,7 @@ public class OrderSubmissionService {
 
         if (!validationResult.isValid()) {
             return new FirstStep(rejectOrder(order, accountValidation,
-                    ReservationService.explain(validationResult.reason(), request.side(), holds)), null, null);
+                    ReservationService.explain(validationResult.reason(), request.side(), holds), quote), null, null);
         }
 
         // Acceptance flow: transition order to ACCEPTED
@@ -379,7 +383,7 @@ public class OrderSubmissionService {
         order = orderRepository.saveAndFlush(order);
 
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
-        Execution execution = fillRecorder.recordExecution(order, executionPrice, OffsetDateTime.now());
+        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, OffsetDateTime.now());
         return new FirstStep(null, order, execution);
     }
 
@@ -668,19 +672,32 @@ public class OrderSubmissionService {
     }
 
     /**
-     * Rejects the specified order with the given reason and returns the corresponding response.
+     * Rejects the specified order with the given reason, recording no quote.
      * @param order the order to be rejected
      * @param accountValidation the account validation details associated with the order
      * @param reason the reason for rejecting the order
      * @return the response containing the result of the order rejection
      */
     private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason) {
+        return rejectOrder(order, accountValidation, reason, null);
+    }
+
+    /**
+     * Rejects the specified order with the given reason and returns the corresponding response.
+     * @param order the order to be rejected
+     * @param accountValidation the account validation details associated with the order
+     * @param reason the reason for rejecting the order
+     * @param quote the quote it was priced from, or null if never priced
+     * @return the response containing the result of the order rejection
+     */
+    private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason,
+                                                ExecutionQuote quote) {
         OffsetDateTime rejectTime = OffsetDateTime.now();
         order.markRejected(reason, rejectTime);
         order = orderRepository.saveAndFlush(order);
 
         Execution execution = new Execution(
-                order, null, null, Execution.Status.REJECTED, reason, rejectTime);
+                order, null, null, Execution.Status.REJECTED, reason, rejectTime, quote);
         execution = executionRepository.saveAndFlush(execution);
 
         BigDecimal currentBalance = accountValidation != null ? accountValidation.cashBalance() : BigDecimal.ZERO;
@@ -707,22 +724,22 @@ public class OrderSubmissionService {
         throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Either instrumentId or symbol must be provided");
     }
 
-    /**
-     * Resolves the price the order fills at from the current market quote. The client's quoted
-     * price is never used: it is only checked against this one.
-     * @param side the side of the order: BUY fills at the ask, SELL at the bid
-     * @param instrument the instrument associated with the order
-     * @return the resolved price for the order
-     * @throws ResponseStatusException unprocessable entity (422) if no valid price can be determined
-     */
-    private BigDecimal resolvePrice(Order.Side side, Instrument instrument) {
+    /** @throws ResponseStatusException 422 if market data returned no quote */
+    private ExecutionQuote resolveQuote(Instrument instrument) {
         QuoteSnapshot quote = currentQuoteService.getCurrentQuote(instrument.getSymbol());
         if (quote == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "No quote returned for symbol: " + instrument.getSymbol());
         }
+        return ExecutionQuote.of(quote);
+    }
 
-        BigDecimal price = TriggerEvaluator.executablePrice(side, quote);
+    /**
+     * The client's quoted price is never the fill price: it is only checked against this one.
+     * @throws ResponseStatusException 422 if the quote has no usable price
+     */
+    private BigDecimal resolvePrice(Order.Side side, ExecutionQuote quote, Instrument instrument) {
+        BigDecimal price = quote.executablePrice(side);
         if (price == null) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,
                     "No valid executable price found for symbol: " + instrument.getSymbol());
