@@ -92,7 +92,7 @@ export abstract class EventStream {
         lastDataAt = Date.now();
         buffer += value;
         const frames = buffer.split(/\r?\n\r?\n/);
-        buffer = frames.pop() ?? '';
+        buffer = frames.splice(-1)[0];
         frames.forEach(frame => this.handleFrame(frame));
       }
       throw new Error('stream closed');
@@ -107,9 +107,6 @@ export abstract class EventStream {
   }
 
   private scheduleReconnect(): void {
-    if (this.streamUrl() === null) {
-      return;
-    }
     const delay = Math.min(EventStream.MAX_BACKOFF_MS, 1000 * 2 ** this.attempt);
     this.attempt++;
     this.zone.run(() => this.status.set('reconnecting'));
