@@ -51,15 +51,7 @@ public class ActivityReportService {
      */
     public ActivityReport getActivityReport(LocalDate from, LocalDate to,
                                             ReportGranularity granularity, UUID instrumentId) {
-        if (from == null || to == null) {
-            throw new IllegalArgumentException("from and to are required");
-        }
-        if (from.isAfter(to)) {
-            throw new IllegalArgumentException("from must be on or before to");
-        }
-        if (ChronoUnit.DAYS.between(from, to) + 1 > MAX_PERIOD_DAYS) {
-            throw new IllegalArgumentException("A report can cover at most " + MAX_PERIOD_DAYS + " days");
-        }
+        requireValidPeriod(from, to);
         if (granularity == null) {
             throw new IllegalArgumentException("granularity is required");
         }
@@ -94,6 +86,24 @@ public class ActivityReportService {
         return instrumentRepository.findAll(Sort.by("symbol")).stream()
                 .map(ActivityReportService::toReportInstrument)
                 .toList();
+    }
+
+    /**
+     * Checks a report period, which every report in this package shares the rules for.
+     * @param from the first UTC day of the period, inclusive
+     * @param to the last UTC day of the period, inclusive
+     * @throws IllegalArgumentException if a day is missing, they run backwards, or the period is too long
+     */
+    static void requireValidPeriod(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            throw new IllegalArgumentException("from and to are required");
+        }
+        if (from.isAfter(to)) {
+            throw new IllegalArgumentException("from must be on or before to");
+        }
+        if (ChronoUnit.DAYS.between(from, to) + 1 > MAX_PERIOD_DAYS) {
+            throw new IllegalArgumentException("A report can cover at most " + MAX_PERIOD_DAYS + " days");
+        }
     }
 
     // ISO weeks start on Monday, even when the report period starts mid-week.
