@@ -34,7 +34,7 @@ describe('OrderHistoryComponent', () => {
   it('skips signed-out loading', () => {
     auth.isAuthenticated.mockReturnValue(false);
     fixture.detectChanges();
-    http.expectNone(r => r.url === url);
+    expect(http.match(r => r.url === url)).toHaveLength(0);
   });
 
   // Verify the loading indicator becomes an empty-state message after an empty response.
@@ -79,7 +79,7 @@ describe('OrderHistoryComponent', () => {
     finishLoad();
     fixture.componentInstance.prevPage();
     fixture.componentInstance.nextPage();
-    http.expectNone(r => r.url === url);
+    expect(http.match(r => r.url === url)).toHaveLength(0);
   });
 
   // Verify clicking an order opens its fill details and clicking again closes them.

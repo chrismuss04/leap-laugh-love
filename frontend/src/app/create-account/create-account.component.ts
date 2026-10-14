@@ -104,6 +104,8 @@ export class CreateAccountComponent implements OnInit {
       formatted = `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
     } else if (digits.length > 3) {
       formatted = `${digits.slice(0, 3)}-${digits.slice(3)}`;
+    } else {
+      // Up to three digits need no separators; keep the original digits.
     }
 
     this.registrationForm.get('ssn')?.setValue(formatted);
@@ -172,14 +174,13 @@ export class CreateAccountComponent implements OnInit {
 
   isFieldInvalid(fieldName: string): boolean {
     const field = this.registrationForm.get(fieldName);
-    if (fieldName === 'confirmPassword') {
-      return !!(
-        field &&
-        (field.dirty || field.touched) &&
-        (field.invalid || this.registrationForm.hasError('passwordsMismatch'))
-      );
+    if (!field || !(field.dirty || field.touched)) {
+      return false;
     }
-    return !!(field && field.invalid && (field.dirty || field.touched));
+    if (fieldName === 'confirmPassword') {
+      return field.invalid || this.registrationForm.hasError('passwordsMismatch');
+    }
+    return field.invalid;
   }
 
   getErrorMessage(fieldName: string): string {

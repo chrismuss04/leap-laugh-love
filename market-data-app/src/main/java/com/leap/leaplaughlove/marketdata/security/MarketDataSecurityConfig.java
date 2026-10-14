@@ -22,7 +22,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Configures Spring Security for the market data service: stateless JWT authentication
  * (reusing iam-app's {@link JwtService}) for every endpoint except health and error.
  */
-// Session Timeout & Revocation: common-security is outside each app's component scan.
+// Session Timeout & Revocation: common is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class MarketDataSecurityConfig {

@@ -9,7 +9,7 @@ import com.leap.leaplaughlove.account.position.PositionMovement;
 import com.leap.leaplaughlove.account.position.PositionMovementRepository;
 import com.leap.leaplaughlove.account.position.PositionRepository;
 import com.leap.leaplaughlove.account.quote.PriceHistoryClient;
-import com.leap.leaplaughlove.account.quote.PriceHistoryClient.CandleClose;
+import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { AbstractControl, FormBuilder, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { AuthService } from '../services/auth.service';
+import { PasswordToggleComponent } from '../shared/password-toggle';
 
 function passwordsMatch(group: AbstractControl): ValidationErrors | null {
   const { password, confirmPassword } = group.value;
@@ -12,7 +13,7 @@ function passwordsMatch(group: AbstractControl): ValidationErrors | null {
 /** Where the emailed reset link lands: sets a new password using the token in the link. */
 @Component({
     selector: 'app-reset-password',
-    imports: [CommonModule, ReactiveFormsModule, RouterLink],
+    imports: [CommonModule, ReactiveFormsModule, RouterLink, PasswordToggleComponent],
     templateUrl: './reset-password.component.html',
     styles: `
     form { display: flex; flex-direction: column; gap: 18px; }

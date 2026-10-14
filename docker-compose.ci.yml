@@ -42,6 +42,14 @@ services:
     cpus: 1.0
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx512m -XX:+UseSerialGC"
+  reporting-app:
+    build:
+      labels:
+        leap.ci: build
+    mem_limit: 640m
+    cpus: 1.0
+    environment:
+      JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
   kafka:
     # Heap is 512m (KAFKA_HEAP_OPTS in docker-compose.yml) plus off-heap buffers.
     mem_limit: 768m

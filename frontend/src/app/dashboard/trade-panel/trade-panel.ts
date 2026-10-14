@@ -130,6 +130,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
       this.trailValue.set(applied.trailPercent);
     } else if (applied.orderType !== 'TRAILING_STOP') {
       this.trailValue.set(null);
+    } else {
+      // A trailing-stop template without a percentage keeps the current trail settings.
     }
     if (applied.side === 'BUY' && applied.takeProfitPercent != null && applied.stopLossPercent != null) {
       const entry = this.estimatePrice();
@@ -344,7 +346,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const account = this.account();
     const price = this.estimatePrice();
     const market = this.price();
-    if (!account || !this.validQuantity() || price == null || !(price > 0) || market == null) {
+    if (!account || !this.validQuantity()) {
+      return null;
+    }
+    if (price == null || !(price > 0) || market == null) {
       return null;
     }
     return orderImpact({
@@ -471,9 +476,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     // manual pick in the ticket sticks.
     const accountsArrived = changes['accounts'] && !changes['accounts'].previousValue?.length;
     const preferred = this.preferredAccountId();
-    if ((changes['preferredAccountId'] || accountsArrived) && this.step() !== 'submitting'
-        && preferred && preferred !== this.accountId()
-        && accounts.some(a => a.accountId === preferred)) {
+    const preferenceChanged = changes['preferredAccountId'] || accountsArrived;
+    const canSwitch = !!preferred && preferred !== this.accountId()
+        && accounts.some(a => a.accountId === preferred);
+    if (preferenceChanged && this.step() !== 'submitting' && canSwitch) {
       this.cancelConfirmation();
       this.accountId.set(preferred);
     }
@@ -600,7 +606,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const entry = this.estimatePrice();
     const take = this.takeProfit();
     const stop = this.stopLoss();
-    if (!this.bracketActive() || entry == null || take == null || stop == null || !this.validQuantity()) {
+    if (!this.bracketActive() || !this.validQuantity()) {
+      return null;
+    }
+    if (entry == null || take == null || stop == null) {
       return null;
     }
     const value = riskReward(entry, take, stop, this.quantity()!);
@@ -719,8 +728,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
         return `Your limit is ${buy ? 'at or above' : 'at or below'} ${this.sideReference()}, so this will fill right away.`;
       }
     }
-    if (this.orderType() === 'STOP_LIMIT' && limit != null && stop != null && (buy ? limit < stop : limit > stop)) {
-      return `Your limit is ${buy ? 'below' : 'above'} your stop, so this only fills if the price ${buy ? 'falls back' : 'recovers'} after reaching your stop.`;
+    if (this.orderType() === 'STOP_LIMIT' && limit != null && stop != null) {
+      if (buy ? limit < stop : limit > stop) {
+        return `Your limit is ${buy ? 'below' : 'above'} your stop, so this only fills if the price ${buy ? 'falls back' : 'recovers'} after reaching your stop.`;
+      }
     }
     const target = this.hasStop() ? stop : limit;
     const distance = distanceTo(target, price);
@@ -772,7 +783,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
       value: toCents(price * (1 + (buy ? step : -step) / 100))
     }));
     const cost = this.averageCost();
-    if (!buy && cost != null && cost > 0 && cost < price && this.sharesOwned() > 0) {
+    const costBelowPrice = cost != null && cost > 0 && cost < price;
+    if (!buy && costBelowPrice && this.sharesOwned() > 0) {
       chips.push({ label: 'Break-even', value: toCents(cost) });
     }
     return chips;
@@ -842,6 +854,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
         const distance = Math.abs(price - value);
         this.setTrailValue(this.trailUnit() === 'PERCENT' ? Math.round(distance / price * 1000) / 10 : toCents(distance));
       }
+    } else {
+      // Ignore chart lines that do not represent an editable order price.
     }
   }
 

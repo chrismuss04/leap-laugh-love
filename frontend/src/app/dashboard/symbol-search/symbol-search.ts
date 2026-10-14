@@ -97,6 +97,8 @@ export class SymbolSearchComponent {
     } else if (event.key === 'Escape') {
       this.close();
       this.input?.nativeElement.blur();
+    } else {
+      // Leave other keys and navigation without results to the input's default behavior.
     }
   }
 

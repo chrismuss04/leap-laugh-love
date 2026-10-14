@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
 );
 
 -- Staff roles: one row per staff login, kept apart from client_sessions so a staff token can
--- only ever match a staff session (see common-security's Role and ClientSessionValidator).
+-- only ever match a staff session (see common's Role and ClientSessionValidator).
 -- Same lifetime rules as client_sessions; never store the raw JWT.
 CREATE TABLE IF NOT EXISTS iam.staff_sessions (
     session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -543,6 +543,29 @@ CREATE INDEX IF NOT EXISTS idx_reporting_orders_client_completed_at
 -- Backs reports over a time range across all clients.
 CREATE INDEX IF NOT EXISTS idx_reporting_orders_completed_at
     ON reporting.orders (completed_at);
+
+-- Analyst Reporting: one row per client per UTC month they completed an order in, kept by
+-- reporting-etl in the same statement that inserts each new reporting.orders row, so a replayed
+-- order never counts twice. Backs the monthly analyst reports (retention, client activity,
+-- concentration) without scanning every order. scripts/migrate-reporting-client-months.sql
+-- rebuilds it from reporting.orders.
+CREATE TABLE IF NOT EXISTS reporting.client_months (
+    client_id UUID NOT NULL,
+    -- First day of the UTC month the orders completed in.
+    month DATE NOT NULL CHECK (EXTRACT(DAY FROM month) = 1),
+    -- Every executed order, FILLED or REJECTED: a client is active in a month they traded or tried
+    -- to. CANCELLED and EXPIRED orders never executed and are left out of the rollup.
+    order_count INTEGER NOT NULL CHECK (order_count > 0),
+    filled_count INTEGER NOT NULL CHECK (filled_count >= 0 AND filled_count <= order_count),
+    -- Sum of quantity * fill_price over FILLED orders. Unbounded NUMERIC: a precision limit here
+    -- could refuse a sum, and with it the order row loaded in the same statement.
+    filled_value NUMERIC NOT NULL CHECK (filled_value >= 0),
+    PRIMARY KEY (client_id, month)
+);
+
+-- Backs every report over a range of months across all clients.
+CREATE INDEX IF NOT EXISTS idx_reporting_client_months_month
+    ON reporting.client_months (month);
 
 -- User Reporting: one row per registered client, loaded from client-register events.
 -- No IAM foreign key: reporting replay must not depend on operational client rows.

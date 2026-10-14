@@ -217,21 +217,50 @@ describe('Commercial analyst dashboard', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('opens at /reporting with a place for every business report, and loads only the activity report', async () => {
+  it('opens at /reporting with the activity report and the six 12-month reports, and loads each once', async () => {
     const { el } = await open('/reporting', AnalystDashboardComponent);
 
     expect(router.url).toBe('/reporting');
     expect(el.querySelector('h1')!.textContent).toContain('Trading Activity');
     expect(panelTitles(el)).toEqual([
-      'Trading volume over time', 'Most traded instruments', 'Average order value over time', 'Client registrations over time'
+      'Monthly scorecard', 'Retention by sign-up month', 'Client activity', 'Activation',
+      'Volume from top clients', 'Orders by value'
     ]);
+    expect(text(el.querySelector('#year-heading')!)).toBe('The last 12 months');
+    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(0);
     expect(Array.from(el.querySelectorAll('.stat-label')).map(l => l.textContent))
       .toEqual(['Trading volume', 'Average order value', 'New registrations', 'Active clients']);
     expect(text(el.querySelector('[data-testid="period-summary"]')!)).toMatch(/^Past month: /);
     expect(el.querySelector('app-activity-report')).not.toBeNull();
     http.expectOne('/api/order/reports/instruments');
     http.expectOne(request => request.url === '/api/order/reports/activity');
+    for (const report of ['scorecard', 'client-activity', 'activation', 'retention', 'concentration', 'order-sizes']) {
+      http.expectOne(`/api/reporting/analyst/${report}`);
+    }
     http.expectNone(() => true);
+  });
+
+  it('names the months the 12-month reports cover once, in their heading, when the first report arrives', async () => {
+    const { harness, el } = await open('/reporting', AnalystDashboardComponent);
+    expect(el.querySelector('[data-testid="report-window"]')).toBeNull();
+
+    http.expectOne('/api/reporting/analyst/scorecard').flush({ window: { firstMonth: '2025-10', lastMonth: '2026-09' }, months: [] });
+    harness.fixture.detectChanges();
+
+    expect(text(el.querySelector('[data-testid="report-window"]')!)).toBe('Oct 2025 – Sep 2026');
+  });
+
+  it("doesn't reload the 12-month reports when the period changes: they always cover the last 12 months", async () => {
+    const { harness, el } = await open('/reporting', AnalystDashboardComponent);
+    http.match(request => request.url.startsWith('/api/reporting/analyst/'));
+    const tab = Array.from(el.querySelectorAll('[role="tab"]'))
+      .find(button => button.textContent!.trim() === 'Past 3 months') as HTMLButtonElement;
+
+    tab.click();
+    await harness.fixture.whenStable();
+
+    expect(router.url).toBe('/reporting?period=3M');
+    http.expectNone(request => request.url.startsWith('/api/reporting/analyst/'));
   });
 
   it('keeps the chosen period in the URL, and leaves it out for the default', async () => {
