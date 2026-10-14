@@ -23,48 +23,37 @@ export interface LifecycleStage {
 
 export type OrderOutcome = 'FILLED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
 
-const STAGES: readonly Pick<LifecycleStage, 'key' | 'label' | 'description' | 'source'>[] = [
-  {
-    key: 'SUBMITTED', label: 'Submitted',
-    description: 'The client placed the order.',
-    source: 'trading.orders.submitted_at'
-  },
-  {
-    key: 'TRIGGERED', label: 'Price reached',
-    description: 'A limit, stop or trailing order waited OPEN until the market reached its price.',
-    source: 'trading.orders.triggered_at'
-  },
-  {
-    key: 'ACCEPTED', label: 'Accepted',
-    description: 'The order passed validation and was queued for execution.',
-    source: 'trading.orders.accepted_at'
-  },
-  {
-    key: 'EXECUTED', label: 'Executed',
-    description: 'The execution engine filled or rejected the order.',
-    source: 'trading.executions.executed_at'
-  },
-  {
-    key: 'COMPLETED', label: 'Filled or rejected',
-    description: 'The order reached its final status: filled, rejected, cancelled or expired.',
-    source: 'trading.orders.filled_at / rejected_at / cancelled_at / expired_at'
-  },
-  {
-    key: 'CASH_SETTLED', label: 'Cash settled',
-    description: 'The account was debited for a buy or credited for a sale.',
-    source: 'trading.cash_ledger.created_at'
-  },
-  {
-    key: 'HOLDINGS_UPDATED', label: 'Holdings updated',
-    description: 'The position moved by the filled quantity.',
-    source: 'trading.position_movements.created_at'
-  },
-  {
-    key: 'REPORTED', label: 'Reported',
-    description: 'The reporting pipeline loaded the finished order.',
-    source: 'reporting.orders.loaded_at'
-  }
+// [key, label, description, source] - a table rather than object literals, so the eight
+// stages read as one block.
+const STAGE_ROWS: readonly (readonly [StageKey, string, string, string])[] = [
+  ['SUBMITTED', 'Submitted',
+    'The client placed the order.',
+    'trading.orders.submitted_at'],
+  ['TRIGGERED', 'Price reached',
+    'A limit, stop or trailing order waited OPEN until the market reached its price.',
+    'trading.orders.triggered_at'],
+  ['ACCEPTED', 'Accepted',
+    'The order passed validation and was queued for execution.',
+    'trading.orders.accepted_at'],
+  ['EXECUTED', 'Executed',
+    'The execution engine filled or rejected the order.',
+    'trading.executions.executed_at'],
+  ['COMPLETED', 'Filled or rejected',
+    'The order reached its final status: filled, rejected, cancelled or expired.',
+    'trading.orders.filled_at / rejected_at / cancelled_at / expired_at'],
+  ['CASH_SETTLED', 'Cash settled',
+    'The account was debited for a buy or credited for a sale.',
+    'trading.cash_ledger.created_at'],
+  ['HOLDINGS_UPDATED', 'Holdings updated',
+    'The position moved by the filled quantity.',
+    'trading.position_movements.created_at'],
+  ['REPORTED', 'Reported',
+    'The reporting pipeline loaded the finished order.',
+    'reporting.orders.loaded_at']
 ];
+
+const STAGES: readonly Pick<LifecycleStage, 'key' | 'label' | 'description' | 'source'>[] =
+  STAGE_ROWS.map(([key, label, description, source]) => ({ key, label, description, source }));
 
 /** Every stage with nothing recorded yet: the trace's shape before its data is loaded. */
 export function emptyLifecycle(): LifecycleStage[] {

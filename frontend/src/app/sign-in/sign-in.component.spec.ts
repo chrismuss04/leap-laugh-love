@@ -11,6 +11,7 @@ import { CreateAccountComponent } from '../create-account/create-account.compone
 import { ForgotPasswordComponent } from '../forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from '../reset-password/reset-password.component';
 import { VerifyEmailComponent } from '../verify-email/verify-email.component';
+import { PasswordToggleComponent } from '../shared/password-toggle';
 import type { MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
 
@@ -30,7 +31,7 @@ describe('SignInComponent', () => {
     router = createSpyObj('Router', ['navigateByUrl'], { events: new Subject<unknown>(), url: '/' });
     TestBed.configureTestingModule({
       declarations: [SignInComponent],
-      imports: [ReactiveFormsModule],
+      imports: [ReactiveFormsModule, PasswordToggleComponent],
       providers: [{ provide: AuthService, useValue: auth }, { provide: Router, useValue: router }]
     });
     fixture = TestBed.createComponent(SignInComponent);
@@ -118,6 +119,7 @@ describe('SignInComponent password recovery', () => {
       declarations: [SignInComponent, CreateAccountComponent],
       imports: [
         ReactiveFormsModule,
+        PasswordToggleComponent,
         ForgotPasswordComponent,
         ResetPasswordComponent,
         VerifyEmailComponent,

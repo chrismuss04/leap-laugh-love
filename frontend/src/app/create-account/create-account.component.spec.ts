@@ -3,6 +3,7 @@ import { ReactiveFormsModule } from '@angular/forms';
 import { of, throwError } from 'rxjs';
 import { ClientRegistrationService } from '../services/client-registration.service';
 import { CreateAccountComponent } from './create-account.component';
+import { PasswordToggleComponent } from '../shared/password-toggle';
 import type { MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
 
@@ -24,7 +25,7 @@ describe('CreateAccountComponent', () => {
     registration = createSpyObj('ClientRegistrationService', ['register']);
     TestBed.configureTestingModule({
       declarations: [CreateAccountComponent],
-      imports: [ReactiveFormsModule],
+      imports: [ReactiveFormsModule, PasswordToggleComponent],
       providers: [{ provide: ClientRegistrationService, useValue: registration }]
     });
     fixture = TestBed.createComponent(CreateAccountComponent);

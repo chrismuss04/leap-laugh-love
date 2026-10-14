@@ -14,6 +14,7 @@ import { VerifyEmailComponent } from './verify-email/verify-email.component';
 import { ShellComponent } from './shell/shell';
 import { AuthService, Role } from './services/auth.service';
 import { AuthInterceptor } from './interceptors/auth.interceptor';
+import { PasswordToggleComponent } from './shared/password-toggle';
 
 // A signed-in user has no use for password recovery or for confirming a registration, and no
 // sign-in screen to show them on.
@@ -113,7 +114,8 @@ export const routes: Routes = [
         RouterModule.forRoot(routes),
         ForgotPasswordComponent,
         ResetPasswordComponent,
-        VerifyEmailComponent], providers: [
+        VerifyEmailComponent,
+        PasswordToggleComponent], providers: [
         AuthService,
         {
             provide: HTTP_INTERCEPTORS,

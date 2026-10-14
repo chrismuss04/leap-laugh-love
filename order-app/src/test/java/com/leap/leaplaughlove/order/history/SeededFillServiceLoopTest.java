@@ -11,7 +11,7 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import com.leap.leaplaughlove.order.quote.PriceHistoryClient;
-import com.leap.leaplaughlove.order.quote.PriceHistoryClient.CandleClose;
+import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;

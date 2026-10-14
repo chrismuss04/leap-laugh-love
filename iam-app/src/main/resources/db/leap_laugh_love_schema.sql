@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
 );
 
 -- Staff roles: one row per staff login, kept apart from client_sessions so a staff token can
--- only ever match a staff session (see common-security's Role and ClientSessionValidator).
+-- only ever match a staff session (see common's Role and ClientSessionValidator).
 -- Same lifetime rules as client_sessions; never store the raw JWT.
 CREATE TABLE IF NOT EXISTS iam.staff_sessions (
     session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

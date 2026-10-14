@@ -20,7 +20,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Configures Spring Security for the reporting service: stateless JWT authentication (reusing
  * iam-app's {@link JwtService}), with every report for commercial analysts only.
  */
-// Session Timeout & Revocation: common-security is outside each app's component scan.
+// Session Timeout & Revocation: common is outside each app's component scan.
 @Import(ClientSessionValidator.class)
 @Configuration
 public class ReportingSecurityConfig {
