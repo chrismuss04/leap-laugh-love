@@ -32,6 +32,7 @@
                     source="trading.orders · trading.accounts · iam.clients"
                     [state]="auditLogState()" [message]="auditLogMessage()" (retry)="retrySearch()">
     <table class="audit-log">
+      <caption class="sr-only">Orders matching the audit filters, newest first</caption>
       <thead>
         <tr><th>Submitted (UTC)</th><th>Client</th><th>Account</th><th>Order</th><th>Status</th><th></th></tr>
       </thead>
@@ -55,6 +56,7 @@
                     [state]="rejectionsState()" [message]="rejectionsMessage()" (retry)="retryRejections()">
     <div class="table-scroll">
       <table class="audit-log">
+        <caption class="sr-only">Rejected orders grouped by reason, most frequent first</caption>
         <thead>
           <tr><th>Reason</th><th class="num">Orders</th><th>Last rejected (UTC)</th></tr>
         </thead>
@@ -76,6 +78,7 @@
                     [state]="stuckState()" [message]="stuckMessage()" (retry)="retryStuckOrders()">
     <div class="table-scroll">
       <table class="audit-log">
+        <caption class="sr-only">Orders still awaiting execution across every client, oldest first</caption>
         <thead>
           <tr><th>Submitted (UTC)</th><th>Waiting</th><th>Client</th><th>Order</th><th>Status</th><th></th></tr>
         </thead>

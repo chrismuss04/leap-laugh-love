@@ -47,6 +47,7 @@
                       [state]="executionsState()" [message]="panelMessage()" (retry)="retryRecords()">
       <div class="table-scroll">
         <table class="records">
+          <caption class="sr-only">Execution records for this order, oldest first</caption>
           <thead>
             <tr><th>Executed (UTC)</th><th>Result</th><th class="amount">Quantity</th><th class="amount">Price</th><th>Reason</th></tr>
           </thead>
@@ -69,6 +70,7 @@
                       [state]="cashEntriesState()" [message]="panelMessage()" (retry)="retryRecords()">
       <div class="table-scroll">
         <table class="records">
+          <caption class="sr-only">Cash ledger entries for this order, oldest first</caption>
           <thead>
             <tr><th>Posted (UTC)</th><th>Entry</th><th class="amount">Amount</th></tr>
           </thead>
@@ -91,6 +93,7 @@
                       [state]="positionMovementsState()" [message]="panelMessage()" (retry)="retryRecords()">
       <div class="table-scroll">
         <table class="records">
+          <caption class="sr-only">Position movements for this order, oldest first</caption>
           <thead>
             <tr><th>Moved (UTC)</th><th>Movement</th><th class="amount">Quantity</th><th class="amount">Cost</th></tr>
           </thead>
