@@ -177,7 +177,7 @@ The services default to `localhost:5432` with password `changeme` and a built-in
 .\scripts\stop-local.ps1         # stops them
 ```
 
-`setup-windows-db.ps1` takes `-Reset` to rebuild the database and `-AppPassword` if your `DB_PASSWORD` isn't `changeme`. `start-local.ps1` reads `DB_PASSWORD` and `JWT_SECRET` from `.env` if it exists, and takes `-SkipBuild` and `-LightHistory` (one month of price history instead of a year, so the first start is much faster).
+`setup-windows-db.ps1` takes `-Reset` to rebuild the database and `-AppPassword` if your `DB_PASSWORD` isn't `changeme`. `start-local.ps1` reads `DB_PASSWORD` and `JWT_SECRET` from `.env` if it exists, and takes `-SkipBuild` and `-LightHistory` (one month of price history instead of a year, so the first start is much faster). For market hours, `-MarketSession PRE_MARKET|REGULAR|AFTER_HOURS|CLOSED` pins a session for a demo (add `-MarketOpensInMinutes 3` to have the market open after three minutes) and `-AlwaysOpen` turns market hours off; both also read `MARKET_HOURS_*` from `.env`.
 
 ### Using an external PostgreSQL with Docker
 
