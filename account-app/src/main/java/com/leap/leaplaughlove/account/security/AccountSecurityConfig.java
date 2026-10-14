@@ -20,7 +20,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Security configuration for the Account app.
  * Includes CORS, CSRF, Session Management, and JWT Authentication.
  */
-// Session Timeout & Revocation: common-security is outside each app's component scan.
+// Session Timeout & Revocation: common is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class AccountSecurityConfig {

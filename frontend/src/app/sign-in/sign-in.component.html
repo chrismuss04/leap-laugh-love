@@ -87,20 +87,10 @@
                 formControlName="password"
                 class="form-input"
                 placeholder="••••••••"
+                autocomplete="current-password"
                 [class.error]="isFieldInvalid('password')"
               />
-              <button
-                type="button"
-                class="password-toggle"
-                (click)="togglePasswordVisibility()"
-                [attr.aria-label]="showPassword ? 'Hide password' : 'Show password'"
-                tabindex="-1"
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z" stroke="currentColor" stroke-width="1.5" />
-                  <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.5" />
-                </svg>
-              </button>
+              <app-password-toggle [visible]="showPassword" (toggle)="togglePasswordVisibility()" />
             </div>
             <span class="error-message" *ngIf="isFieldInvalid('password')">
               {{ getErrorMessage('password') }}

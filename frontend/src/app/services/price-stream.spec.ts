@@ -150,6 +150,56 @@ describe('PriceStreamService', () => {
     expect(service.status()).toBe('reconnecting');
   });
 
+  it('retries after a backoff, reporting reconnecting while it does', async () => {
+    vi.useFakeTimers();
+    serveStream(500);
+    service.watch(['AAPL']);
+    await settle();
+    serveStream();
+
+    vi.advanceTimersByTime(1_000);
+
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(service.status()).toBe('reconnecting');
+  });
+
+  it('has nothing to stream without symbols', () => {
+    (service as unknown as { connect(): void }).connect();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('waits for the schedule after a zero price, since no move from zero counts as big', async () => {
+    service.watch(['AAPL']);
+    await settle();
+    send(tick('AAPL', 0));
+    await settle();
+    flush();
+    send(tick('AAPL', 5));
+    await settle();
+    flush();
+    expect(service.prices()['AAPL']).toBe(0);
+  });
+
+  it('publishes a big move on a shown symbol with no publish history', async () => {
+    service.prices.set({ AAPL: 100 });
+    service.watch(['AAPL']);
+    await settle();
+    send(tick('AAPL', 110));
+    await settle();
+    flush();
+    expect(service.prices()['AAPL']).toBe(110);
+  });
+
+  it('publishes a small move on a shown symbol with no schedule yet', async () => {
+    service.prices.set({ AAPL: 100 });
+    service.watch(['AAPL']);
+    await settle();
+    send(tick('AAPL', 100.001));
+    await settle();
+    flush();
+    expect(service.prices()['AAPL']).toBe(100.001);
+  });
+
   it('reconnects when a request fails outright', async () => {
     fetchSpy.mockReturnValue(Promise.reject(new Error('offline')));
     service.watch(['AAPL']);

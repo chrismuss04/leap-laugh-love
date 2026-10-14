@@ -2,13 +2,13 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY pom.xml .
-COPY common-security/pom.xml common-security/
+COPY common/pom.xml common/
 COPY iam-app/pom.xml iam-app/
 COPY account-app/pom.xml account-app/
 COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
 COPY reporting-app/pom.xml reporting-app/
-COPY common-security/src common-security/src
+COPY common/src common/src
 COPY reporting-app/src reporting-app/src
 # Same build as the other service images: see market-data-app/Dockerfile for why the Maven
 # repository is a shared cache mount and why tests, Javadoc and JaCoCo are skipped here.

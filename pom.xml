@@ -16,7 +16,7 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>common-security</module>
+        <module>common</module>
         <module>iam-app</module>
         <module>account-app</module>
         <module>order-app</module>
@@ -122,7 +122,7 @@
             <build>
                 <plugins>
                     <!-- Only here, not in the normal build: the root builds before its modules, so
-                         an aggregate there resolves common-security from ~/.m2, which fails on a
+                         an aggregate there resolves common from ~/.m2, which fails on a
                          clean CI run and quietly uses a stale copy everywhere else. -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
