@@ -1,0 +1,298 @@
+:host {
+  display: block;
+}
+
+.market-status {
+  position: relative;
+}
+
+/* Each session's colour, from the theme: open is gain, pre-market warning, after-hours info. */
+[data-tone='open'] { --tone: var(--gain); }
+[data-tone='pre'] { --tone: var(--warning); }
+[data-tone='after'] { --tone: var(--info); }
+[data-tone='closed'] { --tone: var(--muted-foreground); }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px 0 10px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--tone) 28%, var(--border));
+  background: color-mix(in srgb, var(--tone) 8%, transparent);
+  color: var(--foreground);
+  font-size: 12px;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pill:hover,
+.pill[aria-expanded='true'] {
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 45%, var(--border));
+}
+
+.pill-label {
+  font-weight: 500;
+}
+
+.pill-sep,
+.pill-next {
+  color: var(--muted-foreground);
+}
+
+.narrow {
+  display: none;
+}
+
+.glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--tone);
+  flex: none;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+[data-tone='open'] .dot {
+  animation: market-pulse 2.4s ease-out infinite;
+}
+
+/* Closed: a hollow ring, nothing is moving. */
+[data-tone='closed'] .dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--tone);
+}
+
+@keyframes market-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gain) 55%, transparent); }
+  70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--gain) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--gain) 0%, transparent); }
+}
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+}
+
+.card {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 10px);
+  z-index: 2;
+  width: 320px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  animation: card-in 0.16s ease-out;
+}
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.card-head .glyph {
+  margin-top: 3px;
+}
+
+.card-head h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.card-next {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+/* The 4:00-20:00 ET day: each session a tinted stretch, the current one in full colour. */
+.timeline {
+  position: relative;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--muted);
+  overflow: visible;
+}
+
+.segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--tone) 30%, var(--muted));
+}
+
+.segment:first-child {
+  border-radius: 999px 0 0 999px;
+}
+
+.segment:nth-child(3) {
+  border-radius: 0 999px 999px 0;
+}
+
+.segment.current {
+  background: var(--tone);
+}
+
+.now {
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 16px;
+  margin-left: -1px;
+  border-radius: 1px;
+  background: var(--foreground);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.ticks {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+
+.sessions {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sessions li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.sessions li.current {
+  background: color-mix(in srgb, var(--tone) 10%, transparent);
+  color: var(--foreground);
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: var(--tone);
+  flex: none;
+}
+
+.session-name {
+  font-weight: 500;
+}
+
+.session-range {
+  margin-left: auto;
+}
+
+.now-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 16%, transparent);
+}
+
+.note {
+  margin: 14px 0 0;
+  padding: 9px 10px;
+  border-radius: var(--radius-md);
+  background: var(--muted);
+  font-size: 12px;
+  color: var(--foreground);
+}
+
+.next-open {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+
+.next-open .num {
+  color: var(--foreground);
+  font-weight: 500;
+}
+
+.footnote {
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+
+@media (max-width: 760px) {
+  .wide {
+    display: none;
+  }
+
+  .narrow {
+    display: inline;
+  }
+
+  .pill {
+    padding: 0 10px 0 8px;
+  }
+
+  .card {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    top: 72px;
+    width: auto;
+  }
+}
+
+/* Phones: the header is full, so the pill is just its glyph; the card still says it all. */
+@media (max-width: 480px) {
+  .narrow {
+    display: none;
+  }
+
+  .pill {
+    gap: 0;
+    padding: 0 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-tone='open'] .dot,
+  .card {
+    animation: none;
+  }
+}

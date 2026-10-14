@@ -23,6 +23,8 @@
       </nav>
 
       <div class="header-right">
+        <app-market-status></app-market-status>
+
         <span class="live-status" [attr.data-status]="stream.status()" role="status">
           <span class="live-dot" aria-hidden="true"></span>
           <span class="live-label">{{ statusLabel() }}</span>
