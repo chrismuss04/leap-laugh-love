@@ -59,4 +59,18 @@ class OpsAccessLogTest {
         assertNull(rows.get(1).get("ORDER_ID"));
         assertEquals("{symbol=AAPL}", rows.get(1).get("SEARCH_CRITERIA"));
     }
+
+    @Test
+    @DisplayName("Accepts every action the table allows")
+    void recordsEveryAction() {
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                STAFF_ID, null, List.of(new SimpleGrantedAuthority("ROLE_TRADING_OPERATIONS"))));
+
+        for (OpsAccessLog.Action action : OpsAccessLog.Action.values()) {
+            accessLog.record(action, null, null);
+        }
+
+        assertEquals(OpsAccessLog.Action.values().length,
+                jdbc.queryForObject("SELECT COUNT(*) FROM trading.ops_access_log", Integer.class));
+    }
 }

@@ -121,7 +121,8 @@ CREATE TABLE trading.executions (
 CREATE TABLE trading.ops_access_log (
     access_id UUID PRIMARY KEY,
     staff_id UUID NOT NULL,
-    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV', 'VIEW_ORDER',
+                                                  'VIEW_ORDER_COUNTS', 'VIEW_REJECTIONS', 'VIEW_STUCK_ORDERS')),
     order_id UUID,
     search_criteria VARCHAR(1000),
     accessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
