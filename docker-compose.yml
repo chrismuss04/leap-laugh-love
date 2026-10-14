@@ -78,6 +78,13 @@ services:
       SPRING_MAIL_PORT: 1025
       # Where the order history link in those emails points; the address the browser reaches the frontend on.
       ORDER_NOTIFICATIONS_HISTORY_URL: "${ORDER_NOTIFICATIONS_HISTORY_URL:-http://localhost:${FRONTEND_PORT:-4200}/orders}"
+      # Market hours (see "Market hours" in the README): REAL follows the NYSE clock; ALWAYS_OPEN
+      # trades around the clock. MARKET_HOURS_FORCE_SESSION pins a session (PRE_MARKET, REGULAR,
+      # AFTER_HOURS or CLOSED) for a demo, for MARKET_HOURS_FORCE_MINUTES (0 = for good) before
+      # the market opens. Set the same values for order-app and market-data-app.
+      MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
+      MARKET_HOURS_FORCE_SESSION: "${MARKET_HOURS_FORCE_SESSION:-}"
+      MARKET_HOURS_FORCE_MINUTES: "${MARKET_HOURS_FORCE_MINUTES:-0}"
 
   market-data-app:
     image: "market-data-app:${IMAGE_TAG:-latest}"
@@ -101,6 +108,13 @@ services:
       # throw away. See "Price history and candle widths" in the README.
       MARKETDATA_HISTORY_BACKFILL_ENABLED: "${MARKETDATA_BACKFILL_ENABLED:-true}"
       MARKETDATA_HISTORY_BACKFILL_TIERS: "${MARKETDATA_BACKFILL_TIERS:-86400:365,3600:90,300:7,60:2}"
+      # Market hours (see "Market hours" in the README): REAL follows the NYSE clock; ALWAYS_OPEN
+      # trades around the clock. MARKET_HOURS_FORCE_SESSION pins a session (PRE_MARKET, REGULAR,
+      # AFTER_HOURS or CLOSED) for a demo, for MARKET_HOURS_FORCE_MINUTES (0 = for good) before
+      # the market opens. Set the same values for order-app and market-data-app.
+      MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
+      MARKET_HOURS_FORCE_SESSION: "${MARKET_HOURS_FORCE_SESSION:-}"
+      MARKET_HOURS_FORCE_MINUTES: "${MARKET_HOURS_FORCE_MINUTES:-0}"
 
   # Staff reports over the reporting schema that reporting-etl loads. Reads only; it needs the
   # database, not Kafka.

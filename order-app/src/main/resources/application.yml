@@ -100,3 +100,11 @@ trading:
     interval-ms: 1000
     # Expire DAY and GTC orders past their time in force.
     expiry-interval-ms: 30000
+
+market:
+  hours:
+    # REAL follows the NYSE clock; ALWAYS_OPEN trades around the clock. A forced session pins
+    # PRE_MARKET, REGULAR, AFTER_HOURS or CLOSED for force-minutes (0 = for good), for demos.
+    mode: ${MARKET_HOURS_MODE:REAL}
+    force-session: ${MARKET_HOURS_FORCE_SESSION:}
+    force-minutes: ${MARKET_HOURS_FORCE_MINUTES:0}

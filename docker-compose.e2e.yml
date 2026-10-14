@@ -11,6 +11,8 @@ services:
     environment:
       # Recovery tests route settlement through a fault proxy; ordinary E2E runs stay direct.
       ACCOUNT_SERVICE_BASE_URL: "${RECOVERY_ACCOUNT_SERVICE_BASE_URL:-http://account-app:8082}"
+      # The suite places market orders that fill at once, so it trades around the clock.
+      MARKET_HOURS_MODE: ALWAYS_OPEN
   db:
     volumes:
       # After the regular seeds (01-06): funded per-worker trader accounts and the fixtures the
@@ -23,6 +25,7 @@ services:
       # rows of the developer default. ~190k rows across the S&P 500; seconds, not minutes.
       # Overrides the backfill tiers the Jenkinsfile sets for the smoke stack.
       MARKETDATA_HISTORY_BACKFILL_TIERS: "${E2E_BACKFILL_TIERS:-86400:30,3600:2,300:1}"
+      MARKET_HOURS_MODE: ALWAYS_OPEN
 
   frontend:
     volumes:
