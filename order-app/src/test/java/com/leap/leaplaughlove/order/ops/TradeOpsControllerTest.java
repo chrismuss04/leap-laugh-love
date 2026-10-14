@@ -177,6 +177,80 @@ class TradeOpsControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/order/ops/orders/counts - 200 with the matching orders counted by outcome")
+    void counts() throws Exception {
+        when(tradeTimelineService.countByStatus(new TradeSearch(null, null, "alice.johnson@leap.com", null, null,
+                null, null, null, OffsetDateTime.parse("2026-10-01T09:00:00Z"),
+                OffsetDateTime.parse("2026-10-08T17:31:00Z")))).thenReturn(new OrderCounts(7, 4, 2, 1));
+
+        mockMvc.perform(get("/api/order/ops/orders/counts")
+                        .with(authentication(tradingOps()))
+                        .param("clientEmail", "alice.johnson@leap.com")
+                        .param("from", "2026-10-01T09:00:00Z")
+                        .param("to", "2026-10-08T17:31:00Z"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.submitted").value(7))
+                .andExpect(jsonPath("$.filled").value(4))
+                .andExpect(jsonPath("$.rejected").value(2))
+                .andExpect(jsonPath("$.awaitingExecution").value(1));
+        verify(accessLog).record(OpsAccessLog.Action.VIEW_ORDER_COUNTS, null,
+                "{from=2026-10-01T09:00Z, to=2026-10-08T17:31Z, clientEmail=alice.johnson@leap.com}");
+    }
+
+    @Test
+    @DisplayName("GET /api/order/ops/orders/counts - 400 with the service's message when a required criterion is missing")
+    void countsWithoutCriteria() throws Exception {
+        when(tradeTimelineService.countByStatus(new TradeSearch(null, null, null, null, null, null, null, null, null, null)))
+                .thenThrow(new IllegalArgumentException("Give a time period to search"));
+
+        mockMvc.perform(get("/api/order/ops/orders/counts").with(authentication(tradingOps())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("Give a time period to search"));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/ops/orders/{id} - 200 with the order and its executions, cash entries and position movements")
+    void records() throws Exception {
+        OffsetDateTime executed = OffsetDateTime.parse("2026-10-08T14:02:06Z");
+        when(tradeTimelineService.getRecords(ORDER_ID)).thenReturn(new TradeRecords(
+                new TradeOpsRepository.OrderRecord(TRADE, "MARKET", executed, null, executed, null,
+                        new BigDecimal("150.00"), null),
+                List.of(new TradeOpsRepository.ExecutionRecord(UUID.randomUUID(), "FILLED", 10L,
+                        new BigDecimal("150.05"), executed, "Executed at market price", null)),
+                List.of(new TradeOpsRepository.CashEntryRecord("BUY_SETTLEMENT", new BigDecimal("-1500.50"), "USD", executed)),
+                List.of(new TradeOpsRepository.PositionMovementRecord("BUY_FILL", 10, new BigDecimal("1500.50"), executed))));
+
+        mockMvc.perform(get("/api/order/ops/orders/{id}", ORDER_ID).with(authentication(tradingOps())))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.order.summary.orderId").value(ORDER_ID.toString()))
+                .andExpect(jsonPath("$.order.orderType").value("MARKET"))
+                .andExpect(jsonPath("$.executions[0].fillPrice").value(150.05))
+                .andExpect(jsonPath("$.cashEntries[0].entryType").value("BUY_SETTLEMENT"))
+                .andExpect(jsonPath("$.positionMovements[0].quantityDelta").value(10));
+        verify(accessLog).record(OpsAccessLog.Action.VIEW_ORDER, ORDER_ID, null);
+    }
+
+    @Test
+    @DisplayName("GET /api/order/ops/orders/{id} - 404 for an unknown order, and the lookup is still logged")
+    void recordsNotFound() throws Exception {
+        when(tradeTimelineService.getRecords(ORDER_ID))
+                .thenThrow(new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + ORDER_ID));
+
+        mockMvc.perform(get("/api/order/ops/orders/{id}", ORDER_ID).with(authentication(tradingOps())))
+                .andExpect(status().isNotFound());
+        verify(accessLog).record(OpsAccessLog.Action.VIEW_ORDER, ORDER_ID, null);
+    }
+
+    @Test
+    @DisplayName("GET /api/order/ops/orders/{id} - 400 for a malformed order ID")
+    void recordsMalformedId() throws Exception {
+        mockMvc.perform(get("/api/order/ops/orders/not-a-uuid").with(authentication(tradingOps())))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("orderId is not valid"));
+        verifyNoInteractions(tradeTimelineService);
+    }
+
+    @Test
     @DisplayName("Each lookup is logged before any trade data is read")
     void logsBeforeReading() throws Exception {
         when(tradeTimelineService.getTimeline(ORDER_ID)).thenReturn(timeline());
