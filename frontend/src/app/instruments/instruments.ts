@@ -65,7 +65,7 @@ export class InstrumentsComponent {
           changed = true;
         }
       }
-      if (changed) this.initialPrices.set(remaining);
+      if (changed) { this.initialPrices.set(remaining); }
     });
     this.requests.pipe(
       tap(() => {
@@ -98,7 +98,9 @@ export class InstrumentsComponent {
   }
 
   selectPeriod(value: string): void {
-    if (value !== 'today' && value !== 'week' && value !== 'month') return;
+    if (value !== 'today' && value !== 'week' && value !== 'month') {
+      return;
+    }
     this.period.set(value);
     this.requests.next(value);
   }
@@ -125,7 +127,9 @@ export class InstrumentsComponent {
   clearFilters(): void { this.query.set(''); this.asset.set(''); }
 
   signed(value: number | null): string {
-    if (value === null) return formatNumber(null);
+    if (value === null) {
+      return formatNumber(null);
+    }
     return `${value > 0 ? '+' : value < 0 ? '\u2212' : ''}${formatNumber(Math.abs(value))}`;
   }
 

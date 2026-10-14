@@ -13,11 +13,13 @@
     –
     <time class="num" [attr.datetime]="filters.range().to">{{ filters.range().to | date: 'd MMM y' }}</time>
   </p>
-  <div class="stats">
-    <app-stat-tile label="Trading volume" hint="Value of filled orders"></app-stat-tile>
-    <app-stat-tile label="Average order value" hint="Per filled order"></app-stat-tile>
-    <app-stat-tile label="New registrations" hint="Clients who signed up"></app-stat-tile>
-    <app-stat-tile label="Active clients" hint="Placed at least one order"></app-stat-tile>
+  <div class="stats stats-5" data-testid="insights" [attr.aria-busy]="insightsState() === 'loading'">
+    <app-stat-tile *ngFor="let tile of tiles()" [label]="tile.label" [value]="tile.value" [hint]="tile.hint"
+                   [trend]="tile.trend" [trendDirection]="tile.direction"></app-stat-tile>
+  </div>
+  <div *ngIf="insightsState() === 'error'" class="stats-error" role="alert">
+    <p>Couldn't load the figures for this period.</p>
+    <button type="button" (click)="retryInsights()">Try again</button>
   </div>
 </section>
 
@@ -25,20 +27,18 @@
   <app-activity-report></app-activity-report>
 </section>
 
-<section class="section grid" aria-label="Business reports">
-  <app-report-panel class="span-all" eyebrow="Volume" heading="Trading volume over time"
-                    description="Value and number of filled orders across the period, split by buys and sells."
-                    source="reporting.orders"></app-report-panel>
-
-  <app-report-panel eyebrow="Instruments" heading="Most traded instruments"
-                    description="Instruments ranked by number of trades and traded value."
-                    source="reporting.orders"></app-report-panel>
-
-  <app-report-panel eyebrow="Order size" heading="Average order value over time"
-                    description="Mean value of a filled order across the period."
-                    source="reporting.orders"></app-report-panel>
-
-  <app-report-panel class="span-all" eyebrow="Clients" heading="Client registrations over time"
-                    description="New client sign-ups across the period."
-                    source="reporting.clients"></app-report-panel>
+<!-- Long-range reports: always the last 12 complete months, not the period chosen above. -->
+<section class="section" aria-labelledby="year-heading">
+  <header class="year-header">
+    <h2 id="year-heading" class="font-display year-title">The last 12 months</h2>
+    <p class="year-range num" *ngIf="reportWindow.label() as range" data-testid="report-window">{{ range }}</p>
+  </header>
+  <div class="grid" role="region" aria-label="Business reports">
+    <app-scorecard-report class="span-all"></app-scorecard-report>
+    <app-retention-report class="span-all"></app-retention-report>
+    <app-client-activity-report></app-client-activity-report>
+    <app-activation-report></app-activation-report>
+    <app-concentration-report></app-concentration-report>
+    <app-order-size-report></app-order-size-report>
+  </div>
 </section>

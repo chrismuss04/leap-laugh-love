@@ -102,6 +102,24 @@ services:
       MARKETDATA_HISTORY_BACKFILL_ENABLED: "${MARKETDATA_BACKFILL_ENABLED:-true}"
       MARKETDATA_HISTORY_BACKFILL_TIERS: "${MARKETDATA_BACKFILL_TIERS:-86400:365,3600:90,300:7,60:2}"
 
+  # Staff reports over the reporting schema that reporting-etl loads. Reads only; it needs the
+  # database, not Kafka.
+  reporting-app:
+    image: "reporting-app:${IMAGE_TAG:-latest}"
+    build:
+      context: .
+      dockerfile: reporting-app/Dockerfile
+    ports:
+      - "${REPORTING_PORT:-8085}:8085"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/paysprint
+      SPRING_DATASOURCE_USERNAME: paysprint
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+
   # Angular dev server with hot reload. Runs straight off the node image rather than a
   # Dockerfile, so there is nothing to rebuild when frontend code changes.
   #
@@ -132,6 +150,7 @@ services:
       ACCOUNT_PROXY_TARGET: http://account-app:8082
       ORDER_PROXY_TARGET: http://order-app:8084
       MARKETDATA_PROXY_TARGET: http://market-data-app:8083
+      REPORTING_PROXY_TARGET: http://reporting-app:8085
     # Reinstalls whenever package-lock.json differs from the one the volume was installed
     # from, not only when the volume is empty - otherwise a dependency upgrade keeps running
     # on the old packages until someone thinks to "docker compose down -v".

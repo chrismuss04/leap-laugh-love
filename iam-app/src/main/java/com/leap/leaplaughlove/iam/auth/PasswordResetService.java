@@ -11,17 +11,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+
+import static com.leap.leaplaughlove.iam.common.LinkTokens.hash;
+import static com.leap.leaplaughlove.iam.common.LinkTokens.newToken;
 
 /**
  * Service for password recovery: issues the single-use link a client is emailed, and changes the
@@ -33,7 +30,6 @@ public class PasswordResetService {
     private static final String ACTIVE_STATUS = "ACTIVE";
     // A locked client is the one most likely to need a reset; deleted and pending clients get no link.
     private static final Set<String> RESETTABLE_STATUSES = Set.of(ACTIVE_STATUS, AuthService.LOCKED_STATUS);
-    private static final int TOKEN_BYTES = 32;
 
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
@@ -43,7 +39,6 @@ public class PasswordResetService {
     private final ApplicationEventPublisher eventPublisher;
     private final Duration tokenTtl;
     private final String linkBaseUrl;
-    private final SecureRandom random = new SecureRandom();
 
     /**
      * Constructs a new PasswordResetService with the specified dependencies.
@@ -147,21 +142,5 @@ public class PasswordResetService {
 
         tokenRepository.invalidateAll(clientId, now);
         sessionRepository.revokeAll(clientId, now);
-    }
-
-    private String newToken() {
-        byte[] bytes = new byte[TOKEN_BYTES];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    // The token is long and random, so a fast unsalted hash is enough to keep the stored value unusable.
-    private static String hash(String token) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
     }
 }

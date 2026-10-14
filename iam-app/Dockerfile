@@ -2,12 +2,13 @@
 FROM maven:3.9.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY pom.xml .
-COPY common-security/pom.xml common-security/
+COPY common/pom.xml common/
 COPY iam-app/pom.xml iam-app/
 COPY account-app/pom.xml account-app/
 COPY order-app/pom.xml order-app/
 COPY market-data-app/pom.xml market-data-app/
-COPY common-security/src common-security/src
+COPY reporting-app/pom.xml reporting-app/
+COPY common/src common/src
 COPY iam-app/src iam-app/src
 # Maven's local repository lives in a BuildKit cache mount, not the image, so it survives
 # between builds and is shared by all four service images: a code change no longer means

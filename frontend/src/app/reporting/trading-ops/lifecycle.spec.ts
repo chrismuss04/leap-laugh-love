@@ -89,6 +89,19 @@ describe('Order lifecycle', () => {
       expect(elapsedSince(stages, 3)).toBeNull();
     });
 
+    it('shows a step stamped before the one it follows as negative', () => {
+      const outOfOrder = stamp(emptyLifecycle(), {
+        SUBMITTED: '2026-10-08T09:00:01.000Z',
+        ACCEPTED: '2026-10-08T09:00:00.500Z'
+      });
+      expect(elapsedSince(outOfOrder, 2)).toBe('-500 ms');
+    });
+
+    it('has nothing to show when a timestamp cannot be read', () => {
+      const unreadable = stamp(emptyLifecycle(), { SUBMITTED: 'not a date', ACCEPTED: '2026-10-08T09:00:00.500Z' });
+      expect(elapsedSince(unreadable, 2)).toBeNull();
+    });
+
     it('measures from the previous step', () => {
       expect(elapsedSince(stages, 2)).toBe('+250 ms');
     });

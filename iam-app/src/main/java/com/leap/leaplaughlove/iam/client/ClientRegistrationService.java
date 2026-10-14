@@ -13,20 +13,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.Base64;
 import java.util.EnumSet;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import static com.leap.leaplaughlove.iam.common.LinkTokens.hash;
+import static com.leap.leaplaughlove.iam.common.LinkTokens.newToken;
 
 /**
  * Service for client registration: takes an application, and opens the client once the applicant
@@ -39,7 +36,6 @@ import java.util.UUID;
 public class ClientRegistrationService {
 
     private static final String ACTIVE_STATUS = "ACTIVE";
-    private static final int TOKEN_BYTES = 32;
 
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
@@ -51,7 +47,6 @@ public class ClientRegistrationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Duration tokenTtl;
     private final String linkBaseUrl;
-    private final SecureRandom random = new SecureRandom();
 
     /**
      * Constructs a new ClientRegistrationService with the specified dependencies.
@@ -183,21 +178,5 @@ public class ClientRegistrationService {
 
     private boolean emailTaken(String email) {
         return clientRepository.existsByEmail(email) || staffCredentialsRepository.existsByEmail(email);
-    }
-
-    private String newToken() {
-        byte[] bytes = new byte[TOKEN_BYTES];
-        random.nextBytes(bytes);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-    }
-
-    // The token is long and random, so a fast unsalted hash is enough to keep the stored value unusable.
-    private static String hash(String token) {
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is not available", e);
-        }
     }
 }

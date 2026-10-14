@@ -25,13 +25,17 @@ import java.util.UUID;
 public class ActivityReportController {
 
     private final ActivityReportService activityReportService;
+    private final BusinessInsightsService businessInsightsService;
 
     /**
-     * Constructs an instance of ActivityReportController with the specified service.
+     * Constructs an instance of ActivityReportController with the specified services.
      * @param activityReportService the service used to build activity reports
+     * @param businessInsightsService the service used to build the dashboard's business insights
      */
-    public ActivityReportController(ActivityReportService activityReportService) {
+    public ActivityReportController(ActivityReportService activityReportService,
+                                    BusinessInsightsService businessInsightsService) {
         this.activityReportService = activityReportService;
+        this.businessInsightsService = businessInsightsService;
     }
 
     /**
@@ -49,6 +53,19 @@ public class ActivityReportController {
             @RequestParam(defaultValue = "DAILY") ReportGranularity granularity,
             @RequestParam(required = false) UUID instrumentId) {
         return activityReportService.getActivityReport(from, to, granularity, instrumentId);
+    }
+
+    /**
+     * GET HTTP endpoint for the dashboard's business insights.
+     * @param from the first UTC day of the period (yyyy-MM-dd), inclusive
+     * @param to the last UTC day of the period (yyyy-MM-dd), inclusive
+     * @return the period's headline figures, the previous period's, and the most active instruments
+     */
+    @GetMapping("/insights")
+    public BusinessInsights getInsights(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return businessInsightsService.getInsights(from, to);
     }
 
     /**

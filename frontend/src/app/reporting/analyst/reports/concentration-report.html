@@ -1,0 +1,41 @@
+<app-report-panel heading="Volume from top clients"
+                  description="Share of each month's traded volume from its top 1%, 10% and 20% of trading clients."
+                  [state]="state()" message="No filled orders in the last 12 complete months." (retry)="load()">
+  <div *ngIf="report() as report">
+    <ul class="legend" aria-hidden="true">
+      <li *ngFor="let topPct of tiers; let i = index"><span class="swatch" [ngClass]="'tier-' + i"></span>Top {{ topPct }}%</li>
+    </ul>
+    <div class="table-wrap">
+      <table class="report-table" data-testid="concentration-table">
+        <caption class="sr-only">Share of monthly volume from the top clients, oldest month first</caption>
+        <thead>
+          <tr>
+            <th scope="col">Month</th>
+            <th scope="col" class="num">Volume</th>
+            <th scope="col">Share</th>
+            <th scope="col" class="num" *ngFor="let topPct of tiers">Top {{ topPct }}%</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let month of report.months" data-testid="concentration-row">
+            <th scope="row">{{ monthLabel(month.month) }}</th>
+            <td class="num" [attr.title]="count(month.tradingClients) + ' trading clients'">{{ compactMoney(month.volume) }}</td>
+            <td>
+              <!-- The slices nest: the top 20% includes the top 10%, which includes the top 1%. -->
+              <span class="bar-track nested" aria-hidden="true">
+                <span *ngFor="let topPct of widestFirst; let i = index" class="bar-fill"
+                      [ngClass]="'tier-' + (tiers.length - 1 - i)" [style.width.%]="tier(month, topPct)?.sharePct ?? 0"></span>
+              </span>
+            </td>
+            <td class="num" *ngFor="let topPct of tiers" [attr.data-tier]="topPct">
+              <ng-container *ngIf="tier(month, topPct) as slice; else none">
+                <span [attr.title]="count(slice.clients) + ' clients, ' + compactMoney(slice.volume)">{{ percent(slice.sharePct) }}</span>
+              </ng-container>
+              <ng-template #none><span class="muted">—</span></ng-template>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</app-report-panel>

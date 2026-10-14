@@ -23,8 +23,25 @@
 
 <section class="section grid" aria-label="Audit reports">
   <app-report-panel class="span-all" eyebrow="Who, what, when, result" heading="Order audit log"
-                    description="Every order with the client and account that placed it, the symbol, side and quantity, when it was submitted and completed, and its final status or rejection reason. Each row opens the order's full lifecycle."
-                    source="trading.orders · trading.executions · iam.clients"></app-report-panel>
+                    description="Every order with the client and account that placed it, the symbol, side and quantity, when it was submitted, and its status. Each row opens the order's full lifecycle. Every search is logged."
+                    source="trading.orders · trading.accounts · iam.clients"
+                    [state]="auditLogState()" [message]="auditLogMessage()" (retry)="retrySearch()">
+    <table class="audit-log">
+      <thead>
+        <tr><th>Submitted (UTC)</th><th>Client</th><th>Account</th><th>Order</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let order of orders(); trackBy: trackOrder" data-testid="audit-log-row">
+          <td class="num">{{ order.submittedAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</td>
+          <td>{{ order.clientEmail }}</td>
+          <td>{{ order.accountNumber }}</td>
+          <td>{{ order.side }} {{ order.quantity }} {{ order.symbol }}</td>
+          <td>{{ order.status | titlecase }}</td>
+          <td><a [routerLink]="['/reporting/orders', order.orderId]" queryParamsHandling="preserve">Trace</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </app-report-panel>
 
   <app-report-panel eyebrow="Exceptions" heading="Rejections by reason"
                     description="Rejected orders grouped by rejection reason, to spot recurring failures."

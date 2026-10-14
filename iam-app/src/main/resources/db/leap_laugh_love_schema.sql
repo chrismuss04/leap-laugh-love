@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS iam.reporting_service_credentials (
 );
 
 -- Staff roles: one row per staff login, kept apart from client_sessions so a staff token can
--- only ever match a staff session (see common-security's Role and ClientSessionValidator).
+-- only ever match a staff session (see common's Role and ClientSessionValidator).
 -- Same lifetime rules as client_sessions; never store the raw JWT.
 CREATE TABLE IF NOT EXISTS iam.staff_sessions (
     session_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -312,7 +312,14 @@ CREATE TABLE IF NOT EXISTS trading.executions (
     fill_price NUMERIC(18,6),
     status TEXT NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    reason TEXT
+    reason TEXT,
+    -- Trade Reconstruction: the market quote the order was priced from. NULL when none was
+    -- used (quote unavailable, seeded fill) or the execution predates these columns.
+    quote_bid NUMERIC(18,6),
+    quote_ask NUMERIC(18,6),
+    quote_last NUMERIC(18,6),
+    quote_timestamp TIMESTAMPTZ,
+    quote_exchange TEXT
 );
 
 CREATE TABLE IF NOT EXISTS trading.cash_ledger (
@@ -410,6 +417,26 @@ CREATE TRIGGER trg_client_profile_no_delete
 
 CREATE TRIGGER trg_client_credentials_no_delete
     BEFORE DELETE ON iam.client_credentials
+    FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
+
+-- Trade Reconstruction: who looked up which trades, written before any data is returned.
+-- order_id has no foreign key: lookups of orders that don't exist are logged too.
+CREATE TABLE IF NOT EXISTS trading.ops_access_log (
+    access_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID NOT NULL
+        REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
+    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    order_id UUID,
+    search_criteria TEXT,
+    accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_ops_access_log_order_id
+    ON trading.ops_access_log (order_id);
+
+DROP TRIGGER IF EXISTS trg_ops_access_log_no_delete_or_update ON trading.ops_access_log;
+CREATE TRIGGER trg_ops_access_log_no_delete_or_update
+    BEFORE UPDATE OR DELETE ON trading.ops_access_log
     FOR EACH ROW EXECUTE FUNCTION trading.reject_delete_or_update();
 
 -- Market Simulation Backend: owns its own instrument/parameter table (decoupled from
@@ -516,6 +543,29 @@ CREATE INDEX IF NOT EXISTS idx_reporting_orders_client_completed_at
 -- Backs reports over a time range across all clients.
 CREATE INDEX IF NOT EXISTS idx_reporting_orders_completed_at
     ON reporting.orders (completed_at);
+
+-- Analyst Reporting: one row per client per UTC month they completed an order in, kept by
+-- reporting-etl in the same statement that inserts each new reporting.orders row, so a replayed
+-- order never counts twice. Backs the monthly analyst reports (retention, client activity,
+-- concentration) without scanning every order. scripts/migrate-reporting-client-months.sql
+-- rebuilds it from reporting.orders.
+CREATE TABLE IF NOT EXISTS reporting.client_months (
+    client_id UUID NOT NULL,
+    -- First day of the UTC month the orders completed in.
+    month DATE NOT NULL CHECK (EXTRACT(DAY FROM month) = 1),
+    -- Every executed order, FILLED or REJECTED: a client is active in a month they traded or tried
+    -- to. CANCELLED and EXPIRED orders never executed and are left out of the rollup.
+    order_count INTEGER NOT NULL CHECK (order_count > 0),
+    filled_count INTEGER NOT NULL CHECK (filled_count >= 0 AND filled_count <= order_count),
+    -- Sum of quantity * fill_price over FILLED orders. Unbounded NUMERIC: a precision limit here
+    -- could refuse a sum, and with it the order row loaded in the same statement.
+    filled_value NUMERIC NOT NULL CHECK (filled_value >= 0),
+    PRIMARY KEY (client_id, month)
+);
+
+-- Backs every report over a range of months across all clients.
+CREATE INDEX IF NOT EXISTS idx_reporting_client_months_month
+    ON reporting.client_months (month);
 
 -- User Reporting: one row per registered client, loaded from client-register events.
 -- No IAM foreign key: reporting replay must not depend on operational client rows.

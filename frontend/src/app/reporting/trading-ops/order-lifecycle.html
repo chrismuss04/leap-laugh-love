@@ -6,6 +6,11 @@
   <p class="eyebrow">Order lifecycle</p>
   <h1 class="font-display headline-page">Trace <em>order</em></h1>
   <p class="order-id" data-testid="lifecycle-order-id"><code>{{ orderId() }}</code></p>
+  <div class="download" *ngIf="validId()">
+    <button type="button" class="btn-download" data-testid="lifecycle-download" [disabled]="downloading()"
+            (click)="downloadCsv()">{{ downloading() ? 'Downloading…' : 'Download CSV' }}</button>
+    <span class="download-error" *ngIf="downloadError()" role="alert">{{ downloadError() }}</span>
+  </div>
 </div>
 
 <div *ngIf="!validId(); else trace" class="notice" role="alert">

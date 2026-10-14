@@ -85,4 +85,26 @@ describe('StatTileComponent', () => {
     fixture.detectChanges();
     expect(el.querySelector('.stat-value')!.textContent).toBe('$1,204,880');
   });
+
+  it('shows how the figure moved, coloured by direction, only when given a trend', () => {
+    const fixture = TestBed.createComponent(StatTileComponent);
+    fixture.componentRef.setInput('label', 'Trading volume');
+    fixture.detectChanges();
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('.stat-trend')).toBeNull();
+
+    fixture.componentRef.setInput('trend', '−4.00% vs previous period');
+    fixture.componentRef.setInput('trendDirection', 'loss');
+    fixture.detectChanges();
+    const trend = el.querySelector('.stat-trend')!;
+    expect(trend.textContent).toBe('−4.00% vs previous period');
+    expect(trend.classList.contains('text-loss')).toBe(true);
+    expect(trend.classList.contains('text-gain')).toBe(false);
+
+    // The colour itself, not just the class: the tile's default grey must not win.
+    const el2 = fixture.nativeElement as HTMLElement;
+    el2.style.setProperty('--loss', 'rgb(255, 0, 0)');
+    el2.style.setProperty('--muted-foreground', 'rgb(128, 128, 128)');
+    expect(getComputedStyle(trend).color).toBe('rgb(255, 0, 0)');
+  });
 });

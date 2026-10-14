@@ -40,6 +40,9 @@ class ActivityReportControllerTest {
     @MockBean
     private ActivityReportService activityReportService;
 
+    @MockBean
+    private BusinessInsightsService businessInsightsService;
+
     private static Authentication analyst() {
         return new UsernamePasswordAuthenticationToken(
                 UUID.randomUUID(), null, List.of(new SimpleGrantedAuthority("ROLE_COMMERCIAL_ANALYST")));
@@ -167,5 +170,43 @@ class ActivityReportControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].id").value(aaplId.toString()))
                 .andExpect(jsonPath("$[0].symbol").value("AAPL"));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/reports/insights - 200 with both periods' figures and the top instruments")
+    void insights() throws Exception {
+        InsightFigures current = new InsightFigures(new BigDecimal("1702.50"), 3, new BigDecimal("567.50"), 4, 2);
+        InsightFigures previous = new InsightFigures(BigDecimal.ZERO, 0, null, 1, 0);
+        when(businessInsightsService.getInsights(FROM, TO)).thenReturn(new BusinessInsights(
+                FROM, TO, FROM.minusDays(7), FROM.minusDays(1), current, previous,
+                List.of(new InstrumentActivity("AAPL", 2, new BigDecimal("1600.00")))));
+
+        mockMvc.perform(get("/api/order/reports/insights")
+                        .with(authentication(analyst()))
+                        .param("from", "2026-09-28")
+                        .param("to", "2026-10-04"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.from").value("2026-09-28"))
+                .andExpect(jsonPath("$.previousFrom").value("2026-09-21"))
+                .andExpect(jsonPath("$.previousTo").value("2026-09-27"))
+                .andExpect(jsonPath("$.current.tradedValue").value(1702.50))
+                .andExpect(jsonPath("$.current.tradeCount").value(3))
+                .andExpect(jsonPath("$.current.averageOrderValue").value(567.50))
+                .andExpect(jsonPath("$.current.newRegistrations").value(4))
+                .andExpect(jsonPath("$.current.activeClients").value(2))
+                .andExpect(jsonPath("$.previous.averageOrderValue").isEmpty())
+                .andExpect(jsonPath("$.topInstruments[0].symbol").value("AAPL"))
+                .andExpect(jsonPath("$.topInstruments[0].tradeCount").value(2));
+    }
+
+    @Test
+    @DisplayName("GET /api/order/reports/insights - 400 when to is missing")
+    void insightsMissingTo() throws Exception {
+        mockMvc.perform(get("/api/order/reports/insights")
+                        .with(authentication(analyst()))
+                        .param("from", "2026-09-28"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message").value("to is required"));
+        verifyNoInteractions(businessInsightsService);
     }
 }

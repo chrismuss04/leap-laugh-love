@@ -1,0 +1,43 @@
+<app-report-panel heading="Retention by sign-up month"
+                  description="Of each month's sign-ups, the share with an executed order in each month after. Month 0 is the sign-up month."
+                  [state]="state()" message="Nobody signed up in the last 12 complete months." (retry)="load()">
+  <div class="table-wrap" *ngIf="report() as report">
+    <table class="report-table retention" data-testid="retention-table" (keydown)="move($event)" (mouseleave)="litCell.set(null)">
+      <caption class="sr-only">
+        Share of each sign-up month's clients active in each month since signing up. Use the arrow keys to move between cells.
+      </caption>
+      <thead>
+        <tr>
+          <th scope="col">Signed up</th>
+          <th scope="col" class="num">Clients</th>
+          <th scope="col" class="num month-col" *ngFor="let offset of offsets()" [class.m0]="offset === 0"
+              [class.lit]="inLitColumn(offset)" [attr.aria-label]="'Month ' + offset + ' after sign-up'">
+            M{{ offset }}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let cohort of report.cohorts; let row = index" data-testid="retention-row">
+          <th scope="row" [class.lit]="inLitRow(row)">{{ monthLabel(cohort.cohort) }}</th>
+          <td class="num" [class.lit]="inLitRow(row)">{{ count(cohort.clients) }}</td>
+          <ng-container *ngFor="let offset of offsets()">
+            <ng-container *ngIf="cohort.months[offset] as cell; else later">
+              <td class="heat" [class.m0]="offset === 0" [class.none]="cell.activePct === null"
+                  [class.strong]="(cell.activePct ?? 0) > strongHeat"
+                  [class.cross]="inLitRow(row) || inLitColumn(offset)"
+                  [style.--heat]="cell.activePct ?? 0"
+                  [attr.tabindex]="isFocusCell(row, offset) ? 0 : -1" [attr.data-cell]="row + '-' + offset"
+                  [attr.aria-label]="cellLabel(cohort, cell)"
+                  (mouseenter)="light(row, offset)" (focus)="focused(row, offset)"
+                  data-testid="retention-cell">
+                {{ percent(cell.activePct) }}
+              </td>
+            </ng-container>
+            <!-- A month after the window's end: this cohort hasn't reached it yet. -->
+            <ng-template #later><td class="heat none" [class.m0]="offset === 0" aria-hidden="true"></td></ng-template>
+          </ng-container>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</app-report-panel>
