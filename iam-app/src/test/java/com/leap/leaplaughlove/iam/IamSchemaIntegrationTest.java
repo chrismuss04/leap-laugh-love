@@ -84,7 +84,7 @@ class IamSchemaIntegrationTest {
     }
 
     @Test
-    @DisplayName("Seed data should insert exactly 10 clients")
+    @DisplayName("Seed data should insert the 10 named clients")
     void testSeedData10Clients() throws Exception {
         String seed = readFile(SEED_FILE);
         
@@ -101,6 +101,34 @@ class IamSchemaIntegrationTest {
         assertTrue(seed.contains("henry.taylor@leap.com"), "Should have henry.taylor");
         assertTrue(seed.contains("iris.anderson@leap.com"), "Should have iris.anderson");
         assertTrue(seed.contains("jack.thomas@leap.com"), "Should have jack.thomas");
+    }
+
+    @Test
+    @DisplayName("Seed data should add 40 analytics mock clients, registered across the last year")
+    void testSeedDataMockClients() throws Exception {
+        String seed = readFile(SEED_FILE);
+
+        assertTrue(seed.contains("FROM generate_series(1, 40) AS n"), "Should generate 40 mock clients");
+        assertTrue(seed.contains("make_interval(days => 352 - (n - 1) * 8)"),
+            "Mock clients should register one every 8 days across the last year");
+        assertTrue(seed.contains("format('(646) 555-%s', lpad((200 + n)::text, 4, '0'))"),
+            "Mock clients should have phone (646) 555-02NN");
+        assertTrue(seed.contains("format('900-20-%s'"), "Mock SSNs should be in the never-issued 900 range");
+        assertTrue(seed.contains("INSERT INTO iam.client_profile") && seed.contains("FROM mock_client m"),
+            "Mock clients should have profiles");
+        assertTrue(seed.contains("INSERT INTO iam.client_credentials") && seed.contains("crypt('Password123!'"),
+            "Mock clients should share the seed password");
+    }
+
+    @Test
+    @DisplayName("Seeded clients should register before their accounts open")
+    void testSeedDataRegistrationDates() throws Exception {
+        String seed = readFile(SEED_FILE);
+
+        assertTrue(seed.contains("INSERT INTO iam.clients (email, phone, status, created_at) VALUES"),
+            "The named clients should carry a registration date");
+        assertTrue(seed.contains("('bob.smith@leap.com', '(212) 555-0102', 'ACTIVE', '2025-04-04 10:00:00+00')"),
+            "Bob should register before his 2025-04-07 account");
     }
 
     @Test
