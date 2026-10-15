@@ -11,7 +11,7 @@ import com.leap.leaplaughlove.account.position.PositionMovement;
 import com.leap.leaplaughlove.account.position.PositionMovementRepository;
 import com.leap.leaplaughlove.account.position.PositionRepository;
 import com.leap.leaplaughlove.account.quote.PriceHistoryClient;
-import com.leap.leaplaughlove.account.quote.PriceHistoryClient.CandleClose;
+import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import com.leap.leaplaughlove.account.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.common.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;

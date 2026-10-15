@@ -102,11 +102,11 @@ public class OrderFillMailer {
                fixedDelayString = &quot;${order.notifications.email.interval-ms:15000}&quot;)
     public void run() {
         try {
-<span class="nc" id="L105">            notifyClients();</span>
+<span class="fc" id="L105">            notifyClients();</span>
 <span class="nc" id="L106">        } catch (RuntimeException ex) {</span>
 <span class="nc" id="L107">            log.warn(&quot;Sweeping for order outcome emails failed: {}&quot;, ex.getMessage());</span>
-<span class="nc" id="L108">        }</span>
-<span class="nc" id="L109">    }</span>
+<span class="fc" id="L108">        }</span>
+<span class="fc" id="L109">    }</span>
 
     /**
      * Emails the client of every finished order that still owes one, and marks each one done.

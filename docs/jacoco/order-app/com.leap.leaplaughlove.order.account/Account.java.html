@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Account.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.account</a> &gt; <span class="el_source">Account.java</span></div><h1>Account.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.account;
 
-import jakarta.persistence.Column;
+import com.leap.leaplaughlove.common.persistence.BaseAccount;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.time.OffsetDateTime;
@@ -13,39 +12,17 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = &quot;accounts&quot;, schema = &quot;trading&quot;)
-public class Account {
-
-    @Id
-    @Column(name = &quot;account_id&quot;)
-    private UUID accountId;
-
-    @Column(name = &quot;client_id&quot;, nullable = false)
-    private UUID clientId;
-
-    @Column(name = &quot;account_number&quot;, nullable = false)
-    private String accountNumber;
-
-    @Column(name = &quot;status&quot;, nullable = false)
-    private String status;
-
-    @Column(name = &quot;base_currency&quot;, nullable = false)
-    private String baseCurrency;
-
-    @Column(name = &quot;trading_enabled&quot;, nullable = false)
-    private boolean tradingEnabled;
-
-    @Column(name = &quot;created_at&quot;)
-    private OffsetDateTime createdAt;
+public class Account extends BaseAccount {
 
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L43">    protected Account() {</span>
-<span class="fc" id="L44">    }</span>
+<span class="fc" id="L20">    protected Account() {</span>
+<span class="fc" id="L21">    }</span>
 
     /**
      * Constructs an Account with the specified details.
-     * 
+     *
      * @param accountId      the unique identifier of the account
      * @param clientId       the client ID that owns this account
      * @param accountNumber  the account number
@@ -54,78 +31,8 @@ public class Account {
      * @param tradingEnabled whether trading is enabled for the account
      * @param createdAt      the timestamp when the account was created
      */
-<span class="fc" id="L57">    public Account(UUID accountId, UUID clientId, String accountNumber, String status, String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {</span>
-<span class="fc" id="L58">        this.accountId = accountId;</span>
-<span class="fc" id="L59">        this.clientId = clientId;</span>
-<span class="fc" id="L60">        this.accountNumber = accountNumber;</span>
-<span class="fc" id="L61">        this.status = status;</span>
-<span class="fc" id="L62">        this.baseCurrency = baseCurrency;</span>
-<span class="fc" id="L63">        this.tradingEnabled = tradingEnabled;</span>
-<span class="fc" id="L64">        this.createdAt = createdAt;</span>
-<span class="fc" id="L65">    }</span>
-
-    /**
-     * Returns the unique identifier of the account.
-     * 
-     * @return the account ID
-     */
-    public UUID getAccountId() {
-<span class="fc" id="L73">        return accountId;</span>
-    }
-
-    /**
-     * Returns the client ID that owns this account.
-     * 
-     * @return the client ID
-     */
-    public UUID getClientId() {
-<span class="fc" id="L82">        return clientId;</span>
-    }
-
-    /**
-     * Returns the account number.
-     * 
-     * @return the account number
-     */
-    public String getAccountNumber() {
-<span class="fc" id="L91">        return accountNumber;</span>
-    }
-
-    /**
-     * Returns the account status.
-     * 
-     * @return the account status
-     */
-    public String getStatus() {
-<span class="fc" id="L100">        return status;</span>
-    }
-
-    /**
-     * Returns the base currency of the account.
-     * 
-     * @return the base currency
-     */
-    public String getBaseCurrency() {
-<span class="fc" id="L109">        return baseCurrency;</span>
-    }
-
-    /**
-     * Indicates whether trading is enabled on the account.
-     * 
-     * @return true if trading is enabled, false otherwise
-     */
-    public boolean isTradingEnabled() {
-<span class="fc" id="L118">        return tradingEnabled;</span>
-    }
-
-    /**
-     * Returns the timestamp when the account was created.
-     * 
-     * @return the creation timestamp
-     */
-    public OffsetDateTime getCreatedAt() {
-<span class="fc" id="L127">        return createdAt;</span>
-    }
+    public Account(UUID accountId, UUID clientId, String accountNumber, String status, String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {
+<span class="fc" id="L35">        super(accountId, clientId, accountNumber, status, baseCurrency, tradingEnabled, createdAt);</span>
+<span class="fc" id="L36">    }</span>
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

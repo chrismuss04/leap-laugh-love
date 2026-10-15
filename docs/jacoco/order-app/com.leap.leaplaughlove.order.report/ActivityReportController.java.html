@@ -25,14 +25,18 @@ import java.util.UUID;
 public class ActivityReportController {
 
     private final ActivityReportService activityReportService;
+    private final BusinessInsightsService businessInsightsService;
 
     /**
-     * Constructs an instance of ActivityReportController with the specified service.
+     * Constructs an instance of ActivityReportController with the specified services.
      * @param activityReportService the service used to build activity reports
+     * @param businessInsightsService the service used to build the dashboard's business insights
      */
-<span class="fc" id="L33">    public ActivityReportController(ActivityReportService activityReportService) {</span>
-<span class="fc" id="L34">        this.activityReportService = activityReportService;</span>
-<span class="fc" id="L35">    }</span>
+    public ActivityReportController(ActivityReportService activityReportService,
+<span class="fc" id="L36">                                    BusinessInsightsService businessInsightsService) {</span>
+<span class="fc" id="L37">        this.activityReportService = activityReportService;</span>
+<span class="fc" id="L38">        this.businessInsightsService = businessInsightsService;</span>
+<span class="fc" id="L39">    }</span>
 
     /**
      * GET HTTP endpoint for an activity report.
@@ -48,7 +52,20 @@ public class ActivityReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = &quot;DAILY&quot;) ReportGranularity granularity,
             @RequestParam(required = false) UUID instrumentId) {
-<span class="fc" id="L51">        return activityReportService.getActivityReport(from, to, granularity, instrumentId);</span>
+<span class="fc" id="L55">        return activityReportService.getActivityReport(from, to, granularity, instrumentId);</span>
+    }
+
+    /**
+     * GET HTTP endpoint for the dashboard's business insights.
+     * @param from the first UTC day of the period (yyyy-MM-dd), inclusive
+     * @param to the last UTC day of the period (yyyy-MM-dd), inclusive
+     * @return the period's headline figures, the previous period's, and the most active instruments
+     */
+    @GetMapping(&quot;/insights&quot;)
+    public BusinessInsights getInsights(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+<span class="fc" id="L68">        return businessInsightsService.getInsights(from, to);</span>
     }
 
     /**
@@ -57,7 +74,7 @@ public class ActivityReportController {
      */
     @GetMapping(&quot;/instruments&quot;)
     public List&lt;ReportInstrument&gt; getInstruments() {
-<span class="fc" id="L60">        return activityReportService.getInstruments();</span>
+<span class="fc" id="L77">        return activityReportService.getInstruments();</span>
     }
 
     /**
@@ -68,7 +85,7 @@ public class ActivityReportController {
     @ExceptionHandler(MissingServletRequestParameterException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map&lt;String, String&gt; handleMissingParameter(MissingServletRequestParameterException ex) {
-<span class="fc" id="L71">        return Map.of(&quot;error&quot;, &quot;BAD_REQUEST&quot;, &quot;message&quot;, ex.getParameterName() + &quot; is required&quot;);</span>
+<span class="fc" id="L88">        return Map.of(&quot;error&quot;, &quot;BAD_REQUEST&quot;, &quot;message&quot;, ex.getParameterName() + &quot; is required&quot;);</span>
     }
 
     /**
@@ -79,7 +96,7 @@ public class ActivityReportController {
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map&lt;String, String&gt; handleMalformedParameter(MethodArgumentTypeMismatchException ex) {
-<span class="fc" id="L82">        return Map.of(&quot;error&quot;, &quot;BAD_REQUEST&quot;, &quot;message&quot;, ex.getName() + &quot; is not valid&quot;);</span>
+<span class="fc" id="L99">        return Map.of(&quot;error&quot;, &quot;BAD_REQUEST&quot;, &quot;message&quot;, ex.getName() + &quot; is not valid&quot;);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

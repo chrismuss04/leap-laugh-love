@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>Account.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.account</a> &gt; <span class="el_source">Account.java</span></div><h1>Account.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.account;
 
+import com.leap.leaplaughlove.common.persistence.BaseAccount;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
-import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.JdbcTypeCode;
-import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -18,34 +14,10 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = &quot;accounts&quot;, schema = &quot;trading&quot;)
-public class Account {
-
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = &quot;account_id&quot;)
-    private UUID accountId;
-
-    @Column(name = &quot;client_id&quot;, nullable = false)
-    private UUID clientId;
-
-    @Column(name = &quot;account_number&quot;, nullable = false, unique = true)
-    private String accountNumber;
-
-    @Column(name = &quot;status&quot;, nullable = false)
-    private String status;
-
-    @JdbcTypeCode(SqlTypes.CHAR)
-    @Column(name = &quot;base_currency&quot;, nullable = false, length = 3)
-    private String baseCurrency;
-
-    @Column(name = &quot;trading_enabled&quot;, nullable = false)
-    private boolean tradingEnabled;
+public class Account extends BaseAccount {
 
     @Column(name = &quot;max_slippage_pct&quot;, precision = 5, scale = 2)
     private BigDecimal maxSlippagePercent;
-
-    @Column(name = &quot;created_at&quot;, nullable = false)
-    private OffsetDateTime createdAt;
 
     @Column(name = &quot;inactive_since&quot;)
     private OffsetDateTime inactiveSince;
@@ -56,8 +28,8 @@ public class Account {
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L59">    protected Account() {</span>
-<span class="fc" id="L60">    }</span>
+<span class="fc" id="L31">    protected Account() {</span>
+<span class="fc" id="L32">    }</span>
 
     /**
      * Constructor for the Account entity with all fields specified.
@@ -70,82 +42,33 @@ public class Account {
      * @param createdAt the timestamp when the account was created
      */
     public Account(UUID accountId, UUID clientId, String accountNumber, String status,
-<span class="fc" id="L73">                   String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {</span>
-<span class="fc" id="L74">        this.accountId = accountId;</span>
-<span class="fc" id="L75">        this.clientId = clientId;</span>
-<span class="fc" id="L76">        this.accountNumber = accountNumber;</span>
-<span class="fc" id="L77">        this.status = status;</span>
-<span class="fc" id="L78">        this.baseCurrency = baseCurrency;</span>
-<span class="fc" id="L79">        this.tradingEnabled = tradingEnabled;</span>
-<span class="fc" id="L80">        this.createdAt = createdAt;</span>
-<span class="fc" id="L81">    }</span>
-
-    /**
-     * Returns the account identifier.
-     * @return the unique identifier for the account
-     */
-<span class="fc" id="L87">    public UUID getAccountId() { return accountId; }</span>
-
-    /**
-     * Returns the client identifier.
-     * @return the unique identifier for the client owning the account
-     */
-<span class="fc" id="L93">    public UUID getClientId() { return clientId; }</span>
-
-    /**
-     * Returns the account number.
-     * @return the unique account number
-     */
-<span class="fc" id="L99">    public String getAccountNumber() { return accountNumber; }</span>
-
-    /**
-     * Returns the account status.
-     * @return the status of the account
-     */
-<span class="fc" id="L105">    public String getStatus() { return status; }</span>
-
-    /**
-     * Returns the base currency of the account.
-     * @return the base currency of the account
-     */
-<span class="fc" id="L111">    public String getBaseCurrency() { return baseCurrency; }</span>
-
-    /**
-     * Indicates if trading is enabled for the account.
-     * @return true if trading is enabled, false otherwise
-     */
-<span class="fc" id="L117">    public boolean isTradingEnabled() { return tradingEnabled; }</span>
+                   String baseCurrency, boolean tradingEnabled, OffsetDateTime createdAt) {
+<span class="fc" id="L46">        super(accountId, clientId, accountNumber, status, baseCurrency, tradingEnabled, createdAt);</span>
+<span class="fc" id="L47">    }</span>
 
     /**
      * Returns the saved price tolerance: the most, in percent, the price may move either way
      * between an order's quote and its execution before order-app rejects it.
      * @return the tolerance in percent, or null when none is saved
      */
-<span class="fc" id="L124">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
+<span class="fc" id="L54">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
 
     /**
      * Saves the account's price tolerance.
      * @param maxSlippagePercent the tolerance in percent, or null to clear it
      */
-<span class="fc" id="L130">    public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }</span>
-
-    /**
-     * Returns the creation timestamp of the account.
-     * @return the timestamp when the account was created
-     */
-<span class="fc" id="L136">    public OffsetDateTime getCreatedAt() { return createdAt; }</span>
+<span class="fc" id="L60">    public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }</span>
 
     /** @return when the account became empty, if the inactivity job has flagged it; otherwise null */
-<span class="fc" id="L139">    public OffsetDateTime getInactiveSince() { return inactiveSince; }</span>
+<span class="fc" id="L63">    public OffsetDateTime getInactiveSince() { return inactiveSince; }</span>
 
     /** Flags the account inactive since the given time, or clears the flag with null. */
-<span class="fc" id="L142">    public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }</span>
+<span class="fc" id="L66">    public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }</span>
 
     /** @return when the client was emailed about the current inactive period; null until then */
-<span class="nc" id="L145">    public OffsetDateTime getInactiveNotifiedAt() { return inactiveNotifiedAt; }</span>
+<span class="nc" id="L69">    public OffsetDateTime getInactiveNotifiedAt() { return inactiveNotifiedAt; }</span>
 
     /** Records when the client was emailed about the inactive account, or clears it with null. */
-<span class="fc" id="L148">    public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }</span>
+<span class="fc" id="L72">    public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }</span>
 }
-
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

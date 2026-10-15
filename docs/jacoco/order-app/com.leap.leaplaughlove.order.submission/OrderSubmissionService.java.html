@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderSubmissionService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.submission</a> &gt; <span class="el_source">OrderSubmissionService.java</span></div><h1>OrderSubmissionService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.submission;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.history.FillRecorder;
@@ -18,6 +21,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
 import com.leap.leaplaughlove.order.working.ReservationService;
+import com.leap.leaplaughlove.order.working.SessionPolicy;
 import com.leap.leaplaughlove.order.working.TrailingStop;
 import com.leap.leaplaughlove.order.working.TriggerEvaluator;
 import org.slf4j.Logger;
@@ -32,8 +36,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -45,14 +52,20 @@ import java.util.UUID;
  * fill yet are stored OPEN, holding back the cash or shares they may need (see
  * {@link ReservationService}), and {@code OrderTriggerEngine} fills them through
  * {@link #fillOpenOrder} once the market reaches their price.
+ *
+ * &lt;p&gt;Market hours ({@link SessionPolicy}): orders only execute in a session they may trade in - an
+ * order that would fill at once outside it is left OPEN instead, until that session comes. A
+ * market order placed outside regular hours is queued for the next open: it holds cash at its
+ * collar ({@link ReservationService#collarFor}) and fills at the opening price, unless that is
+ * beyond the collar.
  */
 @Service
 public class OrderSubmissionService {
 
-<span class="fc" id="L52">    private static final Logger log = LoggerFactory.getLogger(OrderSubmissionService.class);</span>
+<span class="fc" id="L65">    private static final Logger log = LoggerFactory.getLogger(OrderSubmissionService.class);</span>
 
     /** A DAY order works until midnight US Eastern time, the end of the US trading day. */
-<span class="fc" id="L55">    private static final ZoneId MARKET_ZONE = ZoneId.of(&quot;America/New_York&quot;);</span>
+<span class="fc" id="L68">    private static final ZoneId MARKET_ZONE = ZoneId.of(&quot;America/New_York&quot;);</span>
     /** A GTC order is cancelled automatically after this many days, as at most brokers. */
     private static final int GTC_DAYS = 90;
 
@@ -66,20 +79,26 @@ public class OrderSubmissionService {
     private final TransactionTemplate transactionTemplate;
     private final OrderEventPublisher orderEventPublisher;
     private final ReservationService reservationService;
+    private final MarketClock marketClock;
 
     /**
      * What the first step of a submission decided: a finished rejection, an OPEN order waiting
      * for its price (no execution), or an accepted order with its committed FILLED execution,
      * waiting to be settled.
      */
-<span class="fc" id="L75">    private record FirstStep(OrderSubmissionResponse rejection, Order order, Execution execution) {}</span>
+<span class="fc" id="L89">    private record FirstStep(OrderSubmissionResponse rejection, Order order, Execution execution) {}</span>
 
     /**
      * How settling a committed execution ended.
      * @param balanceAfter the account's cash after settling, when account-app reported it
      * @param refusal account-app's refusal, when it refused the fill and the order is now REJECTED
      */
-<span class="fc" id="L82">    private record SettleOutcome(BigDecimal balanceAfter, RuntimeException refusal) {}</span>
+<span class="fc" id="L96">    private record SettleOutcome(BigDecimal balanceAfter, RuntimeException refusal) {}</span>
+
+    /** The current time in UTC, for every timestamp this service writes. */
+    private static OffsetDateTime now() {
+<span class="fc" id="L100">        return OffsetDateTime.now(ZoneOffset.UTC);</span>
+    }
 
     /**
      * Constructs an instance of OrderSubmissionService with the specified dependencies.
@@ -93,6 +112,7 @@ public class OrderSubmissionService {
      * @param transactionTemplate runs each step of a submission in its own transaction
      * @param orderEventPublisher reports each order to Kafka once it is final
      * @param reservationService works out what the account's open orders hold back
+     * @param marketClock decides which market session an order is placed and filled in
      */
     @Autowired
     public OrderSubmissionService(AccountClient accountClient,
@@ -104,18 +124,48 @@ public class OrderSubmissionService {
                                   CurrentQuoteService currentQuoteService,
                                   TransactionTemplate transactionTemplate,
                                   OrderEventPublisher orderEventPublisher,
-<span class="fc" id="L107">                                  ReservationService reservationService) {</span>
-<span class="fc" id="L108">        this.accountClient = accountClient;</span>
-<span class="fc" id="L109">        this.instrumentRepository = instrumentRepository;</span>
-<span class="fc" id="L110">        this.orderRepository = orderRepository;</span>
-<span class="fc" id="L111">        this.executionRepository = executionRepository;</span>
-<span class="fc" id="L112">        this.fillRecorder = fillRecorder;</span>
-<span class="fc" id="L113">        this.tradeValidationService = tradeValidationService;</span>
-<span class="fc" id="L114">        this.currentQuoteService = currentQuoteService;</span>
-<span class="fc" id="L115">        this.transactionTemplate = transactionTemplate;</span>
-<span class="fc" id="L116">        this.orderEventPublisher = orderEventPublisher;</span>
-<span class="fc" id="L117">        this.reservationService = reservationService;</span>
-<span class="fc" id="L118">    }</span>
+                                  ReservationService reservationService,
+<span class="fc" id="L128">                                  MarketClock marketClock) {</span>
+<span class="fc" id="L129">        this.marketClock = marketClock;</span>
+<span class="fc" id="L130">        this.accountClient = accountClient;</span>
+<span class="fc" id="L131">        this.instrumentRepository = instrumentRepository;</span>
+<span class="fc" id="L132">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L133">        this.executionRepository = executionRepository;</span>
+<span class="fc" id="L134">        this.fillRecorder = fillRecorder;</span>
+<span class="fc" id="L135">        this.tradeValidationService = tradeValidationService;</span>
+<span class="fc" id="L136">        this.currentQuoteService = currentQuoteService;</span>
+<span class="fc" id="L137">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L138">        this.orderEventPublisher = orderEventPublisher;</span>
+<span class="fc" id="L139">        this.reservationService = reservationService;</span>
+<span class="fc" id="L140">    }</span>
+
+    /**
+     * Constructs an OrderSubmissionService with market hours off: the market is always open.
+     * @param accountClient the client used for account-related operations
+     * @param instrumentRepository the repository for accessing instrument data
+     * @param orderRepository the repository for persisting order data
+     * @param executionRepository the repository for persisting execution data
+     * @param fillRecorder the component responsible for recording fill details
+     * @param tradeValidationService the service used for validating trades
+     * @param currentQuoteService the service used for obtaining current market quotes
+     * @param transactionTemplate runs each step of a submission in its own transaction
+     * @param orderEventPublisher reports each order to Kafka once it is final
+     * @param reservationService works out what the account's open orders hold back
+     */
+    public OrderSubmissionService(AccountClient accountClient,
+                                  InstrumentRepository instrumentRepository,
+                                  OrderRepository orderRepository,
+                                  ExecutionRepository executionRepository,
+                                  FillRecorder fillRecorder,
+                                  TradeValidationService tradeValidationService,
+                                  CurrentQuoteService currentQuoteService,
+                                  TransactionTemplate transactionTemplate,
+                                  OrderEventPublisher orderEventPublisher,
+                                  ReservationService reservationService) {
+<span class="fc" id="L165">        this(accountClient, instrumentRepository, orderRepository, executionRepository, fillRecorder,</span>
+                tradeValidationService, currentQuoteService, transactionTemplate, orderEventPublisher,
+<span class="fc" id="L167">                reservationService, MarketClock.alwaysOpen());</span>
+<span class="fc" id="L168">    }</span>
 
     /**
      * Constructs an OrderSubmissionService whose holds are summed from the given order repository.
@@ -138,10 +188,10 @@ public class OrderSubmissionService {
                                   CurrentQuoteService currentQuoteService,
                                   TransactionTemplate transactionTemplate,
                                   OrderEventPublisher orderEventPublisher) {
-<span class="fc" id="L141">        this(accountClient, instrumentRepository, orderRepository, executionRepository, fillRecorder,</span>
+<span class="fc" id="L191">        this(accountClient, instrumentRepository, orderRepository, executionRepository, fillRecorder,</span>
                 tradeValidationService, currentQuoteService, transactionTemplate, orderEventPublisher,
                 new ReservationService(orderRepository));
-<span class="fc" id="L144">    }</span>
+<span class="fc" id="L194">    }</span>
 
     /**
      * Submits an order and, unless it has to wait for its price, executes it immediately.
@@ -164,31 +214,32 @@ public class OrderSubmissionService {
      *         before anything is stored
      */
     public OrderSubmissionResponse submitOrder(OrderSubmissionRequest request) {
-<span class="fc bfc" id="L167" title="All 2 branches covered.">        if (request == null) {</span>
-<span class="fc" id="L168">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Order request body is required&quot;);</span>
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        if (request == null) {</span>
+<span class="fc" id="L218">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Order request body is required&quot;);</span>
         }
-<span class="fc bfc" id="L170" title="All 2 branches covered.">        if (request.quantity() &lt;= 0) {</span>
-<span class="fc" id="L171">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Quantity must be at least 1 whole share&quot;);</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        if (request.quantity() &lt;= 0) {</span>
+<span class="fc" id="L221">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Quantity must be at least 1 whole share&quot;);</span>
         }
 
-<span class="fc" id="L174">        FirstStep firstStep = transactionTemplate.execute(status -&gt; acceptOrReject(request));</span>
-<span class="fc bfc" id="L175" title="All 2 branches covered.">        if (firstStep.rejection() != null) {</span>
-<span class="fc" id="L176">            return firstStep.rejection();</span>
+<span class="fc" id="L224">        FirstStep firstStep = Objects.requireNonNull(</span>
+<span class="fc" id="L225">                transactionTemplate.execute(status -&gt; acceptOrReject(request)), &quot;acceptOrReject returned null&quot;);</span>
+<span class="fc bfc" id="L226" title="All 2 branches covered.">        if (firstStep.rejection() != null) {</span>
+<span class="fc" id="L227">            return firstStep.rejection();</span>
         }
-<span class="fc" id="L178">        Order order = firstStep.order();</span>
-<span class="fc" id="L179">        Execution execution = firstStep.execution();</span>
-<span class="fc bfc" id="L180" title="All 2 branches covered.">        if (execution == null) {</span>
+<span class="fc" id="L229">        Order order = firstStep.order();</span>
+<span class="fc" id="L230">        Execution execution = firstStep.execution();</span>
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        if (execution == null) {</span>
             // OPEN: waiting for the market to reach its price.
-<span class="fc" id="L182">            return toResponse(order, null, null);</span>
+<span class="fc" id="L233">            return toResponse(order, null, null);</span>
         }
 
-<span class="fc" id="L185">        SettleOutcome outcome = settleAndRecord(order, execution, null);</span>
-<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (outcome.refusal() != null) {</span>
+<span class="fc" id="L236">        SettleOutcome outcome = settleAndRecord(order, execution, null);</span>
+<span class="fc bfc" id="L237" title="All 2 branches covered.">        if (outcome.refusal() != null) {</span>
             // A 4xx, so the customer is told it definitely didn't go through, and why.
-<span class="fc" id="L188">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, order.getRejectionReason(),</span>
-<span class="fc" id="L189">                    outcome.refusal());</span>
+<span class="fc" id="L239">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, order.getRejectionReason(),</span>
+<span class="fc" id="L240">                    outcome.refusal());</span>
         }
-<span class="fc" id="L191">        return toResponse(order, execution, outcome.balanceAfter());</span>
+<span class="fc" id="L242">        return toResponse(order, execution, outcome.balanceAfter());</span>
     }
 
     /**
@@ -206,17 +257,17 @@ public class OrderSubmissionService {
      *         left OPEN and tried again
      */
     public Order.Status fillOpenOrder(UUID orderId, BigDecimal fillPrice, boolean stopReached, String bearerToken) {
-<span class="fc" id="L209">        FirstStep firstStep = transactionTemplate.execute(status -&gt; acceptOpenOrder(orderId, fillPrice, stopReached, bearerToken));</span>
-<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (firstStep == null) {</span>
-<span class="fc" id="L211">            return null;</span>
+<span class="fc" id="L260">        FirstStep firstStep = transactionTemplate.execute(status -&gt; acceptOpenOrder(orderId, fillPrice, stopReached, bearerToken));</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">        if (firstStep == null) {</span>
+<span class="fc" id="L262">            return null;</span>
         }
-<span class="fc" id="L213">        Order order = firstStep.order();</span>
-<span class="fc bfc" id="L214" title="All 2 branches covered.">        if (firstStep.rejection() != null) {</span>
-<span class="fc" id="L215">            log.info(&quot;Open order {} reached its price but was rejected: {}&quot;, orderId, order.getRejectionReason());</span>
-<span class="fc" id="L216">            return order.getStatus();</span>
+<span class="fc" id="L264">        Order order = firstStep.order();</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">        if (firstStep.rejection() != null) {</span>
+<span class="fc" id="L266">            log.info(&quot;Open order {} reached its price but was rejected: {}&quot;, orderId, order.getRejectionReason());</span>
+<span class="fc" id="L267">            return order.getStatus();</span>
         }
-<span class="fc" id="L218">        settleAndRecord(order, firstStep.execution(), bearerToken);</span>
-<span class="fc" id="L219">        return order.getStatus();</span>
+<span class="fc" id="L269">        settleAndRecord(order, firstStep.execution(), bearerToken);</span>
+<span class="fc" id="L270">        return order.getStatus();</span>
     }
 
     /**
@@ -230,46 +281,46 @@ public class OrderSubmissionService {
     private SettleOutcome settleAndRecord(Order order, Execution execution, String bearerToken) {
         SettlementResponse settlement;
         try {
-<span class="fc" id="L233">            settlement = fillRecorder.settle(order, execution, bearerToken);</span>
-<span class="fc" id="L234">        } catch (RuntimeException ex) {</span>
-<span class="fc bfc" id="L235" title="All 2 branches covered.">            if (!FillRecorder.isRefused(ex)) {</span>
+<span class="fc" id="L284">            settlement = fillRecorder.settle(order, execution, bearerToken);</span>
+<span class="fc" id="L285">        } catch (RuntimeException ex) {</span>
+<span class="fc bfc" id="L286" title="All 2 branches covered.">            if (!FillRecorder.isRefused(ex)) {</span>
                 // account-app may have booked it, so it must not be recorded as rejected. The
                 // order stays ACCEPTED and PendingFillRecovery settles it once account-app answers.
-<span class="fc" id="L238">                log.warn(&quot;Settling order {} had an unknown outcome; left for recovery: {}&quot;,</span>
-<span class="fc" id="L239">                        order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L240">                return new SettleOutcome(null, null);</span>
+<span class="fc" id="L289">                log.warn(&quot;Settling order {} had an unknown outcome; left for recovery: {}&quot;,</span>
+<span class="fc" id="L290">                        order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L291">                return new SettleOutcome(null, null);</span>
             }
             // account-app refused it, so nothing was booked. The execution is immutable, so it
             // stays as the record of the attempt; the order says it never filled.
-<span class="fc" id="L244">            String reason = &quot;Settlement failed: &quot; + FillRecorder.refusalReason(ex);</span>
-<span class="fc" id="L245">            OffsetDateTime rejectedAt = OffsetDateTime.now();</span>
-<span class="fc" id="L246">            transactionTemplate.executeWithoutResult(status -&gt; {</span>
-<span class="fc" id="L247">                order.markRejected(reason, rejectedAt);</span>
-<span class="fc" id="L248">                lockedCopy(order).markRejected(reason, rejectedAt);</span>
-<span class="fc" id="L249">            });</span>
+<span class="fc" id="L295">            String reason = &quot;Settlement failed: &quot; + FillRecorder.refusalReason(ex);</span>
+<span class="fc" id="L296">            OffsetDateTime rejectedAt = now();</span>
+<span class="fc" id="L297">            transactionTemplate.executeWithoutResult(status -&gt; {</span>
+<span class="fc" id="L298">                order.markRejected(reason, rejectedAt);</span>
+<span class="fc" id="L299">                lockedCopy(order).markRejected(reason, rejectedAt);</span>
+<span class="fc" id="L300">            });</span>
             // It executed and is now final, so reporting gets it; validation rejections don't.
-<span class="fc" id="L251">            orderEventPublisher.publishRejected(order);</span>
-<span class="fc" id="L252">            return new SettleOutcome(null, ex);</span>
-<span class="fc" id="L253">        }</span>
+<span class="fc" id="L302">            orderEventPublisher.publishRejected(order);</span>
+<span class="fc" id="L303">            return new SettleOutcome(null, ex);</span>
+<span class="fc" id="L304">        }</span>
 
-<span class="pc bpc" id="L255" title="1 of 2 branches missed.">        BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;</span>
+<span class="pc bpc" id="L306" title="1 of 2 branches missed.">        BigDecimal balanceAfter = settlement != null ? settlement.balanceAfter() : null;</span>
         boolean finishedHere;
         try {
-<span class="fc" id="L258">            finishedHere = Boolean.TRUE.equals(</span>
-<span class="fc" id="L259">                    transactionTemplate.execute(status -&gt; fillRecorder.completeFill(lockedCopy(order), execution)));</span>
-<span class="fc" id="L260">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L309">            finishedHere = Boolean.TRUE.equals(</span>
+<span class="fc" id="L310">                    transactionTemplate.execute(status -&gt; fillRecorder.completeFill(lockedCopy(order), execution)));</span>
+<span class="fc" id="L311">        } catch (RuntimeException ex) {</span>
             // Cash and holdings have moved; only this app's record of it is missing, and
             // PendingFillRecovery writes it once this app's database is back.
-<span class="fc" id="L263">            log.warn(&quot;Order {} settled but its fill could not be recorded; left for recovery: {}&quot;,</span>
-<span class="fc" id="L264">                    order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L265">            return new SettleOutcome(balanceAfter, null);</span>
-<span class="fc" id="L266">        }</span>
-<span class="fc" id="L267">        order.markFilled(execution.getExecutedAt());</span>
+<span class="fc" id="L314">            log.warn(&quot;Order {} settled but its fill could not be recorded; left for recovery: {}&quot;,</span>
+<span class="fc" id="L315">                    order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L316">            return new SettleOutcome(balanceAfter, null);</span>
+<span class="fc" id="L317">        }</span>
+<span class="fc" id="L318">        order.markFilled(execution.getExecutedAt());</span>
         // If recovery finished it first, recovery published it.
-<span class="fc bfc" id="L269" title="All 2 branches covered.">        if (finishedHere) {</span>
-<span class="fc" id="L270">            orderEventPublisher.publishFilled(order, execution);</span>
+<span class="fc bfc" id="L320" title="All 2 branches covered.">        if (finishedHere) {</span>
+<span class="fc" id="L321">            orderEventPublisher.publishFilled(order, execution);</span>
         }
-<span class="fc" id="L272">        return new SettleOutcome(balanceAfter, null);</span>
+<span class="fc" id="L323">        return new SettleOutcome(balanceAfter, null);</span>
     }
 
     /**
@@ -283,8 +334,8 @@ public class OrderSubmissionService {
      * @return the managed, locked order
      */
     private Order lockedCopy(Order order) {
-<span class="fc" id="L286">        return orderRepository.findByIdForUpdate(order.getOrderId())</span>
-<span class="pc" id="L287">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Order &quot; + order.getOrderId() + &quot; is not stored&quot;));</span>
+<span class="fc" id="L337">        return orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc" id="L338">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Order &quot; + order.getOrderId() + &quot; is not stored&quot;));</span>
     }
 
     /**
@@ -295,92 +346,164 @@ public class OrderSubmissionService {
      * @return the rejection, the OPEN order, or the accepted order and its execution
      */
     private FirstStep acceptOrReject(OrderSubmissionRequest request) {
-<span class="fc" id="L298">        Order.OrderType orderType = request.effectiveOrderType();</span>
+<span class="fc" id="L349">        Order.OrderType orderType = request.effectiveOrderType();</span>
+<span class="fc" id="L350">        MarketSession session = marketClock.session();</span>
 
         // 1. Resolve instrument
-<span class="fc" id="L301">        Instrument instrument = resolveInstrument(request);</span>
+<span class="fc" id="L353">        Instrument instrument = resolveInstrument(request);</span>
 
         // 2. Pre-trade check via AccountClient
-<span class="fc" id="L304">        AccountValidationDto accountValidation = fetchAccountValidation(request, instrument);</span>
-<span class="fc" id="L305">        BigDecimal maxSlippagePercent = resolveMaxSlippage(request, orderType, accountValidation);</span>
+<span class="fc" id="L356">        AccountValidationDto accountValidation = fetchAccountValidation(request, instrument);</span>
+        // A market order outside regular hours waits for the open, when the quote it was placed at
+        // is hours old: its collar stands in for a price tolerance.
+<span class="fc bfc" id="L359" title="All 4 branches covered.">        boolean queueForOpen = orderType == Order.OrderType.MARKET &amp;&amp; session != MarketSession.REGULAR;</span>
+<span class="fc bfc" id="L360" title="All 2 branches covered.">        BigDecimal maxSlippagePercent = queueForOpen ? null</span>
+<span class="fc" id="L361">                : resolveMaxSlippage(request, orderType, accountValidation);</span>
 
         // Cash and shares other open orders hold aren't free for this one. The account's row lock
         // keeps two orders from counting the same cash or shares at once.
-<span class="fc" id="L309">        orderRepository.lockAccount(request.accountId());</span>
-<span class="fc" id="L310">        ReservationService.Holds holds = reservationService.holdsFor(</span>
-<span class="fc" id="L311">                request.accountId(), instrument.getInstrumentId(), null);</span>
-<span class="fc" id="L312">        AccountValidationDto available = ReservationService.available(accountValidation, holds);</span>
+<span class="fc" id="L365">        orderRepository.lockAccount(request.accountId());</span>
+<span class="fc" id="L366">        ReservationService.Holds holds = reservationService.holdsFor(</span>
+<span class="fc" id="L367">                request.accountId(), instrument.getInstrumentId(), null);</span>
+<span class="fc" id="L368">        AccountValidationDto available = ReservationService.available(accountValidation, holds);</span>
 
         // 3. Store order immediately with status SUBMITTED for audit retention
-<span class="fc" id="L315">        Order order = orderRepository.saveAndFlush(</span>
-<span class="fc" id="L316">                newOrder(request, instrument, accountValidation, maxSlippagePercent));</span>
+<span class="fc" id="L371">        Order order = orderRepository.saveAndFlush(</span>
+<span class="fc" id="L372">                newOrder(request, instrument, accountValidation, maxSlippagePercent));</span>
+
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
+        ExecutionQuote quote;
         BigDecimal executionPrice;
         try {
-<span class="fc" id="L321">            executionPrice = resolvePrice(request.side(), instrument);</span>
-<span class="fc" id="L322">        } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {</span>
-<span class="fc bfc" id="L323" title="All 2 branches covered.">            String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();</span>
-<span class="fc" id="L324">            return new FirstStep(rejectOrder(order, accountValidation,</span>
-<span class="fc bfc" id="L325" title="All 2 branches covered.">                    rejectReason != null ? rejectReason : &quot;Market quote unavailable&quot;), null, null);</span>
-<span class="fc" id="L326">        }</span>
+<span class="fc" id="L379">            quote = resolveQuote(instrument);</span>
+<span class="fc" id="L380">            executionPrice = resolvePrice(request.side(), quote, instrument);</span>
+<span class="fc" id="L381">        } catch (QuoteUnavailableException | StaleQuoteException | ResponseStatusException ex) {</span>
+<span class="fc bfc" id="L382" title="All 2 branches covered.">            String rejectReason = ex instanceof ResponseStatusException rse ? rse.getReason() : ex.getMessage();</span>
+<span class="fc" id="L383">            return new FirstStep(rejectOrder(order, accountValidation,</span>
+<span class="fc bfc" id="L384" title="All 2 branches covered.">                    rejectReason != null ? rejectReason : &quot;Market quote unavailable&quot;, null), null, null);</span>
+<span class="fc" id="L385">        }</span>
 
-<span class="fc bfc" id="L328" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
-<span class="fc" id="L329">            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);</span>
+<span class="fc bfc" id="L387" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
+<span class="fc" id="L388">            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice, session);</span>
+        }
+<span class="fc bfc" id="L390" title="All 2 branches covered.">        if (queueForOpen) {</span>
+<span class="fc" id="L391">            return queueMarketOrder(order, accountValidation, available, holds, executionPrice);</span>
         }
 
-<span class="fc" id="L332">        return fillMarketOrder(request, order, accountValidation, available, holds, executionPrice,</span>
-                maxSlippagePercent);
+<span class="fc" id="L394">        return fillMarketOrder(order, accountValidation, available, holds, quote, executionPrice);</span>
     }
 
     /**
      * Fills a MARKET order now at the live price, unless its bracket, price tolerance or the
      * account's funds or shares reject it.
-     * @param request the order submission request
-     * @param order the stored SUBMITTED order
+     * @param order the stored SUBMITTED order, carrying its quoted price and price tolerance
      * @param accountValidation the account's validation data from account-app
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
+     * @param quote the live quote the order is priced from
      * @param executionPrice the side's live executable price
-     * @param maxSlippagePercent the price tolerance in force, or null if none
      * @return the rejection, or the accepted order and its execution
      */
-    private FirstStep fillMarketOrder(OrderSubmissionRequest request, Order order,
-                                      AccountValidationDto accountValidation, AccountValidationDto available,
-                                      ReservationService.Holds holds, BigDecimal executionPrice,
-                                      BigDecimal maxSlippagePercent) {
-<span class="fc" id="L352">        Instrument instrument = order.getInstrument();</span>
-<span class="fc" id="L353">        String bracketProblem = bracketProblem(order, executionPrice);</span>
-<span class="fc bfc" id="L354" title="All 2 branches covered.">        if (bracketProblem != null) {</span>
-<span class="fc" id="L355">            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);</span>
+    private FirstStep fillMarketOrder(Order order, AccountValidationDto accountValidation,
+                                      AccountValidationDto available, ReservationService.Holds holds,
+                                      ExecutionQuote quote, BigDecimal executionPrice) {
+<span class="fc" id="L411">        Instrument instrument = order.getInstrument();</span>
+<span class="fc" id="L412">        Order.Side side = order.getSide();</span>
+<span class="fc" id="L413">        BigDecimal maxSlippagePercent = order.getMaxSlippagePercent();</span>
+<span class="fc" id="L414">        String bracketProblem = bracketProblem(order, executionPrice);</span>
+<span class="fc bfc" id="L415" title="All 2 branches covered.">        if (bracketProblem != null) {</span>
+<span class="fc" id="L416">            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem, quote), null, null);</span>
         }
 
         // 5. Price tolerance: reject if the market moved too far from the client's quote
-<span class="fc bfc" id="L359" title="All 2 branches covered.">        if (maxSlippagePercent != null) {</span>
-<span class="fc" id="L360">            TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(</span>
-<span class="fc" id="L361">                    request.quotedPrice(), executionPrice, maxSlippagePercent);</span>
-<span class="fc bfc" id="L362" title="All 2 branches covered.">            if (!toleranceResult.isValid()) {</span>
-<span class="fc" id="L363">                return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason()), null, null);</span>
+<span class="fc bfc" id="L420" title="All 2 branches covered.">        if (maxSlippagePercent != null) {</span>
+<span class="fc" id="L421">            TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(</span>
+<span class="fc" id="L422">                    order.getQuotedPrice(), executionPrice, maxSlippagePercent);</span>
+<span class="fc bfc" id="L423" title="All 2 branches covered.">            if (!toleranceResult.isValid()) {</span>
+<span class="fc" id="L424">                return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason(), quote), null, null);</span>
             }
         }
 
         // 6. Execute Trade Validation
-<span class="fc" id="L368">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
-<span class="fc" id="L369">                available, instrument, request.side(), request.quantity(), executionPrice);</span>
+<span class="fc" id="L429">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
+<span class="fc" id="L430">                available, instrument, side, order.getQuantity(), executionPrice);</span>
 
-<span class="fc bfc" id="L371" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
-<span class="fc" id="L372">            return new FirstStep(rejectOrder(order, accountValidation,</span>
-<span class="fc" id="L373">                    ReservationService.explain(validationResult.reason(), request.side(), holds)), null, null);</span>
+<span class="fc bfc" id="L432" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
+<span class="fc" id="L433">            return new FirstStep(rejectOrder(order, accountValidation,</span>
+<span class="fc" id="L434">                    ReservationService.explain(validationResult.reason(), side, holds), quote), null, null);</span>
         }
 
         // Acceptance flow: transition order to ACCEPTED
-<span class="fc" id="L377">        OffsetDateTime acceptTime = OffsetDateTime.now();</span>
-<span class="fc" id="L378">        order.markAccepted(acceptTime);</span>
-<span class="fc" id="L379">        order = orderRepository.saveAndFlush(order);</span>
+<span class="fc" id="L438">        OffsetDateTime acceptTime = now();</span>
+<span class="fc" id="L439">        order.markAccepted(acceptTime);</span>
+<span class="fc" id="L440">        order = orderRepository.saveAndFlush(order);</span>
 
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
-<span class="fc" id="L382">        Execution execution = fillRecorder.recordExecution(order, executionPrice, OffsetDateTime.now());</span>
-<span class="fc" id="L383">        return new FirstStep(null, order, execution);</span>
+<span class="fc" id="L443">        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, now());</span>
+<span class="fc" id="L444">        return new FirstStep(null, order, execution);</span>
+    }
+
+    /**
+     * Queues a MARKET order placed outside regular hours for the next open. It must be affordable
+     * at its collar - the most it could cost - which it holds while it waits.
+     * @param order the stored SUBMITTED order
+     * @param accountValidation the account's validation data from account-app
+     * @param available the same, less what other open orders hold
+     * @param holds what other open orders hold
+     * @param executionPrice the side's executable price now, which the collar is measured from
+     * @return the rejection, or the OPEN order
+     */
+    private FirstStep queueMarketOrder(Order order, AccountValidationDto accountValidation,
+                                       AccountValidationDto available, ReservationService.Holds holds,
+                                       BigDecimal executionPrice) {
+<span class="fc" id="L460">        Order.Side side = order.getSide();</span>
+<span class="fc" id="L461">        String bracketProblem = bracketProblem(order, executionPrice);</span>
+<span class="pc bpc" id="L462" title="1 of 2 branches missed.">        if (bracketProblem != null) {</span>
+<span class="nc" id="L463">            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);</span>
+        }
+
+<span class="fc" id="L466">        BigDecimal collar = ReservationService.collarFor(side, executionPrice);</span>
+<span class="fc" id="L467">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
+<span class="fc" id="L468">                available, order.getInstrument(), side, order.getQuantity(), collar);</span>
+<span class="fc bfc" id="L469" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
+<span class="fc" id="L470">            return new FirstStep(rejectOrder(order, accountValidation,</span>
+<span class="fc" id="L471">                    ReservationService.explain(validationResult.reason(), side, holds)), null, null);</span>
+        }
+
+        // Good for the trading day it is queued for: a DAY order placed at that open.
+<span class="fc" id="L475">        Instant opensAt = marketClock.nextRegularOpen();</span>
+<span class="pc bpc" id="L476" title="1 of 2 branches missed.">        OffsetDateTime placedFor = opensAt != null ? opensAt.atOffset(ZoneOffset.UTC) : now();</span>
+<span class="fc" id="L477">        order.queueForOpen(collar, SessionPolicy.dayExpiry(placedFor, false));</span>
+<span class="fc" id="L478">        order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), collar));</span>
+<span class="fc" id="L479">        order = orderRepository.saveAndFlush(order);</span>
+<span class="fc" id="L480">        return new FirstStep(null, order, null);</span>
+    }
+
+    /**
+     * Why a market order queued for the open can't fill at this price: the open was beyond its
+     * collar.
+     * @param order the queued order
+     * @param fillPrice the side's executable price at the open
+     * @return the reason, or null if the price is within the collar (or the order has none)
+     */
+    static String collarProblem(Order order, BigDecimal fillPrice) {
+<span class="fc" id="L491">        BigDecimal collar = order.getCollarPrice();</span>
+<span class="fc bfc" id="L492" title="All 2 branches covered.">        if (collar == null) {</span>
+<span class="fc" id="L493">            return null;</span>
+        }
+<span class="fc bfc" id="L495" title="All 2 branches covered.">        boolean buy = order.getSide() == Order.Side.BUY;</span>
+<span class="pc bpc" id="L496" title="1 of 6 branches missed.">        boolean beyond = buy ? fillPrice.compareTo(collar) &gt; 0 : fillPrice.compareTo(collar) &lt; 0;</span>
+<span class="fc bfc" id="L497" title="All 2 branches covered.">        if (!beyond) {</span>
+<span class="fc" id="L498">            return null;</span>
+        }
+<span class="fc" id="L500">        return String.format(&quot;%s opened at $%s, %s this queued order's price collar of $%s &quot;</span>
+                        + &quot;(5%% from the price when it was placed) - order not filled, %s&quot;,
+<span class="fc" id="L502">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L503">                fillPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc bfc" id="L504" title="All 2 branches covered.">                buy ? &quot;above&quot; : &quot;below&quot;,</span>
+<span class="fc" id="L505">                collar.setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc bfc" id="L506" title="All 2 branches covered.">                buy ? &quot;nothing was charged&quot; : &quot;no shares were sold&quot;);</span>
     }
 
     /**
@@ -394,15 +517,15 @@ public class OrderSubmissionService {
      */
     private AccountValidationDto fetchAccountValidation(OrderSubmissionRequest request, Instrument instrument) {
         try {
-<span class="fc" id="L397">            return accountClient.getValidationData(request.accountId(), instrument.getInstrumentId());</span>
-<span class="fc" id="L398">        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {</span>
-<span class="fc" id="L399">            throw new ResponseStatusException(ex.getStatusCode(), &quot;Failed to validate account&quot;);</span>
-<span class="fc" id="L400">        } catch (HttpClientErrorException ex) {</span>
-<span class="fc" id="L401">            log.warn(&quot;account-app refused validation for account {}: {}&quot;, request.accountId(), ex.getStatusCode());</span>
-<span class="fc" id="L402">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Failed to validate account&quot;);</span>
-<span class="fc" id="L403">        } catch (RestClientException ex) {</span>
-<span class="fc" id="L404">            log.error(&quot;account-app unavailable validating account {}&quot;, request.accountId(), ex);</span>
-<span class="fc" id="L405">            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, &quot;Account service unavailable, please try again&quot;);</span>
+<span class="fc" id="L520">            return accountClient.getValidationData(request.accountId(), instrument.getInstrumentId());</span>
+<span class="fc" id="L521">        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden ex) {</span>
+<span class="fc" id="L522">            throw new ResponseStatusException(ex.getStatusCode(), &quot;Failed to validate account&quot;);</span>
+<span class="fc" id="L523">        } catch (HttpClientErrorException ex) {</span>
+<span class="fc" id="L524">            log.warn(&quot;account-app refused validation for account {}: {}&quot;, request.accountId(), ex.getStatusCode());</span>
+<span class="fc" id="L525">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Failed to validate account&quot;);</span>
+<span class="fc" id="L526">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L527">            log.error(&quot;account-app unavailable validating account {}&quot;, request.accountId(), ex);</span>
+<span class="fc" id="L528">            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, &quot;Account service unavailable, please try again&quot;);</span>
         }
     }
 
@@ -412,38 +535,82 @@ public class OrderSubmissionService {
      */
     private static BigDecimal resolveMaxSlippage(OrderSubmissionRequest request, Order.OrderType orderType,
                                                  AccountValidationDto accountValidation) {
-<span class="fc bfc" id="L415" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
-<span class="fc" id="L416">            return null;</span>
+<span class="fc bfc" id="L538" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
+<span class="fc" id="L539">            return null;</span>
         }
-<span class="fc bfc" id="L418" title="All 2 branches covered.">        BigDecimal maxSlippagePercent = request.maxSlippagePercent() != null</span>
-<span class="fc" id="L419">                ? request.maxSlippagePercent()</span>
-<span class="fc" id="L420">                : accountValidation.maxSlippagePercent();</span>
-<span class="fc bfc" id="L421" title="All 4 branches covered.">        if (maxSlippagePercent != null &amp;&amp; request.quotedPrice() == null) {</span>
-<span class="fc" id="L422">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc bfc" id="L541" title="All 2 branches covered.">        BigDecimal maxSlippagePercent = request.maxSlippagePercent() != null</span>
+<span class="fc" id="L542">                ? request.maxSlippagePercent()</span>
+<span class="fc" id="L543">                : accountValidation.maxSlippagePercent();</span>
+<span class="fc bfc" id="L544" title="All 4 branches covered.">        if (maxSlippagePercent != null &amp;&amp; request.quotedPrice() == null) {</span>
+<span class="fc" id="L545">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
                     &quot;quotedPrice is required: this account has a saved price tolerance&quot;);
         }
-<span class="fc" id="L425">        return maxSlippagePercent;</span>
+<span class="fc" id="L548">        return maxSlippagePercent;</span>
     }
 
-    private static Order newOrder(OrderSubmissionRequest request, Instrument instrument,
-                                  AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
-<span class="fc" id="L430">        Order.OrderType orderType = request.effectiveOrderType();</span>
-<span class="fc" id="L431">        OffsetDateTime now = OffsetDateTime.now();</span>
-<span class="fc" id="L432">        Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);</span>
-<span class="fc" id="L433">        order.setAccountNumber(accountValidation.accountNumber());</span>
-<span class="fc" id="L434">        order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);</span>
-<span class="fc bfc" id="L435" title="All 2 branches covered.">        if (request.hasBracket()) {</span>
-<span class="fc" id="L436">            order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());</span>
+    private Order newOrder(OrderSubmissionRequest request, Instrument instrument,
+                           AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
+<span class="fc" id="L553">        Order.OrderType orderType = request.effectiveOrderType();</span>
+<span class="fc" id="L554">        OffsetDateTime now = now();</span>
+<span class="fc" id="L555">        Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);</span>
+<span class="fc" id="L556">        order.setAccountNumber(accountValidation.accountNumber());</span>
+<span class="fc" id="L557">        order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);</span>
+<span class="fc bfc" id="L558" title="All 2 branches covered.">        if (request.hasBracket()) {</span>
+<span class="fc" id="L559">            order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());</span>
         }
-<span class="fc bfc" id="L438" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
-<span class="fc bfc" id="L439" title="All 2 branches covered.">            Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;</span>
-<span class="fc" id="L440">            order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,</span>
-<span class="fc" id="L441">                    expiryOf(timeInForce, now));</span>
-<span class="fc bfc" id="L442" title="All 2 branches covered.">            if (orderType.hasTrail()) {</span>
-<span class="fc" id="L443">                order.setTrailing(request.trailAmount(), request.trailPercent());</span>
+<span class="fc" id="L561">        order.setExtendedHours(request.isForExtendedHours());</span>
+<span class="fc bfc" id="L562" title="All 2 branches covered.">        if (orderType != Order.OrderType.MARKET) {</span>
+<span class="fc bfc" id="L563" title="All 2 branches covered.">            Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;</span>
+<span class="fc" id="L564">            order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,</span>
+<span class="fc" id="L565">                    SessionPolicy.expiryOf(timeInForce, now, request.isForExtendedHours(), marketClock));</span>
+<span class="fc bfc" id="L566" title="All 2 branches covered.">            if (orderType.hasTrail()) {</span>
+<span class="fc" id="L567">                order.setTrailing(request.trailAmount(), request.trailPercent());</span>
             }
         }
-<span class="fc" id="L446">        return order;</span>
+<span class="fc" id="L570">        return order;</span>
+    }
+
+    /**
+     * Starts a trailing stop's trail from the price the order is placed at.
+     * @return why the trail can't start, or null (also when the order doesn't trail)
+     */
+    private static String trailProblem(Order order, BigDecimal executionPrice) {
+<span class="fc bfc" id="L578" title="All 2 branches covered.">        if (!order.getOrderType().hasTrail()) {</span>
+<span class="fc" id="L579">            return null;</span>
+        }
+<span class="fc" id="L581">        BigDecimal stop = TrailingStop.stopFor(order.getSide(), executionPrice, order.getTrailAmount(), order.getTrailPercent());</span>
+<span class="fc bfc" id="L582" title="All 2 branches covered.">        if (stop.signum() &lt;= 0) {</span>
+<span class="fc" id="L583">            return String.format(&quot;Trail of $%s must be smaller than the current %s of $%s - order rejected&quot;,</span>
+<span class="fc" id="L584">                    money(TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())),</span>
+<span class="fc" id="L585">                    executableSide(order.getSide()), money(executionPrice));</span>
+        }
+<span class="fc" id="L587">        order.moveTrail(executionPrice, stop);</span>
+<span class="fc" id="L588">        return null;</span>
+    }
+
+    /**
+     * A stop the price has already passed would trigger at once - almost always a mistake,
+     * e.g. a sell stop entered above the market. The ticket points the client to a market
+     * or limit order instead.
+     * @return why the stop is refused, or null
+     */
+    private static String stopProblem(Order order, BigDecimal executionPrice) {
+<span class="fc" id="L598">        Order.Side side = order.getSide();</span>
+<span class="fc bfc" id="L599" title="All 2 branches covered.">        if (!order.getOrderType().hasStop()</span>
+<span class="fc bfc" id="L600" title="All 2 branches covered.">                || !TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {</span>
+<span class="fc" id="L601">            return null;</span>
+        }
+<span class="fc" id="L603">        return String.format(&quot;Stop price $%s must be %s the current %s of $%s - order rejected&quot;,</span>
+<span class="pc bpc" id="L604" title="1 of 2 branches missed.">                money(order.getStopPrice()), side == Order.Side.BUY ? &quot;above&quot; : &quot;below&quot;,</span>
+<span class="fc" id="L605">                executableSide(side), money(executionPrice));</span>
+    }
+
+    private static String executableSide(Order.Side side) {
+<span class="pc bpc" id="L609" title="1 of 2 branches missed.">        return side == Order.Side.BUY ? &quot;ask&quot; : &quot;bid&quot;;</span>
+    }
+
+    private static String money(BigDecimal amount) {
+<span class="fc" id="L613">        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();</span>
     }
 
     /**
@@ -455,68 +622,49 @@ public class OrderSubmissionService {
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
      * @param executionPrice the side's live executable price
+     * @param session the market session in force; outside one the order may trade in, it waits
      * @return the rejection, the OPEN order, or the accepted order and its execution
      */
     private FirstStep placeConditionalOrder(Order order, AccountValidationDto accountValidation,
                                             AccountValidationDto available, ReservationService.Holds holds,
-                                            BigDecimal executionPrice) {
-<span class="fc" id="L463">        Order.OrderType orderType = order.getOrderType();</span>
-<span class="fc" id="L464">        Order.Side side = order.getSide();</span>
+                                            BigDecimal executionPrice, MarketSession session) {
+<span class="fc" id="L631">        Order.OrderType orderType = order.getOrderType();</span>
+<span class="fc" id="L632">        Order.Side side = order.getSide();</span>
 
-        // A trailing stop starts its trail from the price it is placed at.
-<span class="fc bfc" id="L467" title="All 2 branches covered.">        if (orderType.hasTrail()) {</span>
-<span class="fc" id="L468">            BigDecimal stop = TrailingStop.stopFor(side, executionPrice, order.getTrailAmount(), order.getTrailPercent());</span>
-<span class="fc bfc" id="L469" title="All 2 branches covered.">            if (stop.signum() &lt;= 0) {</span>
-<span class="fc" id="L470">                return new FirstStep(rejectOrder(order, accountValidation, String.format(</span>
-                        &quot;Trail of $%s must be smaller than the current %s of $%s - order rejected&quot;,
-<span class="fc" id="L472">                        TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())</span>
-<span class="fc" id="L473">                                .setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
-<span class="pc bpc" id="L474" title="1 of 2 branches missed.">                        side == Order.Side.BUY ? &quot;ask&quot; : &quot;bid&quot;,</span>
-<span class="fc" id="L475">                        executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);</span>
-            }
-<span class="fc" id="L477">            order.moveTrail(executionPrice, stop);</span>
+<span class="fc" id="L634">        String priceProblem = trailProblem(order, executionPrice);</span>
+<span class="fc bfc" id="L635" title="All 2 branches covered.">        if (priceProblem == null) {</span>
+<span class="fc" id="L636">            priceProblem = bracketProblem(order, executionPrice);</span>
+        }
+<span class="fc bfc" id="L638" title="All 2 branches covered.">        if (priceProblem == null) {</span>
+<span class="fc" id="L639">            priceProblem = stopProblem(order, executionPrice);</span>
+        }
+<span class="fc bfc" id="L641" title="All 2 branches covered.">        if (priceProblem != null) {</span>
+<span class="fc" id="L642">            return new FirstStep(rejectOrder(order, accountValidation, priceProblem), null, null);</span>
         }
 
-<span class="fc" id="L480">        String bracketProblem = bracketProblem(order, executionPrice);</span>
-<span class="fc bfc" id="L481" title="All 2 branches covered.">        if (bracketProblem != null) {</span>
-<span class="fc" id="L482">            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);</span>
+<span class="fc" id="L645">        BigDecimal reservePrice = ReservationService.reservePricePerShare(</span>
+<span class="fc" id="L646">                orderType, order.getLimitPrice(), order.getStopPrice());</span>
+<span class="fc" id="L647">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
+<span class="fc" id="L648">                available, order.getInstrument(), side, order.getQuantity(), reservePrice);</span>
+<span class="fc bfc" id="L649" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
+<span class="fc" id="L650">            return new FirstStep(rejectOrder(order, accountValidation,</span>
+<span class="fc" id="L651">                    ReservationService.explain(validationResult.reason(), side, holds)), null, null);</span>
         }
 
-        // A stop the price has already passed would trigger at once - almost always a mistake,
-        // e.g. a sell stop entered above the market. The ticket points the client to a market
-        // or limit order instead.
-<span class="fc bfc" id="L488" title="All 4 branches covered.">        if (orderType.hasStop() &amp;&amp; TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {</span>
-<span class="fc" id="L489">            return new FirstStep(rejectOrder(order, accountValidation, String.format(</span>
-                    &quot;Stop price $%s must be %s the current %s of $%s - order rejected&quot;,
-<span class="fc" id="L491">                    order.getStopPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
-<span class="pc bpc" id="L492" title="1 of 2 branches missed.">                    side == Order.Side.BUY ? &quot;above&quot; : &quot;below&quot;,</span>
-<span class="pc bpc" id="L493" title="1 of 2 branches missed.">                    side == Order.Side.BUY ? &quot;ask&quot; : &quot;bid&quot;,</span>
-<span class="fc" id="L494">                    executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);</span>
-        }
-
-<span class="fc" id="L497">        BigDecimal reservePrice = ReservationService.reservePricePerShare(</span>
-<span class="fc" id="L498">                orderType, order.getLimitPrice(), order.getStopPrice());</span>
-<span class="fc" id="L499">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
-<span class="fc" id="L500">                available, order.getInstrument(), side, order.getQuantity(), reservePrice);</span>
-<span class="fc bfc" id="L501" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
-<span class="fc" id="L502">            return new FirstStep(rejectOrder(order, accountValidation,</span>
-<span class="fc" id="L503">                    ReservationService.explain(validationResult.reason(), side, holds)), null, null);</span>
-        }
-
-<span class="fc" id="L506">        TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, executionPrice);</span>
-<span class="fc bfc" id="L507" title="All 2 branches covered.">        if (evaluation.fills()) {</span>
+<span class="fc" id="L654">        TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, executionPrice);</span>
+<span class="fc bfc" id="L655" title="All 4 branches covered.">        if (evaluation.fills() &amp;&amp; SessionPolicy.canExecute(order, session)) {</span>
             // A limit the market is already at or better than fills now, at the live price.
-<span class="fc" id="L509">            OffsetDateTime acceptTime = OffsetDateTime.now();</span>
-<span class="fc" id="L510">            order.markAccepted(acceptTime);</span>
-<span class="fc" id="L511">            order = orderRepository.saveAndFlush(order);</span>
-<span class="fc" id="L512">            Execution execution = fillRecorder.recordExecution(order, evaluation.fillPrice(), acceptTime,</span>
-<span class="fc" id="L513">                    executionReason(order));</span>
-<span class="fc" id="L514">            return new FirstStep(null, order, execution);</span>
+<span class="fc" id="L657">            OffsetDateTime acceptTime = now();</span>
+<span class="fc" id="L658">            order.markAccepted(acceptTime);</span>
+<span class="fc" id="L659">            order = orderRepository.saveAndFlush(order);</span>
+<span class="fc" id="L660">            Execution execution = fillRecorder.recordExecution(order, evaluation.fillPrice(), acceptTime,</span>
+<span class="fc" id="L661">                    executionReason(order));</span>
+<span class="fc" id="L662">            return new FirstStep(null, order, execution);</span>
         }
 
-<span class="fc" id="L517">        order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), reservePrice));</span>
-<span class="fc" id="L518">        order = orderRepository.saveAndFlush(order);</span>
-<span class="fc" id="L519">        return new FirstStep(null, order, null);</span>
+<span class="fc" id="L665">        order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), reservePrice));</span>
+<span class="fc" id="L666">        order = orderRepository.saveAndFlush(order);</span>
+<span class="fc" id="L667">        return new FirstStep(null, order, null);</span>
     }
 
     /**
@@ -529,50 +677,58 @@ public class OrderSubmissionService {
      * @return the rejection or the accepted order and its execution; null if it wasn't OPEN
      */
     private FirstStep acceptOpenOrder(UUID orderId, BigDecimal fillPrice, boolean stopReached, String bearerToken) {
-<span class="fc" id="L532">        Order order = lockForFill(orderId);</span>
-<span class="pc bpc" id="L533" title="1 of 4 branches missed.">        if (order == null || order.getStatus() != Order.Status.OPEN) {</span>
-<span class="fc" id="L534">            return null;</span>
+<span class="fc" id="L680">        Order order = lockForFill(orderId);</span>
+<span class="pc bpc" id="L681" title="1 of 4 branches missed.">        if (order == null || order.getStatus() != Order.Status.OPEN) {</span>
+<span class="fc" id="L682">            return null;</span>
+        }
+        // The engine checked the session too, but it may have changed since (e.g. at the close).
+<span class="pc bpc" id="L685" title="1 of 2 branches missed.">        if (!SessionPolicy.canExecute(order, marketClock.session())) {</span>
+<span class="nc" id="L686">            return null;</span>
+        }
+<span class="fc" id="L688">        String collarProblem = collarProblem(order, fillPrice);</span>
+<span class="fc bfc" id="L689" title="All 2 branches covered.">        if (collarProblem != null) {</span>
+<span class="fc" id="L690">            return new FirstStep(rejectOrder(order, null, collarProblem), order, null);</span>
         }
         // Loaded inside the transaction, so settling and publishing can read it afterwards.
-<span class="fc" id="L537">        Instrument instrument = order.getInstrument();</span>
-<span class="fc" id="L538">        instrument.getSymbol();</span>
-<span class="fc" id="L539">        OffsetDateTime now = OffsetDateTime.now();</span>
-<span class="fc bfc" id="L540" title="All 2 branches covered.">        if (stopReached) {</span>
-<span class="fc" id="L541">            order.markTriggered(now);</span>
+<span class="fc" id="L693">        Instrument instrument = order.getInstrument();</span>
+<span class="fc" id="L694">        instrument.getSymbol();</span>
+<span class="fc" id="L695">        OffsetDateTime now = now();</span>
+<span class="fc bfc" id="L696" title="All 2 branches covered.">        if (stopReached) {</span>
+<span class="fc" id="L697">            order.markTriggered(now);</span>
         }
 
         AccountValidationDto accountValidation;
         try {
-<span class="fc" id="L546">            accountValidation = accountClient.getValidationDataAs(order.getAccountId(),</span>
-<span class="fc" id="L547">                    instrument.getInstrumentId(), bearerToken);</span>
-<span class="fc" id="L548">        } catch (HttpClientErrorException ex) {</span>
-<span class="fc" id="L549">            int status = ex.getStatusCode().value();</span>
-<span class="pc bpc" id="L550" title="3 of 6 branches missed.">            if (status != 400 &amp;&amp; status != 404 &amp;&amp; status != 422) {</span>
+<span class="fc" id="L702">            accountValidation = accountClient.getValidationDataAs(order.getAccountId(),</span>
+<span class="fc" id="L703">                    instrument.getInstrumentId(), bearerToken);</span>
+<span class="fc" id="L704">        } catch (HttpClientErrorException ex) {</span>
+<span class="fc" id="L705">            int status = ex.getStatusCode().value();</span>
+<span class="pc bpc" id="L706" title="3 of 6 branches missed.">            if (status != 400 &amp;&amp; status != 404 &amp;&amp; status != 422) {</span>
                 // Not an answer about the account (e.g. our token was refused): try again later
                 // rather than reject an order the client still wants.
-<span class="fc" id="L553">                throw ex;</span>
+<span class="fc" id="L709">                throw ex;</span>
             }
             // account-app answered: the account is gone, closed or can't trade.
-<span class="nc" id="L556">            String reason = &quot;Account could not be validated: &quot; + FillRecorder.refusalReason(ex);</span>
-<span class="nc" id="L557">            return new FirstStep(rejectOrder(order, null, reason), order, null);</span>
-<span class="fc" id="L558">        }</span>
-<span class="fc" id="L559">        order.setAccountNumber(accountValidation.accountNumber());</span>
+<span class="nc" id="L712">            String reason = &quot;Account could not be validated: &quot; + FillRecorder.refusalReason(ex);</span>
+<span class="nc" id="L713">            return new FirstStep(rejectOrder(order, null, reason), order, null);</span>
+<span class="fc" id="L714">        }</span>
+<span class="fc" id="L715">        order.setAccountNumber(accountValidation.accountNumber());</span>
 
-<span class="fc" id="L561">        orderRepository.lockAccount(order.getAccountId());</span>
-<span class="fc" id="L562">        ReservationService.Holds holds = reservationService.holdsFor(</span>
-<span class="fc" id="L563">                order.getAccountId(), instrument.getInstrumentId(), order.getOrderId());</span>
-<span class="fc" id="L564">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
-<span class="fc" id="L565">                ReservationService.available(accountValidation, holds), instrument, order.getSide(),</span>
-<span class="fc" id="L566">                order.getQuantity(), fillPrice);</span>
-<span class="fc bfc" id="L567" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
-<span class="fc" id="L568">            return new FirstStep(rejectOrder(order, accountValidation,</span>
-<span class="fc" id="L569">                    ReservationService.explain(validationResult.reason(), order.getSide(), holds)), order, null);</span>
+<span class="fc" id="L717">        orderRepository.lockAccount(order.getAccountId());</span>
+<span class="fc" id="L718">        ReservationService.Holds holds = reservationService.holdsFor(</span>
+<span class="fc" id="L719">                order.getAccountId(), instrument.getInstrumentId(), order.getOrderId());</span>
+<span class="fc" id="L720">        TradeValidationResult validationResult = tradeValidationService.validateTrade(</span>
+<span class="fc" id="L721">                ReservationService.available(accountValidation, holds), instrument, order.getSide(),</span>
+<span class="fc" id="L722">                order.getQuantity(), fillPrice);</span>
+<span class="fc bfc" id="L723" title="All 2 branches covered.">        if (!validationResult.isValid()) {</span>
+<span class="fc" id="L724">            return new FirstStep(rejectOrder(order, accountValidation,</span>
+<span class="fc" id="L725">                    ReservationService.explain(validationResult.reason(), order.getSide(), holds)), order, null);</span>
         }
 
-<span class="fc" id="L572">        order.markAccepted(now);</span>
-<span class="fc" id="L573">        order = orderRepository.saveAndFlush(order);</span>
-<span class="fc" id="L574">        Execution execution = fillRecorder.recordExecution(order, fillPrice, now, executionReason(order));</span>
-<span class="fc" id="L575">        return new FirstStep(null, order, execution);</span>
+<span class="fc" id="L728">        order.markAccepted(now);</span>
+<span class="fc" id="L729">        order = orderRepository.saveAndFlush(order);</span>
+<span class="fc" id="L730">        Execution execution = fillRecorder.recordExecution(order, fillPrice, now, executionReason(order));</span>
+<span class="fc" id="L731">        return new FirstStep(null, order, execution);</span>
     }
 
     /**
@@ -585,25 +741,25 @@ public class OrderSubmissionService {
      * @return why the bracket is refused, or null if the order has none or it fits
      */
     private static String bracketProblem(Order order, BigDecimal executionPrice) {
-<span class="fc bfc" id="L588" title="All 2 branches covered.">        if (!order.hasBracket()) {</span>
-<span class="fc" id="L589">            return null;</span>
+<span class="fc bfc" id="L744" title="All 2 branches covered.">        if (!order.hasBracket()) {</span>
+<span class="fc" id="L745">            return null;</span>
         }
-<span class="pc bpc" id="L591" title="1 of 3 branches missed.">        BigDecimal entry = switch (order.getOrderType()) {</span>
-<span class="fc" id="L592">            case MARKET -&gt; executionPrice;</span>
-<span class="fc" id="L593">            case LIMIT, STOP_LIMIT -&gt; order.getLimitPrice();</span>
-<span class="nc bnc" id="L594" title="All 2 branches missed.">            case STOP, TRAILING_STOP -&gt; order.getStopPrice() != null ? order.getStopPrice() : executionPrice;</span>
+<span class="pc bpc" id="L747" title="1 of 3 branches missed.">        BigDecimal entry = switch (order.getOrderType()) {</span>
+<span class="fc" id="L748">            case MARKET -&gt; executionPrice;</span>
+<span class="fc" id="L749">            case LIMIT, STOP_LIMIT -&gt; order.getLimitPrice();</span>
+<span class="nc bnc" id="L750" title="All 2 branches missed.">            case STOP, TRAILING_STOP -&gt; order.getStopPrice() != null ? order.getStopPrice() : executionPrice;</span>
         };
-<span class="fc bfc" id="L596" title="All 2 branches covered.">        if (order.getBracketTakeProfitPrice().compareTo(entry) &lt;= 0) {</span>
-<span class="fc" id="L597">            return String.format(&quot;Take-profit $%s must be above the buy's entry price of $%s - order rejected&quot;,</span>
-<span class="fc" id="L598">                    order.getBracketTakeProfitPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
-<span class="fc" id="L599">                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());</span>
+<span class="fc bfc" id="L752" title="All 2 branches covered.">        if (order.getBracketTakeProfitPrice().compareTo(entry) &lt;= 0) {</span>
+<span class="fc" id="L753">            return String.format(&quot;Take-profit $%s must be above the buy's entry price of $%s - order rejected&quot;,</span>
+<span class="fc" id="L754">                    order.getBracketTakeProfitPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc" id="L755">                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());</span>
         }
-<span class="fc bfc" id="L601" title="All 2 branches covered.">        if (order.getBracketStopLossPrice().compareTo(entry) &gt;= 0) {</span>
-<span class="fc" id="L602">            return String.format(&quot;Stop-loss $%s must be below the buy's entry price of $%s - order rejected&quot;,</span>
-<span class="fc" id="L603">                    order.getBracketStopLossPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
-<span class="fc" id="L604">                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());</span>
+<span class="fc bfc" id="L757" title="All 2 branches covered.">        if (order.getBracketStopLossPrice().compareTo(entry) &gt;= 0) {</span>
+<span class="fc" id="L758">            return String.format(&quot;Stop-loss $%s must be below the buy's entry price of $%s - order rejected&quot;,</span>
+<span class="fc" id="L759">                    order.getBracketStopLossPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),</span>
+<span class="fc" id="L760">                    entry.setScale(2, RoundingMode.HALF_UP).toPlainString());</span>
         }
-<span class="fc" id="L606">        return null;</span>
+<span class="fc" id="L762">        return null;</span>
     }
 
     /**
@@ -615,27 +771,27 @@ public class OrderSubmissionService {
      * @return the locked order; null if it is gone or is not to be filled
      */
     private Order lockForFill(UUID orderId) {
-<span class="fc" id="L618">        UUID group = orderRepository.findOcoGroupId(orderId);</span>
-<span class="fc bfc" id="L619" title="All 2 branches covered.">        if (group == null) {</span>
-<span class="fc" id="L620">            return orderRepository.findByIdForUpdate(orderId).orElse(null);</span>
+<span class="fc" id="L774">        UUID group = orderRepository.findOcoGroupId(orderId);</span>
+<span class="fc bfc" id="L775" title="All 2 branches covered.">        if (group == null) {</span>
+<span class="fc" id="L776">            return orderRepository.findByIdForUpdate(orderId).orElse(null);</span>
         }
-<span class="fc" id="L622">        Order order = null;</span>
-<span class="fc" id="L623">        boolean siblingExecuted = false;</span>
-<span class="fc bfc" id="L624" title="All 2 branches covered.">        for (Order leg : orderRepository.findGroupForUpdate(group)) {</span>
-<span class="fc bfc" id="L625" title="All 2 branches covered.">            if (leg.getOrderId().equals(orderId)) {</span>
-<span class="fc" id="L626">                order = leg;</span>
-<span class="pc bpc" id="L627" title="1 of 4 branches missed.">            } else if (leg.getStatus() == Order.Status.ACCEPTED || leg.getStatus() == Order.Status.FILLED) {</span>
-<span class="fc" id="L628">                siblingExecuted = true;</span>
+<span class="fc" id="L778">        Order order = null;</span>
+<span class="fc" id="L779">        boolean siblingExecuted = false;</span>
+<span class="fc bfc" id="L780" title="All 2 branches covered.">        for (Order leg : orderRepository.findGroupForUpdate(group)) {</span>
+<span class="fc bfc" id="L781" title="All 2 branches covered.">            if (leg.getOrderId().equals(orderId)) {</span>
+<span class="fc" id="L782">                order = leg;</span>
+<span class="pc bpc" id="L783" title="1 of 4 branches missed.">            } else if (leg.getStatus() == Order.Status.ACCEPTED || leg.getStatus() == Order.Status.FILLED) {</span>
+<span class="fc" id="L784">                siblingExecuted = true;</span>
             }
-<span class="fc" id="L630">        }</span>
-<span class="pc bpc" id="L631" title="1 of 4 branches missed.">        if (order != null &amp;&amp; siblingExecuted) {</span>
-<span class="pc bpc" id="L632" title="1 of 2 branches missed.">            if (order.getStatus() == Order.Status.OPEN) {</span>
-<span class="fc" id="L633">                order.markCancelled(OffsetDateTime.now());</span>
-<span class="fc" id="L634">                orderEventPublisher.publishCancelled(order);</span>
+<span class="fc" id="L786">        }</span>
+<span class="pc bpc" id="L787" title="1 of 4 branches missed.">        if (order != null &amp;&amp; siblingExecuted) {</span>
+<span class="pc bpc" id="L788" title="1 of 2 branches missed.">            if (order.getStatus() == Order.Status.OPEN) {</span>
+<span class="fc" id="L789">                order.markCancelled(now());</span>
+<span class="fc" id="L790">                orderEventPublisher.publishCancelled(order);</span>
             }
-<span class="fc" id="L636">            return null;</span>
+<span class="fc" id="L792">            return null;</span>
         }
-<span class="fc" id="L638">        return order;</span>
+<span class="fc" id="L794">        return order;</span>
     }
 
     /**
@@ -644,27 +800,41 @@ public class OrderSubmissionService {
      * @return the execution's reason
      */
     private static String executionReason(Order order) {
-<span class="pc bpc" id="L647" title="1 of 5 branches missed.">        return switch (order.getOrderType()) {</span>
-<span class="nc" id="L648">            case MARKET -&gt; &quot;Executed at market price&quot;;</span>
-<span class="fc" id="L649">            case LIMIT -&gt; &quot;Executed at limit price or better&quot;;</span>
-<span class="fc" id="L650">            case STOP -&gt; &quot;Stop price reached; executed at market price&quot;;</span>
-<span class="fc" id="L651">            case STOP_LIMIT -&gt; &quot;Stop price reached; executed at limit price or better&quot;;</span>
-<span class="fc" id="L652">            case TRAILING_STOP -&gt; &quot;Trailing stop reached; executed at market price&quot;;</span>
+<span class="fc bfc" id="L803" title="All 5 branches covered.">        return switch (order.getOrderType()) {</span>
+<span class="pc bpc" id="L804" title="1 of 2 branches missed.">            case MARKET -&gt; order.isQueuedForOpen()</span>
+<span class="fc" id="L805">                    ? &quot;Queued for the open; executed at the opening market price&quot;</span>
+<span class="nc" id="L806">                    : &quot;Executed at market price&quot;;</span>
+<span class="fc" id="L807">            case LIMIT -&gt; &quot;Executed at limit price or better&quot;;</span>
+<span class="fc" id="L808">            case STOP -&gt; &quot;Stop price reached; executed at market price&quot;;</span>
+<span class="fc" id="L809">            case STOP_LIMIT -&gt; &quot;Stop price reached; executed at limit price or better&quot;;</span>
+<span class="fc" id="L810">            case TRAILING_STOP -&gt; &quot;Trailing stop reached; executed at market price&quot;;</span>
         };
     }
 
     /**
-     * When an order with the given time in force expires if it hasn't filled.
+     * When an order with the given time in force expires if it hasn't filled, with market hours
+     * off. With market hours on, see {@link SessionPolicy#expiryOf}.
      * @param timeInForce DAY or GTC
      * @param now when the order is placed
      * @return midnight US Eastern time after placing for DAY, 90 days later for GTC
      */
     public static OffsetDateTime expiryOf(Order.TimeInForce timeInForce, OffsetDateTime now) {
-<span class="fc bfc" id="L663" title="All 2 branches covered.">        if (timeInForce == Order.TimeInForce.GTC) {</span>
-<span class="fc" id="L664">            return now.plusDays(GTC_DAYS);</span>
+<span class="fc bfc" id="L822" title="All 2 branches covered.">        if (timeInForce == Order.TimeInForce.GTC) {</span>
+<span class="fc" id="L823">            return now.plusDays(GTC_DAYS);</span>
         }
-<span class="fc" id="L666">        return now.atZoneSameInstant(MARKET_ZONE).toLocalDate().plusDays(1)</span>
-<span class="fc" id="L667">                .atStartOfDay(MARKET_ZONE).toOffsetDateTime();</span>
+<span class="fc" id="L825">        return now.atZoneSameInstant(MARKET_ZONE).toLocalDate().plusDays(1)</span>
+<span class="fc" id="L826">                .atStartOfDay(MARKET_ZONE).toOffsetDateTime();</span>
+    }
+
+    /**
+     * Rejects the specified order with the given reason, recording no quote.
+     * @param order the order to be rejected
+     * @param accountValidation the account validation details associated with the order
+     * @param reason the reason for rejecting the order
+     * @return the response containing the result of the order rejection
+     */
+    private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason) {
+<span class="fc" id="L837">        return rejectOrder(order, accountValidation, reason, null);</span>
     }
 
     /**
@@ -672,19 +842,21 @@ public class OrderSubmissionService {
      * @param order the order to be rejected
      * @param accountValidation the account validation details associated with the order
      * @param reason the reason for rejecting the order
+     * @param quote the quote it was priced from, or null if never priced
      * @return the response containing the result of the order rejection
      */
-    private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason) {
-<span class="fc" id="L678">        OffsetDateTime rejectTime = OffsetDateTime.now();</span>
-<span class="fc" id="L679">        order.markRejected(reason, rejectTime);</span>
-<span class="fc" id="L680">        order = orderRepository.saveAndFlush(order);</span>
+    private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason,
+                                                ExecutionQuote quote) {
+<span class="fc" id="L850">        OffsetDateTime rejectTime = now();</span>
+<span class="fc" id="L851">        order.markRejected(reason, rejectTime);</span>
+<span class="fc" id="L852">        order = orderRepository.saveAndFlush(order);</span>
 
-<span class="fc" id="L682">        Execution execution = new Execution(</span>
-                order, null, null, Execution.Status.REJECTED, reason, rejectTime);
-<span class="fc" id="L684">        execution = executionRepository.saveAndFlush(execution);</span>
+<span class="fc" id="L854">        Execution execution = new Execution(</span>
+                order, null, null, Execution.Status.REJECTED, reason, rejectTime, quote);
+<span class="fc" id="L856">        execution = executionRepository.saveAndFlush(execution);</span>
 
-<span class="pc bpc" id="L686" title="1 of 2 branches missed.">        BigDecimal currentBalance = accountValidation != null ? accountValidation.cashBalance() : BigDecimal.ZERO;</span>
-<span class="fc" id="L687">        return toResponse(order, execution, currentBalance);</span>
+<span class="fc bfc" id="L858" title="All 2 branches covered.">        BigDecimal currentBalance = accountValidation != null ? accountValidation.cashBalance() : BigDecimal.ZERO;</span>
+<span class="fc" id="L859">        return toResponse(order, execution, currentBalance);</span>
     }
 
     /**
@@ -695,39 +867,39 @@ public class OrderSubmissionService {
      * @throws ResponseStatusException bad request (400) if neither instrumentId nor symbol is provided.
      */
     private Instrument resolveInstrument(OrderSubmissionRequest request) {
-<span class="fc bfc" id="L698" title="All 2 branches covered.">        if (request.instrumentId() != null) {</span>
-<span class="fc" id="L699">            return instrumentRepository.findById(request.instrumentId())</span>
-<span class="fc" id="L700">                    .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Instrument not found&quot;));</span>
+<span class="fc bfc" id="L870" title="All 2 branches covered.">        if (request.instrumentId() != null) {</span>
+<span class="fc" id="L871">            return instrumentRepository.findById(request.instrumentId())</span>
+<span class="fc" id="L872">                    .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Instrument not found&quot;));</span>
         }
-<span class="fc bfc" id="L702" title="All 4 branches covered.">        if (request.symbol() != null &amp;&amp; !request.symbol().isBlank()) {</span>
-<span class="fc" id="L703">            return instrumentRepository.findBySymbol(request.symbol().trim().toUpperCase())</span>
-<span class="fc" id="L704">                    .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND,</span>
-<span class="fc" id="L705">                            &quot;Instrument not found for symbol: &quot; + request.symbol()));</span>
+<span class="fc bfc" id="L874" title="All 4 branches covered.">        if (request.symbol() != null &amp;&amp; !request.symbol().isBlank()) {</span>
+<span class="fc" id="L875">            return instrumentRepository.findBySymbol(request.symbol().trim().toUpperCase())</span>
+<span class="fc" id="L876">                    .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND,</span>
+<span class="fc" id="L877">                            &quot;Instrument not found for symbol: &quot; + request.symbol()));</span>
         }
-<span class="fc" id="L707">        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Either instrumentId or symbol must be provided&quot;);</span>
+<span class="fc" id="L879">        throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Either instrumentId or symbol must be provided&quot;);</span>
+    }
+
+    /** @throws ResponseStatusException 422 if market data returned no quote */
+    private ExecutionQuote resolveQuote(Instrument instrument) {
+<span class="fc" id="L884">        QuoteSnapshot quote = currentQuoteService.getCurrentQuote(instrument.getSymbol());</span>
+<span class="fc bfc" id="L885" title="All 2 branches covered.">        if (quote == null) {</span>
+<span class="fc" id="L886">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,</span>
+<span class="fc" id="L887">                    &quot;No quote returned for symbol: &quot; + instrument.getSymbol());</span>
+        }
+<span class="fc" id="L889">        return ExecutionQuote.of(quote);</span>
     }
 
     /**
-     * Resolves the price the order fills at from the current market quote. The client's quoted
-     * price is never used: it is only checked against this one.
-     * @param side the side of the order: BUY fills at the ask, SELL at the bid
-     * @param instrument the instrument associated with the order
-     * @return the resolved price for the order
-     * @throws ResponseStatusException unprocessable entity (422) if no valid price can be determined
+     * The client's quoted price is never the fill price: it is only checked against this one.
+     * @throws ResponseStatusException 422 if the quote has no usable price
      */
-    private BigDecimal resolvePrice(Order.Side side, Instrument instrument) {
-<span class="fc" id="L719">        QuoteSnapshot quote = currentQuoteService.getCurrentQuote(instrument.getSymbol());</span>
-<span class="fc bfc" id="L720" title="All 2 branches covered.">        if (quote == null) {</span>
-<span class="fc" id="L721">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,</span>
-<span class="fc" id="L722">                    &quot;No quote returned for symbol: &quot; + instrument.getSymbol());</span>
+    private BigDecimal resolvePrice(Order.Side side, ExecutionQuote quote, Instrument instrument) {
+<span class="fc" id="L897">        BigDecimal price = quote.executablePrice(side);</span>
+<span class="fc bfc" id="L898" title="All 2 branches covered.">        if (price == null) {</span>
+<span class="fc" id="L899">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,</span>
+<span class="fc" id="L900">                    &quot;No valid executable price found for symbol: &quot; + instrument.getSymbol());</span>
         }
-
-<span class="fc" id="L725">        BigDecimal price = TriggerEvaluator.executablePrice(side, quote);</span>
-<span class="fc bfc" id="L726" title="All 2 branches covered.">        if (price == null) {</span>
-<span class="fc" id="L727">            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY,</span>
-<span class="fc" id="L728">                    &quot;No valid executable price found for symbol: &quot; + instrument.getSymbol());</span>
-        }
-<span class="fc" id="L730">        return price;</span>
+<span class="fc" id="L902">        return price;</span>
     }
 
     /**
@@ -738,39 +910,41 @@ public class OrderSubmissionService {
      * @return an OrderSubmissionResponse representing the order and execution details
      */
     private OrderSubmissionResponse toResponse(Order order, Execution execution, BigDecimal currentBalance) {
-<span class="fc bfc" id="L741" title="All 2 branches covered.">        OrderSubmissionResponse.ExecutionDto execDto = execution == null ? null : new OrderSubmissionResponse.ExecutionDto(</span>
-<span class="fc" id="L742">                execution.getExecutionId(),</span>
-<span class="fc" id="L743">                execution.getFillQuantity(),</span>
-<span class="fc" id="L744">                execution.getFillPrice(),</span>
-<span class="fc" id="L745">                execution.getStatus().name(),</span>
-<span class="fc" id="L746">                execution.getExecutedAt(),</span>
-<span class="fc" id="L747">                execution.getReason()</span>
+<span class="fc bfc" id="L913" title="All 2 branches covered.">        OrderSubmissionResponse.ExecutionDto execDto = execution == null ? null : new OrderSubmissionResponse.ExecutionDto(</span>
+<span class="fc" id="L914">                execution.getExecutionId(),</span>
+<span class="fc" id="L915">                execution.getFillQuantity(),</span>
+<span class="fc" id="L916">                execution.getFillPrice(),</span>
+<span class="fc" id="L917">                execution.getStatus().name(),</span>
+<span class="fc" id="L918">                execution.getExecutedAt(),</span>
+<span class="fc" id="L919">                execution.getReason()</span>
         );
 
-<span class="fc" id="L750">        return new OrderSubmissionResponse(</span>
-<span class="fc" id="L751">                order.getOrderId(),</span>
-<span class="fc" id="L752">                order.getAccountId(),</span>
-<span class="fc" id="L753">                order.getAccountNumber(),</span>
-<span class="fc" id="L754">                order.getInstrument().getInstrumentId(),</span>
-<span class="fc" id="L755">                order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L756">                order.getSide().name(),</span>
-<span class="fc" id="L757">                order.getQuantity(),</span>
-<span class="fc" id="L758">                order.getStatus().name(),</span>
-<span class="fc" id="L759">                order.getSubmittedAt(),</span>
-<span class="fc" id="L760">                order.getAcceptedAt(),</span>
-<span class="fc" id="L761">                order.getRejectedAt(),</span>
-<span class="fc" id="L762">                order.getFilledAt(),</span>
-<span class="fc" id="L763">                order.getRejectionReason(),</span>
+<span class="fc" id="L922">        return new OrderSubmissionResponse(</span>
+<span class="fc" id="L923">                order.getOrderId(),</span>
+<span class="fc" id="L924">                order.getAccountId(),</span>
+<span class="fc" id="L925">                order.getAccountNumber(),</span>
+<span class="fc" id="L926">                order.getInstrument().getInstrumentId(),</span>
+<span class="fc" id="L927">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L928">                order.getSide().name(),</span>
+<span class="fc" id="L929">                order.getQuantity(),</span>
+<span class="fc" id="L930">                order.getStatus().name(),</span>
+<span class="fc" id="L931">                order.getSubmittedAt(),</span>
+<span class="fc" id="L932">                order.getAcceptedAt(),</span>
+<span class="fc" id="L933">                order.getRejectedAt(),</span>
+<span class="fc" id="L934">                order.getFilledAt(),</span>
+<span class="fc" id="L935">                order.getRejectionReason(),</span>
                 execDto,
                 currentBalance,
-<span class="fc" id="L766">                order.getOrderType().name(),</span>
-<span class="fc" id="L767">                order.getLimitPrice(),</span>
-<span class="fc" id="L768">                order.getStopPrice(),</span>
-<span class="fc bfc" id="L769" title="All 2 branches covered.">                order.getTimeInForce() != null ? order.getTimeInForce().name() : null,</span>
-<span class="fc" id="L770">                order.getExpiresAt(),</span>
-<span class="fc" id="L771">                order.getReservedCash(),</span>
-<span class="fc" id="L772">                order.getTrailAmount(),</span>
-<span class="fc" id="L773">                order.getTrailPercent()</span>
+<span class="fc" id="L938">                order.getOrderType().name(),</span>
+<span class="fc" id="L939">                order.getLimitPrice(),</span>
+<span class="fc" id="L940">                order.getStopPrice(),</span>
+<span class="fc bfc" id="L941" title="All 2 branches covered.">                order.getTimeInForce() != null ? order.getTimeInForce().name() : null,</span>
+<span class="fc" id="L942">                order.getExpiresAt(),</span>
+<span class="fc" id="L943">                order.getReservedCash(),</span>
+<span class="fc" id="L944">                order.getTrailAmount(),</span>
+<span class="fc" id="L945">                order.getTrailPercent(),</span>
+<span class="fc" id="L946">                order.isExtendedHours(),</span>
+<span class="fc" id="L947">                order.getCollarPrice()</span>
         );
     }
 }

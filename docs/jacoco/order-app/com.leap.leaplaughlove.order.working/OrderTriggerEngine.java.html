@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderTriggerEngine.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OrderTriggerEngine.java</span></div><h1>OrderTriggerEngine.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
@@ -10,6 +12,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,10 @@ import java.util.UUID;
  * same validation, settlement and recovery path as a market order; a STOP_LIMIT whose stop is
  * reached but whose limit isn't is only marked triggered, and keeps waiting as a limit order.
  *
+ * &lt;p&gt;Only orders the market session allows are evaluated ({@link SessionPolicy}): outside regular
+ * hours stops don't trigger and trailing stops don't trail, and only extended-hours limit orders
+ * can fill in pre-market and after-hours.
+ *
  * &lt;p&gt;A separate, slower schedule expires orders past their time in force.
  */
 @Service
@@ -37,7 +44,7 @@ import java.util.UUID;
         matchIfMissing = true)
 public class OrderTriggerEngine {
 
-<span class="fc" id="L40">    private static final Logger log = LoggerFactory.getLogger(OrderTriggerEngine.class);</span>
+<span class="fc" id="L47">    private static final Logger log = LoggerFactory.getLogger(OrderTriggerEngine.class);</span>
 
     private final OrderRepository orderRepository;
     private final AccountRepository accountRepository;
@@ -47,6 +54,7 @@ public class OrderTriggerEngine {
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
     private final OrderUpdateBroadcaster broadcaster;
+    private final MarketClock marketClock;
 
     /**
      * Constructs an OrderTriggerEngine.
@@ -66,16 +74,43 @@ public class OrderTriggerEngine {
                               OpenOrderService openOrderService,
                               JwtService jwtService,
                               TransactionTemplate transactionTemplate,
-<span class="fc" id="L69">                              OrderUpdateBroadcaster broadcaster) {</span>
-<span class="fc" id="L70">        this.orderRepository = orderRepository;</span>
-<span class="fc" id="L71">        this.accountRepository = accountRepository;</span>
-<span class="fc" id="L72">        this.currentQuoteService = currentQuoteService;</span>
-<span class="fc" id="L73">        this.orderSubmissionService = orderSubmissionService;</span>
-<span class="fc" id="L74">        this.openOrderService = openOrderService;</span>
-<span class="fc" id="L75">        this.jwtService = jwtService;</span>
-<span class="fc" id="L76">        this.transactionTemplate = transactionTemplate;</span>
-<span class="fc" id="L77">        this.broadcaster = broadcaster;</span>
-<span class="fc" id="L78">    }</span>
+                              OrderUpdateBroadcaster broadcaster) {
+<span class="fc" id="L78">        this(orderRepository, accountRepository, currentQuoteService, orderSubmissionService, openOrderService,</span>
+<span class="fc" id="L79">                jwtService, transactionTemplate, broadcaster, MarketClock.alwaysOpen());</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Constructs an OrderTriggerEngine that only works orders in a session they may trade in.
+     * @param orderRepository finds and locks open orders
+     * @param accountRepository finds the client an order acts for
+     * @param currentQuoteService reads the live quotes
+     * @param orderSubmissionService fills an order whose price was reached
+     * @param openOrderService expires orders past their time in force
+     * @param jwtService issues the service tokens the engine calls other apps with
+     * @param transactionTemplate marks stop-limit orders triggered and moves trailing stops
+     * @param broadcaster tells clients, as it happens, that an order of theirs ended
+     * @param marketClock decides which session is in force
+     */
+    @Autowired
+    public OrderTriggerEngine(OrderRepository orderRepository,
+                              AccountRepository accountRepository,
+                              CurrentQuoteService currentQuoteService,
+                              OrderSubmissionService orderSubmissionService,
+                              OpenOrderService openOrderService,
+                              JwtService jwtService,
+                              TransactionTemplate transactionTemplate,
+                              OrderUpdateBroadcaster broadcaster,
+<span class="fc" id="L103">                              MarketClock marketClock) {</span>
+<span class="fc" id="L104">        this.marketClock = marketClock;</span>
+<span class="fc" id="L105">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L106">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L107">        this.currentQuoteService = currentQuoteService;</span>
+<span class="fc" id="L108">        this.orderSubmissionService = orderSubmissionService;</span>
+<span class="fc" id="L109">        this.openOrderService = openOrderService;</span>
+<span class="fc" id="L110">        this.jwtService = jwtService;</span>
+<span class="fc" id="L111">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L112">        this.broadcaster = broadcaster;</span>
+<span class="fc" id="L113">    }</span>
 
     /**
      * Scheduled entry point: evaluates every open order against the live market.
@@ -84,11 +119,11 @@ public class OrderTriggerEngine {
                fixedDelayString = &quot;${trading.order-triggers.interval-ms:1000}&quot;)
     public void run() {
         try {
-<span class="nc" id="L87">            evaluateOpenOrders();</span>
-<span class="nc" id="L88">        } catch (RuntimeException ex) {</span>
-<span class="nc" id="L89">            log.warn(&quot;Evaluating open orders failed: {}&quot;, ex.getMessage());</span>
-<span class="nc" id="L90">        }</span>
-<span class="nc" id="L91">    }</span>
+<span class="nc" id="L122">            evaluateOpenOrders();</span>
+<span class="nc" id="L123">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L124">            log.warn(&quot;Evaluating open orders failed: {}&quot;, ex.getMessage());</span>
+<span class="nc" id="L125">        }</span>
+<span class="nc" id="L126">    }</span>
 
     /**
      * Scheduled entry point: expires open orders past their time in force.
@@ -97,34 +132,37 @@ public class OrderTriggerEngine {
                fixedDelayString = &quot;${trading.order-triggers.expiry-interval-ms:30000}&quot;)
     public void expire() {
         try {
-<span class="nc" id="L100">            openOrderService.expireDue();</span>
-<span class="nc" id="L101">        } catch (RuntimeException ex) {</span>
-<span class="nc" id="L102">            log.warn(&quot;Expiring open orders failed: {}&quot;, ex.getMessage());</span>
-<span class="nc" id="L103">        }</span>
-<span class="nc" id="L104">    }</span>
+<span class="nc" id="L135">            openOrderService.expireDue();</span>
+<span class="nc" id="L136">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L137">            log.warn(&quot;Expiring open orders failed: {}&quot;, ex.getMessage());</span>
+<span class="nc" id="L138">        }</span>
+<span class="nc" id="L139">    }</span>
 
     /**
      * Evaluates every open order against the live market once.
      * @return how many orders were sent to be filled
      */
     public int evaluateOpenOrders() {
-<span class="fc" id="L111">        List&lt;Order&gt; open = orderRepository.findOpen();</span>
-<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (open.isEmpty()) {</span>
-<span class="fc" id="L113">            return 0;</span>
+<span class="fc" id="L146">        MarketSession session = marketClock.session();</span>
+<span class="fc" id="L147">        List&lt;Order&gt; open = orderRepository.findOpen().stream()</span>
+<span class="fc" id="L148">                .filter(order -&gt; SessionPolicy.canExecute(order, session))</span>
+<span class="fc" id="L149">                .toList();</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (open.isEmpty()) {</span>
+<span class="fc" id="L151">            return 0;</span>
         }
-<span class="fc" id="L115">        Map&lt;String, QuoteSnapshot&gt; quotes = currentQuoteService.getFreshQuotes(jwtService.generateQuoteToken());</span>
-<span class="fc" id="L116">        int filled = 0;</span>
-<span class="fc bfc" id="L117" title="All 2 branches covered.">        for (Order order : open) {</span>
+<span class="fc" id="L153">        Map&lt;String, QuoteSnapshot&gt; quotes = currentQuoteService.getFreshQuotes(jwtService.generateQuoteToken());</span>
+<span class="fc" id="L154">        int filled = 0;</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        for (Order order : open) {</span>
             try {
-<span class="fc bfc" id="L119" title="All 2 branches covered.">                if (evaluate(order, quotes.get(order.getInstrument().getSymbol()))) {</span>
-<span class="fc" id="L120">                    filled++;</span>
+<span class="fc bfc" id="L157" title="All 2 branches covered.">                if (evaluate(order, quotes.get(order.getInstrument().getSymbol()))) {</span>
+<span class="fc" id="L158">                    filled++;</span>
                 }
-<span class="fc" id="L122">            } catch (RuntimeException ex) {</span>
+<span class="fc" id="L160">            } catch (RuntimeException ex) {</span>
                 // One order failing (e.g. account-app down) must not hold up the rest.
-<span class="fc" id="L124">                log.warn(&quot;Open order {} could not be processed; will retry: {}&quot;, order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L125">            }</span>
-<span class="fc" id="L126">        }</span>
-<span class="fc" id="L127">        return filled;</span>
+<span class="fc" id="L162">                log.warn(&quot;Open order {} could not be processed; will retry: {}&quot;, order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L163">            }</span>
+<span class="fc" id="L164">        }</span>
+<span class="fc" id="L165">        return filled;</span>
     }
 
     /**
@@ -134,28 +172,28 @@ public class OrderTriggerEngine {
      * @return whether the order was sent to be filled
      */
     private boolean evaluate(Order order, QuoteSnapshot quote) {
-<span class="fc" id="L137">        BigDecimal price = TriggerEvaluator.executablePrice(order.getSide(), quote);</span>
-<span class="pc bpc" id="L138" title="1 of 2 branches missed.">        if (price == null) {</span>
-<span class="nc" id="L139">            return false;</span>
+<span class="fc" id="L175">        BigDecimal price = TriggerEvaluator.executablePrice(order.getSide(), quote);</span>
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">        if (price == null) {</span>
+<span class="nc" id="L177">            return false;</span>
         }
-<span class="pc bpc" id="L141" title="1 of 4 branches missed.">        if (order.getOrderType().hasTrail() &amp;&amp; !trail(order, price)) {</span>
-<span class="nc" id="L142">            return false;</span>
+<span class="pc bpc" id="L179" title="1 of 4 branches missed.">        if (order.getOrderType().hasTrail() &amp;&amp; !trail(order, price)) {</span>
+<span class="nc" id="L180">            return false;</span>
         }
-<span class="fc" id="L144">        TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, price);</span>
-<span class="fc bfc" id="L145" title="All 2 branches covered.">        if (evaluation.fills()) {</span>
-<span class="fc" id="L146">            Order.Status status = orderSubmissionService.fillOpenOrder(order.getOrderId(), evaluation.fillPrice(),</span>
-<span class="fc" id="L147">                    evaluation.stopReached(), jwtService.generateSettlementToken(clientIdOf(order)));</span>
-<span class="fc" id="L148">            log.info(&quot;Open {} {} order {} reached its price at {}; now {}&quot;, order.getOrderType(), order.getSide(),</span>
-<span class="fc" id="L149">                    order.getOrderId(), evaluation.fillPrice(), status);</span>
-<span class="fc bfc" id="L150" title="All 2 branches covered.">            if (status != null) {</span>
-<span class="fc" id="L151">                notifyClient(order, status, evaluation.fillPrice());</span>
+<span class="fc" id="L182">        TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, price);</span>
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        if (evaluation.fills()) {</span>
+<span class="fc" id="L184">            Order.Status status = orderSubmissionService.fillOpenOrder(order.getOrderId(), evaluation.fillPrice(),</span>
+<span class="fc" id="L185">                    evaluation.stopReached(), jwtService.generateSettlementToken(clientIdOf(order)));</span>
+<span class="fc" id="L186">            log.info(&quot;Open {} {} order {} reached its price at {}; now {}&quot;, order.getOrderType(), order.getSide(),</span>
+<span class="fc" id="L187">                    order.getOrderId(), evaluation.fillPrice(), status);</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">            if (status != null) {</span>
+<span class="fc" id="L189">                notifyClient(order, status, evaluation.fillPrice());</span>
             }
-<span class="fc bfc" id="L153" title="All 2 branches covered.">            return status != null;</span>
+<span class="fc bfc" id="L191" title="All 2 branches covered.">            return status != null;</span>
         }
-<span class="pc bpc" id="L155" title="1 of 4 branches missed.">        if (evaluation.stopReached() &amp;&amp; order.getTriggeredAt() == null) {</span>
-<span class="fc" id="L156">            markTriggered(order.getOrderId());</span>
+<span class="pc bpc" id="L193" title="1 of 4 branches missed.">        if (evaluation.stopReached() &amp;&amp; order.getTriggeredAt() == null) {</span>
+<span class="fc" id="L194">            markTriggered(order.getOrderId());</span>
         }
-<span class="fc" id="L158">        return false;</span>
+<span class="fc" id="L196">        return false;</span>
     }
 
     /**
@@ -167,15 +205,15 @@ public class OrderTriggerEngine {
      */
     private void notifyClient(Order order, Order.Status status, BigDecimal fillPrice) {
         try {
-<span class="fc bfc" id="L170" title="All 2 branches covered.">            String reason = status == Order.Status.REJECTED</span>
-<span class="fc" id="L171">                    ? orderRepository.findById(order.getOrderId()).map(Order::getRejectionReason).orElse(null)</span>
-<span class="fc" id="L172">                    : null;</span>
-<span class="fc" id="L173">            broadcaster.publish(clientIdOf(order), OrderUpdate.of(order, status,</span>
-<span class="fc bfc" id="L174" title="All 2 branches covered.">                    status == Order.Status.REJECTED ? null : fillPrice, reason));</span>
-<span class="nc" id="L175">        } catch (RuntimeException ex) {</span>
-<span class="nc" id="L176">            log.warn(&quot;Could not tell the client about order {}: {}&quot;, order.getOrderId(), ex.getMessage());</span>
-<span class="fc" id="L177">        }</span>
-<span class="fc" id="L178">    }</span>
+<span class="fc bfc" id="L208" title="All 2 branches covered.">            String reason = status == Order.Status.REJECTED</span>
+<span class="fc" id="L209">                    ? orderRepository.findById(order.getOrderId()).map(Order::getRejectionReason).orElse(null)</span>
+<span class="fc" id="L210">                    : null;</span>
+<span class="fc" id="L211">            broadcaster.publish(clientIdOf(order), OrderUpdate.of(order, status,</span>
+<span class="fc bfc" id="L212" title="All 2 branches covered.">                    status == Order.Status.REJECTED ? null : fillPrice, reason));</span>
+<span class="nc" id="L213">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L214">            log.warn(&quot;Could not tell the client about order {}: {}&quot;, order.getOrderId(), ex.getMessage());</span>
+<span class="fc" id="L215">        }</span>
+<span class="fc" id="L216">    }</span>
 
     /**
      * Moves a trailing stop behind a new best price, saving it under the order's row lock so a
@@ -186,21 +224,21 @@ public class OrderTriggerEngine {
      * @return false if the order is no longer OPEN, so there is nothing to evaluate
      */
     private boolean trail(Order order, BigDecimal price) {
-<span class="fc" id="L189">        TrailingStop.Move move = TrailingStop.ratchet(order, price);</span>
-<span class="fc bfc" id="L190" title="All 2 branches covered.">        if (move == null) {</span>
-<span class="fc" id="L191">            return true;</span>
+<span class="fc" id="L227">        TrailingStop.Move move = TrailingStop.ratchet(order, price);</span>
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        if (move == null) {</span>
+<span class="fc" id="L229">            return true;</span>
         }
-<span class="fc" id="L193">        Boolean moved = transactionTemplate.execute(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
-<span class="pc bpc" id="L194" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.OPEN)</span>
-<span class="fc" id="L195">                .map(locked -&gt; {</span>
-<span class="fc" id="L196">                    locked.moveTrail(move.best(), move.stop());</span>
-<span class="fc" id="L197">                    return true;</span>
+<span class="fc" id="L231">        Boolean moved = transactionTemplate.execute(status -&gt; orderRepository.findByIdForUpdate(order.getOrderId())</span>
+<span class="pc bpc" id="L232" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.OPEN)</span>
+<span class="fc" id="L233">                .map(locked -&gt; {</span>
+<span class="fc" id="L234">                    locked.moveTrail(move.best(), move.stop());</span>
+<span class="fc" id="L235">                    return true;</span>
                 })
-<span class="fc" id="L199">                .orElse(false));</span>
-<span class="pc bpc" id="L200" title="1 of 2 branches missed.">        if (Boolean.TRUE.equals(moved)) {</span>
-<span class="fc" id="L201">            order.moveTrail(move.best(), move.stop());</span>
+<span class="fc" id="L237">                .orElse(false));</span>
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">        if (Boolean.TRUE.equals(moved)) {</span>
+<span class="fc" id="L239">            order.moveTrail(move.best(), move.stop());</span>
         }
-<span class="fc" id="L203">        return Boolean.TRUE.equals(moved);</span>
+<span class="fc" id="L241">        return Boolean.TRUE.equals(moved);</span>
     }
 
     /**
@@ -208,13 +246,13 @@ public class OrderTriggerEngine {
      * @param orderId the order
      */
     private void markTriggered(UUID orderId) {
-<span class="fc" id="L211">        transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(orderId)</span>
-<span class="pc bpc" id="L212" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.OPEN)</span>
-<span class="fc" id="L213">                .ifPresent(locked -&gt; {</span>
-<span class="fc" id="L214">                    locked.markTriggered(OffsetDateTime.now());</span>
-<span class="fc" id="L215">                    log.info(&quot;Stop-limit order {} triggered; now working as a limit order&quot;, orderId);</span>
-<span class="fc" id="L216">                }));</span>
-<span class="fc" id="L217">    }</span>
+<span class="fc" id="L249">        transactionTemplate.executeWithoutResult(status -&gt; orderRepository.findByIdForUpdate(orderId)</span>
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">                .filter(locked -&gt; locked.getStatus() == Order.Status.OPEN)</span>
+<span class="fc" id="L251">                .ifPresent(locked -&gt; {</span>
+<span class="fc" id="L252">                    locked.markTriggered(OffsetDateTime.now());</span>
+<span class="fc" id="L253">                    log.info(&quot;Stop-limit order {} triggered; now working as a limit order&quot;, orderId);</span>
+<span class="fc" id="L254">                }));</span>
+<span class="fc" id="L255">    }</span>
 
     /**
      * The client who owns the order's account, whose behalf the fill settles on.
@@ -222,9 +260,9 @@ public class OrderTriggerEngine {
      * @return the client ID
      */
     private UUID clientIdOf(Order order) {
-<span class="fc" id="L225">        return accountRepository.findById(order.getAccountId())</span>
-<span class="fc" id="L226">                .map(Account::getClientId)</span>
-<span class="pc" id="L227">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
+<span class="fc" id="L263">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L264">                .map(Account::getClientId)</span>
+<span class="pc" id="L265">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found for order: &quot; + order.getOrderId()));</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

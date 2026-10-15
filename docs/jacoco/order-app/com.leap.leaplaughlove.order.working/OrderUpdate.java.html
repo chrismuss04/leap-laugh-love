@@ -19,8 +19,9 @@ import java.util.UUID;
  * @param fillPrice the price it filled at, for FILLED and ACCEPTED
  * @param reason why it was rejected, for REJECTED
  * @param at when this happened
+ * @param extendedHours whether it was a LIMIT order that could also fill in extended hours
  */
-<span class="fc" id="L23">public record OrderUpdate(</span>
+<span class="fc" id="L24">public record OrderUpdate(</span>
         UUID orderId,
         String symbol,
         String side,
@@ -29,8 +30,26 @@ import java.util.UUID;
         String status,
         BigDecimal fillPrice,
         String reason,
-        OffsetDateTime at
+        OffsetDateTime at,
+        boolean extendedHours
 ) {
+    /**
+     * An update about a regular-hours order.
+     * @param orderId the order
+     * @param symbol the instrument's symbol
+     * @param side BUY or SELL
+     * @param quantity whole shares ordered
+     * @param orderType the order type
+     * @param status how it ended
+     * @param fillPrice the price it filled at, if it did
+     * @param reason why it was rejected, if it was
+     * @param at when this happened
+     */
+    public OrderUpdate(UUID orderId, String symbol, String side, long quantity, String orderType, String status,
+                       BigDecimal fillPrice, String reason, OffsetDateTime at) {
+<span class="fc" id="L50">        this(orderId, symbol, side, quantity, orderType, status, fillPrice, reason, at, false);</span>
+<span class="fc" id="L51">    }</span>
+
     /**
      * Describes how an order, whose instrument must be loaded, has just ended.
      * @param order the order
@@ -40,16 +59,17 @@ import java.util.UUID;
      * @return the update to send
      */
     public static OrderUpdate of(Order order, Order.Status status, BigDecimal fillPrice, String reason) {
-<span class="fc" id="L43">        return new OrderUpdate(</span>
-<span class="fc" id="L44">                order.getOrderId(),</span>
-<span class="fc" id="L45">                order.getInstrument().getSymbol(),</span>
-<span class="fc" id="L46">                order.getSide().name(),</span>
-<span class="fc" id="L47">                order.getQuantity(),</span>
-<span class="fc" id="L48">                order.getOrderType().name(),</span>
-<span class="fc" id="L49">                status.name(),</span>
+<span class="fc" id="L62">        return new OrderUpdate(</span>
+<span class="fc" id="L63">                order.getOrderId(),</span>
+<span class="fc" id="L64">                order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L65">                order.getSide().name(),</span>
+<span class="fc" id="L66">                order.getQuantity(),</span>
+<span class="fc" id="L67">                order.getOrderType().name(),</span>
+<span class="fc" id="L68">                status.name(),</span>
                 fillPrice,
                 reason,
-<span class="fc" id="L52">                OffsetDateTime.now());</span>
+<span class="fc" id="L71">                OffsetDateTime.now(),</span>
+<span class="fc" id="L72">                order.isExtendedHours());</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

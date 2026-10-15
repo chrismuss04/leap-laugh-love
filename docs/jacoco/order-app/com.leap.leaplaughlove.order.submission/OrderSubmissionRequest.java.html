@@ -95,8 +95,38 @@ import com.leap.leaplaughlove.order.order.Order;
 
         @Positive(message = &quot;bracketStopLossPrice must be greater than zero&quot;)
         @Digits(integer = 12, fraction = 2, message = &quot;bracketStopLossPrice may have at most two decimal places&quot;)
-        BigDecimal bracketStopLossPrice
+        BigDecimal bracketStopLossPrice,
+
+        Boolean extendedHours
 ) {
+
+    /**
+     * An order placed before market hours existed: it trades in regular hours only.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     * @param trailAmount for TRAILING_STOP: the trail in dollars
+     * @param trailPercent for TRAILING_STOP: the trail in percent
+     * @param bracketTakeProfitPrice for a BUY: the take-profit sell's limit price
+     * @param bracketStopLossPrice for a BUY: the stop-loss sell's stop price
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent,
+                                  BigDecimal bracketTakeProfitPrice, BigDecimal bracketStopLossPrice) {
+<span class="nc" id="L126">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, bracketTakeProfitPrice,
+                bracketStopLossPrice, null);
+<span class="nc" id="L129">    }</span>
 
     /**
      * An order placed before bracket orders existed.
@@ -118,9 +148,9 @@ import com.leap.leaplaughlove.order.order.Order;
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
                                   Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                                   Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent) {
-<span class="nc" id="L121">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
-                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null);
-<span class="nc" id="L123">    }</span>
+<span class="nc" id="L151">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null, null);
+<span class="nc" id="L153">    }</span>
 
     /**
      * A market order, as placed before order types existed.
@@ -134,9 +164,9 @@ import com.leap.leaplaughlove.order.order.Order;
      */
     public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
-<span class="fc" id="L137">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,</span>
-                null, null, null, null, null, null, null, null);
-<span class="fc" id="L139">    }</span>
+<span class="fc" id="L167">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,</span>
+                null, null, null, null, null, null, null, null, null);
+<span class="fc" id="L169">    }</span>
 
     /**
      * An order placed before trailing stops existed.
@@ -156,9 +186,9 @@ import com.leap.leaplaughlove.order.order.Order;
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
                                   Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                                   Order.TimeInForce timeInForce) {
-<span class="nc" id="L159">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
-                limitPrice, stopPrice, timeInForce, null, null, null, null);
-<span class="nc" id="L161">    }</span>
+<span class="nc" id="L189">        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,</span>
+                limitPrice, stopPrice, timeInForce, null, null, null, null, null);
+<span class="nc" id="L191">    }</span>
 
     /**
      * The order type, MARKET when none was given.
@@ -166,7 +196,27 @@ import com.leap.leaplaughlove.order.order.Order;
      */
     @JsonIgnore
     public Order.OrderType effectiveOrderType() {
-<span class="fc bfc" id="L169" title="All 2 branches covered.">        return orderType != null ? orderType : Order.OrderType.MARKET;</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">        return orderType != null ? orderType : Order.OrderType.MARKET;</span>
+    }
+
+    /**
+     * Whether the order may also trade in pre-market and after-hours.
+     * @return true only when asked for
+     */
+    @JsonIgnore
+    public boolean isForExtendedHours() {
+<span class="fc" id="L208">        return Boolean.TRUE.equals(extendedHours);</span>
+    }
+
+    /**
+     * Only limit orders trade in extended hours: thin markets make a market price - or a stop that
+     * turns into one - unsafe there.
+     * @return false when extendedHours is set on anything but a LIMIT order
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;extendedHours applies to LIMIT orders only&quot;)
+    public boolean isExtendedHoursForLimitOnly() {
+<span class="fc bfc" id="L219" title="All 4 branches covered.">        return !isForExtendedHours() || effectiveOrderType() == Order.OrderType.LIMIT;</span>
     }
 
     /**
@@ -176,7 +226,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;quotedPrice is required when maxSlippagePercent is set&quot;)
     public boolean isQuotedPricePresentForTolerance() {
-<span class="fc bfc" id="L179" title="All 4 branches covered.">        return maxSlippagePercent == null || quotedPrice != null;</span>
+<span class="fc bfc" id="L229" title="All 4 branches covered.">        return maxSlippagePercent == null || quotedPrice != null;</span>
     }
 
     /**
@@ -186,7 +236,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;limitPrice is required for LIMIT and STOP_LIMIT orders, and only for them&quot;)
     public boolean isLimitPriceMatchingType() {
-<span class="fc bfc" id="L189" title="All 4 branches covered.">        return effectiveOrderType().hasLimit() == (limitPrice != null);</span>
+<span class="fc bfc" id="L239" title="All 4 branches covered.">        return effectiveOrderType().hasLimit() == (limitPrice != null);</span>
     }
 
     /**
@@ -196,7 +246,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;stopPrice is required for STOP and STOP_LIMIT orders, and only for them&quot;)
     public boolean isStopPriceMatchingType() {
-<span class="fc bfc" id="L199" title="All 4 branches covered.">        return effectiveOrderType().takesStopPrice() == (stopPrice != null);</span>
+<span class="fc bfc" id="L249" title="All 4 branches covered.">        return effectiveOrderType().takesStopPrice() == (stopPrice != null);</span>
     }
 
     /**
@@ -206,11 +256,11 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;TRAILING_STOP orders need exactly one of trailAmount and trailPercent, and only they take them&quot;)
     public boolean isTrailMatchingType() {
-<span class="fc bfc" id="L209" title="All 4 branches covered.">        boolean hasTrail = trailAmount != null || trailPercent != null;</span>
-<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (!effectiveOrderType().hasTrail()) {</span>
-<span class="fc bfc" id="L211" title="All 2 branches covered.">            return !hasTrail;</span>
+<span class="fc bfc" id="L259" title="All 4 branches covered.">        boolean hasTrail = trailAmount != null || trailPercent != null;</span>
+<span class="fc bfc" id="L260" title="All 2 branches covered.">        if (!effectiveOrderType().hasTrail()) {</span>
+<span class="fc bfc" id="L261" title="All 2 branches covered.">            return !hasTrail;</span>
         }
-<span class="fc bfc" id="L213" title="All 6 branches covered.">        return (trailAmount != null) != (trailPercent != null);</span>
+<span class="fc bfc" id="L263" title="All 6 branches covered.">        return (trailAmount != null) != (trailPercent != null);</span>
     }
 
     /**
@@ -220,7 +270,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;maxSlippagePercent applies to market orders only&quot;)
     public boolean isToleranceForMarketOnly() {
-<span class="fc bfc" id="L223" title="All 4 branches covered.">        return maxSlippagePercent == null || effectiveOrderType() == Order.OrderType.MARKET;</span>
+<span class="fc bfc" id="L273" title="All 4 branches covered.">        return maxSlippagePercent == null || effectiveOrderType() == Order.OrderType.MARKET;</span>
     }
 
     /**
@@ -229,7 +279,7 @@ import com.leap.leaplaughlove.order.order.Order;
      */
     @JsonIgnore
     public boolean hasBracket() {
-<span class="pc bpc" id="L232" title="1 of 4 branches missed.">        return bracketTakeProfitPrice != null || bracketStopLossPrice != null;</span>
+<span class="pc bpc" id="L282" title="1 of 4 branches missed.">        return bracketTakeProfitPrice != null || bracketStopLossPrice != null;</span>
     }
 
     /**
@@ -239,7 +289,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;A bracket needs both bracketTakeProfitPrice and bracketStopLossPrice&quot;)
     public boolean isBracketComplete() {
-<span class="fc bfc" id="L242" title="All 6 branches covered.">        return (bracketTakeProfitPrice == null) == (bracketStopLossPrice == null);</span>
+<span class="fc bfc" id="L292" title="All 6 branches covered.">        return (bracketTakeProfitPrice == null) == (bracketStopLossPrice == null);</span>
     }
 
     /**
@@ -249,7 +299,7 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;A bracket can only be attached to a BUY order&quot;)
     public boolean isBracketOnBuyOnly() {
-<span class="fc bfc" id="L252" title="All 4 branches covered.">        return !hasBracket() || side == Order.Side.BUY;</span>
+<span class="fc bfc" id="L302" title="All 4 branches covered.">        return !hasBracket() || side == Order.Side.BUY;</span>
     }
 
     /**
@@ -259,8 +309,8 @@ import com.leap.leaplaughlove.order.order.Order;
     @JsonIgnore
     @AssertTrue(message = &quot;bracketTakeProfitPrice must be above bracketStopLossPrice&quot;)
     public boolean isBracketOrdered() {
-<span class="fc bfc" id="L262" title="All 4 branches covered.">        return bracketTakeProfitPrice == null || bracketStopLossPrice == null</span>
-<span class="fc bfc" id="L263" title="All 2 branches covered.">                || bracketTakeProfitPrice.compareTo(bracketStopLossPrice) &gt; 0;</span>
+<span class="fc bfc" id="L312" title="All 4 branches covered.">        return bracketTakeProfitPrice == null || bracketStopLossPrice == null</span>
+<span class="fc bfc" id="L313" title="All 2 branches covered.">                || bracketTakeProfitPrice.compareTo(bracketStopLossPrice) &gt; 0;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

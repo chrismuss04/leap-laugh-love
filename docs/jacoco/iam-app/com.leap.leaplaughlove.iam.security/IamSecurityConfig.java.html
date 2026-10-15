@@ -26,7 +26,7 @@ import java.util.Map;
  * This class defines the JWT authentication and CORS settings, security filter
  * chain, password encoder, and exception handling for unauthorized access.
  */
-// Session Timeout &amp; Revocation: common-security is outside each app's component scan.
+// Session Timeout &amp; Revocation: common is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class IamSecurityConfig {

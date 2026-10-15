@@ -2,6 +2,7 @@
 
 import com.leap.leaplaughlove.order.order.Order;
 import jakarta.persistence.Column;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
@@ -27,8 +28,8 @@ public class Execution {
     /**
      * Enum describing the status of an execution
      */
-<span class="fc" id="L30">    public enum Status {</span>
-<span class="fc" id="L31">        FILLED, REJECTED</span>
+<span class="fc" id="L31">    public enum Status {</span>
+<span class="fc" id="L32">        FILLED, REJECTED</span>
     }
 
     @Id
@@ -56,11 +57,14 @@ public class Execution {
     @Column(name = &quot;reason&quot;)
     private String reason;
 
+    @Embedded
+    private ExecutionQuote quote;
+
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L62">    protected Execution() {</span>
-<span class="fc" id="L63">    }</span>
+<span class="fc" id="L66">    protected Execution() {</span>
+<span class="fc" id="L67">    }</span>
 
     /**
      * Constructs a new Execution with the specified details.
@@ -74,15 +78,15 @@ public class Execution {
      * @param executedAt   the timestamp when the execution occurred
      */
     public Execution(UUID executionId, Order order, Long fillQuantity, BigDecimal fillPrice,
-<span class="fc" id="L77">            Status status, String reason, OffsetDateTime executedAt) {</span>
-<span class="fc" id="L78">        this.executionId = executionId;</span>
-<span class="fc" id="L79">        this.order = order;</span>
-<span class="fc" id="L80">        this.fillQuantity = fillQuantity;</span>
-<span class="fc" id="L81">        this.fillPrice = fillPrice;</span>
-<span class="fc" id="L82">        this.status = status;</span>
-<span class="fc" id="L83">        this.reason = reason;</span>
-<span class="pc bpc" id="L84" title="1 of 2 branches missed.">        this.executedAt = executedAt != null ? executedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L85">    }</span>
+<span class="fc" id="L81">            Status status, String reason, OffsetDateTime executedAt) {</span>
+<span class="fc" id="L82">        this.executionId = executionId;</span>
+<span class="fc" id="L83">        this.order = order;</span>
+<span class="fc" id="L84">        this.fillQuantity = fillQuantity;</span>
+<span class="fc" id="L85">        this.fillPrice = fillPrice;</span>
+<span class="fc" id="L86">        this.status = status;</span>
+<span class="fc" id="L87">        this.reason = reason;</span>
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        this.executedAt = executedAt != null ? executedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L89">    }</span>
 
     /**
      * Constructs a new Execution without specifying an execution ID. The execution
@@ -97,8 +101,17 @@ public class Execution {
      */
     public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
             Status status, String reason, OffsetDateTime executedAt) {
-<span class="fc" id="L100">        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);</span>
-<span class="fc" id="L101">    }</span>
+<span class="fc" id="L104">        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);</span>
+<span class="fc" id="L105">    }</span>
+
+    /**
+     * @param quote the market quote the order was priced from, or null if none was used
+     */
+    public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
+            Status status, String reason, OffsetDateTime executedAt, ExecutionQuote quote) {
+<span class="fc" id="L112">        this(null, order, fillQuantity, fillPrice, status, reason, executedAt);</span>
+<span class="fc" id="L113">        this.quote = quote;</span>
+<span class="fc" id="L114">    }</span>
 
     /**
      * Returns the unique identifier of the execution.
@@ -106,7 +119,7 @@ public class Execution {
      * @return the execution ID
      */
     public UUID getExecutionId() {
-<span class="fc" id="L109">        return executionId;</span>
+<span class="fc" id="L122">        return executionId;</span>
     }
 
     /**
@@ -115,7 +128,7 @@ public class Execution {
      * @return the order associated with this execution
      */
     public Order getOrder() {
-<span class="fc" id="L118">        return order;</span>
+<span class="fc" id="L131">        return order;</span>
     }
 
     /**
@@ -124,7 +137,7 @@ public class Execution {
      * @return the fill quantity
      */
     public Long getFillQuantity() {
-<span class="fc" id="L127">        return fillQuantity;</span>
+<span class="fc" id="L140">        return fillQuantity;</span>
     }
 
     /**
@@ -133,7 +146,7 @@ public class Execution {
      * @return the fill price
      */
     public BigDecimal getFillPrice() {
-<span class="fc" id="L136">        return fillPrice;</span>
+<span class="fc" id="L149">        return fillPrice;</span>
     }
 
     /**
@@ -142,7 +155,7 @@ public class Execution {
      * @return the execution status
      */
     public Status getStatus() {
-<span class="fc" id="L145">        return status;</span>
+<span class="fc" id="L158">        return status;</span>
     }
 
     /**
@@ -151,7 +164,7 @@ public class Execution {
      * @return the execution timestamp
      */
     public OffsetDateTime getExecutedAt() {
-<span class="fc" id="L154">        return executedAt;</span>
+<span class="fc" id="L167">        return executedAt;</span>
     }
 
     /**
@@ -160,7 +173,12 @@ public class Execution {
      * @return the rejection reason
      */
     public String getReason() {
-<span class="fc" id="L163">        return reason;</span>
+<span class="fc" id="L176">        return reason;</span>
+    }
+
+    /** Null if no quote was used, or the execution predates quotes being stored. */
+    public ExecutionQuote getQuote() {
+<span class="fc" id="L181">        return quote;</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

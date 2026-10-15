@@ -25,7 +25,8 @@ import com.leap.leaplaughlove.order.instrument.Instrument;
  * Decoupled from Account JPA entity: stores accountId directly.
  * Follows the audit lifecycle: SUBMITTED -&gt; ACCEPTED or REJECTED -&gt; FILLED. Orders other than
  * market orders wait in between: SUBMITTED -&gt; OPEN -&gt; ACCEPTED -&gt; FILLED once the market reaches
- * their price, or OPEN -&gt; CANCELLED or EXPIRED if it never does.
+ * their price, or OPEN -&gt; CANCELLED or EXPIRED if it never does. A market order placed outside
+ * regular hours waits OPEN the same way, for the next open.
  */
 @Entity
 @Table(name = &quot;orders&quot;, schema = &quot;trading&quot;)
@@ -34,13 +35,13 @@ public class Order {
     /**
      * Represents the side of the order, either BUY or SELL.
      */
-<span class="fc" id="L37">    public enum Side { BUY, SELL }</span>
+<span class="fc" id="L38">    public enum Side { BUY, SELL }</span>
 
     /**
      * The status of the order matching the database check constraint. OPEN orders are waiting
      * for the market to reach their price; CANCELLED and EXPIRED ones never executed.
      */
-<span class="fc" id="L43">    public enum Status { SUBMITTED, OPEN, ACCEPTED, REJECTED, FILLED, CANCELLED, EXPIRED }</span>
+<span class="fc" id="L44">    public enum Status { SUBMITTED, OPEN, ACCEPTED, REJECTED, FILLED, CANCELLED, EXPIRED }</span>
 
     /**
      * How the order is priced. MARKET fills at once at the live quote. LIMIT fills only at its
@@ -48,40 +49,40 @@ public class Order {
      * and STOP_LIMIT becomes a limit order then. TRAILING_STOP is a stop whose stop price follows
      * the market in the order's favour, a fixed amount or percent behind the best price seen.
      */
-<span class="fc" id="L51">    public enum OrderType {</span>
-<span class="fc" id="L52">        MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP;</span>
+<span class="fc" id="L52">    public enum OrderType {</span>
+<span class="fc" id="L53">        MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP;</span>
 
         /**
          * Returns whether this type carries a limit price.
          * @return true for LIMIT and STOP_LIMIT
          */
-<span class="fc bfc" id="L58" title="All 4 branches covered.">        public boolean hasLimit() { return this == LIMIT || this == STOP_LIMIT; }</span>
+<span class="fc bfc" id="L59" title="All 4 branches covered.">        public boolean hasLimit() { return this == LIMIT || this == STOP_LIMIT; }</span>
 
         /**
          * Returns whether this type waits for a stop price to be reached. A trailing stop's is set
          * by order-app and moves, rather than being entered.
          * @return true for STOP, STOP_LIMIT and TRAILING_STOP
          */
-<span class="fc bfc" id="L65" title="All 6 branches covered.">        public boolean hasStop() { return this == STOP || this == STOP_LIMIT || this == TRAILING_STOP; }</span>
+<span class="fc bfc" id="L66" title="All 6 branches covered.">        public boolean hasStop() { return this == STOP || this == STOP_LIMIT || this == TRAILING_STOP; }</span>
 
         /**
          * Returns whether the client enters this type's stop price.
          * @return true for STOP and STOP_LIMIT
          */
-<span class="fc bfc" id="L71" title="All 4 branches covered.">        public boolean takesStopPrice() { return this == STOP || this == STOP_LIMIT; }</span>
+<span class="fc bfc" id="L72" title="All 4 branches covered.">        public boolean takesStopPrice() { return this == STOP || this == STOP_LIMIT; }</span>
 
         /**
          * Returns whether this type trails the market by an amount or percent.
          * @return true for TRAILING_STOP
          */
-<span class="fc bfc" id="L77" title="All 2 branches covered.">        public boolean hasTrail() { return this == TRAILING_STOP; }</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        public boolean hasTrail() { return this == TRAILING_STOP; }</span>
     }
 
     /**
      * How long an order that hasn't filled keeps working: DAY until the end of the day it was
      * placed, GTC (good till cancelled) until cancelled, for at most 90 days.
      */
-<span class="fc" id="L84">    public enum TimeInForce { DAY, GTC }</span>
+<span class="fc" id="L85">    public enum TimeInForce { DAY, GTC }</span>
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -130,7 +131,7 @@ public class Order {
     @Column(name = &quot;max_slippage_pct&quot;, precision = 5, scale = 2)
     private BigDecimal maxSlippagePercent;
 
-<span class="fc" id="L133">    @Enumerated(EnumType.STRING)</span>
+<span class="fc" id="L134">    @Enumerated(EnumType.STRING)</span>
     @Column(name = &quot;order_type&quot;, nullable = false)
     private OrderType orderType = OrderType.MARKET;
 
@@ -180,6 +181,12 @@ public class Order {
     @Column(name = &quot;oco_group_id&quot;)
     private UUID ocoGroupId;
 
+    @Column(name = &quot;extended_hours&quot;, nullable = false)
+    private boolean extendedHours;
+
+    @Column(name = &quot;collar_price&quot;, precision = 18, scale = 6)
+    private BigDecimal collarPrice;
+
     @Column(name = &quot;notice_pending&quot;, nullable = false)
     private boolean noticePending;
 
@@ -189,8 +196,8 @@ public class Order {
     /**
      * Protected no-argument constructor for JPA.
      */
-<span class="fc" id="L192">    protected Order() {</span>
-<span class="fc" id="L193">    }</span>
+<span class="fc" id="L199">    protected Order() {</span>
+<span class="fc" id="L200">    }</span>
 
     /**
      * Constructor for creating a new order at submission time.
@@ -200,14 +207,14 @@ public class Order {
      * @param quantity the quantity of the instrument to trade
      * @param submittedAt the timestamp when the order was submitted
      */
-<span class="fc" id="L203">    public Order(UUID accountId, Instrument instrument, Side side, Long quantity, OffsetDateTime submittedAt) {</span>
-<span class="fc" id="L204">        this.accountId = accountId;</span>
-<span class="fc" id="L205">        this.instrument = instrument;</span>
-<span class="fc" id="L206">        this.side = side;</span>
-<span class="fc" id="L207">        this.quantity = quantity;</span>
-<span class="fc" id="L208">        this.status = Status.SUBMITTED;</span>
-<span class="fc bfc" id="L209" title="All 2 branches covered.">        this.submittedAt = submittedAt != null ? submittedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L210">    }</span>
+<span class="fc" id="L210">    public Order(UUID accountId, Instrument instrument, Side side, Long quantity, OffsetDateTime submittedAt) {</span>
+<span class="fc" id="L211">        this.accountId = accountId;</span>
+<span class="fc" id="L212">        this.instrument = instrument;</span>
+<span class="fc" id="L213">        this.side = side;</span>
+<span class="fc" id="L214">        this.quantity = quantity;</span>
+<span class="fc" id="L215">        this.status = Status.SUBMITTED;</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">        this.submittedAt = submittedAt != null ? submittedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L217">    }</span>
 
     /**
      * Full constructor for Order entity with all audit fields, updated post execution attempt
@@ -226,19 +233,19 @@ public class Order {
     public Order(UUID orderId, UUID accountId, Instrument instrument, Side side,
                  Long quantity, Status status, OffsetDateTime submittedAt,
                  OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
-<span class="fc" id="L229">                 OffsetDateTime filledAt, String rejectionReason) {</span>
-<span class="fc" id="L230">        this.orderId = orderId;</span>
-<span class="fc" id="L231">        this.accountId = accountId;</span>
-<span class="fc" id="L232">        this.instrument = instrument;</span>
-<span class="fc" id="L233">        this.side = side;</span>
-<span class="fc" id="L234">        this.quantity = quantity;</span>
-<span class="fc" id="L235">        this.status = status;</span>
-<span class="fc" id="L236">        this.submittedAt = submittedAt;</span>
-<span class="fc" id="L237">        this.acceptedAt = acceptedAt;</span>
-<span class="fc" id="L238">        this.rejectedAt = rejectedAt;</span>
-<span class="fc" id="L239">        this.filledAt = filledAt;</span>
-<span class="fc" id="L240">        this.rejectionReason = rejectionReason;</span>
-<span class="fc" id="L241">    }</span>
+<span class="fc" id="L236">                 OffsetDateTime filledAt, String rejectionReason) {</span>
+<span class="fc" id="L237">        this.orderId = orderId;</span>
+<span class="fc" id="L238">        this.accountId = accountId;</span>
+<span class="fc" id="L239">        this.instrument = instrument;</span>
+<span class="fc" id="L240">        this.side = side;</span>
+<span class="fc" id="L241">        this.quantity = quantity;</span>
+<span class="fc" id="L242">        this.status = status;</span>
+<span class="fc" id="L243">        this.submittedAt = submittedAt;</span>
+<span class="fc" id="L244">        this.acceptedAt = acceptedAt;</span>
+<span class="fc" id="L245">        this.rejectedAt = rejectedAt;</span>
+<span class="fc" id="L246">        this.filledAt = filledAt;</span>
+<span class="fc" id="L247">        this.rejectionReason = rejectionReason;</span>
+<span class="fc" id="L248">    }</span>
 
     /**
      * Constructor for Order entity with Account object reference.
@@ -247,9 +254,9 @@ public class Order {
                  Long quantity, Status status, OffsetDateTime submittedAt,
                  OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
                  OffsetDateTime filledAt, String rejectionReason) {
-<span class="fc bfc" id="L250" title="All 2 branches covered.">        this(orderId, account != null ? account.getAccountId() : null, instrument, side,</span>
+<span class="fc bfc" id="L257" title="All 2 branches covered.">        this(orderId, account != null ? account.getAccountId() : null, instrument, side,</span>
              quantity, status, submittedAt, acceptedAt, rejectedAt, filledAt, rejectionReason);
-<span class="fc" id="L252">    }</span>
+<span class="fc" id="L259">    }</span>
 
     /**
      * Sets how the order is priced and how long it may wait. Called once, before the order is
@@ -262,12 +269,34 @@ public class Order {
      */
     public void setConditions(OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                               TimeInForce timeInForce, OffsetDateTime expiresAt) {
-<span class="pc bpc" id="L265" title="1 of 2 branches missed.">        this.orderType = orderType != null ? orderType : OrderType.MARKET;</span>
-<span class="fc" id="L266">        this.limitPrice = limitPrice;</span>
-<span class="fc" id="L267">        this.stopPrice = stopPrice;</span>
-<span class="fc" id="L268">        this.timeInForce = timeInForce;</span>
-<span class="fc" id="L269">        this.expiresAt = expiresAt;</span>
-<span class="fc" id="L270">    }</span>
+<span class="pc bpc" id="L272" title="1 of 2 branches missed.">        this.orderType = orderType != null ? orderType : OrderType.MARKET;</span>
+<span class="fc" id="L273">        this.limitPrice = limitPrice;</span>
+<span class="fc" id="L274">        this.stopPrice = stopPrice;</span>
+<span class="fc" id="L275">        this.timeInForce = timeInForce;</span>
+<span class="fc" id="L276">        this.expiresAt = expiresAt;</span>
+<span class="fc" id="L277">    }</span>
+
+    /**
+     * Lets a LIMIT order also fill in pre-market and after-hours, not only in regular hours.
+     * Called once, before the order is first stored.
+     * @param extendedHours whether it trades in extended hours
+     */
+    public void setExtendedHours(boolean extendedHours) {
+<span class="fc" id="L285">        this.extendedHours = extendedHours;</span>
+<span class="fc" id="L286">    }</span>
+
+    /**
+     * Queues a market order placed outside regular hours for the next open: it works for that
+     * trading day and fills at the opening price, but only within its collar - the most a buy pays,
+     * the least a sell takes. Called once, before the order goes OPEN.
+     * @param collarPrice the collar
+     * @param expiresAt the close of the trading day it is queued for
+     */
+    public void queueForOpen(BigDecimal collarPrice, OffsetDateTime expiresAt) {
+<span class="fc" id="L296">        this.collarPrice = collarPrice;</span>
+<span class="fc" id="L297">        this.timeInForce = TimeInForce.DAY;</span>
+<span class="fc" id="L298">        this.expiresAt = expiresAt;</span>
+<span class="fc" id="L299">    }</span>
 
     /**
      * Sets how far a trailing stop trails the market: an amount, or a percent of the best price.
@@ -276,9 +305,9 @@ public class Order {
      * @param trailPercent the trail in percent, or null
      */
     public void setTrailing(BigDecimal trailAmount, BigDecimal trailPercent) {
-<span class="fc" id="L279">        this.trailAmount = trailAmount;</span>
-<span class="fc" id="L280">        this.trailPercent = trailPercent;</span>
-<span class="fc" id="L281">    }</span>
+<span class="fc" id="L308">        this.trailAmount = trailAmount;</span>
+<span class="fc" id="L309">        this.trailPercent = trailPercent;</span>
+<span class="fc" id="L310">    }</span>
 
     /**
      * Attaches a bracket to a buy: once it fills, a take-profit sell limit and a stop-loss sell
@@ -287,9 +316,9 @@ public class Order {
      * @param stopLossPrice the stop price of the stop-loss sell
      */
     public void setBracket(BigDecimal takeProfitPrice, BigDecimal stopLossPrice) {
-<span class="fc" id="L290">        this.bracketTakeProfitPrice = takeProfitPrice;</span>
-<span class="fc" id="L291">        this.bracketStopLossPrice = stopLossPrice;</span>
-<span class="fc" id="L292">    }</span>
+<span class="fc" id="L319">        this.bracketTakeProfitPrice = takeProfitPrice;</span>
+<span class="fc" id="L320">        this.bracketStopLossPrice = stopLossPrice;</span>
+<span class="fc" id="L321">    }</span>
 
     /**
      * Makes this order one leg of a bracket's exit pair. Called once, before it is first stored.
@@ -297,17 +326,17 @@ public class Order {
      * @param ocoGroupId the group both exit legs share; only one of them can execute
      */
     public void linkAsExit(UUID parentOrderId, UUID ocoGroupId) {
-<span class="fc" id="L300">        this.parentOrderId = parentOrderId;</span>
-<span class="fc" id="L301">        this.ocoGroupId = ocoGroupId;</span>
-<span class="fc" id="L302">    }</span>
+<span class="fc" id="L329">        this.parentOrderId = parentOrderId;</span>
+<span class="fc" id="L330">        this.ocoGroupId = ocoGroupId;</span>
+<span class="fc" id="L331">    }</span>
 
     /**
      * Applies a share-count change made to the other leg of its group, which both legs sell.
      * @param quantity the new quantity
      */
     public void syncQuantity(long quantity) {
-<span class="fc" id="L309">        this.quantity = quantity;</span>
-<span class="fc" id="L310">    }</span>
+<span class="fc" id="L338">        this.quantity = quantity;</span>
+<span class="fc" id="L339">    }</span>
 
     /**
      * Starts or moves a trailing stop: records the best price seen and the stop it sets.
@@ -315,9 +344,9 @@ public class Order {
      * @param stopPrice the stop price that follows from it
      */
     public void moveTrail(BigDecimal trailPeak, BigDecimal stopPrice) {
-<span class="fc" id="L318">        this.trailPeak = trailPeak;</span>
-<span class="fc" id="L319">        this.stopPrice = stopPrice;</span>
-<span class="fc" id="L320">    }</span>
+<span class="fc" id="L347">        this.trailPeak = trailPeak;</span>
+<span class="fc" id="L348">        this.stopPrice = stopPrice;</span>
+<span class="fc" id="L349">    }</span>
 
     /**
      * Applies an edit to a working order. The caller has validated it.
@@ -333,26 +362,26 @@ public class Order {
     public void modify(long quantity, BigDecimal limitPrice, BigDecimal stopPrice, BigDecimal trailAmount,
                        BigDecimal trailPercent, TimeInForce timeInForce, OffsetDateTime expiresAt,
                        BigDecimal reservedCash) {
-<span class="fc" id="L336">        this.quantity = quantity;</span>
-<span class="fc" id="L337">        this.limitPrice = limitPrice;</span>
-<span class="fc" id="L338">        this.stopPrice = stopPrice;</span>
-<span class="fc" id="L339">        this.trailAmount = trailAmount;</span>
-<span class="fc" id="L340">        this.trailPercent = trailPercent;</span>
-<span class="fc" id="L341">        this.timeInForce = timeInForce;</span>
-<span class="fc" id="L342">        this.expiresAt = expiresAt;</span>
-<span class="fc" id="L343">        this.reservedCash = reservedCash;</span>
-<span class="fc" id="L344">    }</span>
+<span class="fc" id="L365">        this.quantity = quantity;</span>
+<span class="fc" id="L366">        this.limitPrice = limitPrice;</span>
+<span class="fc" id="L367">        this.stopPrice = stopPrice;</span>
+<span class="fc" id="L368">        this.trailAmount = trailAmount;</span>
+<span class="fc" id="L369">        this.trailPercent = trailPercent;</span>
+<span class="fc" id="L370">        this.timeInForce = timeInForce;</span>
+<span class="fc" id="L371">        this.expiresAt = expiresAt;</span>
+<span class="fc" id="L372">        this.reservedCash = reservedCash;</span>
+<span class="fc" id="L373">    }</span>
 
     /**
      * Transitions order state to OPEN: it waits for the market to reach its price.
      * @param reservedCash the cash it holds back from buying power while open; null for a sell
      */
     public void markOpen(BigDecimal reservedCash) {
-<span class="fc" id="L351">        this.status = Status.OPEN;</span>
-<span class="fc" id="L352">        this.reservedCash = reservedCash;</span>
+<span class="fc" id="L380">        this.status = Status.OPEN;</span>
+<span class="fc" id="L381">        this.reservedCash = reservedCash;</span>
         // An order that waited owes the client an email about how it ended (see OrderFillMailer).
-<span class="fc" id="L354">        this.noticePending = true;</span>
-<span class="fc" id="L355">    }</span>
+<span class="fc" id="L383">        this.noticePending = true;</span>
+<span class="fc" id="L384">    }</span>
 
     /**
      * Records that a stop order's stop price was reached. A STOP_LIMIT order stays OPEN, now
@@ -360,39 +389,39 @@ public class Order {
      * @param triggeredAt the timestamp when the stop price was reached
      */
     public void markTriggered(OffsetDateTime triggeredAt) {
-<span class="fc bfc" id="L363" title="All 2 branches covered.">        if (this.triggeredAt == null) {</span>
-<span class="pc bpc" id="L364" title="1 of 2 branches missed.">            this.triggeredAt = triggeredAt != null ? triggeredAt : OffsetDateTime.now();</span>
+<span class="fc bfc" id="L392" title="All 2 branches covered.">        if (this.triggeredAt == null) {</span>
+<span class="pc bpc" id="L393" title="1 of 2 branches missed.">            this.triggeredAt = triggeredAt != null ? triggeredAt : OffsetDateTime.now();</span>
         }
-<span class="fc" id="L366">    }</span>
+<span class="fc" id="L395">    }</span>
 
     /**
      * Transitions an OPEN order to CANCELLED at the client's request.
      * @param cancelledAt the timestamp when the order was cancelled
      */
     public void markCancelled(OffsetDateTime cancelledAt) {
-<span class="fc" id="L373">        this.status = Status.CANCELLED;</span>
+<span class="fc" id="L402">        this.status = Status.CANCELLED;</span>
         // The client did it themselves, so no email is owed.
-<span class="fc" id="L375">        this.noticePending = false;</span>
-<span class="pc bpc" id="L376" title="1 of 2 branches missed.">        this.cancelledAt = cancelledAt != null ? cancelledAt : OffsetDateTime.now();</span>
-<span class="fc" id="L377">    }</span>
+<span class="fc" id="L404">        this.noticePending = false;</span>
+<span class="pc bpc" id="L405" title="1 of 2 branches missed.">        this.cancelledAt = cancelledAt != null ? cancelledAt : OffsetDateTime.now();</span>
+<span class="fc" id="L406">    }</span>
 
     /**
      * Transitions an OPEN order to EXPIRED once its time in force has run out.
      * @param expiredAt the timestamp when the order expired
      */
     public void markExpired(OffsetDateTime expiredAt) {
-<span class="fc" id="L384">        this.status = Status.EXPIRED;</span>
-<span class="pc bpc" id="L385" title="1 of 2 branches missed.">        this.expiredAt = expiredAt != null ? expiredAt : OffsetDateTime.now();</span>
-<span class="fc" id="L386">    }</span>
+<span class="fc" id="L413">        this.status = Status.EXPIRED;</span>
+<span class="pc bpc" id="L414" title="1 of 2 branches missed.">        this.expiredAt = expiredAt != null ? expiredAt : OffsetDateTime.now();</span>
+<span class="fc" id="L415">    }</span>
 
     /**
      * Transitions order state to ACCEPTED.
      * @param acceptedAt the timestamp when the order was accepted
      */
     public void markAccepted(OffsetDateTime acceptedAt) {
-<span class="fc" id="L393">        this.status = Status.ACCEPTED;</span>
-<span class="fc bfc" id="L394" title="All 2 branches covered.">        this.acceptedAt = acceptedAt != null ? acceptedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L395">    }</span>
+<span class="fc" id="L422">        this.status = Status.ACCEPTED;</span>
+<span class="fc bfc" id="L423" title="All 2 branches covered.">        this.acceptedAt = acceptedAt != null ? acceptedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L424">    }</span>
 
     /**
      * Transitions order state to REJECTED with a given reason.
@@ -400,82 +429,82 @@ public class Order {
      * @param rejectedAt the timestamp when the order was rejected
      */
     public void markRejected(String reason, OffsetDateTime rejectedAt) {
-<span class="fc" id="L403">        this.status = Status.REJECTED;</span>
-<span class="fc" id="L404">        this.rejectionReason = reason;</span>
-<span class="fc bfc" id="L405" title="All 2 branches covered.">        this.rejectedAt = rejectedAt != null ? rejectedAt : OffsetDateTime.now();</span>
-<span class="fc" id="L406">    }</span>
+<span class="fc" id="L432">        this.status = Status.REJECTED;</span>
+<span class="fc" id="L433">        this.rejectionReason = reason;</span>
+<span class="fc bfc" id="L434" title="All 2 branches covered.">        this.rejectedAt = rejectedAt != null ? rejectedAt : OffsetDateTime.now();</span>
+<span class="fc" id="L435">    }</span>
 
     /**
      * Transitions order state to FILLED upon successful execution.
      * @param filledAt the timestamp when the order was filled
      */
     public void markFilled(OffsetDateTime filledAt) {
-<span class="fc" id="L413">        this.status = Status.FILLED;</span>
-<span class="fc bfc" id="L414" title="All 2 branches covered.">        this.filledAt = filledAt != null ? filledAt : OffsetDateTime.now();</span>
-<span class="fc" id="L415">    }</span>
+<span class="fc" id="L442">        this.status = Status.FILLED;</span>
+<span class="fc bfc" id="L443" title="All 2 branches covered.">        this.filledAt = filledAt != null ? filledAt : OffsetDateTime.now();</span>
+<span class="fc" id="L444">    }</span>
 
     /**
      * Returns the orderID of this order.
      * @return the orderID
      */
-<span class="fc" id="L421">    public UUID getOrderId() { return orderId; }</span>
+<span class="fc" id="L450">    public UUID getOrderId() { return orderId; }</span>
     /**
      * Returns the accountId associated with this order.
      * @return the accountId
      */
     public UUID getAccountId() {
-<span class="fc" id="L427">        return accountId;</span>
+<span class="fc" id="L456">        return accountId;</span>
     }
     /**
      * Returns the account number associated with this order.
      * @return the account number
      */
-<span class="fc" id="L433">    public String getAccountNumber() { return accountNumber; }</span>
+<span class="fc" id="L462">    public String getAccountNumber() { return accountNumber; }</span>
     /**
      * Sets the account number for this order.
      * @param accountNumber the account number to set
      */
-<span class="fc" id="L438">    public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }</span>
+<span class="fc" id="L467">    public void setAccountNumber(String accountNumber) { this.accountNumber = accountNumber; }</span>
     /**
      * Returns the instrument associated with this order.
      * @return the instrument
      */
-<span class="fc" id="L443">    public Instrument getInstrument() { return instrument; }</span>
+<span class="fc" id="L472">    public Instrument getInstrument() { return instrument; }</span>
     /**
      * Returns the side (BUY/SELL) of this order.
      * @return the side
      */
-<span class="fc" id="L448">    public Side getSide() { return side; }</span>
+<span class="fc" id="L477">    public Side getSide() { return side; }</span>
     /**
      * Returns the quantity of this order.
      * @return the quantity
      */
-<span class="fc" id="L453">    public Long getQuantity() { return quantity; }</span>
+<span class="fc" id="L482">    public Long getQuantity() { return quantity; }</span>
     /**
      * Returns the status of this order.
      * @return the status
      */
-<span class="fc" id="L458">    public Status getStatus() { return status; }</span>
+<span class="fc" id="L487">    public Status getStatus() { return status; }</span>
     /**
      * Returns the timestamp when the order was submitted.
      * @return the submitted timestamp
      */
-<span class="fc" id="L463">    public OffsetDateTime getSubmittedAt() { return submittedAt; }</span>
+<span class="fc" id="L492">    public OffsetDateTime getSubmittedAt() { return submittedAt; }</span>
     /**
      * Returns the timestamp when the order was accepted.
      * @return the accepted timestamp
      */
-<span class="fc" id="L468">    public OffsetDateTime getAcceptedAt() { return acceptedAt; }</span>
+<span class="fc" id="L497">    public OffsetDateTime getAcceptedAt() { return acceptedAt; }</span>
     /**
      * Returns the timestamp when the order was rejected.
      * @return the rejected timestamp
      */
-<span class="fc" id="L473">    public OffsetDateTime getRejectedAt() { return rejectedAt; }</span>
+<span class="fc" id="L502">    public OffsetDateTime getRejectedAt() { return rejectedAt; }</span>
     /**
      * Returns the timestamp when the order was filled.
      * @return the filled timestamp
      */
-<span class="fc" id="L478">    public OffsetDateTime getFilledAt() { return filledAt; }</span>
+<span class="fc" id="L507">    public OffsetDateTime getFilledAt() { return filledAt; }</span>
     /**
      * Returns when the order last changed for good: when it filled, was rejected, cancelled or
      * expired - or, while it is still working, when it was submitted. Order history is listed and
@@ -483,151 +512,166 @@ public class Order {
      * @return the completion time, or the submission time while the order is not final
      */
     public OffsetDateTime getCompletedAt() {
-<span class="fc bfc" id="L486" title="All 2 branches covered.">        if (filledAt != null) return filledAt;</span>
-<span class="fc bfc" id="L487" title="All 2 branches covered.">        if (rejectedAt != null) return rejectedAt;</span>
-<span class="pc bpc" id="L488" title="1 of 2 branches missed.">        if (cancelledAt != null) return cancelledAt;</span>
-<span class="pc bpc" id="L489" title="1 of 2 branches missed.">        if (expiredAt != null) return expiredAt;</span>
-<span class="fc" id="L490">        return submittedAt;</span>
+<span class="fc bfc" id="L515" title="All 2 branches covered.">        if (filledAt != null) return filledAt;</span>
+<span class="fc bfc" id="L516" title="All 2 branches covered.">        if (rejectedAt != null) return rejectedAt;</span>
+<span class="pc bpc" id="L517" title="1 of 2 branches missed.">        if (cancelledAt != null) return cancelledAt;</span>
+<span class="pc bpc" id="L518" title="1 of 2 branches missed.">        if (expiredAt != null) return expiredAt;</span>
+<span class="fc" id="L519">        return submittedAt;</span>
     }
     /**
      * Returns the reason for order rejection, if any.
      * @return the rejection reason
      */
-<span class="fc" id="L496">    public String getRejectionReason() { return rejectionReason; }</span>
+<span class="fc" id="L525">    public String getRejectionReason() { return rejectionReason; }</span>
     /**
      * Sets the timestamp when the order was accepted.
      * @param acceptedAt the accepted timestamp to set
      */
-<span class="fc" id="L501">    public void setAcceptedAt(OffsetDateTime acceptedAt) { this.acceptedAt = acceptedAt; }</span>
+<span class="fc" id="L530">    public void setAcceptedAt(OffsetDateTime acceptedAt) { this.acceptedAt = acceptedAt; }</span>
     /**
      * Sets the timestamp when the order was rejected.
      * @param rejectedAt the rejected timestamp to set
      */
-<span class="fc" id="L506">    public void setRejectedAt(OffsetDateTime rejectedAt) { this.rejectedAt = rejectedAt; }</span>
+<span class="fc" id="L535">    public void setRejectedAt(OffsetDateTime rejectedAt) { this.rejectedAt = rejectedAt; }</span>
     /**
      * Sets the timestamp when the order was filled.
      * @param filledAt the filled timestamp to set
      */
-<span class="fc" id="L511">    public void setFilledAt(OffsetDateTime filledAt) { this.filledAt = filledAt; }</span>
+<span class="fc" id="L540">    public void setFilledAt(OffsetDateTime filledAt) { this.filledAt = filledAt; }</span>
     /**
      * Sets the reason for order rejection.
      * @param rejectionReason the rejection reason to set
      */
-<span class="fc" id="L516">    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }</span>
+<span class="fc" id="L545">    public void setRejectionReason(String rejectionReason) { this.rejectionReason = rejectionReason; }</span>
     /**
      * Returns the price the client was quoted when placing the order, if it carried one.
      * @return the quoted price
      */
-<span class="fc" id="L521">    public BigDecimal getQuotedPrice() { return quotedPrice; }</span>
+<span class="fc" id="L550">    public BigDecimal getQuotedPrice() { return quotedPrice; }</span>
     /**
      * Returns the price tolerance, in percent, the order was checked against, if any.
      * @return the price tolerance in percent
      */
-<span class="fc" id="L526">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
+<span class="fc" id="L555">    public BigDecimal getMaxSlippagePercent() { return maxSlippagePercent; }</span>
     /**
      * Records the quote the client placed the order at and the tolerance applied to it.
      * @param quotedPrice the price the client was quoted, or null
      * @param maxSlippagePercent the price tolerance in percent, or null when none applied
      */
     public void setPriceTolerance(BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
-<span class="fc" id="L533">        this.quotedPrice = quotedPrice;</span>
-<span class="fc" id="L534">        this.maxSlippagePercent = maxSlippagePercent;</span>
-<span class="fc" id="L535">    }</span>
+<span class="fc" id="L562">        this.quotedPrice = quotedPrice;</span>
+<span class="fc" id="L563">        this.maxSlippagePercent = maxSlippagePercent;</span>
+<span class="fc" id="L564">    }</span>
     /**
      * Returns how the order is priced.
      * @return the order type; MARKET for an order stored before order types existed
      */
-<span class="pc bpc" id="L540" title="1 of 2 branches missed.">    public OrderType getOrderType() { return orderType != null ? orderType : OrderType.MARKET; }</span>
+<span class="pc bpc" id="L569" title="1 of 2 branches missed.">    public OrderType getOrderType() { return orderType != null ? orderType : OrderType.MARKET; }</span>
     /**
      * Returns the limit price of a LIMIT or STOP_LIMIT order.
      * @return the limit price, or null
      */
-<span class="fc" id="L545">    public BigDecimal getLimitPrice() { return limitPrice; }</span>
+<span class="fc" id="L574">    public BigDecimal getLimitPrice() { return limitPrice; }</span>
     /**
      * Returns the stop price of a STOP or STOP_LIMIT order.
      * @return the stop price, or null
      */
-<span class="fc" id="L550">    public BigDecimal getStopPrice() { return stopPrice; }</span>
+<span class="fc" id="L579">    public BigDecimal getStopPrice() { return stopPrice; }</span>
     /**
      * Returns how long the order may wait to fill.
      * @return the time in force, or null for a market order
      */
-<span class="fc" id="L555">    public TimeInForce getTimeInForce() { return timeInForce; }</span>
+<span class="fc" id="L584">    public TimeInForce getTimeInForce() { return timeInForce; }</span>
     /**
      * Returns when the order expires if it is still OPEN.
      * @return the expiry, or null for a market order
      */
-<span class="fc" id="L560">    public OffsetDateTime getExpiresAt() { return expiresAt; }</span>
+<span class="fc" id="L589">    public OffsetDateTime getExpiresAt() { return expiresAt; }</span>
     /**
      * Returns when a stop order's stop price was reached.
      * @return the trigger time, or null if not reached
      */
-<span class="fc" id="L565">    public OffsetDateTime getTriggeredAt() { return triggeredAt; }</span>
+<span class="fc" id="L594">    public OffsetDateTime getTriggeredAt() { return triggeredAt; }</span>
     /**
      * Returns when the order was cancelled.
      * @return the cancellation time, or null
      */
-<span class="fc" id="L570">    public OffsetDateTime getCancelledAt() { return cancelledAt; }</span>
+<span class="fc" id="L599">    public OffsetDateTime getCancelledAt() { return cancelledAt; }</span>
     /**
      * Returns when the order expired.
      * @return the expiry time, or null
      */
-<span class="fc" id="L575">    public OffsetDateTime getExpiredAt() { return expiredAt; }</span>
+<span class="fc" id="L604">    public OffsetDateTime getExpiredAt() { return expiredAt; }</span>
     /**
      * Returns the dollars a trailing stop trails the best price by.
      * @return the trail amount, or null
      */
-<span class="fc" id="L580">    public BigDecimal getTrailAmount() { return trailAmount; }</span>
+<span class="fc" id="L609">    public BigDecimal getTrailAmount() { return trailAmount; }</span>
     /**
      * Returns the percent of the best price a trailing stop trails it by.
      * @return the trail percent, or null
      */
-<span class="fc" id="L585">    public BigDecimal getTrailPercent() { return trailPercent; }</span>
+<span class="fc" id="L614">    public BigDecimal getTrailPercent() { return trailPercent; }</span>
     /**
      * Returns the best price a trailing stop has seen: the high for a sell, the low for a buy.
      * @return the best price, or null before it starts
      */
-<span class="fc" id="L590">    public BigDecimal getTrailPeak() { return trailPeak; }</span>
+<span class="fc" id="L619">    public BigDecimal getTrailPeak() { return trailPeak; }</span>
     /**
      * Returns the limit price of the take-profit sell a buy opens when it fills.
      * @return the take-profit price, or null if the order has no bracket
      */
-<span class="fc" id="L595">    public BigDecimal getBracketTakeProfitPrice() { return bracketTakeProfitPrice; }</span>
+<span class="fc" id="L624">    public BigDecimal getBracketTakeProfitPrice() { return bracketTakeProfitPrice; }</span>
     /**
      * Returns the stop price of the stop-loss sell a buy opens when it fills.
      * @return the stop-loss price, or null if the order has no bracket
      */
-<span class="fc" id="L600">    public BigDecimal getBracketStopLossPrice() { return bracketStopLossPrice; }</span>
+<span class="fc" id="L629">    public BigDecimal getBracketStopLossPrice() { return bracketStopLossPrice; }</span>
     /**
      * Returns whether this buy carries a bracket.
      * @return true if it has a take-profit and a stop-loss
      */
-<span class="pc bpc" id="L605" title="1 of 4 branches missed.">    public boolean hasBracket() { return bracketTakeProfitPrice != null &amp;&amp; bracketStopLossPrice != null; }</span>
+<span class="pc bpc" id="L634" title="1 of 4 branches missed.">    public boolean hasBracket() { return bracketTakeProfitPrice != null &amp;&amp; bracketStopLossPrice != null; }</span>
     /**
      * Returns the buy whose fill opened this exit order.
      * @return the parent order's ID, or null if this is not a bracket exit
      */
-<span class="fc" id="L610">    public UUID getParentOrderId() { return parentOrderId; }</span>
+<span class="fc" id="L639">    public UUID getParentOrderId() { return parentOrderId; }</span>
     /**
      * Returns the group of exit legs where one execution cancels the other.
      * @return the group ID, or null if this is not a bracket exit
      */
-<span class="fc" id="L615">    public UUID getOcoGroupId() { return ocoGroupId; }</span>
+<span class="fc" id="L644">    public UUID getOcoGroupId() { return ocoGroupId; }</span>
+    /**
+     * Returns whether this LIMIT order may also fill in pre-market and after-hours.
+     * @return true for an extended-hours order
+     */
+<span class="fc" id="L649">    public boolean isExtendedHours() { return extendedHours; }</span>
+    /**
+     * Returns the price a market order queued for the open may fill within.
+     * @return the collar, or null if the order wasn't queued
+     */
+<span class="fc" id="L654">    public BigDecimal getCollarPrice() { return collarPrice; }</span>
+    /**
+     * Returns whether this is a market order queued for the open.
+     * @return true for a market order placed outside regular hours
+     */
+<span class="pc bpc" id="L659" title="1 of 4 branches missed.">    public boolean isQueuedForOpen() { return getOrderType() == OrderType.MARKET &amp;&amp; collarPrice != null; }</span>
     /**
      * Returns whether this order went OPEN and its outcome has not yet been emailed.
      * @return true while an outcome email is owed
      */
-<span class="nc" id="L620">    public boolean isNoticePending() { return noticePending; }</span>
+<span class="nc" id="L664">    public boolean isNoticePending() { return noticePending; }</span>
     /**
      * Returns when the outcome email was sent.
      * @return the send time, or null if none was sent
      */
-<span class="nc" id="L625">    public OffsetDateTime getNotifiedAt() { return notifiedAt; }</span>
+<span class="nc" id="L669">    public OffsetDateTime getNotifiedAt() { return notifiedAt; }</span>
     /**
      * Returns the cash an OPEN buy holds back from buying power.
      * @return the reserved cash, or null for a sell or a market order
      */
-<span class="fc" id="L630">    public BigDecimal getReservedCash() { return reservedCash; }</span>
+<span class="fc" id="L674">    public BigDecimal getReservedCash() { return reservedCash; }</span>
 }
 
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

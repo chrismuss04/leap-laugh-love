@@ -22,7 +22,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Security configuration for the Order app.
  * Includes CORS, CSRF, Session Management, and JWT Authentication.
  */
-// Session Timeout &amp; Revocation: common-security is outside each app's component scan.
+// Session Timeout &amp; Revocation: common is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 <span class="fc" id="L28">public class OrderSecurityConfig {</span>
@@ -46,15 +46,17 @@ import org.springframework.web.cors.CorsConfigurationSource;
                         // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
                         // the original REQUEST dispatch was already authenticated
 <span class="fc" id="L48">                        .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()</span>
+                        // Reads every client's trades, so Trading Operations only.
+<span class="fc" id="L50">                        .requestMatchers(&quot;/api/order/ops/**&quot;).hasRole(&quot;TRADING_OPERATIONS&quot;)</span>
                         // Activity reports read reporting.orders, not trading data: analysts only.
-<span class="fc" id="L50">                        .requestMatchers(&quot;/api/order/reports/**&quot;).hasRole(&quot;COMMERCIAL_ANALYST&quot;)</span>
+<span class="fc" id="L52">                        .requestMatchers(&quot;/api/order/reports/**&quot;).hasRole(&quot;COMMERCIAL_ANALYST&quot;)</span>
                         // Everything else is client-only: staff tokens are refused here (403).
-<span class="fc" id="L52">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
-<span class="fc" id="L53">                .exceptionHandling(handling -&gt; handling</span>
-<span class="fc" id="L54">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
-<span class="fc" id="L55">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
-<span class="fc" id="L56">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
-<span class="fc" id="L57">        return http.build();</span>
+<span class="fc" id="L54">                        .anyRequest().hasRole(&quot;CLIENT&quot;))</span>
+<span class="fc" id="L55">                .exceptionHandling(handling -&gt; handling</span>
+<span class="fc" id="L56">                        .authenticationEntryPoint((request, response, authException) -&gt;</span>
+<span class="fc" id="L57">                                JwtAuthenticationEntryPoint.writeUnauthorized(response, objectMapper)))</span>
+<span class="fc" id="L58">                .addFilterBefore(new JwtAuthenticationFilter(jwtService, sessions), UsernamePasswordAuthenticationFilter.class);</span>
+<span class="fc" id="L59">        return http.build();</span>
     }
 
     /**
@@ -64,7 +66,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
      */
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
-<span class="fc" id="L67">        return CommonCorsConfiguration.corsConfigurationSource();</span>
+<span class="fc" id="L69">        return CommonCorsConfiguration.corsConfigurationSource();</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

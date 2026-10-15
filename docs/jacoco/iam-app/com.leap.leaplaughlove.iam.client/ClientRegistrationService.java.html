@@ -13,20 +13,17 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.util.Base64;
 import java.util.EnumSet;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+
+import static com.leap.leaplaughlove.iam.common.LinkTokens.hash;
+import static com.leap.leaplaughlove.iam.common.LinkTokens.newToken;
 
 /**
  * Service for client registration: takes an application, and opens the client once the applicant
@@ -39,7 +36,6 @@ import java.util.UUID;
 public class ClientRegistrationService {
 
     private static final String ACTIVE_STATUS = &quot;ACTIVE&quot;;
-    private static final int TOKEN_BYTES = 32;
 
     private final ClientRepository clientRepository;
     private final ClientCredentialsRepository credentialsRepository;
@@ -51,7 +47,6 @@ public class ClientRegistrationService {
     private final ApplicationEventPublisher eventPublisher;
     private final Duration tokenTtl;
     private final String linkBaseUrl;
-<span class="fc" id="L54">    private final SecureRandom random = new SecureRandom();</span>
 
     /**
      * Constructs a new ClientRegistrationService with the specified dependencies.
@@ -71,22 +66,22 @@ public class ClientRegistrationService {
                                      PasswordEncoder passwordEncoder,
                                      ApplicationEventPublisher eventPublisher,
                                      @Value(&quot;${app.registration.token-ttl-minutes}&quot;) long tokenTtlMinutes,
-<span class="fc" id="L74">                                     @Value(&quot;${app.registration.link-base-url}&quot;) String linkBaseUrl) {</span>
-<span class="fc bfc" id="L75" title="All 2 branches covered.">        if (tokenTtlMinutes &lt;= 0) {</span>
-<span class="fc" id="L76">            throw new IllegalArgumentException(&quot;app.registration.token-ttl-minutes must be &gt; 0&quot;);</span>
+<span class="fc" id="L69">                                     @Value(&quot;${app.registration.link-base-url}&quot;) String linkBaseUrl) {</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (tokenTtlMinutes &lt;= 0) {</span>
+<span class="fc" id="L71">            throw new IllegalArgumentException(&quot;app.registration.token-ttl-minutes must be &gt; 0&quot;);</span>
         }
-<span class="pc bpc" id="L78" title="1 of 4 branches missed.">        if (linkBaseUrl == null || linkBaseUrl.isBlank()) {</span>
-<span class="fc" id="L79">            throw new IllegalArgumentException(&quot;app.registration.link-base-url must not be blank&quot;);</span>
+<span class="pc bpc" id="L73" title="1 of 4 branches missed.">        if (linkBaseUrl == null || linkBaseUrl.isBlank()) {</span>
+<span class="fc" id="L74">            throw new IllegalArgumentException(&quot;app.registration.link-base-url must not be blank&quot;);</span>
         }
-<span class="fc" id="L81">        this.clientRepository = clientRepository;</span>
-<span class="fc" id="L82">        this.credentialsRepository = credentialsRepository;</span>
-<span class="fc" id="L83">        this.pendingRepository = pendingRepository;</span>
-<span class="fc" id="L84">        this.staffCredentialsRepository = staffCredentialsRepository;</span>
-<span class="fc" id="L85">        this.passwordEncoder = passwordEncoder;</span>
-<span class="fc" id="L86">        this.eventPublisher = eventPublisher;</span>
-<span class="fc" id="L87">        this.tokenTtl = Duration.ofMinutes(tokenTtlMinutes);</span>
-<span class="fc" id="L88">        this.linkBaseUrl = linkBaseUrl;</span>
-<span class="fc" id="L89">    }</span>
+<span class="fc" id="L76">        this.clientRepository = clientRepository;</span>
+<span class="fc" id="L77">        this.credentialsRepository = credentialsRepository;</span>
+<span class="fc" id="L78">        this.pendingRepository = pendingRepository;</span>
+<span class="fc" id="L79">        this.staffCredentialsRepository = staffCredentialsRepository;</span>
+<span class="fc" id="L80">        this.passwordEncoder = passwordEncoder;</span>
+<span class="fc" id="L81">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L82">        this.tokenTtl = Duration.ofMinutes(tokenTtlMinutes);</span>
+<span class="fc" id="L83">        this.linkBaseUrl = linkBaseUrl;</span>
+<span class="fc" id="L84">    }</span>
 
     /**
      * Takes an application. If its email, phone number and SSN are all unused it is stored and the
@@ -97,50 +92,50 @@ public class ClientRegistrationService {
      */
     @Transactional
     public void submit(RegistrationRequest request) {
-<span class="fc" id="L100">        Instant now = Instant.now();</span>
-<span class="fc" id="L101">        String phone = ClientRegistrationController.normalizePhone(request.phone());</span>
+<span class="fc" id="L95">        Instant now = Instant.now();</span>
+<span class="fc" id="L96">        String phone = ClientRegistrationController.normalizePhone(request.phone());</span>
         // Hashed before anything is looked up: hashing is slow on purpose, so skipping it for a
         // refused application would show in how long the answer took.
-<span class="fc" id="L104">        String passwordHash = passwordEncoder.encode(request.password());</span>
-<span class="fc" id="L105">        pendingRepository.deleteExpired(now);</span>
+<span class="fc" id="L99">        String passwordHash = passwordEncoder.encode(request.password());</span>
+<span class="fc" id="L100">        pendingRepository.deleteExpired(now);</span>
 
         // Each account whose email address, phone number or SSN was used, with everything of theirs
         // that was, so each gets one email listing all of it. Only they are told which details; an
         // applicant using someone else's never is.
-<span class="fc" id="L110">        boolean emailTaken = emailTaken(request.email());</span>
-<span class="fc" id="L111">        Map&lt;String, Set&lt;Detail&gt;&gt; owners = new LinkedHashMap&lt;&gt;();</span>
-<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (emailTaken) {</span>
-<span class="fc" id="L113">            owners.computeIfAbsent(request.email(), key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.EMAIL);</span>
+<span class="fc" id="L105">        boolean emailTaken = emailTaken(request.email());</span>
+<span class="fc" id="L106">        Map&lt;String, Set&lt;Detail&gt;&gt; owners = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        if (emailTaken) {</span>
+<span class="fc" id="L108">            owners.computeIfAbsent(request.email(), key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.EMAIL);</span>
         }
-<span class="fc" id="L115">        clientRepository.findFirstBySsn(request.ssn()).map(Client::getEmail).ifPresent(owner -&gt;</span>
-<span class="fc" id="L116">                owners.computeIfAbsent(owner, key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.SSN));</span>
-<span class="fc bfc" id="L117" title="All 2 branches covered.">        if (phone != null) {</span>
-<span class="fc" id="L118">            clientRepository.findFirstByPhone(phone).map(Client::getEmail).ifPresent(owner -&gt;</span>
-<span class="fc" id="L119">                    owners.computeIfAbsent(owner, key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.PHONE));</span>
+<span class="fc" id="L110">        clientRepository.findFirstBySsn(request.ssn()).map(Client::getEmail).ifPresent(owner -&gt;</span>
+<span class="fc" id="L111">                owners.computeIfAbsent(owner, key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.SSN));</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        if (phone != null) {</span>
+<span class="fc" id="L113">            clientRepository.findFirstByPhone(phone).map(Client::getEmail).ifPresent(owner -&gt;</span>
+<span class="fc" id="L114">                    owners.computeIfAbsent(owner, key -&gt; EnumSet.noneOf(Detail.class)).add(Detail.PHONE));</span>
         }
-<span class="fc bfc" id="L121" title="All 2 branches covered.">        if (!owners.isEmpty()) {</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">        if (!owners.isEmpty()) {</span>
             // An applicant whose own address is registered hears it in that account's email instead.
-<span class="fc bfc" id="L123" title="All 2 branches covered.">            if (!emailTaken) {</span>
-<span class="fc" id="L124">                eventPublisher.publishEvent(RegistrationEmailEvent.of(Kind.NOT_COMPLETED, request.email()));</span>
+<span class="fc bfc" id="L118" title="All 2 branches covered.">            if (!emailTaken) {</span>
+<span class="fc" id="L119">                eventPublisher.publishEvent(RegistrationEmailEvent.of(Kind.NOT_COMPLETED, request.email()));</span>
             }
-<span class="fc" id="L126">            owners.forEach((owner, details) -&gt; eventPublisher.publishEvent(</span>
-<span class="fc bfc" id="L127" title="All 2 branches covered.">                    details.equals(EnumSet.of(Detail.EMAIL))</span>
-<span class="fc" id="L128">                            ? RegistrationEmailEvent.of(Kind.ALREADY_REGISTERED, owner)</span>
-<span class="fc" id="L129">                            : RegistrationEmailEvent.detailsReused(owner, details)));</span>
-<span class="fc" id="L130">            return;</span>
+<span class="fc" id="L121">            owners.forEach((owner, details) -&gt; eventPublisher.publishEvent(</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">                    details.equals(EnumSet.of(Detail.EMAIL))</span>
+<span class="fc" id="L123">                            ? RegistrationEmailEvent.of(Kind.ALREADY_REGISTERED, owner)</span>
+<span class="fc" id="L124">                            : RegistrationEmailEvent.detailsReused(owner, details)));</span>
+<span class="fc" id="L125">            return;</span>
         }
 
-<span class="fc" id="L133">        String token = newToken();</span>
-<span class="fc" id="L134">        Instant expiresAt = now.plus(tokenTtl);</span>
-<span class="fc" id="L135">        pendingRepository.replace(new PendingRegistration(</span>
-<span class="fc" id="L136">                UUID.randomUUID(), hash(token), request.email(), phone,</span>
-<span class="fc" id="L137">                request.fullName(), request.dateOfBirth(), request.ssn(),</span>
-<span class="fc" id="L138">                request.addressLine1(), request.addressLine2(), request.city(),</span>
-<span class="fc" id="L139">                request.stateRegion(), request.postalCode(), request.countryCode(),</span>
-<span class="fc" id="L140">                request.experienceLevel(), request.initialDepositAmount(), passwordHash, now, expiresAt));</span>
-<span class="fc" id="L141">        eventPublisher.publishEvent(RegistrationEmailEvent.verify(</span>
-<span class="fc" id="L142">                request.email(), linkBaseUrl + &quot;?token=&quot; + token, expiresAt));</span>
-<span class="fc" id="L143">    }</span>
+<span class="fc" id="L128">        String token = newToken();</span>
+<span class="fc" id="L129">        Instant expiresAt = now.plus(tokenTtl);</span>
+<span class="fc" id="L130">        pendingRepository.replace(new PendingRegistration(</span>
+<span class="fc" id="L131">                UUID.randomUUID(), hash(token), request.email(), phone,</span>
+<span class="fc" id="L132">                request.fullName(), request.dateOfBirth(), request.ssn(),</span>
+<span class="fc" id="L133">                request.addressLine1(), request.addressLine2(), request.city(),</span>
+<span class="fc" id="L134">                request.stateRegion(), request.postalCode(), request.countryCode(),</span>
+<span class="fc" id="L135">                request.experienceLevel(), request.initialDepositAmount(), passwordHash, now, expiresAt));</span>
+<span class="fc" id="L136">        eventPublisher.publishEvent(RegistrationEmailEvent.verify(</span>
+<span class="fc" id="L137">                request.email(), linkBaseUrl + &quot;?token=&quot; + token, expiresAt));</span>
+<span class="fc" id="L138">    }</span>
 
     /**
      * Opens the client an application was for, using the token from the emailed link. The details
@@ -152,53 +147,37 @@ public class ClientRegistrationService {
      */
     @Transactional
     public void verify(String token) {
-<span class="fc" id="L155">        PendingRegistration pending = pendingRepository.consume(hash(token), Instant.now())</span>
-<span class="fc" id="L156">                .orElseThrow(InvalidVerificationLinkException::new);</span>
-<span class="pc bpc" id="L157" title="1 of 2 branches missed.">        if (emailTaken(pending.email())</span>
-<span class="fc bfc" id="L158" title="All 2 branches covered.">                || clientRepository.existsBySsn(pending.ssn())</span>
-<span class="pc bpc" id="L159" title="1 of 4 branches missed.">                || (pending.phone() != null &amp;&amp; clientRepository.existsByPhone(pending.phone()))) {</span>
-<span class="fc" id="L160">            throw new InvalidVerificationLinkException();</span>
+<span class="fc" id="L150">        PendingRegistration pending = pendingRepository.consume(hash(token), Instant.now())</span>
+<span class="fc" id="L151">                .orElseThrow(InvalidVerificationLinkException::new);</span>
+<span class="pc bpc" id="L152" title="1 of 2 branches missed.">        if (emailTaken(pending.email())</span>
+<span class="fc bfc" id="L153" title="All 2 branches covered.">                || clientRepository.existsBySsn(pending.ssn())</span>
+<span class="pc bpc" id="L154" title="1 of 4 branches missed.">                || (pending.phone() != null &amp;&amp; clientRepository.existsByPhone(pending.phone()))) {</span>
+<span class="fc" id="L155">            throw new InvalidVerificationLinkException();</span>
         }
 
-<span class="fc" id="L163">        Client client = new Client(</span>
-<span class="fc" id="L164">                UUID.randomUUID(), pending.email(), pending.phone(), ACTIVE_STATUS, OffsetDateTime.now(),</span>
-<span class="fc" id="L165">                pending.fullName(), pending.dateOfBirth(), pending.ssn(),</span>
-<span class="fc" id="L166">                pending.addressLine1(), pending.addressLine2(), pending.city(),</span>
-<span class="fc" id="L167">                pending.stateRegion(), pending.postalCode(), pending.countryCode(),</span>
-<span class="fc" id="L168">                pending.experienceLevel(), pending.initialDepositAmount());</span>
+<span class="fc" id="L158">        Client client = new Client(</span>
+<span class="fc" id="L159">                UUID.randomUUID(), pending.email(), pending.phone(), ACTIVE_STATUS, OffsetDateTime.now(),</span>
+<span class="fc" id="L160">                pending.fullName(), pending.dateOfBirth(), pending.ssn(),</span>
+<span class="fc" id="L161">                pending.addressLine1(), pending.addressLine2(), pending.city(),</span>
+<span class="fc" id="L162">                pending.stateRegion(), pending.postalCode(), pending.countryCode(),</span>
+<span class="fc" id="L163">                pending.experienceLevel(), pending.initialDepositAmount());</span>
         try {
             // Flushed here so that losing a race for the email, phone number or SSN is refused
             // like any other dead link, rather than failing when the transaction commits.
-<span class="fc" id="L172">            clientRepository.saveAndFlush(client);</span>
-<span class="fc" id="L173">        } catch (DataIntegrityViolationException e) {</span>
-<span class="fc" id="L174">            throw new InvalidVerificationLinkException();</span>
-<span class="fc" id="L175">        }</span>
-<span class="fc" id="L176">        credentialsRepository.save(new ClientCredentials(client.getClientId(), pending.passwordHash(), 0, null));</span>
+<span class="fc" id="L167">            clientRepository.saveAndFlush(client);</span>
+<span class="fc" id="L168">        } catch (DataIntegrityViolationException e) {</span>
+<span class="fc" id="L169">            throw new InvalidVerificationLinkException();</span>
+<span class="fc" id="L170">        }</span>
+<span class="fc" id="L171">        credentialsRepository.save(new ClientCredentials(client.getClientId(), pending.passwordHash(), 0, null));</span>
 
-<span class="fc" id="L178">        eventPublisher.publishEvent(new ClientRegistrationEvent(client.getClientId(), client.getCreatedAt()));</span>
+<span class="fc" id="L173">        eventPublisher.publishEvent(new ClientRegistrationEvent(client.getClientId(), client.getCreatedAt()));</span>
 
-<span class="fc" id="L180">        eventPublisher.publishEvent(new ClientRegisteredEvent(</span>
-<span class="fc" id="L181">                client.getClientId(), client.getEmail(), pending.initialDepositAmount()));</span>
-<span class="fc" id="L182">    }</span>
+<span class="fc" id="L175">        eventPublisher.publishEvent(new ClientRegisteredEvent(</span>
+<span class="fc" id="L176">                client.getClientId(), client.getEmail(), pending.initialDepositAmount()));</span>
+<span class="fc" id="L177">    }</span>
 
     private boolean emailTaken(String email) {
-<span class="fc bfc" id="L185" title="All 4 branches covered.">        return clientRepository.existsByEmail(email) || staffCredentialsRepository.existsByEmail(email);</span>
-    }
-
-    private String newToken() {
-<span class="fc" id="L189">        byte[] bytes = new byte[TOKEN_BYTES];</span>
-<span class="fc" id="L190">        random.nextBytes(bytes);</span>
-<span class="fc" id="L191">        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);</span>
-    }
-
-    // The token is long and random, so a fast unsalted hash is enough to keep the stored value unusable.
-    private static String hash(String token) {
-        try {
-<span class="fc" id="L197">            MessageDigest digest = MessageDigest.getInstance(&quot;SHA-256&quot;);</span>
-<span class="fc" id="L198">            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));</span>
-<span class="nc" id="L199">        } catch (NoSuchAlgorithmException e) {</span>
-<span class="nc" id="L200">            throw new IllegalStateException(&quot;SHA-256 is not available&quot;, e);</span>
-        }
+<span class="fc bfc" id="L180" title="All 4 branches covered.">        return clientRepository.existsByEmail(email) || staffCredentialsRepository.existsByEmail(email);</span>
     }
 }
 </pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -10,7 +10,7 @@ import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.position.PositionMovementRepository;
 import com.leap.leaplaughlove.order.quote.PriceHistoryClient;
-import com.leap.leaplaughlove.order.quote.PriceHistoryClient.CandleClose;
+import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

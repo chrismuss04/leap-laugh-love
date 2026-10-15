@@ -11,7 +11,12 @@ com.leap.leaplaughlove.account.position
 com.leap.leaplaughlove.account.quote
 com.leap.leaplaughlove.account.security
 com.leap.leaplaughlove.account.settlement
+com.leap.leaplaughlove.common.client
+com.leap.leaplaughlove.common.market
+com.leap.leaplaughlove.common.marketdata
+com.leap.leaplaughlove.common.persistence
 com.leap.leaplaughlove.common.security
+com.leap.leaplaughlove.common.web
 com.leap.leaplaughlove.iam
 com.leap.leaplaughlove.iam.account
 com.leap.leaplaughlove.iam.auth
@@ -39,6 +44,7 @@ com.leap.leaplaughlove.order.execution
 com.leap.leaplaughlove.order.history
 com.leap.leaplaughlove.order.instrument
 com.leap.leaplaughlove.order.notification
+com.leap.leaplaughlove.order.ops
 com.leap.leaplaughlove.order.order
 com.leap.leaplaughlove.order.position
 com.leap.leaplaughlove.order.quote
