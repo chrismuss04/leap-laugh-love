@@ -35,16 +35,16 @@ export class OrderHistoryComponent implements OnInit {
     return parts.length ? parts.join(' · ') : null;
   }
 
-  year = signal<number | null>(null);
-  month = signal<number | null>(null);
-  day = signal<number | null>(null);
+  readonly year = signal<number | null>(null);
+  readonly month = signal<number | null>(null);
+  readonly day = signal<number | null>(null);
 
   readonly years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
   readonly months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
-  days = computed(() => {
+  readonly days = computed(() => {
     const year = this.year();
     const month = this.month();
     if (year === null || month === null) {
@@ -54,8 +54,8 @@ export class OrderHistoryComponent implements OnInit {
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
   });
 
-  private authService = inject(AuthService);
-  private orderService = inject(OrderService);
+  private readonly authService = inject(AuthService);
+  private readonly orderService = inject(OrderService);
 
   ngOnInit() {
     if (!this.authService.isAuthenticated()) {

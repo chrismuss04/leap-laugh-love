@@ -6,13 +6,20 @@ export function formatMoney(value: number | null | undefined): string {
   return value == null || Number.isNaN(value) ? '—' : currency.format(value);
 }
 
+/** "+", "−" or nothing for zero: the sign shown on a signed figure. */
+function signOf(value: number): string {
+  if (value > 0) {
+    return '+';
+  }
+  return value < 0 ? '−' : '';
+}
+
 /** +$1,234.56 / −$1,234.56 - always signed, so direction never relies on colour alone. */
 export function formatSignedMoney(value: number | null | undefined): string {
   if (value == null || Number.isNaN(value)) {
     return '—';
   }
-  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-  return sign + currency.format(Math.abs(value));
+  return signOf(value) + currency.format(Math.abs(value));
 }
 
 /** +1.23% / −1.23% */
@@ -20,8 +27,7 @@ export function formatSignedPercent(value: number | null | undefined): string {
   if (value == null || !Number.isFinite(value)) {
     return '—';
   }
-  const sign = value > 0 ? '+' : value < 0 ? '−' : '';
-  return `${sign}${plain.format(Math.abs(value))}%`;
+  return `${signOf(value)}${plain.format(Math.abs(value))}%`;
 }
 
 /** 4,812.10 - index levels are points, not dollars. */
