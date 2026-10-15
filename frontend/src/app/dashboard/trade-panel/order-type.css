@@ -19,10 +19,10 @@
 }
 
 /* Five types in two rows: Market, Limit and Stop above; Stop limit and Trailing stop below. */
-.type { grid-column: span 2; }
-.type:nth-child(n + 4) { grid-column: span 3; }
+.type:nth-of-type(n + 4) { grid-column: span 3; }
 
 .type {
+  grid-column: span 2;
   padding: 7px 4px;
   border-radius: 6px;
   background: transparent;
@@ -41,8 +41,6 @@
   box-shadow: inset 0 0 0 1px var(--border), 0 1px 2px rgba(0, 0, 0, 0.25);
 }
 
-.type:focus-visible,
-.tif-option:focus-visible,
 .chip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -190,7 +188,7 @@
 }
 
 .unit.on { background: var(--surface-hover); color: var(--foreground); }
-.unit:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
 
 .trail-note,
 .chart-hint {

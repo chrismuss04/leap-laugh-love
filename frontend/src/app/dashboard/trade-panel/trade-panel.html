@@ -21,7 +21,7 @@
   </p>
 </ng-template>
 
-<section class="panel" [attr.data-side]="side()" aria-labelledby="trade-title">
+<section class="panel" [attr.data-side]="side()" [attr.aria-labelledby]="symbol() ? 'trade-title' : 'trade-title-empty'">
   <!-- Order placement confirmation: opened only after Submit buy/sell requires confirmation. -->
   <dialog #confirmationDialog class="confirmation-dialog"
           aria-labelledby="confirmation-title" aria-describedby="confirmation-description"
@@ -99,11 +99,11 @@
     </p>
 
     <!-- Result -->
-    <div *ngIf="step() === 'result' && result() as result" class="result" role="status" data-testid="trade-result">
+    <div *ngIf="step() === 'result' && result() as result" class="result" data-testid="trade-result">
       <ng-container *ngIf="result.status === 'FILLED'; else notFilled">
         <div class="result-icon ok" aria-hidden="true">✓</div>
-        <p class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
-          {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</p>
+        <output class="result-title">{{ result.side === 'BUY' ? 'Bought' : 'Sold' }} {{ result.quantity | number }}
+          {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}</output>
         <dl class="summary">
           <div *ngIf="result.orderType && result.orderType !== 'MARKET'"><dt>Order type</dt>
             <dd>{{ typeLabel(result.orderType) }}</dd></div>
@@ -117,7 +117,7 @@
       <ng-template #notFilled>
         <ng-container *ngIf="result.status === 'ACCEPTED'; else notAccepted">
           <div class="result-icon pending" aria-hidden="true">…</div>
-          <p class="result-title">Order placed, confirming</p>
+          <output class="result-title">Order placed, confirming</output>
           <p class="result-text">Your order to {{ result.side === 'BUY' ? 'buy' : 'sell' }}
             {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
             went through and is still being confirmed. It will show as filled in your activity shortly.</p>
@@ -132,7 +132,7 @@
             </svg>
           </div>
           <ng-container *ngIf="queuedResult(); else placedOpen">
-            <p class="result-title">Queued for market open</p>
+            <output class="result-title">Queued for market open</output>
             <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
               {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
               when {{ waitingFor() }}, at the opening price. You can cancel it any time before then from Open orders.</p>
@@ -143,7 +143,7 @@
             </dl>
           </ng-container>
           <ng-template #placedOpen>
-            <p class="result-title">{{ typeLabel(result.orderType) }} order placed</p>
+            <output class="result-title">{{ typeLabel(result.orderType) }} order placed</output>
             <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
               {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
               once {{ waitingFor() }}. It's good {{ result.timeInForce === 'GTC' ? 'until you cancel it' : 'for today' }}<span
@@ -157,7 +157,7 @@
       </ng-template>
       <ng-template #rejected>
         <div class="result-icon bad" aria-hidden="true">!</div>
-        <p class="result-title">{{ priceMoved() ? 'The price moved, so your order wasn’t filled' : 'Order not filled' }}</p>
+        <output class="result-title">{{ priceMoved() ? 'The price moved, so your order wasn’t filled' : 'Order not filled' }}</output>
         <p class="result-text">{{ result.rejectionReason || 'The order was rejected.' }}</p>
         <button *ngIf="priceMoved()" type="button" class="cta" (click)="reviewAtNewPrice()">Review at new price</button>
       </ng-template>
@@ -241,12 +241,13 @@
 
     <!-- Edit -->
     <form *ngIf="step() === 'edit'" class="ticket" method="post" (ngSubmit)="review()">
-      <div class="sides" role="radiogroup" aria-label="Order side">
-        <button type="button" role="radio" class="side buy" [class.on]="side() === 'BUY'"
-                [attr.aria-checked]="side() === 'BUY'" (click)="setSide('BUY')">Buy</button>
-        <button type="button" role="radio" class="side sell" [class.on]="side() === 'SELL'"
-                [attr.aria-checked]="side() === 'SELL'" (click)="setSide('SELL')">Sell</button>
-      </div>
+      <fieldset class="sides">
+        <legend class="sr-only">Order side</legend>
+        <label class="side buy choice" [class.on]="side() === 'BUY'">
+          <input type="radio" name="side" value="BUY" [checked]="side() === 'BUY'" (change)="setSide('BUY')" />Buy</label>
+        <label class="side sell choice" [class.on]="side() === 'SELL'">
+          <input type="radio" name="side" value="SELL" [checked]="side() === 'SELL'" (change)="setSide('SELL')" />Sell</label>
+      </fieldset>
 
       <label class="field" *ngIf="accounts().length > 1">
         <span class="field-label">Account</span>
@@ -256,24 +257,26 @@
       </label>
 
       <div *ngIf="templates().length > 0" class="templates" data-testid="templates">
-        <span class="field-label" id="templates-label">Templates</span>
-        <div class="template-chips" role="group" aria-labelledby="templates-label">
+        <span class="field-label" aria-hidden="true">Templates</span>
+        <fieldset class="template-chips">
+          <legend class="sr-only">Templates</legend>
           <span *ngFor="let template of templates()" class="template-chip">
             <button type="button" class="chip template-apply" (click)="applyTemplate(template)"
                     [attr.aria-label]="'Apply template ' + template.name">{{ template.name }}</button>
             <button type="button" class="template-delete" (click)="deleteTemplate(template)"
                     [attr.aria-label]="'Delete template ' + template.name">×</button>
           </span>
-        </div>
+        </fieldset>
       </div>
 
       <div class="order-type">
-        <span class="field-label" id="order-type-label">Order type</span>
-        <div class="types" role="radiogroup" aria-labelledby="order-type-label">
-          <button *ngFor="let t of orderTypes" type="button" role="radio" class="type"
-                  [class.on]="orderType() === t.type" [attr.aria-checked]="orderType() === t.type"
-                  (click)="setOrderType(t.type)">{{ t.label }}</button>
-        </div>
+        <span class="field-label" aria-hidden="true">Order type</span>
+        <fieldset class="types">
+          <legend class="sr-only">Order type</legend>
+          <label *ngFor="let t of orderTypes" class="type choice" [class.on]="orderType() === t.type">
+            <input type="radio" name="orderType" [value]="t.type" [checked]="orderType() === t.type"
+                   (change)="setOrderType(t.type)" />{{ t.label }}</label>
+        </fieldset>
         <p *ngIf="!queued()" class="type-hint">{{ typeHint() }}</p>
         <p *ngIf="sessionNote() as note" class="session-note" data-testid="session-note">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -312,18 +315,21 @@
                      min="0.01" step="0.01" placeholder="0" [ngModel]="trailValue()" (ngModelChange)="setTrailValue($event)" />
               <span class="currency" *ngIf="trailUnit() === 'PERCENT'" aria-hidden="true">%</span>
             </span>
-            <span class="units" role="radiogroup" aria-label="Trail unit">
-              <button type="button" role="radio" class="unit" [class.on]="trailUnit() === 'PERCENT'"
-                      [attr.aria-checked]="trailUnit() === 'PERCENT'" aria-label="Percent" (click)="setTrailUnit('PERCENT')">%</button>
-              <button type="button" role="radio" class="unit" [class.on]="trailUnit() === 'AMOUNT'"
-                      [attr.aria-checked]="trailUnit() === 'AMOUNT'" aria-label="Dollars" (click)="setTrailUnit('AMOUNT')">$</button>
-            </span>
+            <fieldset class="units">
+              <legend class="sr-only">Trail unit</legend>
+              <label class="unit choice" [class.on]="trailUnit() === 'PERCENT'">
+                <input type="radio" name="trailUnit" value="PERCENT" aria-label="Percent"
+                       [checked]="trailUnit() === 'PERCENT'" (change)="setTrailUnit('PERCENT')" />%</label>
+              <label class="unit choice" [class.on]="trailUnit() === 'AMOUNT'">
+                <input type="radio" name="trailUnit" value="AMOUNT" aria-label="Dollars"
+                       [checked]="trailUnit() === 'AMOUNT'" (change)="setTrailUnit('AMOUNT')" />$</label>
+            </fieldset>
           </span>
         </div>
-        <div class="chips" role="group" aria-label="Suggested trails">
+        <fieldset class="chips"><legend class="sr-only">Suggested trails</legend>
           <button *ngFor="let chip of trailChips()" type="button" class="chip" [class.on]="chip.value === trailValue()"
                   (click)="setTrailValue(chip.value)">{{ chip.label }}</button>
-        </div>
+        </fieldset>
         <p *ngIf="hitRate() as hint" class="hit-rate" data-testid="hit-rate">{{ hint.text }}
           <span class="hit-rate-note">{{ hitRateNote() }}</span></p>
         <p class="trail-note">The stop follows the {{ side() === 'SELL' ? 'highest' : 'lowest' }} price
@@ -343,11 +349,11 @@
                    [ngModel]="stopPrice()" (ngModelChange)="setStopPrice($event)" />
           </span>
         </div>
-        <div class="chips" role="group" aria-label="Suggested stop prices">
+        <fieldset class="chips"><legend class="sr-only">Suggested stop prices</legend>
           <button *ngFor="let chip of stopChips()" type="button" class="chip" [class.on]="chip.value === stopPrice()"
                   [attr.aria-label]="'Stop at ' + money(chip.value) + ' (' + chip.label + ')'"
                   [title]="money(chip.value)" (click)="setStopPrice(chip.value)">{{ chip.label }}</button>
-        </div>
+        </fieldset>
         <p *ngIf="hitRate() as hint" class="hit-rate" data-testid="hit-rate">{{ hint.text }}
           <span class="hit-rate-note">{{ hitRateNote() }}</span></p>
       </div>
@@ -365,11 +371,11 @@
                    [ngModel]="limitPrice()" (ngModelChange)="setLimitPrice($event)" />
           </span>
         </div>
-        <div class="chips" role="group" aria-label="Suggested limit prices">
+        <fieldset class="chips"><legend class="sr-only">Suggested limit prices</legend>
           <button *ngFor="let chip of limitChips()" type="button" class="chip" [class.on]="chip.value === limitPrice()"
                   [attr.aria-label]="'Limit at ' + money(chip.value) + ' (' + chip.label + ')'"
                   [title]="money(chip.value)" (click)="setLimitPrice(chip.value)">{{ chip.label }}</button>
-        </div>
+        </fieldset>
         <p *ngIf="orderType() === 'LIMIT' && hitRate() as hint" class="hit-rate" data-testid="hit-rate">{{ hint.text }}
           <span class="hit-rate-note">{{ hitRateNote() }}</span></p>
       </div>
@@ -381,7 +387,7 @@
             <span class="bracket-sub">Also trade 4:00–9:30 AM and 4:00–8:00 PM ET. Fewer traders means wider
               spreads and bigger price swings.</span>
           </span>
-          <input type="checkbox" role="switch" class="switch" name="extendedHours"
+          <input type="checkbox" role="switch" class="switch" name="extendedHours" [attr.aria-checked]="extendedHours()"
                  [ngModel]="extendedHours()" (ngModelChange)="setExtendedHours($event)" />
         </label>
       </div>
@@ -392,7 +398,7 @@
             <span class="field-label">Protect this trade</span>
             <span class="bracket-sub">Auto-sell to take profit or cut losses once this buy fills.</span>
           </span>
-          <input type="checkbox" role="switch" class="switch" name="bracketOn"
+          <input type="checkbox" role="switch" class="switch" name="bracketOn" [attr.aria-checked]="bracketOn()"
                  [ngModel]="bracketOn()" (ngModelChange)="setBracketOn($event)" />
         </label>
         <ng-container *ngIf="bracketOn()">
@@ -406,11 +412,11 @@
                        [ngModel]="takeProfit()" (ngModelChange)="setTakeProfit($event)" />
               </span>
             </div>
-            <div class="chips" role="group" aria-label="Suggested take-profit prices">
+            <fieldset class="chips"><legend class="sr-only">Suggested take-profit prices</legend>
               <button *ngFor="let chip of takeProfitChips()" type="button" class="chip" [class.on]="chip.value === takeProfit()"
                       [attr.aria-label]="'Take profit at ' + money(chip.value) + ' (' + chip.label + ')'"
                       [title]="money(chip.value)" (click)="setTakeProfit(chip.value)">{{ chip.label }}</button>
-            </div>
+            </fieldset>
           </div>
           <div class="price-field">
             <div class="field-row">
@@ -422,11 +428,11 @@
                        [ngModel]="stopLoss()" (ngModelChange)="setStopLoss($event)" />
               </span>
             </div>
-            <div class="chips" role="group" aria-label="Suggested stop-loss prices">
+            <fieldset class="chips"><legend class="sr-only">Suggested stop-loss prices</legend>
               <button *ngFor="let chip of stopLossChips()" type="button" class="chip" [class.on]="chip.value === stopLoss()"
                       [attr.aria-label]="'Stop loss at ' + money(chip.value) + ' (' + chip.label + ')'"
                       [title]="money(chip.value)" (click)="setStopLoss(chip.value)">{{ chip.label }}</button>
-            </div>
+            </fieldset>
           </div>
           <p *ngIf="riskRewardText() as text" class="risk-reward num" data-testid="risk-reward" aria-live="polite">{{ text }}</p>
         </ng-container>
@@ -438,14 +444,16 @@
       </div>
 
       <div *ngIf="!isMarket()" class="field-row">
-        <span class="field-label" id="tif-label">Good for</span>
-        <span class="tif" role="radiogroup" aria-labelledby="tif-label">
-          <button type="button" role="radio" class="tif-option" [class.on]="timeInForce() === 'DAY'"
-                  [attr.aria-checked]="timeInForce() === 'DAY'" (click)="setTimeInForce('DAY')">Today</button>
-          <button type="button" role="radio" class="tif-option" [class.on]="timeInForce() === 'GTC'"
-                  [attr.aria-checked]="timeInForce() === 'GTC'" title="Up to 90 days"
-                  (click)="setTimeInForce('GTC')">Until cancelled</button>
-        </span>
+        <span class="field-label" aria-hidden="true">Good for</span>
+        <fieldset class="tif">
+          <legend class="sr-only">Good for</legend>
+          <label class="tif-option choice" [class.on]="timeInForce() === 'DAY'">
+            <input type="radio" name="timeInForce" value="DAY" [checked]="timeInForce() === 'DAY'"
+                   (change)="setTimeInForce('DAY')" />Today</label>
+          <label class="tif-option choice" [class.on]="timeInForce() === 'GTC'" title="Up to 90 days">
+            <input type="radio" name="timeInForce" value="GTC" [checked]="timeInForce() === 'GTC'"
+                   (change)="setTimeInForce('GTC')" />Until cancelled</label>
+        </fieldset>
       </div>
 
       <div *ngIf="queued()" class="field-row" data-testid="collar-row">
@@ -513,7 +521,7 @@
 
   <ng-template #noSymbol>
     <div class="placeholder">
-      <h2 id="trade-title">Trade</h2>
+      <h2 id="trade-title-empty">Trade</h2>
       <p>Search for a symbol or select one of your positions to buy or sell.</p>
     </div>
   </ng-template>

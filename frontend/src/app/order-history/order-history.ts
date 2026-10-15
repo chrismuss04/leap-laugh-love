@@ -12,16 +12,16 @@ import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/or
     styleUrl: './order-history.css'
 })
 export class OrderHistoryComponent implements OnInit {
-  orders = signal<OrderHistoryItem[]>([]);
-  currentPage = signal(0);
-  totalPages = signal(0);
-  loading = signal(false);
-  error = signal<string | null>(null);
-  expandedOrderId = signal<string | null>(null);
+  readonly orders = signal<OrderHistoryItem[]>([]);
+  readonly currentPage = signal(0);
+  readonly totalPages = signal(0);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly expandedOrderId = signal<string | null>(null);
 
-  typeLabel = orderTypeLabel;
+  readonly typeLabel = orderTypeLabel;
   /** A market order waiting for the open. */
-  queued = isQueuedOrder;
+  readonly queued = isQueuedOrder;
 
   /** The prices a limit or stop order was placed with, e.g. "stop $140.00 · limit $139.00". */
   conditionText(order: OrderHistoryItem): string | null {

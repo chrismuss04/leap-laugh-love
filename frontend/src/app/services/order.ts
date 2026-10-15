@@ -203,7 +203,7 @@ export class OrderService {
   // Same-origin path, proxied to order-app - see proxy.conf.js.
   private readonly API_URL = '/api/order';
 
-  constructor(private http: HttpClient) {}
+  constructor(private readonly http: HttpClient) {}
 
   getOrderHistory(
     page: number = 0,

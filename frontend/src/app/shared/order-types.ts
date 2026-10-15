@@ -139,34 +139,48 @@ export function describeOrder(order: OrderDescription): SentencePart[] {
   ];
 }
 
+/** "10 shares", "1 share", or "shares" before a quantity is entered. */
+function sharesText(quantity: number | null): string {
+  if (quantity == null || quantity < 1) {
+    return 'shares';
+  }
+  return `${quantity.toLocaleString('en-US')} ${quantity === 1 ? 'share' : 'shares'}`;
+}
+
+/** ", good for today, including extended hours.": how long the order works, and when. */
+function untilPart(order: OrderDescription): SentencePart {
+  const until = order.timeInForce === 'GTC' ? ', good until cancelled' : ', good for today';
+  const extended = order.type === 'LIMIT' && order.extendedHours ? ', including extended hours' : '';
+  return { text: until + extended + '.' };
+}
+
+/** A market order: now, or queued for the open when the market isn't in regular hours. */
+function describeMarket(order: OrderDescription, verb: string, shares: string): SentencePart[] {
+  const start: SentencePart[] = [{ text: `${capitalise(verb)} ` }, { text: shares, strong: true }];
+  if (order.queuedFor === undefined) {
+    return [...start, { text: ` of ${order.symbol} now at the best available price.` }];
+  }
+  const when: SentencePart[] = order.queuedFor
+    ? [{ text: ' (' }, { text: order.queuedFor, strong: true }, { text: ')' }]
+    : [];
+  return [
+    ...start, { text: ` of ${order.symbol} at the market open` }, ...when,
+    { text: ', within 5% of the current price.' }
+  ];
+}
+
 function describeEntry(order: OrderDescription): SentencePart[] {
   const verb = order.side === 'BUY' ? 'buy' : 'sell';
-  const shares = order.quantity != null && order.quantity >= 1
-    ? `${order.quantity.toLocaleString('en-US')} ${order.quantity === 1 ? 'share' : 'shares'}`
-    : 'shares';
-  const limit = order.limitPrice != null ? formatMoney(order.limitPrice) : '$—';
-  const stop = order.stopPrice != null ? formatMoney(order.stopPrice) : '$—';
+  const shares = sharesText(order.quantity);
+  const limit = order.limitPrice == null ? '$—' : formatMoney(order.limitPrice);
+  const stop = order.stopPrice == null ? '$—' : formatMoney(order.stopPrice);
   const orBetter = order.side === 'BUY' ? 'or lower' : 'or higher';
   const moves = order.side === 'BUY' ? 'rises' : 'falls';
-  const extended = order.type === 'LIMIT' && order.extendedHours ? ', including extended hours' : '';
-  const until: SentencePart = {
-    text: (order.timeInForce === 'GTC' ? ', good until cancelled' : ', good for today') + extended + '.'
-  };
+  const until = untilPart(order);
 
   switch (order.type) {
     case 'MARKET':
-      if (order.queuedFor !== undefined) {
-        return [
-          { text: `${capitalise(verb)} ` }, { text: shares, strong: true },
-          { text: ` of ${order.symbol} at the market open` },
-          ...(order.queuedFor ? [{ text: ' (' }, { text: order.queuedFor, strong: true }, { text: ')' }] : []),
-          { text: ', within 5% of the current price.' }
-        ];
-      }
-      return [
-        { text: `${capitalise(verb)} ` }, { text: shares, strong: true },
-        { text: ` of ${order.symbol} now at the best available price.` }
-      ];
+      return describeMarket(order, verb, shares);
     case 'LIMIT':
       return [
         { text: `${capitalise(verb)} ` }, { text: shares, strong: true }, { text: ` of ${order.symbol} at ` },
@@ -246,8 +260,15 @@ export function distanceLabel(target: number | null, price: number | null, refer
   if (distance.percent < 0.005) {
     return `At ${reference}`;
   }
-  const digits = distance.percent < 1 ? 2 : distance.percent < 10 ? 1 : 0;
-  return `${distance.percent.toFixed(digits)}% ${distance.direction === 'rise' ? 'above' : 'below'} ${reference}`;
+  return `${distance.percent.toFixed(percentDigits(distance.percent))}% ${distance.direction === 'rise' ? 'above' : 'below'} ${reference}`;
+}
+
+/** Two decimals under 1%, one under 10%, none above. */
+function percentDigits(percent: number): number {
+  if (percent < 1) {
+    return 2;
+  }
+  return percent < 10 ? 1 : 0;
 }
 
 /** Rounds to cents, for prices picked from chips. */

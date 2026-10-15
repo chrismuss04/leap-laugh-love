@@ -37,6 +37,11 @@ export function direction(value: number | null | undefined): 'gain' | 'loss' | '
   return value > 0 ? 'gain' : 'loss';
 }
 
+/** Whether a value is a usable positive number: not null, NaN, zero or negative. */
+export function isPositive(value: number | null | undefined): value is number {
+  return value != null && value > 0;
+}
+
 /** Percentage change from a baseline, or null when there is no meaningful baseline. */
 export function percentChange(current: number | null | undefined, baseline: number | null | undefined): number | null {
   if (current == null || baseline == null || baseline === 0) {

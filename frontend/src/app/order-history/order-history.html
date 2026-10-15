@@ -65,7 +65,11 @@
               [ngClass]="order.side === 'BUY' ? 'buy-row' : 'sell-row'"
               class="order-row"
               data-testid="order-row"
+              tabindex="0"
+              [attr.aria-expanded]="expandedOrderId() === order.orderId"
               (click)="toggleExpand(order.orderId)"
+              (keydown.enter)="toggleExpand(order.orderId)"
+              (keydown.space)="$event.preventDefault(); toggleExpand(order.orderId)"
             >
               <td class="expand-icon">
                 {{ expandedOrderId() === order.orderId ? '▼' : '▶' }}
