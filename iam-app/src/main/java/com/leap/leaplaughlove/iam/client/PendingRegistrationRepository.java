@@ -13,8 +13,11 @@ import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.UUID;
 
-// Every write joins the caller's transaction, so an application is only stored or spent together
-// with the change it belongs to.
+/**
+ * Holds registration applications until the applicant confirms their email link.
+ * Every write joins the caller's transaction, so an application is only stored or spent together
+ * with the change it belongs to.
+ */
 @Repository
 @Transactional(propagation = Propagation.MANDATORY)
 public class PendingRegistrationRepository {
@@ -36,7 +39,10 @@ public class PendingRegistrationRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // Stores an application, dropping any earlier one for the same email so only the newest link works.
+    /**
+     * Stores an application, dropping any earlier one for the same email so only the newest link works.
+     * @param pending the application to store
+     */
     public void replace(PendingRegistration pending) {
         jdbcTemplate.update("DELETE FROM iam.pending_registrations WHERE email = ?", pending.email());
         jdbcTemplate.update("""
@@ -53,14 +59,23 @@ public class PendingRegistrationRepository {
                 pending.createdAt().atOffset(ZoneOffset.UTC), pending.expiresAt().atOffset(ZoneOffset.UTC));
     }
 
-    // An unconfirmed application holds an SSN and a password hash, so it is not kept past its link.
+    /**
+     * Deletes applications whose link has expired. An unconfirmed application holds an SSN and a
+     * password hash, so it is not kept past its link.
+     * @param now the current time
+     */
     public void deleteExpired(Instant now) {
         jdbcTemplate.update("DELETE FROM iam.pending_registrations WHERE expires_at <= ?",
                 now.atOffset(ZoneOffset.UTC));
     }
 
-    // Removes and returns the application a link was issued for. The delete decides who gets it,
-    // so a link submitted twice at the same moment opens one client, not two.
+    /**
+     * Removes and returns the application a link was issued for. The delete decides who gets it,
+     * so a link submitted twice at the same moment opens one client, not two.
+     * @param tokenHash the hash of the link's token
+     * @param now the current time
+     * @return the application, or empty if the link is unknown, expired or already used
+     */
     public Optional<PendingRegistration> consume(String tokenHash, Instant now) {
         Optional<PendingRegistration> pending = jdbcTemplate.query("""
                 SELECT * FROM iam.pending_registrations WHERE token_hash = ? AND expires_at > ?

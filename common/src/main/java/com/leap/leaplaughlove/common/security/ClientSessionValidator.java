@@ -11,6 +11,10 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+/**
+ * Checks that the login session behind a token is still live. Read-only and shared by every
+ * protected service, for client and staff sessions alike.
+ */
 @Service
 public class ClientSessionValidator {
     public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);
@@ -34,7 +38,14 @@ public class ClientSessionValidator {
         this.clock = clock;
     }
 
-    // Never extend activity here: polling and market-data requests must not keep a login alive.
+    /**
+     * Whether a client's session is still live. Never extends the session's activity: polling and
+     * market-data requests must not keep a login alive.
+     * @param sessionId the token's session
+     * @param clientId the token's client
+     * @param tokenExpiry the token's expiry
+     * @return true if the session exists, is unrevoked, unexpired and not idle
+     */
     public boolean isActive(UUID sessionId, UUID clientId, Instant tokenExpiry) {
         return isActive(Role.CLIENT, sessionId, clientId, tokenExpiry);
     }

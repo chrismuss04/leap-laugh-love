@@ -84,18 +84,33 @@ public class TradeOpsController {
         return tradeTimelineService.countByStatus(search);
     }
 
+    /**
+     * The order's recorded fields, executions, cash entries and position movements.
+     * @param orderId the order
+     * @return everything recorded for the order
+     */
     @GetMapping("/{orderId}")
     public TradeRecords getRecords(@PathVariable UUID orderId) {
         accessLog.record(OpsAccessLog.Action.VIEW_ORDER, orderId, null);
         return tradeTimelineService.getRecords(orderId);
     }
 
+    /**
+     * The order's records as one time-ordered sequence of steps.
+     * @param orderId the order
+     * @return the order's timeline
+     */
     @GetMapping("/{orderId}/timeline")
     public TradeTimeline getTimeline(@PathVariable UUID orderId) {
         accessLog.record(OpsAccessLog.Action.VIEW_TIMELINE, orderId, null);
         return tradeTimelineService.getTimeline(orderId);
     }
 
+    /**
+     * The order's timeline as a CSV download.
+     * @param orderId the order
+     * @return the CSV, as an attachment named {@code trade-<orderId>.csv}
+     */
     @GetMapping("/{orderId}/timeline.csv")
     public ResponseEntity<String> downloadTimelineCsv(@PathVariable UUID orderId) {
         accessLog.record(OpsAccessLog.Action.DOWNLOAD_CSV, orderId, null);
@@ -124,6 +139,11 @@ public class TradeOpsController {
         return criteria.toString();
     }
 
+    /**
+     * Answers a parameter that can't be read, such as a malformed date or UUID, with a 400.
+     * @param ex the mismatch
+     * @return an error body naming the parameter
+     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleMalformedParameter(MethodArgumentTypeMismatchException ex) {

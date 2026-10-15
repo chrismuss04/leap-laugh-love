@@ -16,6 +16,11 @@ public class InstrumentController {
         this.service = service;
     }
 
+    /**
+     * Lists every active instrument with its latest price and its change over a period.
+     * @param period {@code today}, {@code week} or {@code month}
+     * @return the overview, with the change computed against the period's baseline
+     */
     @GetMapping
     public InstrumentOverviewResponse getOverview(@RequestParam(defaultValue = "today") String period) {
         return service.getOverview(period);
