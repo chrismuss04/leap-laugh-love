@@ -3,7 +3,8 @@ import { CommonModule } from '@angular/common';
 
 /**
  * Staff Dashboards: one headline figure, styled like the trading dashboard's summary stats. Shows
- * a dash until a report supplies the value, and how it moved when a report supplies a trend.
+ * a dash until a report supplies the value, a shimmer while one is loading, and how it moved when
+ * a report supplies a trend.
  */
 @Component({
   selector: 'app-stat-tile',
@@ -11,7 +12,10 @@ import { CommonModule } from '@angular/common';
   template: `
     <div class="stat">
       <span class="stat-label">{{ label }}</span>
-      <span class="stat-value num" [class.text-muted]="value === null">{{ value ?? '—' }}</span>
+      <span *ngIf="loading; else figure" class="stat-value skeleton" data-testid="stat-loading" aria-hidden="true"></span>
+      <ng-template #figure>
+        <span class="stat-value num" [class.text-muted]="value === null">{{ value ?? '—' }}</span>
+      </ng-template>
       <span class="stat-hint" *ngIf="hint">{{ hint }}</span>
       <span class="stat-trend" *ngIf="trend" [class.text-gain]="trendDirection === 'gain'"
             [class.text-loss]="trendDirection === 'loss'">{{ trend }}</span>
@@ -38,6 +42,7 @@ import { CommonModule } from '@angular/common';
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .stat-value.skeleton { display: block; width: 4em; height: 1.4em; }
     .stat-hint { font-size: 12px; color: var(--muted-foreground); }
     .stat-trend { margin-top: auto; padding-top: 4px; font-size: 12px; color: var(--muted-foreground); }
     /* Set here, not left to the global text-gain/text-loss: this component's own colour outranks them. */
@@ -49,6 +54,8 @@ export class StatTileComponent {
   @Input({ required: true }) label = '';
   /** The formatted figure, or null until a report provides it. */
   @Input() value: string | null = null;
+  /** True while the figure is loading: a shimmer stands in for it. */
+  @Input() loading = false;
   @Input() hint = '';
   /** How the figure moved, e.g. "+12.00% vs previous period"; signed, so colour isn't the only cue. */
   @Input() trend = '';

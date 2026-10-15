@@ -286,6 +286,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_parent
 CREATE INDEX IF NOT EXISTS idx_orders_account_submitted_at_order_id
     ON trading.orders (account_id, submitted_at DESC, order_id DESC);
 
+-- Backs Trading Operations' stuck-order report: orders across every client still waiting to execute.
+CREATE INDEX IF NOT EXISTS idx_orders_awaiting_execution_submitted_at
+    ON trading.orders (submitted_at) WHERE status IN ('SUBMITTED', 'ACCEPTED');
+-- Backs Trading Operations' rejections-by-reason report over a period across every client.
+CREATE INDEX IF NOT EXISTS idx_orders_rejected_submitted_at
+    ON trading.orders (submitted_at) WHERE status = 'REJECTED';
+
 -- Order templates: a saved ticket setup (side, type, time in force, percent offsets from the market
 -- price, bracket percents) a client applies in one tap. Percent offsets, not prices, so a template
 -- fits whatever the price is on the day. At most 20 per client (see OrderTemplateService).
@@ -431,7 +438,8 @@ CREATE TABLE IF NOT EXISTS trading.ops_access_log (
     access_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     staff_id UUID NOT NULL
         REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
-    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV', 'VIEW_ORDER',
+                                           'VIEW_ORDER_COUNTS', 'VIEW_REJECTIONS', 'VIEW_STUCK_ORDERS')),
     order_id UUID,
     search_criteria TEXT,
     accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

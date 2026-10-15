@@ -68,6 +68,10 @@ marketdata:
 order:
   execution:
     max-quote-age-seconds: 5
+  ops:
+    # Trading Operations' stuck-order report lists orders still SUBMITTED or ACCEPTED this long
+    # after they were submitted (see TradeOpsReportService).
+    stuck-after-minutes: ${ORDER_OPS_STUCK_AFTER_MINUTES:5}
   notifications:
     # Emails a client when an order that waited fills, is refused or expires (see OrderFillMailer).
     email:

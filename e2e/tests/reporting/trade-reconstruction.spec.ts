@@ -49,11 +49,73 @@ test.describe('Trade reconstruction', () => {
     expect(csv).toContain(`${orderId},`);
   });
 
-  test('clients and commercial analysts are refused trade reconstruction', async ({ request, trader, tokenFor }) => {
+  test('Trading Operations see the counts and rejections for their filters, and stuck orders', async ({ page, trader, tokenFor }) => {
+    await trader.api.placeOrder({ accountId: trader.accountId, symbol: 'AAPL', side: 'BUY', quantity: 1 });
+    // Far beyond any buying power, so it is stored REJECTED with its reason.
+    const refused = await trader.api.placeOrderRaw({ accountId: trader.accountId, symbol: 'AAPL', side: 'BUY', quantity: 100_000_000 });
+    expect((await refused.json()).status).toBe('REJECTED');
+
+    await page.addInitScript(t => localStorage.setItem('auth_token', t), await tokenFor(staff.tradingOps.email));
+    await page.goto('/reporting');
+    const filters = page.getByRole('form', { name: 'Audit filters' });
+    await filters.locator('input[formControlName="from"]').fill(localMinute(new Date(Date.now() - DAY)));
+    await filters.locator('input[formControlName="to"]').fill(localMinute(new Date(Date.now() + DAY)));
+    await filters.locator('input[formControlName="clientEmail"]').fill(trader.persona.email);
+    await filters.getByRole('button', { name: 'Apply' }).click();
+
+    const tile = (label: string) => page.getByTestId('order-counts')
+      .locator('app-stat-tile', { has: page.getByText(label, { exact: true }) }).locator('.stat-value');
+    for (const label of ['Orders submitted', 'Filled', 'Rejected']) {
+      await expect(tile(label)).toHaveText(/^[1-9][\d,]*$/);
+    }
+    await expect(tile('Awaiting execution')).toHaveText(/^\d[\d,]*$/);
+
+    const panel = (heading: string) => page.locator('app-report-panel', { has: page.getByRole('heading', { name: heading }) });
+    // Every client's rejections in the period, so other tests' may be listed alongside this one.
+    await expect(panel('Rejections by reason').getByTestId('rejection-row').filter({ hasText: 'Insufficient funds' }).first())
+      .toBeVisible();
+    // Nothing here leaves an order waiting, so only check the report loaded: a list or "No data available".
+    await expect(panel('Stuck orders').getByTestId('stuck-order-row').first()
+      .or(panel('Stuck orders').getByText('No data available'))).toBeVisible();
+  });
+
+  test("the trace page shows a rejected order's records, and says when a ledger has none", async ({ page, trader, tokenFor }) => {
+    const refused = await (await trader.api.placeOrderRaw(
+      { accountId: trader.accountId, symbol: 'AAPL', side: 'BUY', quantity: 100_000_000 })).json();
+    expect(refused.status).toBe('REJECTED');
+
+    await page.addInitScript(t => localStorage.setItem('auth_token', t), await tokenFor(staff.tradingOps.email));
+    await page.goto(`/reporting/orders/${refused.orderId}`);
+
+    const summary = page.getByTestId('order-summary');
+    await expect(summary).toContainText(trader.persona.email);
+    await expect(summary).toContainText(trader.accountNumber);
+    await expect(summary).toContainText('Rejected');
+    await expect(summary).toContainText('Insufficient funds');
+    await expect(page.getByTestId('execution-row')).toHaveCount(1);
+    await expect(page.getByTestId('execution-row')).toContainText('Insufficient funds');
+    for (const heading of ['Cash entries', 'Position movements']) {
+      await expect(page.locator('app-report-panel', { has: page.getByRole('heading', { name: heading }) }))
+        .toContainText('No data available');
+    }
+  });
+
+  test('clients and commercial analysts are refused trade reconstruction and its reports', async ({ request, trader, tokenFor }) => {
+    const { orderId } = await trader.api.placeOrder(
+      { accountId: trader.accountId, symbol: 'AAPL', side: 'BUY', quantity: 1 });
+    const period = { from: new Date(Date.now() - DAY).toISOString(), to: new Date(Date.now() + DAY).toISOString() };
+    const lookups: [string, Record<string, string>][] = [
+      ['/api/order/ops/orders', { symbol: 'AAPL' }],
+      ['/api/order/ops/orders/counts', { ...period, clientEmail: trader.persona.email }],
+      [`/api/order/ops/orders/${orderId}`, {}],
+      ['/api/order/ops/reports/rejections', period],
+      ['/api/order/ops/reports/stuck-orders', {}]
+    ];
     for (const token of [trader.token, await tokenFor(staff.analyst.email)]) {
-      const response = await request.get('/api/order/ops/orders',
-        { headers: { Authorization: `Bearer ${token}` }, params: { symbol: 'AAPL' } });
-      expect(response.status()).toBe(403);
+      for (const [url, params] of lookups) {
+        const response = await request.get(url, { headers: { Authorization: `Bearer ${token}` }, params });
+        expect(response.status(), url).toBe(403);
+      }
     }
   });
 });

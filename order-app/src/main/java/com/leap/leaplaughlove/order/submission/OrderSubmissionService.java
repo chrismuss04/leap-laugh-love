@@ -40,6 +40,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZoneId;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -93,6 +94,11 @@ public class OrderSubmissionService {
      * @param refusal account-app's refusal, when it refused the fill and the order is now REJECTED
      */
     private record SettleOutcome(BigDecimal balanceAfter, RuntimeException refusal) {}
+
+    /** The current time in UTC, for every timestamp this service writes. */
+    private static OffsetDateTime now() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
 
     /**
      * Constructs an instance of OrderSubmissionService with the specified dependencies.
@@ -215,7 +221,8 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be at least 1 whole share");
         }
 
-        FirstStep firstStep = transactionTemplate.execute(status -> acceptOrReject(request));
+        FirstStep firstStep = Objects.requireNonNull(
+                transactionTemplate.execute(status -> acceptOrReject(request)), "acceptOrReject returned null");
         if (firstStep.rejection() != null) {
             return firstStep.rejection();
         }
@@ -286,7 +293,7 @@ public class OrderSubmissionService {
             // account-app refused it, so nothing was booked. The execution is immutable, so it
             // stays as the record of the attempt; the order says it never filled.
             String reason = "Settlement failed: " + FillRecorder.refusalReason(ex);
-            OffsetDateTime rejectedAt = OffsetDateTime.now();
+            OffsetDateTime rejectedAt = now();
             transactionTemplate.executeWithoutResult(status -> {
                 order.markRejected(reason, rejectedAt);
                 lockedCopy(order).markRejected(reason, rejectedAt);
@@ -384,28 +391,26 @@ public class OrderSubmissionService {
             return queueMarketOrder(order, accountValidation, available, holds, executionPrice);
         }
 
-        return fillMarketOrder(request, order, accountValidation, available, holds, quote, executionPrice,
-                maxSlippagePercent);
+        return fillMarketOrder(order, accountValidation, available, holds, quote, executionPrice);
     }
 
     /**
      * Fills a MARKET order now at the live price, unless its bracket, price tolerance or the
      * account's funds or shares reject it.
-     * @param request the order submission request
-     * @param order the stored SUBMITTED order
+     * @param order the stored SUBMITTED order, carrying its quoted price and price tolerance
      * @param accountValidation the account's validation data from account-app
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
      * @param quote the live quote the order is priced from
      * @param executionPrice the side's live executable price
-     * @param maxSlippagePercent the price tolerance in force, or null if none
      * @return the rejection, or the accepted order and its execution
      */
-    private FirstStep fillMarketOrder(OrderSubmissionRequest request, Order order,
-                                      AccountValidationDto accountValidation, AccountValidationDto available,
-                                      ReservationService.Holds holds, ExecutionQuote quote,
-                                      BigDecimal executionPrice, BigDecimal maxSlippagePercent) {
+    private FirstStep fillMarketOrder(Order order, AccountValidationDto accountValidation,
+                                      AccountValidationDto available, ReservationService.Holds holds,
+                                      ExecutionQuote quote, BigDecimal executionPrice) {
         Instrument instrument = order.getInstrument();
+        Order.Side side = order.getSide();
+        BigDecimal maxSlippagePercent = order.getMaxSlippagePercent();
         String bracketProblem = bracketProblem(order, executionPrice);
         if (bracketProblem != null) {
             return new FirstStep(rejectOrder(order, accountValidation, bracketProblem, quote), null, null);
@@ -414,7 +419,7 @@ public class OrderSubmissionService {
         // 5. Price tolerance: reject if the market moved too far from the client's quote
         if (maxSlippagePercent != null) {
             TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(
-                    request.quotedPrice(), executionPrice, maxSlippagePercent);
+                    order.getQuotedPrice(), executionPrice, maxSlippagePercent);
             if (!toleranceResult.isValid()) {
                 return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason(), quote), null, null);
             }
@@ -422,20 +427,20 @@ public class OrderSubmissionService {
 
         // 6. Execute Trade Validation
         TradeValidationResult validationResult = tradeValidationService.validateTrade(
-                available, instrument, request.side(), request.quantity(), executionPrice);
+                available, instrument, side, order.getQuantity(), executionPrice);
 
         if (!validationResult.isValid()) {
             return new FirstStep(rejectOrder(order, accountValidation,
-                    ReservationService.explain(validationResult.reason(), request.side(), holds), quote), null, null);
+                    ReservationService.explain(validationResult.reason(), side, holds), quote), null, null);
         }
 
         // Acceptance flow: transition order to ACCEPTED
-        OffsetDateTime acceptTime = OffsetDateTime.now();
+        OffsetDateTime acceptTime = now();
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
-        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, OffsetDateTime.now());
+        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, now());
         return new FirstStep(null, order, execution);
     }
 
@@ -468,7 +473,7 @@ public class OrderSubmissionService {
 
         // Good for the trading day it is queued for: a DAY order placed at that open.
         Instant opensAt = marketClock.nextRegularOpen();
-        OffsetDateTime placedFor = opensAt != null ? opensAt.atOffset(ZoneOffset.UTC) : OffsetDateTime.now();
+        OffsetDateTime placedFor = opensAt != null ? opensAt.atOffset(ZoneOffset.UTC) : now();
         order.queueForOpen(collar, SessionPolicy.dayExpiry(placedFor, false));
         order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), collar));
         order = orderRepository.saveAndFlush(order);
@@ -546,7 +551,7 @@ public class OrderSubmissionService {
     private Order newOrder(OrderSubmissionRequest request, Instrument instrument,
                            AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
         Order.OrderType orderType = request.effectiveOrderType();
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = now();
         Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
         order.setAccountNumber(accountValidation.accountNumber());
         order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
@@ -649,7 +654,7 @@ public class OrderSubmissionService {
         TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, executionPrice);
         if (evaluation.fills() && SessionPolicy.canExecute(order, session)) {
             // A limit the market is already at or better than fills now, at the live price.
-            OffsetDateTime acceptTime = OffsetDateTime.now();
+            OffsetDateTime acceptTime = now();
             order.markAccepted(acceptTime);
             order = orderRepository.saveAndFlush(order);
             Execution execution = fillRecorder.recordExecution(order, evaluation.fillPrice(), acceptTime,
@@ -687,7 +692,7 @@ public class OrderSubmissionService {
         // Loaded inside the transaction, so settling and publishing can read it afterwards.
         Instrument instrument = order.getInstrument();
         instrument.getSymbol();
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = now();
         if (stopReached) {
             order.markTriggered(now);
         }
@@ -781,7 +786,7 @@ public class OrderSubmissionService {
         }
         if (order != null && siblingExecuted) {
             if (order.getStatus() == Order.Status.OPEN) {
-                order.markCancelled(OffsetDateTime.now());
+                order.markCancelled(now());
                 orderEventPublisher.publishCancelled(order);
             }
             return null;
@@ -842,7 +847,7 @@ public class OrderSubmissionService {
      */
     private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason,
                                                 ExecutionQuote quote) {
-        OffsetDateTime rejectTime = OffsetDateTime.now();
+        OffsetDateTime rejectTime = now();
         order.markRejected(reason, rejectTime);
         order = orderRepository.saveAndFlush(order);
 

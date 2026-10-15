@@ -84,15 +84,26 @@ class RoleAccessTest {
 
     @Test
     @Sql("/db/order_submission_test_setup.sql")
-    @DisplayName("Trading Operations can search trades, view a timeline and download it")
+    @DisplayName("Trading Operations can search and count trades, read the audit reports, and trace and download a trade")
     void tradingOperationsCanReconstructTrades() throws Exception {
         String token = tokenFor(Role.TRADING_OPERATIONS);
         mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token)
                         .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z")
                         .param("clientEmail", "owner@example.com"))
                 .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/orders/counts").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z")
+                        .param("clientEmail", "owner@example.com"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/reports/rejections").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
         // 404, not 403: the role got through.
         UUID unknown = UUID.randomUUID();
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown).header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline").header("Authorization", "Bearer " + token))
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline.csv").header("Authorization", "Bearer " + token))
@@ -101,7 +112,7 @@ class RoleAccessTest {
 
     @ParameterizedTest
     @EnumSource(value = Role.class, names = {"CLIENT", "COMMERCIAL_ANALYST"})
-    @DisplayName("clients and commercial analysts can't reconstruct trades")
+    @DisplayName("clients and commercial analysts can't reconstruct trades or read the audit reports")
     void othersCannotReconstructTrades(Role role) throws Exception {
         String token = tokenFor(role);
         UUID orderId = UUID.randomUUID();
@@ -111,12 +122,28 @@ class RoleAccessTest {
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/order/ops/orders/" + orderId + "/timeline.csv").header("Authorization", "Bearer " + token))
                 .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/counts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/reports/rejections").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
     }
 
     @Test
-    @DisplayName("trade reconstruction without a token is unauthorized")
+    @DisplayName("trade reconstruction and the audit reports without a token are unauthorized")
     void tradeReconstructionWithoutTokenIsUnauthorized() throws Exception {
         mockMvc.perform(get("/api/order/ops/orders").param("symbol", "AAPL"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/orders/" + UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/orders/counts"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/reports/rejections"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders"))
                 .andExpect(status().isUnauthorized());
     }
 
