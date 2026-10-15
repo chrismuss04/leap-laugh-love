@@ -20,6 +20,7 @@ export type ReportState = 'pending' | 'loading' | 'empty' | 'error' | 'ready';
       <header class="panel-header">
         <p class="panel-eyebrow" *ngIf="eyebrow">{{ eyebrow }}</p>
         <h2 class="panel-title" [id]="headingId">{{ heading }}</h2>
+        <p class="panel-scope" *ngIf="scope" data-testid="panel-scope">{{ scope }}</p>
         <p class="panel-description" *ngIf="description">{{ description }}</p>
       </header>
 
@@ -60,6 +61,16 @@ export type ReportState = 'pending' | 'loading' | 'empty' | 'error' | 'ready';
       margin-bottom: 6px;
     }
     .panel-title { font-size: 18px; font-weight: 600; color: var(--foreground); }
+    .panel-scope {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 10px;
+      border-radius: 999px;
+      background: var(--muted);
+      color: var(--muted-foreground);
+      font-size: 12px;
+      font-weight: 600;
+    }
     .panel-description { margin-top: 4px; font-size: 14px; color: var(--muted-foreground); }
     .panel-body { flex: 1; display: flex; flex-direction: column; min-height: var(--panel-min-height, 160px); }
     .panel-body > * { flex: 1; }
@@ -120,6 +131,8 @@ export class ReportPanelComponent {
   @Input({ required: true }) heading = '';
   @Input() eyebrow = '';
   @Input() description = '';
+  /** What the report covers when that differs from the page's filters, e.g. "All clients". */
+  @Input() scope = '';
   /** Where the report's data will come from, shown on the placeholder, e.g. trading.executions. */
   @Input() source = '';
   @Input() state: ReportState = 'pending';

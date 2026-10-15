@@ -1,7 +1,7 @@
 import { convertToParamMap } from '@angular/router';
 import {
-  EMPTY_AUDIT_FILTER, activeAuditFilters, auditParams, isOrderId, missingAuditCriteria, normalizeAudit, parseAudit,
-  toTradeSearch
+  EMPTY_AUDIT_FILTER, activeAuditFilters, auditParams, auditPeriod, isOrderId, missingAuditCriteria, normalizeAudit,
+  parseAudit, toTradeSearch
 } from './audit';
 
 describe('Audit filter', () => {
@@ -77,6 +77,15 @@ describe('Audit filter', () => {
       clientId: undefined,
       side: 'BUY'
     }));
+  });
+
+  it('reads the period alone, needing both ends but no client', () => {
+    expect(auditPeriod({ ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', to: '2026-10-08T17:30' })).toEqual({
+      from: new Date('2026-10-01T09:00').toISOString(),
+      to: new Date('2026-10-08T17:31').toISOString()
+    });
+    expect(auditPeriod({ ...EMPTY_AUDIT_FILTER, from: '2026-10-01T09:00', clientId: 'c-1' })).toBeNull();
+    expect(auditPeriod(EMPTY_AUDIT_FILTER)).toBeNull();
   });
 
   it('searches an account by id when it is a UUID, otherwise by account number', () => {

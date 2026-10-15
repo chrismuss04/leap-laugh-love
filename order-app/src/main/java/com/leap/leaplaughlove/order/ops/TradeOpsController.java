@@ -59,21 +59,35 @@ public class TradeOpsController {
             @RequestParam(required = false) Order.Side side,
             @RequestParam(required = false) Order.Status status,
             @RequestParam(required = false) UUID orderId) {
-        Map<String, Object> criteria = new LinkedHashMap<>();
-        criteria.put("from", from);
-        criteria.put("to", to);
-        criteria.put("clientId", clientId);
-        criteria.put("clientEmail", clientEmail);
-        criteria.put("accountId", accountId);
-        criteria.put("accountNumber", accountNumber);
-        criteria.put("symbol", symbol);
-        criteria.put("side", side);
-        criteria.put("status", status);
-        criteria.put("orderId", orderId);
-        criteria.values().removeIf(Objects::isNull);
-        accessLog.record(OpsAccessLog.Action.SEARCH, null, criteria.toString());
-        return tradeTimelineService.search(new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,
-                symbol, side, status, from, to));
+        TradeSearch search = new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,
+                symbol, side, status, from, to);
+        accessLog.record(OpsAccessLog.Action.SEARCH, null, criteria(search));
+        return tradeTimelineService.search(search);
+    }
+
+    /** How many orders the same search matches, by outcome; takes the same criteria. */
+    @GetMapping("/counts")
+    public OrderCounts countByStatus(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) UUID clientId,
+            @RequestParam(required = false) String clientEmail,
+            @RequestParam(required = false) UUID accountId,
+            @RequestParam(required = false) String accountNumber,
+            @RequestParam(required = false) String symbol,
+            @RequestParam(required = false) Order.Side side,
+            @RequestParam(required = false) Order.Status status,
+            @RequestParam(required = false) UUID orderId) {
+        TradeSearch search = new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,
+                symbol, side, status, from, to);
+        accessLog.record(OpsAccessLog.Action.VIEW_ORDER_COUNTS, null, criteria(search));
+        return tradeTimelineService.countByStatus(search);
+    }
+
+    @GetMapping("/{orderId}")
+    public TradeRecords getRecords(@PathVariable UUID orderId) {
+        accessLog.record(OpsAccessLog.Action.VIEW_ORDER, orderId, null);
+        return tradeTimelineService.getRecords(orderId);
     }
 
     @GetMapping("/{orderId}/timeline")
@@ -91,6 +105,23 @@ public class TradeOpsController {
                 .header(HttpHeaders.CONTENT_DISPOSITION,
                         ContentDisposition.attachment().filename("trade-" + orderId + ".csv").build().toString())
                 .body(csv);
+    }
+
+    // The criteria given, in a fixed order, for the access log.
+    private static String criteria(TradeSearch search) {
+        Map<String, Object> criteria = new LinkedHashMap<>();
+        criteria.put("from", search.from());
+        criteria.put("to", search.to());
+        criteria.put("clientId", search.clientId());
+        criteria.put("clientEmail", search.clientEmail());
+        criteria.put("accountId", search.accountId());
+        criteria.put("accountNumber", search.accountNumber());
+        criteria.put("symbol", search.symbol());
+        criteria.put("side", search.side());
+        criteria.put("status", search.status());
+        criteria.put("orderId", search.orderId());
+        criteria.values().removeIf(Objects::isNull);
+        return criteria.toString();
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)

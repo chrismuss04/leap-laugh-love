@@ -23,15 +23,18 @@ public class TradeOpsRepository {
 
     static final int MAX_SEARCH_RESULTS = 100;
 
-    private static final String TRADE_SELECT = """
-            SELECT o.order_id, o.submitted_at, c.email, a.account_number, i.symbol, o.side, o.quantity,
-                   o.status, o.accepted_at, o.rejected_at, o.filled_at, o.rejection_reason,
-                   o.quoted_price, o.max_slippage_pct
+    private static final String TRADE_FROM = """
             FROM trading.orders o
             JOIN trading.accounts a ON a.account_id = o.account_id
             JOIN trading.instruments i ON i.instrument_id = o.instrument_id
             JOIN iam.clients c ON c.client_id = a.client_id
             """;
+
+    private static final String TRADE_SELECT = """
+            SELECT o.order_id, o.submitted_at, c.email, a.account_number, i.symbol, o.side, o.quantity,
+                   o.status, o.accepted_at, o.rejected_at, o.filled_at, o.rejection_reason,
+                   o.quoted_price, o.max_slippage_pct, o.order_type
+            """ + TRADE_FROM;
 
     private final NamedParameterJdbcTemplate jdbc;
 
@@ -40,9 +43,9 @@ public class TradeOpsRepository {
                               String symbol, Order.Side side, Order.Status status,
                               OffsetDateTime from, OffsetDateTime to) {}
 
-    public record OrderRecord(TradeSummary summary, OffsetDateTime acceptedAt, OffsetDateTime rejectedAt,
-                              OffsetDateTime filledAt, String rejectionReason, BigDecimal quotedPrice,
-                              BigDecimal maxSlippagePercent) {}
+    public record OrderRecord(TradeSummary summary, String orderType, OffsetDateTime acceptedAt,
+                              OffsetDateTime rejectedAt, OffsetDateTime filledAt, String rejectionReason,
+                              BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {}
 
     public record ExecutionRecord(UUID executionId, String status, Long fillQuantity, BigDecimal fillPrice,
                                   OffsetDateTime executedAt, String reason, ExecutionQuote quote) {}
@@ -59,51 +62,55 @@ public class TradeOpsRepository {
     /** Newest first, up to {@link #MAX_SEARCH_RESULTS}. */
     public List<TradeSummary> search(TradeSearch search) {
         var params = new MapSqlParameterSource();
-        List<String> conditions = new ArrayList<>();
-        if (search.orderId() != null) {
-            conditions.add("o.order_id = :orderId");
-            params.addValue("orderId", search.orderId());
-        }
-        if (search.clientId() != null) {
-            conditions.add("a.client_id = :clientId");
-            params.addValue("clientId", search.clientId());
-        }
-        if (search.clientEmail() != null) {
-            conditions.add("LOWER(c.email) = LOWER(:clientEmail)");
-            params.addValue("clientEmail", search.clientEmail());
-        }
-        if (search.accountId() != null) {
-            conditions.add("o.account_id = :accountId");
-            params.addValue("accountId", search.accountId());
-        }
-        if (search.accountNumber() != null) {
-            conditions.add("a.account_number = :accountNumber");
-            params.addValue("accountNumber", search.accountNumber());
-        }
-        if (search.symbol() != null) {
-            conditions.add("UPPER(i.symbol) = UPPER(:symbol)");
-            params.addValue("symbol", search.symbol());
-        }
-        if (search.side() != null) {
-            conditions.add("o.side = :side");
-            params.addValue("side", search.side().name());
-        }
-        if (search.status() != null) {
-            conditions.add("o.status = :status");
-            params.addValue("status", search.status().name());
-        }
-        if (search.from() != null) {
-            conditions.add("o.submitted_at >= :from");
-            params.addValue("from", search.from());
-        }
-        if (search.to() != null) {
-            conditions.add("o.submitted_at < :to");
-            params.addValue("to", search.to());
-        }
-        String where = conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions) + "\n";
-        String sql = TRADE_SELECT + where
+        String sql = TRADE_SELECT + where(search, params)
                 + "ORDER BY o.submitted_at DESC, o.order_id DESC\nLIMIT " + MAX_SEARCH_RESULTS;
         return jdbc.query(sql, params, (rs, rowNum) -> toSummary(rs));
+    }
+
+    /** Every order the search matches, not only the first {@link #MAX_SEARCH_RESULTS}. */
+    public OrderCounts countByStatus(TradeSearch search) {
+        var params = new MapSqlParameterSource();
+        String sql = """
+                SELECT COUNT(*) AS submitted,
+                       COUNT(CASE WHEN o.status = 'FILLED' THEN 1 END) AS filled,
+                       COUNT(CASE WHEN o.status = 'REJECTED' THEN 1 END) AS rejected,
+                       COUNT(CASE WHEN o.status IN ('SUBMITTED', 'ACCEPTED', 'OPEN') THEN 1 END) AS awaiting
+                """ + TRADE_FROM + where(search, params);
+        return jdbc.queryForObject(sql, params, (rs, rowNum) -> new OrderCounts(
+                rs.getLong("submitted"), rs.getLong("filled"), rs.getLong("rejected"), rs.getLong("awaiting")));
+    }
+
+    /**
+     * Orders submitted in the period (from inclusive, to exclusive) and rejected, by reason: the
+     * most frequent first, then by reason, with rejections recorded without one last.
+     */
+    public List<RejectionCount> countRejectionsByReason(OffsetDateTime from, OffsetDateTime to) {
+        return jdbc.query("""
+                        SELECT rejection_reason, COUNT(*) AS rejections, MAX(rejected_at) AS last_rejected_at
+                        FROM trading.orders
+                        WHERE status = 'REJECTED' AND submitted_at >= :from AND submitted_at < :to
+                        GROUP BY rejection_reason
+                        ORDER BY rejections DESC, rejection_reason NULLS LAST
+                        """,
+                new MapSqlParameterSource().addValue("from", from).addValue("to", to),
+                (rs, rowNum) -> new RejectionCount(
+                        rs.getString("rejection_reason"),
+                        rs.getLong("rejections"),
+                        rs.getObject("last_rejected_at", OffsetDateTime.class)));
+    }
+
+    /**
+     * Orders still SUBMITTED or ACCEPTED that were submitted before the given time, across every
+     * client, oldest first, up to {@link #MAX_SEARCH_RESULTS}. OPEN orders are left out: they wait
+     * for their price by design.
+     */
+    public List<TradeSummary> findAwaitingExecutionSince(OffsetDateTime submittedBefore) {
+        String sql = TRADE_SELECT + """
+                WHERE o.status IN ('SUBMITTED', 'ACCEPTED') AND o.submitted_at < :submittedBefore
+                ORDER BY o.submitted_at, o.order_id
+                """ + "LIMIT " + MAX_SEARCH_RESULTS;
+        return jdbc.query(sql, new MapSqlParameterSource("submittedBefore", submittedBefore),
+                (rs, rowNum) -> toSummary(rs));
     }
 
     public Optional<OrderRecord> findOrder(UUID orderId) {
@@ -111,6 +118,7 @@ public class TradeOpsRepository {
                 new MapSqlParameterSource("orderId", orderId),
                 (rs, rowNum) -> new OrderRecord(
                         toSummary(rs),
+                        rs.getString("order_type"),
                         rs.getObject("accepted_at", OffsetDateTime.class),
                         rs.getObject("rejected_at", OffsetDateTime.class),
                         rs.getObject("filled_at", OffsetDateTime.class),
@@ -167,6 +175,52 @@ public class TradeOpsRepository {
                         rs.getLong("quantity_delta"),
                         rs.getBigDecimal("cost_delta"),
                         rs.getObject("created_at", OffsetDateTime.class)));
+    }
+
+    // Null fields aren't filtered on; adds a parameter for each one that is.
+    private static String where(TradeSearch search, MapSqlParameterSource params) {
+        List<String> conditions = new ArrayList<>();
+        if (search.orderId() != null) {
+            conditions.add("o.order_id = :orderId");
+            params.addValue("orderId", search.orderId());
+        }
+        if (search.clientId() != null) {
+            conditions.add("a.client_id = :clientId");
+            params.addValue("clientId", search.clientId());
+        }
+        if (search.clientEmail() != null) {
+            conditions.add("LOWER(c.email) = LOWER(:clientEmail)");
+            params.addValue("clientEmail", search.clientEmail());
+        }
+        if (search.accountId() != null) {
+            conditions.add("o.account_id = :accountId");
+            params.addValue("accountId", search.accountId());
+        }
+        if (search.accountNumber() != null) {
+            conditions.add("a.account_number = :accountNumber");
+            params.addValue("accountNumber", search.accountNumber());
+        }
+        if (search.symbol() != null) {
+            conditions.add("UPPER(i.symbol) = UPPER(:symbol)");
+            params.addValue("symbol", search.symbol());
+        }
+        if (search.side() != null) {
+            conditions.add("o.side = :side");
+            params.addValue("side", search.side().name());
+        }
+        if (search.status() != null) {
+            conditions.add("o.status = :status");
+            params.addValue("status", search.status().name());
+        }
+        if (search.from() != null) {
+            conditions.add("o.submitted_at >= :from");
+            params.addValue("from", search.from());
+        }
+        if (search.to() != null) {
+            conditions.add("o.submitted_at < :to");
+            params.addValue("to", search.to());
+        }
+        return conditions.isEmpty() ? "" : "WHERE " + String.join(" AND ", conditions) + "\n";
     }
 
     private static TradeSummary toSummary(ResultSet rs) throws SQLException {

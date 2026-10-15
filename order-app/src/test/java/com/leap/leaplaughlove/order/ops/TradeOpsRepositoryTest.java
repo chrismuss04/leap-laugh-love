@@ -147,6 +147,7 @@ class TradeOpsRepositoryTest {
         OrderRecord order = repository.findOrder(FILLED_ORDER).orElseThrow();
 
         assertEquals(FILLED_ORDER, order.summary().orderId());
+        assertEquals("MARKET", order.orderType());
         assertTrue(at("2026-10-02T10:00:01Z").isEqual(order.acceptedAt()));
         assertTrue(at("2026-10-02T10:00:02Z").isEqual(order.filledAt()));
         assertNull(order.rejectedAt());
@@ -191,6 +192,74 @@ class TradeOpsRepositoryTest {
 
         assertTrue(repository.findCashEntries(REJECTED_ORDER).isEmpty());
         assertTrue(repository.findPositionMovements(REJECTED_ORDER).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Counts the orders a search matches, by outcome")
+    void countByStatus() {
+        insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, AAPL, "BUY", "OPEN", "2026-10-03T10:00:00Z", null, null);
+        insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, AAPL, "BUY", "ACCEPTED", "2026-10-03T11:00:00Z", null, null);
+        insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, AAPL, "BUY", "CANCELLED", "2026-10-03T12:00:00Z", null, null);
+
+        assertEquals(new OrderCounts(5, 1, 1, 2), repository.countByStatus(
+                new TradeSearch(null, null, "owner@example.com", null, null, null, null, null, null, null)));
+        assertEquals(new OrderCounts(6, 1, 1, 3), repository.countByStatus(search()));
+        assertEquals(new OrderCounts(1, 0, 1, 0), repository.countByStatus(new TradeSearch(null, OWNER_CLIENT, null,
+                null, null, null, null, null, at("2026-10-05T00:00:00Z"), at("2026-10-06T00:00:00Z"))));
+        assertEquals(new OrderCounts(0, 0, 0, 0), repository.countByStatus(
+                new TradeSearch(null, null, "nobody@example.com", null, null, null, null, null, null, null)));
+    }
+
+    @Test
+    @DisplayName("Counts every match, not only the first page of search results")
+    void countByStatusUnlimited() {
+        for (int i = 0; i < TradeOpsRepository.MAX_SEARCH_RESULTS + 5; i++) {
+            insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, MSFT, "BUY", "FILLED", "2026-09-01T10:00:00Z", null, null);
+        }
+
+        assertEquals(TradeOpsRepository.MAX_SEARCH_RESULTS + 8, repository.countByStatus(search()).submitted());
+    }
+
+    @Test
+    @DisplayName("Groups the period's rejections by reason, most frequent first, keeping those without one")
+    void countRejectionsByReason() {
+        insertRejected("2026-10-05T11:00:00Z", "Insufficient position", "2026-10-05T11:00:01Z");
+        insertRejected("2026-10-05T12:00:00Z", "Market quote unavailable", "2026-10-05T12:00:01Z");
+        insertRejected("2026-10-05T13:00:00Z", null, "2026-10-05T13:00:01Z");
+        insertRejected("2026-09-01T10:00:00Z", "Market quote unavailable", "2026-09-01T10:00:01Z");
+
+        List<RejectionCount> rejections = repository.countRejectionsByReason(
+                at("2026-10-01T00:00:00Z"), at("2026-10-08T00:00:00Z"));
+
+        assertEquals(3, rejections.size());
+        assertEquals("Insufficient position", rejections.get(0).reason());
+        assertEquals(2, rejections.get(0).count());
+        assertTrue(at("2026-10-05T11:00:01Z").isEqual(rejections.get(0).lastRejectedAt()));
+        assertEquals("Market quote unavailable", rejections.get(1).reason());
+        assertEquals(1, rejections.get(1).count());
+        assertNull(rejections.get(2).reason());
+        assertEquals(1, rejections.get(2).count());
+        assertTrue(repository.countRejectionsByReason(at("2026-10-06T00:00:00Z"), at("2026-10-08T00:00:00Z")).isEmpty());
+    }
+
+    @Test
+    @DisplayName("Finds orders still waiting to execute across every client, oldest first, leaving out OPEN orders")
+    void findAwaitingExecutionSince() {
+        UUID accepted = UUID.randomUUID();
+        insertOrder(accepted, OWNER_ACCOUNT, MSFT, "BUY", "ACCEPTED", "2026-10-06T10:00:00Z", null, null);
+        insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, MSFT, "BUY", "OPEN", "2026-10-01T10:00:00Z", null, null);
+        insertOrder(UUID.randomUUID(), OWNER_ACCOUNT, MSFT, "BUY", "SUBMITTED", "2026-10-07T10:05:00Z", null, null);
+
+        assertEquals(List.of(accepted, OTHER_ORDER), ids(repository.findAwaitingExecutionSince(at("2026-10-07T10:01:00Z"))));
+        assertEquals("owner@example.com", repository.findAwaitingExecutionSince(at("2026-10-07T00:00:00Z")).get(0).clientEmail());
+        assertTrue(repository.findAwaitingExecutionSince(at("2026-10-01T00:00:00Z")).isEmpty());
+    }
+
+    private void insertRejected(String submittedAt, String reason, String rejectedAt) {
+        UUID orderId = UUID.randomUUID();
+        insertOrder(orderId, OWNER_ACCOUNT, MSFT, "SELL", "REJECTED", submittedAt, null, null);
+        jdbc.update("UPDATE trading.orders SET rejected_at = ?, rejection_reason = ? WHERE order_id = ?",
+                at(rejectedAt), reason, orderId);
     }
 
     @Test
