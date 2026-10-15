@@ -189,12 +189,21 @@ export interface TimelineSegment {
   range: string;
 }
 
+/** A trading day with all four session times, so its sessions can be laid out. */
+type FullTradingDay = TradingDay & {
+  preMarketOpen: string; regularOpen: string; regularClose: string; afterHoursClose: string;
+};
+
+function hasFullSchedule(day: TradingDay): day is FullTradingDay {
+  return day.open && [day.preMarketOpen, day.regularOpen, day.regularClose, day.afterHoursClose].every(Boolean);
+}
+
 /**
  * Today's sessions laid out from 4:00 to 20:00 ET. An early close shortens regular and
  * after-hours trading, leaving the end of the bar closed. Empty on a day the market is closed.
  */
 export function timelineSegments(day: TradingDay): TimelineSegment[] {
-  if (!day.open || !day.preMarketOpen || !day.regularOpen || !day.regularClose || !day.afterHoursClose) {
+  if (!hasFullSchedule(day)) {
     return [];
   }
   const origin = Date.parse(day.preMarketOpen);

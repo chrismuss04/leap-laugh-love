@@ -566,6 +566,49 @@ public class OrderSubmissionService {
     }
 
     /**
+     * Starts a trailing stop's trail from the price the order is placed at.
+     * @return why the trail can't start, or null (also when the order doesn't trail)
+     */
+    private static String trailProblem(Order order, BigDecimal executionPrice) {
+        if (!order.getOrderType().hasTrail()) {
+            return null;
+        }
+        BigDecimal stop = TrailingStop.stopFor(order.getSide(), executionPrice, order.getTrailAmount(), order.getTrailPercent());
+        if (stop.signum() <= 0) {
+            return String.format("Trail of $%s must be smaller than the current %s of $%s - order rejected",
+                    money(TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())),
+                    executableSide(order.getSide()), money(executionPrice));
+        }
+        order.moveTrail(executionPrice, stop);
+        return null;
+    }
+
+    /**
+     * A stop the price has already passed would trigger at once - almost always a mistake,
+     * e.g. a sell stop entered above the market. The ticket points the client to a market
+     * or limit order instead.
+     * @return why the stop is refused, or null
+     */
+    private static String stopProblem(Order order, BigDecimal executionPrice) {
+        Order.Side side = order.getSide();
+        if (!order.getOrderType().hasStop()
+                || !TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {
+            return null;
+        }
+        return String.format("Stop price $%s must be %s the current %s of $%s - order rejected",
+                money(order.getStopPrice()), side == Order.Side.BUY ? "above" : "below",
+                executableSide(side), money(executionPrice));
+    }
+
+    private static String executableSide(Order.Side side) {
+        return side == Order.Side.BUY ? "ask" : "bid";
+    }
+
+    private static String money(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    /**
      * Places a LIMIT, STOP or STOP_LIMIT order: validates the account can cover the most it could
      * cost (or holds the shares it sells), then fills it now if the market is already at its
      * price, or else leaves it OPEN holding that cash.
@@ -583,35 +626,15 @@ public class OrderSubmissionService {
         Order.OrderType orderType = order.getOrderType();
         Order.Side side = order.getSide();
 
-        // A trailing stop starts its trail from the price it is placed at.
-        if (orderType.hasTrail()) {
-            BigDecimal stop = TrailingStop.stopFor(side, executionPrice, order.getTrailAmount(), order.getTrailPercent());
-            if (stop.signum() <= 0) {
-                return new FirstStep(rejectOrder(order, accountValidation, String.format(
-                        "Trail of $%s must be smaller than the current %s of $%s - order rejected",
-                        TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())
-                                .setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                        side == Order.Side.BUY ? "ask" : "bid",
-                        executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);
-            }
-            order.moveTrail(executionPrice, stop);
+        String priceProblem = trailProblem(order, executionPrice);
+        if (priceProblem == null) {
+            priceProblem = bracketProblem(order, executionPrice);
         }
-
-        String bracketProblem = bracketProblem(order, executionPrice);
-        if (bracketProblem != null) {
-            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+        if (priceProblem == null) {
+            priceProblem = stopProblem(order, executionPrice);
         }
-
-        // A stop the price has already passed would trigger at once - almost always a mistake,
-        // e.g. a sell stop entered above the market. The ticket points the client to a market
-        // or limit order instead.
-        if (orderType.hasStop() && TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {
-            return new FirstStep(rejectOrder(order, accountValidation, String.format(
-                    "Stop price $%s must be %s the current %s of $%s - order rejected",
-                    order.getStopPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                    side == Order.Side.BUY ? "above" : "below",
-                    side == Order.Side.BUY ? "ask" : "bid",
-                    executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);
+        if (priceProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, priceProblem), null, null);
         }
 
         BigDecimal reservePrice = ReservationService.reservePricePerShare(

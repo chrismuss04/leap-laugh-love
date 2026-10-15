@@ -95,6 +95,21 @@ export function missingAuditCriteria(filter: AuditFilter): string | null {
   return null;
 }
 
+/** Why the filter can't be submitted, or null when it can: missing criteria, a reversed period or a malformed client id. */
+export function auditFilterError(filter: AuditFilter): string | null {
+  const missing = missingAuditCriteria(filter);
+  if (missing) {
+    return missing;
+  }
+  if (filter.from! > filter.to!) {
+    return '"Submitted from" must be on or before "Submitted to".';
+  }
+  if (filter.clientId && !isUuid(filter.clientId)) {
+    return 'Enter a full client id, or search by email instead.';
+  }
+  return null;
+}
+
 /**
  * The trade search for a filter that can be searched. Submitted from and to are local
  * datetime-local minutes and both inclusive, so the search runs from the start of the first to the

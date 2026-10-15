@@ -60,6 +60,14 @@ public record MarketStatusResponse(
                     utc(day.preMarketOpen()), utc(day.regularOpen()), utc(day.regularClose()),
                     utc(day.afterHoursClose()));
         }
+
+        static OffsetDateTime utc(Instant instant) {
+            return instant != null ? instant.atOffset(ZoneOffset.UTC) : null;
+        }
+
+        static OffsetDateTime utc(ZonedDateTime time) {
+            return time != null ? utc(time.toInstant()) : null;
+        }
     }
 
     /**
@@ -70,20 +78,12 @@ public record MarketStatusResponse(
     public static MarketStatusResponse of(MarketClock.Status status) {
         return new MarketStatusResponse(
                 status.session(),
-                utc(status.now()),
+                TradingDayResponse.utc(status.now()),
                 status.next() != null ? status.next().session() : null,
-                status.next() != null ? utc(status.next().at()) : null,
-                utc(status.nextRegularOpen()),
+                status.next() != null ? TradingDayResponse.utc(status.next().at()) : null,
+                TradingDayResponse.utc(status.nextRegularOpen()),
                 TradingDayResponse.of(status.today()),
                 status.mode(),
                 status.forced());
-    }
-
-    private static OffsetDateTime utc(Instant instant) {
-        return instant != null ? instant.atOffset(ZoneOffset.UTC) : null;
-    }
-
-    private static OffsetDateTime utc(ZonedDateTime time) {
-        return time != null ? utc(time.toInstant()) : null;
     }
 }
