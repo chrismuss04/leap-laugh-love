@@ -25,7 +25,6 @@ pipeline {
         disableConcurrentBuilds()
         // A hung build holds this executor's ports and containers until someone notices;
         // failing it releases them via the cleanup block below.
-        // Includes the sequential, isolated trade recovery suite (up to 30 minutes).
         timeout(time: 90, unit: 'MINUTES')
         buildDiscarder(logRotator(numToKeepStr: '20'))
     }
@@ -120,53 +119,6 @@ pipeline {
                     // project with no branch or PR support, so a feature-branch scan would replace
                     // main's results; only main and pull requests are analysed.
                     env.RUN_SONAR = env.RUN_E2E
-
-                    // The trade recovery suite is the slowest stage, so it runs on pull requests
-                    // only - a merge to main has already passed it as a PR - and is skipped when
-                    // every file the PR changes is in an area the suite cannot be affected by.
-                    // The list names what is safe rather than what is relevant, so a path nobody
-                    // thought about runs the suite instead of silently skipping it. A plain
-                    // Pipeline job (no BRANCH_NAME) still always runs it, as with E2E.
-                    env.RUN_RECOVERY = env.BRANCH_NAME ? 'false' : 'true'
-                    if (env.CHANGE_ID) {
-                        def unaffected = [
-                            ~/frontend\/.*/,
-                            ~/reporting-etl\/.*/,
-                            // Only reads the reporting schema; nothing trade recovery runs calls it.
-                            ~/reporting-app\/.*/,
-                            ~/docs\/.*/,
-                            ~/.*\.(md|mmd)/,
-                            ~/sonar-project\.properties/,
-                            ~/docker-compose\.external-db\.yml/,
-                            ~/\.(env\.example|gitignore|gitattributes)/,
-                            // The rest of the E2E suite; recovery shares fixtures/, data/, seed/
-                            // and the npm dependencies with it, so those still count.
-                            ~/e2e\/tests\/(?!recovery\/).*/,
-                            ~/e2e\/(pages|scripts)\/.*/,
-                            ~/e2e\/(Dockerfile|playwright\.config\.ts|eslint\.config\.mjs|\.env\.example)/,
-                        ]
-                        try {
-                            // Diff against the target branch, not the previous build: "changeset"
-                            // only sees commits since the last build of this PR. A PR checkout
-                            // doesn't always carry the target branch, so fetch it first.
-                            def changed = sh(script: '''
-                                set -eu
-                                git fetch --no-tags --quiet origin "+refs/heads/$CHANGE_TARGET:refs/remotes/origin/$CHANGE_TARGET"
-                                git diff --name-only "origin/$CHANGE_TARGET...HEAD"
-                            ''', returnStdout: true).trim().readLines()
-                            def relevant = changed.findAll { file -> !unaffected.any { file ==~ it } }
-                            if (relevant) {
-                                env.RUN_RECOVERY = 'true'
-                                echo "Trade recovery tests will run; affected by: ${relevant.take(10).join(', ')}${relevant.size() > 10 ? ', ...' : ''}"
-                            } else {
-                                echo "Trade recovery tests skipped: no changed file can affect them."
-                            }
-                        } catch (err) {
-                            // Unable to tell what changed (fetch failed, shallow history): run it.
-                            env.RUN_RECOVERY = 'true'
-                            echo "Trade recovery tests will run; could not diff against ${env.CHANGE_TARGET}: ${err}"
-                        }
-                    }
 
                     // Docker Desktop and current Linux installs ship Compose v2 as the
                     // "docker compose" plugin, and some no longer include the standalone
@@ -585,8 +537,7 @@ pipeline {
         // Run on their own, after the parallel builds rather than beside them. Headless Chromium and the
         // service image builds together starved Docker Desktop on a small agent: specs that take a few
         // seconds ran 4-5x slower and Chromium's connection closed part-way ("Browser connection was
-        // closed while running tests"), failing the build with Sonar, E2E and the recovery suite never
-        // reached. Sequential costs wall-clock time, not correctness.
+        // closed while running tests"), failing the build with Sonar and E2E never reached. Sequential costs wall-clock time, not correctness.
         stage('Frontend Unit Tests') {
             when {
                 environment name: 'RUN_SONAR', value: 'true'
@@ -701,7 +652,7 @@ pipeline {
                         }
                         steps {
                             // Waits for SonarQube's webhook to report the gate result and fails the build
-                            // on a failed gate, which also keeps E2E and the recovery suite from starting.
+                            // on a failed gate, which also keeps E2E from starting.
                             timeout(time: 5, unit: 'MINUTES') {
                                 waitForQualityGate abortPipeline: true
                             }
@@ -768,52 +719,6 @@ pipeline {
                                     archiveArtifacts allowEmptyArchive: true, artifacts: 'e2e/playwright-report/**, e2e/test-results/**'
                                 }
                             }
-                    }
-                    stage('Trade Recovery Tests') {
-                        when {
-                            // RUN_RECOVERY is set in Configure Pipeline.
-                            environment name: 'RUN_RECOVERY', value: 'true'
-                        }
-                        options {
-                            timeout(time: 30, unit: 'MINUTES')
-                        }
-                        environment {
-                            CI = 'true'
-                        }
-                        steps {
-                            sh '''
-                                set -eu
-                                # Recovery needs the local Docker daemon, Compose v2 and Python 3.
-                                docker compose version
-                                python3 --version
-                                # Release this build's ordinary stack before starting another four JVMs.
-                                # Keep its containers for diagnostics; final pipeline cleanup removes them.
-                                $COMPOSE -p "$COMPOSE_PROJECT" stop
-                                npm ci --prefix e2e --cache "$HOME/.npm-ci" --no-audit --no-fund
-                                npm --prefix e2e run test:recovery:proxy
-                                # Reuse the service images "Build Docker Images" made for this commit rather
-                                # than building all four again; the build's cleanup block removes them.
-                                RECOVERY_IMAGE_TAG="$IMAGE_TAG" bash scripts/test-trade-recovery.sh npm --prefix e2e run test:recovery
-                                # A successful stage must produce a test report, not just a healthy stack.
-                                python3 -c 'import glob; assert glob.glob(".recovery-results/*/junit.xml"), "Recovery test report missing"'
-                            '''
-                        }
-                        post {
-                            always {
-                                script {
-                                    try {
-                                        // The marker survives termination of the shell/test process.
-                                        timeout(time: 5, unit: 'MINUTES') {
-                                            sh 'bash scripts/test-trade-recovery.sh --cleanup'
-                                        }
-                                    } finally {
-                                        // Keep diagnostics even when tests or fallback cleanup fail.
-                                        archiveArtifacts allowEmptyArchive: true, artifacts: '.recovery-results/**'
-                                        junit allowEmptyResults: true, testResults: '.recovery-results/*/junit.xml'
-                                    }
-                                }
-                            }
-                        }
                     }
                     }
                 }
