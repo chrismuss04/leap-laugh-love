@@ -59,7 +59,15 @@ public class JwtService {
                 .compact();
     }
 
-    // Session Timeout & Revocation: use the same timestamps as the persisted login session.
+    /**
+     * Generates a client session token that uses the same timestamps as the persisted login session.
+     * @param clientId the client ID
+     * @param email the signed-in email
+     * @param sessionId the persisted login session
+     * @param issuedAt when the session started
+     * @param expiresAt when the session ends
+     * @return serialized JWT token as a String
+     */
     public String generateToken(UUID clientId, String email, UUID sessionId,
                                 Instant issuedAt, Instant expiresAt) {
         return generateToken(clientId, email, Role.CLIENT, sessionId, issuedAt, expiresAt);
@@ -91,12 +99,22 @@ public class JwtService {
                 .compact();
     }
 
-    // Session Timeout & Revocation: background recovery uses short-lived, purpose-scoped tokens.
+    /**
+     * Generates a short-lived token scoped to settlement, for background recovery acting on a
+     * client's behalf.
+     * @param clientId the client whose orders are being settled
+     * @return a 60-second "account-settlement" service token
+     */
     public String generateSettlementToken(UUID clientId) {
         return generateServiceToken(clientId, "account-settlement");
     }
 
-    // Session Timeout & Revocation: historical seeding can read prices, but not client APIs.
+    /**
+     * Generates a short-lived token scoped to price history. Historical seeding can read prices
+     * with it, but not client APIs.
+     * @param clientId the client the seeding runs for
+     * @return a 60-second "market-history" service token
+     */
     public String generateHistoryToken(UUID clientId) {
         return generateServiceToken(clientId, "market-history");
     }
@@ -118,8 +136,14 @@ public class JwtService {
                 .signWith(signingKey).compact();
     }
 
-    // Session Timeout & Revocation: parse verified claims once, preserving the session identity.
-    // clientId is the token's subject: a client ID, or a staff member's service_id when role is a staff role.
+    /**
+     * The verified claims of a token, parsed once so the session identity is preserved.
+     * @param clientId the token's subject: a client ID, or a staff member's service_id when the role is a staff role
+     * @param sessionId the persisted login session, or null for service tokens
+     * @param expiresAt when the token expires
+     * @param purpose the scope of a service token, or null for session tokens
+     * @param role the role the token grants
+     */
     public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose, Role role) {
         /** A client's identity: tokens issued before roles existed, and every client token. */
         public TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {
@@ -127,6 +151,13 @@ public class JwtService {
         }
     }
 
+    /**
+     * Parses and verifies a token, returning its session identity. A token with no role claim
+     * predates roles and is treated as a client login.
+     * @param token the JWT to parse
+     * @return the token's identity
+     * @throws IllegalArgumentException if the token has no expiry or an unknown role
+     */
     public TokenIdentity parseIdentity(String token) {
         Claims claims = Jwts.parser().verifyWith(signingKey).build()
                 .parseSignedClaims(token).getPayload();

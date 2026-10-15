@@ -45,12 +45,21 @@ public class TradeOpsReportController {
         return tradeOpsReportService.rejectionsByReason(from, to);
     }
 
+    /**
+     * Orders that were submitted or accepted but never executed, across every client.
+     * @return the stuck orders, oldest first
+     */
     @GetMapping("/stuck-orders")
     public List<TradeSummary> stuckOrders() {
         accessLog.record(OpsAccessLog.Action.VIEW_STUCK_ORDERS, null, null);
         return tradeOpsReportService.stuckOrders();
     }
 
+    /**
+     * Answers a parameter that can't be read, such as a malformed date, with a 400.
+     * @param ex the mismatch
+     * @return an error body naming the parameter
+     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public Map<String, String> handleMalformedParameter(MethodArgumentTypeMismatchException ex) {

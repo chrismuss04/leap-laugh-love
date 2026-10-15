@@ -43,15 +43,50 @@ public class TradeOpsRepository {
                               String symbol, Order.Side side, Order.Status status,
                               OffsetDateTime from, OffsetDateTime to) {}
 
+    /**
+     * An order as it was recorded.
+     * @param summary the order's headline fields
+     * @param orderType the order type
+     * @param acceptedAt when the order was accepted, or null
+     * @param rejectedAt when the order was rejected, or null
+     * @param filledAt when the order was filled, or null
+     * @param rejectionReason why it was rejected, or null
+     * @param quotedPrice the price quoted at submission, or null
+     * @param maxSlippagePercent the slippage the client allowed, or null
+     */
     public record OrderRecord(TradeSummary summary, String orderType, OffsetDateTime acceptedAt,
                               OffsetDateTime rejectedAt, OffsetDateTime filledAt, String rejectionReason,
                               BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {}
 
+    /**
+     * One execution attempt on an order.
+     * @param executionId the execution's ID
+     * @param status the execution's status
+     * @param fillQuantity the quantity filled, or null if nothing was
+     * @param fillPrice the price filled at, or null if nothing was
+     * @param executedAt when the execution happened
+     * @param reason why it failed, or null
+     * @param quote the market quote it was priced from
+     */
     public record ExecutionRecord(UUID executionId, String status, Long fillQuantity, BigDecimal fillPrice,
                                   OffsetDateTime executedAt, String reason, ExecutionQuote quote) {}
 
+    /**
+     * A cash ledger entry made for an order.
+     * @param entryType the kind of entry
+     * @param amount the amount
+     * @param currency the currency
+     * @param createdAt when the entry was made
+     */
     public record CashEntryRecord(String entryType, BigDecimal amount, String currency, OffsetDateTime createdAt) {}
 
+    /**
+     * A change to a holding made for an order.
+     * @param movementType the kind of movement
+     * @param quantityDelta the change in shares held
+     * @param costDelta the change in cost basis
+     * @param createdAt when the movement was made
+     */
     public record PositionMovementRecord(String movementType, long quantityDelta, BigDecimal costDelta,
                                          OffsetDateTime createdAt) {}
 
@@ -113,6 +148,11 @@ public class TradeOpsRepository {
                 (rs, rowNum) -> toSummary(rs));
     }
 
+    /**
+     * Loads one order's recorded fields.
+     * @param orderId the order
+     * @return the order, or empty if it doesn't exist
+     */
     public Optional<OrderRecord> findOrder(UUID orderId) {
         List<OrderRecord> orders = jdbc.query(TRADE_SELECT + "WHERE o.order_id = :orderId",
                 new MapSqlParameterSource("orderId", orderId),
@@ -128,6 +168,11 @@ public class TradeOpsRepository {
         return orders.stream().findFirst();
     }
 
+    /**
+     * Loads an order's executions.
+     * @param orderId the order
+     * @return its executions, oldest first
+     */
     public List<ExecutionRecord> findExecutions(UUID orderId) {
         return jdbc.query("""
                         SELECT execution_id, status, fill_quantity, fill_price, executed_at, reason,
@@ -147,6 +192,11 @@ public class TradeOpsRepository {
                         toQuote(rs)));
     }
 
+    /**
+     * Loads the cash ledger entries an order made.
+     * @param orderId the order
+     * @return its entries, oldest first
+     */
     public List<CashEntryRecord> findCashEntries(UUID orderId) {
         return jdbc.query("""
                         SELECT entry_type, amount, currency, created_at
@@ -162,6 +212,11 @@ public class TradeOpsRepository {
                         rs.getObject("created_at", OffsetDateTime.class)));
     }
 
+    /**
+     * Loads the holding changes an order made.
+     * @param orderId the order
+     * @return its movements, oldest first
+     */
     public List<PositionMovementRecord> findPositionMovements(UUID orderId) {
         return jdbc.query("""
                         SELECT movement_type, quantity_delta, cost_delta, created_at

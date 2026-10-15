@@ -14,6 +14,12 @@ import org.springframework.kafka.support.serializer.JsonSerializer;
 /** Uses ISO-8601 timestamps and no Java type headers for the Python ETL consumer. */
 @Configuration
 public class ClientRegistrationKafkaConfig {
+    /**
+     * Creates the producer factory for registration events.
+     * @param properties the Spring Kafka producer settings
+     * @param mapper the application's object mapper, copied so its own settings are untouched
+     * @return a factory with string keys and JSON values
+     */
     @Bean
     public ProducerFactory<String, ClientRegistrationEvent> registrationProducerFactory(
             KafkaProperties properties, ObjectMapper mapper) {
@@ -21,6 +27,11 @@ public class ClientRegistrationKafkaConfig {
                 new StringSerializer(), valueSerializer(mapper));
     }
 
+    /**
+     * Creates the template that sends registration events.
+     * @param registrationProducerFactory the factory to send with
+     * @return the Kafka template
+     */
     @Bean
     public KafkaTemplate<String, ClientRegistrationEvent> registrationKafkaTemplate(
             ProducerFactory<String, ClientRegistrationEvent> registrationProducerFactory) {
