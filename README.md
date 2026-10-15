@@ -1466,6 +1466,8 @@ git commit -m "docs: update javadoc and jacoco coverage reports"
 git push origin gh-pages
 ```
 
+The `-Pdocs` build applies the dark theme from `docs-theme/` (landing page, JaCoCo and Javadoc stylesheets), using the same tokens as `frontend/src/styles.css`. Edit the files there rather than the generated output, and add a section to `docs-theme/site/jacoco/index.html` when a module is added.
+
 ---
 
 ## Kafka and the reporting ETL
