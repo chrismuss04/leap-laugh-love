@@ -1430,9 +1430,9 @@ The [Jenkinsfile](Jenkinsfile) runs on every push:
 | Build and Test → Service Stack | Build images, validate the schema and seeds, start the services, check health |
 | Frontend Unit Tests | Vitest in headless Chromium, with coverage |
 | Verify → Static Analysis | SonarQube analysis and Quality Gate |
-| Verify → Stack Tests | Playwright E2E, then the trade recovery tests ([docs/trade-record-resilience.md](docs/trade-record-resilience.md)) |
+| Verify → Stack Tests | Playwright E2E |
 
-`main` and pull requests run everything. Feature-branch pushes skip E2E, the recovery tests and SonarQube.
+`main` and pull requests run everything. Feature-branch pushes skip E2E and SonarQube. The trade recovery tests are not part of CI; run them by hand as [docs/trade-record-resilience.md](docs/trade-record-resilience.md) describes.
 
 ### SonarQube
 
