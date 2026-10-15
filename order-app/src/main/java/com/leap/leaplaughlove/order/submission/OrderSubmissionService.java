@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.order.submission;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -19,6 +21,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
 import com.leap.leaplaughlove.order.working.ReservationService;
+import com.leap.leaplaughlove.order.working.SessionPolicy;
 import com.leap.leaplaughlove.order.working.TrailingStop;
 import com.leap.leaplaughlove.order.working.TriggerEvaluator;
 import org.slf4j.Logger;
@@ -33,8 +36,11 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
+import java.util.Objects;
 import java.util.UUID;
 
 /**
@@ -46,6 +52,12 @@ import java.util.UUID;
  * fill yet are stored OPEN, holding back the cash or shares they may need (see
  * {@link ReservationService}), and {@code OrderTriggerEngine} fills them through
  * {@link #fillOpenOrder} once the market reaches their price.
+ *
+ * <p>Market hours ({@link SessionPolicy}): orders only execute in a session they may trade in - an
+ * order that would fill at once outside it is left OPEN instead, until that session comes. A
+ * market order placed outside regular hours is queued for the next open: it holds cash at its
+ * collar ({@link ReservationService#collarFor}) and fills at the opening price, unless that is
+ * beyond the collar.
  */
 @Service
 public class OrderSubmissionService {
@@ -67,6 +79,7 @@ public class OrderSubmissionService {
     private final TransactionTemplate transactionTemplate;
     private final OrderEventPublisher orderEventPublisher;
     private final ReservationService reservationService;
+    private final MarketClock marketClock;
 
     /**
      * What the first step of a submission decided: a finished rejection, an OPEN order waiting
@@ -82,6 +95,11 @@ public class OrderSubmissionService {
      */
     private record SettleOutcome(BigDecimal balanceAfter, RuntimeException refusal) {}
 
+    /** The current time in UTC, for every timestamp this service writes. */
+    private static OffsetDateTime now() {
+        return OffsetDateTime.now(ZoneOffset.UTC);
+    }
+
     /**
      * Constructs an instance of OrderSubmissionService with the specified dependencies.
      * @param accountClient the client used for account-related operations
@@ -94,6 +112,7 @@ public class OrderSubmissionService {
      * @param transactionTemplate runs each step of a submission in its own transaction
      * @param orderEventPublisher reports each order to Kafka once it is final
      * @param reservationService works out what the account's open orders hold back
+     * @param marketClock decides which market session an order is placed and filled in
      */
     @Autowired
     public OrderSubmissionService(AccountClient accountClient,
@@ -105,7 +124,9 @@ public class OrderSubmissionService {
                                   CurrentQuoteService currentQuoteService,
                                   TransactionTemplate transactionTemplate,
                                   OrderEventPublisher orderEventPublisher,
-                                  ReservationService reservationService) {
+                                  ReservationService reservationService,
+                                  MarketClock marketClock) {
+        this.marketClock = marketClock;
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -116,6 +137,34 @@ public class OrderSubmissionService {
         this.transactionTemplate = transactionTemplate;
         this.orderEventPublisher = orderEventPublisher;
         this.reservationService = reservationService;
+    }
+
+    /**
+     * Constructs an OrderSubmissionService with market hours off: the market is always open.
+     * @param accountClient the client used for account-related operations
+     * @param instrumentRepository the repository for accessing instrument data
+     * @param orderRepository the repository for persisting order data
+     * @param executionRepository the repository for persisting execution data
+     * @param fillRecorder the component responsible for recording fill details
+     * @param tradeValidationService the service used for validating trades
+     * @param currentQuoteService the service used for obtaining current market quotes
+     * @param transactionTemplate runs each step of a submission in its own transaction
+     * @param orderEventPublisher reports each order to Kafka once it is final
+     * @param reservationService works out what the account's open orders hold back
+     */
+    public OrderSubmissionService(AccountClient accountClient,
+                                  InstrumentRepository instrumentRepository,
+                                  OrderRepository orderRepository,
+                                  ExecutionRepository executionRepository,
+                                  FillRecorder fillRecorder,
+                                  TradeValidationService tradeValidationService,
+                                  CurrentQuoteService currentQuoteService,
+                                  TransactionTemplate transactionTemplate,
+                                  OrderEventPublisher orderEventPublisher,
+                                  ReservationService reservationService) {
+        this(accountClient, instrumentRepository, orderRepository, executionRepository, fillRecorder,
+                tradeValidationService, currentQuoteService, transactionTemplate, orderEventPublisher,
+                reservationService, MarketClock.alwaysOpen());
     }
 
     /**
@@ -172,7 +221,8 @@ public class OrderSubmissionService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Quantity must be at least 1 whole share");
         }
 
-        FirstStep firstStep = transactionTemplate.execute(status -> acceptOrReject(request));
+        FirstStep firstStep = Objects.requireNonNull(
+                transactionTemplate.execute(status -> acceptOrReject(request)), "acceptOrReject returned null");
         if (firstStep.rejection() != null) {
             return firstStep.rejection();
         }
@@ -243,7 +293,7 @@ public class OrderSubmissionService {
             // account-app refused it, so nothing was booked. The execution is immutable, so it
             // stays as the record of the attempt; the order says it never filled.
             String reason = "Settlement failed: " + FillRecorder.refusalReason(ex);
-            OffsetDateTime rejectedAt = OffsetDateTime.now();
+            OffsetDateTime rejectedAt = now();
             transactionTemplate.executeWithoutResult(status -> {
                 order.markRejected(reason, rejectedAt);
                 lockedCopy(order).markRejected(reason, rejectedAt);
@@ -297,13 +347,18 @@ public class OrderSubmissionService {
      */
     private FirstStep acceptOrReject(OrderSubmissionRequest request) {
         Order.OrderType orderType = request.effectiveOrderType();
+        MarketSession session = marketClock.session();
 
         // 1. Resolve instrument
         Instrument instrument = resolveInstrument(request);
 
         // 2. Pre-trade check via AccountClient
         AccountValidationDto accountValidation = fetchAccountValidation(request, instrument);
-        BigDecimal maxSlippagePercent = resolveMaxSlippage(request, orderType, accountValidation);
+        // A market order outside regular hours waits for the open, when the quote it was placed at
+        // is hours old: its collar stands in for a price tolerance.
+        boolean queueForOpen = orderType == Order.OrderType.MARKET && session != MarketSession.REGULAR;
+        BigDecimal maxSlippagePercent = queueForOpen ? null
+                : resolveMaxSlippage(request, orderType, accountValidation);
 
         // Cash and shares other open orders hold aren't free for this one. The account's row lock
         // keeps two orders from counting the same cash or shares at once.
@@ -315,6 +370,7 @@ public class OrderSubmissionService {
         // 3. Store order immediately with status SUBMITTED for audit retention
         Order order = orderRepository.saveAndFlush(
                 newOrder(request, instrument, accountValidation, maxSlippagePercent));
+
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
         ExecutionQuote quote;
@@ -329,31 +385,32 @@ public class OrderSubmissionService {
         }
 
         if (orderType != Order.OrderType.MARKET) {
-            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);
+            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice, session);
+        }
+        if (queueForOpen) {
+            return queueMarketOrder(order, accountValidation, available, holds, executionPrice);
         }
 
-        return fillMarketOrder(request, order, accountValidation, available, holds, quote, executionPrice,
-                maxSlippagePercent);
+        return fillMarketOrder(order, accountValidation, available, holds, quote, executionPrice);
     }
 
     /**
      * Fills a MARKET order now at the live price, unless its bracket, price tolerance or the
      * account's funds or shares reject it.
-     * @param request the order submission request
-     * @param order the stored SUBMITTED order
+     * @param order the stored SUBMITTED order, carrying its quoted price and price tolerance
      * @param accountValidation the account's validation data from account-app
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
      * @param quote the live quote the order is priced from
      * @param executionPrice the side's live executable price
-     * @param maxSlippagePercent the price tolerance in force, or null if none
      * @return the rejection, or the accepted order and its execution
      */
-    private FirstStep fillMarketOrder(OrderSubmissionRequest request, Order order,
-                                      AccountValidationDto accountValidation, AccountValidationDto available,
-                                      ReservationService.Holds holds, ExecutionQuote quote,
-                                      BigDecimal executionPrice, BigDecimal maxSlippagePercent) {
+    private FirstStep fillMarketOrder(Order order, AccountValidationDto accountValidation,
+                                      AccountValidationDto available, ReservationService.Holds holds,
+                                      ExecutionQuote quote, BigDecimal executionPrice) {
         Instrument instrument = order.getInstrument();
+        Order.Side side = order.getSide();
+        BigDecimal maxSlippagePercent = order.getMaxSlippagePercent();
         String bracketProblem = bracketProblem(order, executionPrice);
         if (bracketProblem != null) {
             return new FirstStep(rejectOrder(order, accountValidation, bracketProblem, quote), null, null);
@@ -362,7 +419,7 @@ public class OrderSubmissionService {
         // 5. Price tolerance: reject if the market moved too far from the client's quote
         if (maxSlippagePercent != null) {
             TradeValidationResult toleranceResult = tradeValidationService.checkPriceTolerance(
-                    request.quotedPrice(), executionPrice, maxSlippagePercent);
+                    order.getQuotedPrice(), executionPrice, maxSlippagePercent);
             if (!toleranceResult.isValid()) {
                 return new FirstStep(rejectOrder(order, accountValidation, toleranceResult.reason(), quote), null, null);
             }
@@ -370,21 +427,83 @@ public class OrderSubmissionService {
 
         // 6. Execute Trade Validation
         TradeValidationResult validationResult = tradeValidationService.validateTrade(
-                available, instrument, request.side(), request.quantity(), executionPrice);
+                available, instrument, side, order.getQuantity(), executionPrice);
 
         if (!validationResult.isValid()) {
             return new FirstStep(rejectOrder(order, accountValidation,
-                    ReservationService.explain(validationResult.reason(), request.side(), holds), quote), null, null);
+                    ReservationService.explain(validationResult.reason(), side, holds), quote), null, null);
         }
 
         // Acceptance flow: transition order to ACCEPTED
-        OffsetDateTime acceptTime = OffsetDateTime.now();
+        OffsetDateTime acceptTime = now();
         order.markAccepted(acceptTime);
         order = orderRepository.saveAndFlush(order);
 
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
-        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, OffsetDateTime.now());
+        Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, now());
         return new FirstStep(null, order, execution);
+    }
+
+    /**
+     * Queues a MARKET order placed outside regular hours for the next open. It must be affordable
+     * at its collar - the most it could cost - which it holds while it waits.
+     * @param order the stored SUBMITTED order
+     * @param accountValidation the account's validation data from account-app
+     * @param available the same, less what other open orders hold
+     * @param holds what other open orders hold
+     * @param executionPrice the side's executable price now, which the collar is measured from
+     * @return the rejection, or the OPEN order
+     */
+    private FirstStep queueMarketOrder(Order order, AccountValidationDto accountValidation,
+                                       AccountValidationDto available, ReservationService.Holds holds,
+                                       BigDecimal executionPrice) {
+        Order.Side side = order.getSide();
+        String bracketProblem = bracketProblem(order, executionPrice);
+        if (bracketProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+        }
+
+        BigDecimal collar = ReservationService.collarFor(side, executionPrice);
+        TradeValidationResult validationResult = tradeValidationService.validateTrade(
+                available, order.getInstrument(), side, order.getQuantity(), collar);
+        if (!validationResult.isValid()) {
+            return new FirstStep(rejectOrder(order, accountValidation,
+                    ReservationService.explain(validationResult.reason(), side, holds)), null, null);
+        }
+
+        // Good for the trading day it is queued for: a DAY order placed at that open.
+        Instant opensAt = marketClock.nextRegularOpen();
+        OffsetDateTime placedFor = opensAt != null ? opensAt.atOffset(ZoneOffset.UTC) : now();
+        order.queueForOpen(collar, SessionPolicy.dayExpiry(placedFor, false));
+        order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), collar));
+        order = orderRepository.saveAndFlush(order);
+        return new FirstStep(null, order, null);
+    }
+
+    /**
+     * Why a market order queued for the open can't fill at this price: the open was beyond its
+     * collar.
+     * @param order the queued order
+     * @param fillPrice the side's executable price at the open
+     * @return the reason, or null if the price is within the collar (or the order has none)
+     */
+    static String collarProblem(Order order, BigDecimal fillPrice) {
+        BigDecimal collar = order.getCollarPrice();
+        if (collar == null) {
+            return null;
+        }
+        boolean buy = order.getSide() == Order.Side.BUY;
+        boolean beyond = buy ? fillPrice.compareTo(collar) > 0 : fillPrice.compareTo(collar) < 0;
+        if (!beyond) {
+            return null;
+        }
+        return String.format("%s opened at $%s, %s this queued order's price collar of $%s "
+                        + "(5%% from the price when it was placed) - order not filled, %s",
+                order.getInstrument().getSymbol(),
+                fillPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                buy ? "above" : "below",
+                collar.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                buy ? "nothing was charged" : "no shares were sold");
     }
 
     /**
@@ -429,25 +548,69 @@ public class OrderSubmissionService {
         return maxSlippagePercent;
     }
 
-    private static Order newOrder(OrderSubmissionRequest request, Instrument instrument,
-                                  AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
+    private Order newOrder(OrderSubmissionRequest request, Instrument instrument,
+                           AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
         Order.OrderType orderType = request.effectiveOrderType();
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = now();
         Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
         order.setAccountNumber(accountValidation.accountNumber());
         order.setPriceTolerance(request.quotedPrice(), maxSlippagePercent);
         if (request.hasBracket()) {
             order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());
         }
+        order.setExtendedHours(request.isForExtendedHours());
         if (orderType != Order.OrderType.MARKET) {
             Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
             order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
-                    expiryOf(timeInForce, now));
+                    SessionPolicy.expiryOf(timeInForce, now, request.isForExtendedHours(), marketClock));
             if (orderType.hasTrail()) {
                 order.setTrailing(request.trailAmount(), request.trailPercent());
             }
         }
         return order;
+    }
+
+    /**
+     * Starts a trailing stop's trail from the price the order is placed at.
+     * @return why the trail can't start, or null (also when the order doesn't trail)
+     */
+    private static String trailProblem(Order order, BigDecimal executionPrice) {
+        if (!order.getOrderType().hasTrail()) {
+            return null;
+        }
+        BigDecimal stop = TrailingStop.stopFor(order.getSide(), executionPrice, order.getTrailAmount(), order.getTrailPercent());
+        if (stop.signum() <= 0) {
+            return String.format("Trail of $%s must be smaller than the current %s of $%s - order rejected",
+                    money(TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())),
+                    executableSide(order.getSide()), money(executionPrice));
+        }
+        order.moveTrail(executionPrice, stop);
+        return null;
+    }
+
+    /**
+     * A stop the price has already passed would trigger at once - almost always a mistake,
+     * e.g. a sell stop entered above the market. The ticket points the client to a market
+     * or limit order instead.
+     * @return why the stop is refused, or null
+     */
+    private static String stopProblem(Order order, BigDecimal executionPrice) {
+        Order.Side side = order.getSide();
+        if (!order.getOrderType().hasStop()
+                || !TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {
+            return null;
+        }
+        return String.format("Stop price $%s must be %s the current %s of $%s - order rejected",
+                money(order.getStopPrice()), side == Order.Side.BUY ? "above" : "below",
+                executableSide(side), money(executionPrice));
+    }
+
+    private static String executableSide(Order.Side side) {
+        return side == Order.Side.BUY ? "ask" : "bid";
+    }
+
+    private static String money(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 
     /**
@@ -459,43 +622,24 @@ public class OrderSubmissionService {
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
      * @param executionPrice the side's live executable price
+     * @param session the market session in force; outside one the order may trade in, it waits
      * @return the rejection, the OPEN order, or the accepted order and its execution
      */
     private FirstStep placeConditionalOrder(Order order, AccountValidationDto accountValidation,
                                             AccountValidationDto available, ReservationService.Holds holds,
-                                            BigDecimal executionPrice) {
+                                            BigDecimal executionPrice, MarketSession session) {
         Order.OrderType orderType = order.getOrderType();
         Order.Side side = order.getSide();
 
-        // A trailing stop starts its trail from the price it is placed at.
-        if (orderType.hasTrail()) {
-            BigDecimal stop = TrailingStop.stopFor(side, executionPrice, order.getTrailAmount(), order.getTrailPercent());
-            if (stop.signum() <= 0) {
-                return new FirstStep(rejectOrder(order, accountValidation, String.format(
-                        "Trail of $%s must be smaller than the current %s of $%s - order rejected",
-                        TrailingStop.distance(executionPrice, order.getTrailAmount(), order.getTrailPercent())
-                                .setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                        side == Order.Side.BUY ? "ask" : "bid",
-                        executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);
-            }
-            order.moveTrail(executionPrice, stop);
+        String priceProblem = trailProblem(order, executionPrice);
+        if (priceProblem == null) {
+            priceProblem = bracketProblem(order, executionPrice);
         }
-
-        String bracketProblem = bracketProblem(order, executionPrice);
-        if (bracketProblem != null) {
-            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+        if (priceProblem == null) {
+            priceProblem = stopProblem(order, executionPrice);
         }
-
-        // A stop the price has already passed would trigger at once - almost always a mistake,
-        // e.g. a sell stop entered above the market. The ticket points the client to a market
-        // or limit order instead.
-        if (orderType.hasStop() && TriggerEvaluator.stopReached(side, order.getStopPrice(), executionPrice)) {
-            return new FirstStep(rejectOrder(order, accountValidation, String.format(
-                    "Stop price $%s must be %s the current %s of $%s - order rejected",
-                    order.getStopPrice().setScale(2, RoundingMode.HALF_UP).toPlainString(),
-                    side == Order.Side.BUY ? "above" : "below",
-                    side == Order.Side.BUY ? "ask" : "bid",
-                    executionPrice.setScale(2, RoundingMode.HALF_UP).toPlainString())), null, null);
+        if (priceProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, priceProblem), null, null);
         }
 
         BigDecimal reservePrice = ReservationService.reservePricePerShare(
@@ -508,9 +652,9 @@ public class OrderSubmissionService {
         }
 
         TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, executionPrice);
-        if (evaluation.fills()) {
+        if (evaluation.fills() && SessionPolicy.canExecute(order, session)) {
             // A limit the market is already at or better than fills now, at the live price.
-            OffsetDateTime acceptTime = OffsetDateTime.now();
+            OffsetDateTime acceptTime = now();
             order.markAccepted(acceptTime);
             order = orderRepository.saveAndFlush(order);
             Execution execution = fillRecorder.recordExecution(order, evaluation.fillPrice(), acceptTime,
@@ -537,10 +681,18 @@ public class OrderSubmissionService {
         if (order == null || order.getStatus() != Order.Status.OPEN) {
             return null;
         }
+        // The engine checked the session too, but it may have changed since (e.g. at the close).
+        if (!SessionPolicy.canExecute(order, marketClock.session())) {
+            return null;
+        }
+        String collarProblem = collarProblem(order, fillPrice);
+        if (collarProblem != null) {
+            return new FirstStep(rejectOrder(order, null, collarProblem), order, null);
+        }
         // Loaded inside the transaction, so settling and publishing can read it afterwards.
         Instrument instrument = order.getInstrument();
         instrument.getSymbol();
-        OffsetDateTime now = OffsetDateTime.now();
+        OffsetDateTime now = now();
         if (stopReached) {
             order.markTriggered(now);
         }
@@ -634,7 +786,7 @@ public class OrderSubmissionService {
         }
         if (order != null && siblingExecuted) {
             if (order.getStatus() == Order.Status.OPEN) {
-                order.markCancelled(OffsetDateTime.now());
+                order.markCancelled(now());
                 orderEventPublisher.publishCancelled(order);
             }
             return null;
@@ -649,7 +801,9 @@ public class OrderSubmissionService {
      */
     private static String executionReason(Order order) {
         return switch (order.getOrderType()) {
-            case MARKET -> "Executed at market price";
+            case MARKET -> order.isQueuedForOpen()
+                    ? "Queued for the open; executed at the opening market price"
+                    : "Executed at market price";
             case LIMIT -> "Executed at limit price or better";
             case STOP -> "Stop price reached; executed at market price";
             case STOP_LIMIT -> "Stop price reached; executed at limit price or better";
@@ -658,7 +812,8 @@ public class OrderSubmissionService {
     }
 
     /**
-     * When an order with the given time in force expires if it hasn't filled.
+     * When an order with the given time in force expires if it hasn't filled, with market hours
+     * off. With market hours on, see {@link SessionPolicy#expiryOf}.
      * @param timeInForce DAY or GTC
      * @param now when the order is placed
      * @return midnight US Eastern time after placing for DAY, 90 days later for GTC
@@ -692,7 +847,7 @@ public class OrderSubmissionService {
      */
     private OrderSubmissionResponse rejectOrder(Order order, AccountValidationDto accountValidation, String reason,
                                                 ExecutionQuote quote) {
-        OffsetDateTime rejectTime = OffsetDateTime.now();
+        OffsetDateTime rejectTime = now();
         order.markRejected(reason, rejectTime);
         order = orderRepository.saveAndFlush(order);
 
@@ -787,7 +942,9 @@ public class OrderSubmissionService {
                 order.getExpiresAt(),
                 order.getReservedCash(),
                 order.getTrailAmount(),
-                order.getTrailPercent()
+                order.getTrailPercent(),
+                order.isExtendedHours(),
+                order.getCollarPrice()
         );
     }
 }

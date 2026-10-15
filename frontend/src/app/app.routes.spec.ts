@@ -10,6 +10,7 @@ import { InstrumentsComponent } from './instruments/instruments';
 import { ShellComponent } from './shell/shell';
 import { AuthService } from './services/auth.service';
 import { PriceStreamService } from './services/price-stream';
+import { MarketStatusService } from './services/market-status';
 
 /** The pages that render inside the shell, i.e. every route a signed-in link can lead to. */
 const pages: Route[] = routes.find(route => route.component === ShellComponent)?.children ?? [];
@@ -71,7 +72,8 @@ describe('App routes', () => {
     TestBed.configureTestingModule({
       imports: [ShellComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     });
     const http = TestBed.inject(HttpTestingController);
     const now = Math.floor(Date.now() / 1000);
@@ -227,7 +229,8 @@ describe('ShellComponent for staff', () => {
     TestBed.configureTestingModule({
       imports: [ShellComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     });
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(ShellComponent);

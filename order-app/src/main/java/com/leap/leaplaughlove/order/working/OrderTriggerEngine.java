@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.order.working;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
@@ -10,6 +12,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -30,6 +33,10 @@ import java.util.UUID;
  * same validation, settlement and recovery path as a market order; a STOP_LIMIT whose stop is
  * reached but whose limit isn't is only marked triggered, and keeps waiting as a limit order.
  *
+ * <p>Only orders the market session allows are evaluated ({@link SessionPolicy}): outside regular
+ * hours stops don't trigger and trailing stops don't trail, and only extended-hours limit orders
+ * can fill in pre-market and after-hours.
+ *
  * <p>A separate, slower schedule expires orders past their time in force.
  */
 @Service
@@ -47,6 +54,7 @@ public class OrderTriggerEngine {
     private final JwtService jwtService;
     private final TransactionTemplate transactionTemplate;
     private final OrderUpdateBroadcaster broadcaster;
+    private final MarketClock marketClock;
 
     /**
      * Constructs an OrderTriggerEngine.
@@ -67,6 +75,33 @@ public class OrderTriggerEngine {
                               JwtService jwtService,
                               TransactionTemplate transactionTemplate,
                               OrderUpdateBroadcaster broadcaster) {
+        this(orderRepository, accountRepository, currentQuoteService, orderSubmissionService, openOrderService,
+                jwtService, transactionTemplate, broadcaster, MarketClock.alwaysOpen());
+    }
+
+    /**
+     * Constructs an OrderTriggerEngine that only works orders in a session they may trade in.
+     * @param orderRepository finds and locks open orders
+     * @param accountRepository finds the client an order acts for
+     * @param currentQuoteService reads the live quotes
+     * @param orderSubmissionService fills an order whose price was reached
+     * @param openOrderService expires orders past their time in force
+     * @param jwtService issues the service tokens the engine calls other apps with
+     * @param transactionTemplate marks stop-limit orders triggered and moves trailing stops
+     * @param broadcaster tells clients, as it happens, that an order of theirs ended
+     * @param marketClock decides which session is in force
+     */
+    @Autowired
+    public OrderTriggerEngine(OrderRepository orderRepository,
+                              AccountRepository accountRepository,
+                              CurrentQuoteService currentQuoteService,
+                              OrderSubmissionService orderSubmissionService,
+                              OpenOrderService openOrderService,
+                              JwtService jwtService,
+                              TransactionTemplate transactionTemplate,
+                              OrderUpdateBroadcaster broadcaster,
+                              MarketClock marketClock) {
+        this.marketClock = marketClock;
         this.orderRepository = orderRepository;
         this.accountRepository = accountRepository;
         this.currentQuoteService = currentQuoteService;
@@ -108,7 +143,10 @@ public class OrderTriggerEngine {
      * @return how many orders were sent to be filled
      */
     public int evaluateOpenOrders() {
-        List<Order> open = orderRepository.findOpen();
+        MarketSession session = marketClock.session();
+        List<Order> open = orderRepository.findOpen().stream()
+                .filter(order -> SessionPolicy.canExecute(order, session))
+                .toList();
         if (open.isEmpty()) {
             return 0;
         }

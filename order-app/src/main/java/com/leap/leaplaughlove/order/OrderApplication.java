@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.order;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
 import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -12,7 +13,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
  */
 @SpringBootApplication
 @EnableScheduling
-@Import(JwtService.class)
+@Import({JwtService.class, MarketClock.class})
 public class OrderApplication {
     /**
      * Entry point for the Order application.

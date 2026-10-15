@@ -25,7 +25,8 @@ import com.leap.leaplaughlove.order.instrument.Instrument;
  * Decoupled from Account JPA entity: stores accountId directly.
  * Follows the audit lifecycle: SUBMITTED -> ACCEPTED or REJECTED -> FILLED. Orders other than
  * market orders wait in between: SUBMITTED -> OPEN -> ACCEPTED -> FILLED once the market reaches
- * their price, or OPEN -> CANCELLED or EXPIRED if it never does.
+ * their price, or OPEN -> CANCELLED or EXPIRED if it never does. A market order placed outside
+ * regular hours waits OPEN the same way, for the next open.
  */
 @Entity
 @Table(name = "orders", schema = "trading")
@@ -180,6 +181,12 @@ public class Order {
     @Column(name = "oco_group_id")
     private UUID ocoGroupId;
 
+    @Column(name = "extended_hours", nullable = false)
+    private boolean extendedHours;
+
+    @Column(name = "collar_price", precision = 18, scale = 6)
+    private BigDecimal collarPrice;
+
     @Column(name = "notice_pending", nullable = false)
     private boolean noticePending;
 
@@ -266,6 +273,28 @@ public class Order {
         this.limitPrice = limitPrice;
         this.stopPrice = stopPrice;
         this.timeInForce = timeInForce;
+        this.expiresAt = expiresAt;
+    }
+
+    /**
+     * Lets a LIMIT order also fill in pre-market and after-hours, not only in regular hours.
+     * Called once, before the order is first stored.
+     * @param extendedHours whether it trades in extended hours
+     */
+    public void setExtendedHours(boolean extendedHours) {
+        this.extendedHours = extendedHours;
+    }
+
+    /**
+     * Queues a market order placed outside regular hours for the next open: it works for that
+     * trading day and fills at the opening price, but only within its collar - the most a buy pays,
+     * the least a sell takes. Called once, before the order goes OPEN.
+     * @param collarPrice the collar
+     * @param expiresAt the close of the trading day it is queued for
+     */
+    public void queueForOpen(BigDecimal collarPrice, OffsetDateTime expiresAt) {
+        this.collarPrice = collarPrice;
+        this.timeInForce = TimeInForce.DAY;
         this.expiresAt = expiresAt;
     }
 
@@ -613,6 +642,21 @@ public class Order {
      * @return the group ID, or null if this is not a bracket exit
      */
     public UUID getOcoGroupId() { return ocoGroupId; }
+    /**
+     * Returns whether this LIMIT order may also fill in pre-market and after-hours.
+     * @return true for an extended-hours order
+     */
+    public boolean isExtendedHours() { return extendedHours; }
+    /**
+     * Returns the price a market order queued for the open may fill within.
+     * @return the collar, or null if the order wasn't queued
+     */
+    public BigDecimal getCollarPrice() { return collarPrice; }
+    /**
+     * Returns whether this is a market order queued for the open.
+     * @return true for a market order placed outside regular hours
+     */
+    public boolean isQueuedForOpen() { return getOrderType() == OrderType.MARKET && collarPrice != null; }
     /**
      * Returns whether this order went OPEN and its outcome has not yet been emailed.
      * @return true while an outcome email is owed

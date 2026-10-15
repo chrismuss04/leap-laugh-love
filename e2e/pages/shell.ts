@@ -4,6 +4,10 @@ import { expect, Locator, Page } from '@playwright/test';
 export class Shell {
   readonly nav: Locator;
   readonly liveStatus: Locator;
+  /** The header's market status pill: "Market open", "After-hours"... with what happens next. */
+  readonly marketStatus: Locator;
+  /** The card the pill opens: today's sessions on a timeline. */
+  readonly marketHours: Locator;
   readonly profileButton: Locator;
   readonly menu: Locator;
   readonly logout: Locator;
@@ -11,6 +15,8 @@ export class Shell {
   constructor(readonly page: Page) {
     this.nav = page.getByRole('navigation', { name: 'Main' });
     this.liveStatus = page.locator('.live-status');
+    this.marketStatus = page.getByTestId('market-status');
+    this.marketHours = page.getByRole('dialog', { name: /Market|Pre-market|After-hours/ });
     this.profileButton = page.locator('.profile-button');
     this.menu = page.getByRole('menu');
     this.logout = page.getByRole('menuitem', { name: 'Log out' });

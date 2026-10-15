@@ -1,11 +1,20 @@
 import {
-  AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, signal
+  AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, computed, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 
 export interface ChartPoint {
   time: number;
   value: number;
+}
+
+/** The drawn line, worked out from the points, the baseline and the chart's size. */
+interface ChartShape {
+  linePath: string;
+  areaPath: string;
+  baselineY: number | null;
+  min: number;
+  max: number;
 }
 
 /**
@@ -29,18 +38,23 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Output() scrub = new EventEmitter<number | null>();
 
   readonly width = signal(0);
-  /** Taken from the host, so the parent sizes the chart with CSS. */
-  height = 280;
   readonly active = signal<number | null>(null);
-
-  linePath = '';
-  areaPath = '';
-  baselineY: number | null = null;
 
   private readonly padding = 12;
   private observer?: ResizeObserver;
-  private min = 0;
-  private max = 0;
+  /** Taken from the host, so the parent sizes the chart with CSS. */
+  private readonly hostHeight = signal(280);
+  private readonly data = signal<{ points: ChartPoint[]; baseline: number | null }>({ points: [], baseline: null });
+  /**
+   * Derived rather than assigned, so a resize (which the ResizeObserver reports outside change
+   * detection) marks the view dirty instead of changing a bound value behind Angular's back.
+   */
+  private readonly shape = computed(() => this.build(this.data().points, this.data().baseline));
+
+  get height(): number { return this.hostHeight(); }
+  get linePath(): string { return this.shape().linePath; }
+  get areaPath(): string { return this.shape().areaPath; }
+  get baselineY(): number | null { return this.shape().baselineY; }
 
   constructor(private host: ElementRef<HTMLElement>, private zone: NgZone) {}
 
@@ -51,9 +65,8 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
       if (width !== this.width() || height !== this.height) {
         // ResizeObserver callbacks aren't guaranteed to run inside Angular's zone.
         this.zone.run(() => {
-          this.height = height;
+          this.hostHeight.set(height);
           this.width.set(width);
-          this.build();
         });
       }
     });
@@ -64,7 +77,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (this.active() !== null && this.active()! >= this.points.length) {
       this.clear();
     }
-    this.build();
+    this.data.set({ points: this.points, baseline: this.baseline });
   }
 
   ngOnDestroy(): void {
@@ -77,8 +90,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   y(value: number): number {
-    const span = this.max - this.min || 1;
-    return this.padding + ((this.max - value) / span) * (this.height - this.padding * 2);
+    return this.scale(value, this.shape());
   }
 
   onPointer(event: PointerEvent): void {
@@ -124,25 +136,33 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
   }
 
-  private build(): void {
-    const points = this.points;
-    if (points.length === 0 || this.width() === 0) {
-      this.linePath = this.areaPath = '';
-      this.baselineY = null;
-      return;
+  private scale(value: number, { min, max }: Pick<ChartShape, 'min' | 'max'>): number {
+    const span = max - min || 1;
+    return this.padding + ((max - value) / span) * (this.height - this.padding * 2);
+  }
+
+  private build(points: ChartPoint[], baseline: number | null): ChartShape {
+    const width = this.width();
+    if (points.length === 0 || width === 0) {
+      return { linePath: '', areaPath: '', baselineY: null, min: 0, max: 0 };
     }
     const values = points.map(point => point.value);
-    if (this.baseline != null) {
-      values.push(this.baseline);
+    if (baseline != null) {
+      values.push(baseline);
     }
-    this.min = Math.min(...values);
-    this.max = Math.max(...values);
+    const range = { min: Math.min(...values), max: Math.max(...values) };
+    const y = (value: number) => this.scale(value, range);
+    const x = (index: number) => points.length <= 1 ? width : (index / (points.length - 1)) * width;
 
     const coords = points.length === 1
-      ? [[0, this.y(points[0].value)], [this.width(), this.y(points[0].value)]]
-      : points.map((point, i) => [this.x(i), this.y(point.value)]);
-    this.linePath = coords.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`).join('');
-    this.areaPath = `${this.linePath}L${this.width()},${this.height}L0,${this.height}Z`;
-    this.baselineY = this.baseline != null ? this.y(this.baseline) : null;
+      ? [[0, y(points[0].value)], [width, y(points[0].value)]]
+      : points.map((point, i) => [x(i), y(point.value)]);
+    const linePath = coords.map(([cx, cy], i) => `${i === 0 ? 'M' : 'L'}${cx.toFixed(1)},${cy.toFixed(1)}`).join('');
+    return {
+      linePath,
+      areaPath: `${linePath}L${width},${this.height}L0,${this.height}Z`,
+      baselineY: baseline != null ? y(baseline) : null,
+      ...range
+    };
   }
 }

@@ -2,8 +2,8 @@ import { Component, EventEmitter, Input, OnChanges, Output, signal } from '@angu
 import { CommonModule } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
-  AuditFilter, EMPTY_AUDIT_FILTER, ORDER_SIDES, ORDER_STATUSES, OrderSide, OrderStatus, isOrderId, isUuid,
-  missingAuditCriteria, normalizeAudit
+  AuditFilter, EMPTY_AUDIT_FILTER, ORDER_SIDES, ORDER_STATUSES, OrderSide, OrderStatus, isOrderId, auditFilterError,
+  normalizeAudit
 } from './audit';
 
 /**
@@ -126,28 +126,13 @@ export class AuditFilterComponent implements OnChanges {
       accountId: v.accountId, symbol: v.symbol,
       side: (v.side || null) as OrderSide | null, status: (v.status || null) as OrderStatus | null
     });
-    const error = this.validate(filter);
+    const error = auditFilterError(filter);
     if (error) {
       this.formError.set(error);
       return;
     }
     this.formError.set('');
     this.apply.emit(filter);
-  }
-
-  /** The first problem with the filter, or null when it can be applied. */
-  private validate(filter: AuditFilter): string | null {
-    const missing = missingAuditCriteria(filter);
-    if (missing) {
-      return missing;
-    }
-    if (filter.from! > filter.to!) {
-      return '"Submitted from" must be on or before "Submitted to".';
-    }
-    if (filter.clientId && !isUuid(filter.clientId)) {
-      return 'Enter a full client id, or search by email instead.';
-    }
-    return null;
   }
 
   reset(): void {

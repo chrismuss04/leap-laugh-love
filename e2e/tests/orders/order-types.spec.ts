@@ -51,7 +51,7 @@ test.describe('Limit orders', () => {
     await ticket.submitButton.click();
     await expect(ticket.result).toContainText('Set aside from buying power');
 
-    expect((await trader.api.openOrders()).length).toBe(1);
+    expect(await trader.api.openOrders()).toHaveLength(1);
     // Order-app counts the hold; the account's own cash is untouched until the order fills.
     expect(await trader.api.buyingPower(trader.accountId)).toBeCloseTo(before, 2);
   });
@@ -255,6 +255,6 @@ test.describe('Order templates', () => {
     await ticket.templates.getByRole('button', { name: `Apply template ${name}` }).click();
 
     await expect(ticket.limitPrice).toHaveValue(/\d/);
-    await expect(ticket.untilCancelled).toHaveAttribute('aria-checked', 'true');
+    await expect(ticket.untilCancelled).toBeChecked();
   });
 });

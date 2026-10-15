@@ -8,6 +8,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ShellComponent } from './shell';
 import { AuthService } from '../services/auth.service';
 import { PriceStreamService } from '../services/price-stream';
+import { MarketStatusService } from '../services/market-status';
 import type { Mock } from 'vitest';
 
 // Reproduce AppComponent's parent bindings: testing the shell alone misses mid-render logout.
@@ -32,7 +33,8 @@ describe('Session expiry in the signed-in shell', () => {
     await TestBed.configureTestingModule({
       imports: [ShellComponent, SessionHostComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     }).compileComponents();
     auth = TestBed.inject(AuthService);
     http = TestBed.inject(HttpTestingController);
@@ -51,7 +53,8 @@ describe('Session expiry in the signed-in shell', () => {
     TestBed.configureTestingModule({
       imports: [SessionHostComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     });
     auth = TestBed.inject(AuthService);
     http = TestBed.inject(HttpTestingController);

@@ -1,7 +1,7 @@
 import { convertToParamMap } from '@angular/router';
 import {
-  EMPTY_AUDIT_FILTER, activeAuditFilters, auditParams, auditPeriod, isOrderId, missingAuditCriteria, normalizeAudit,
-  parseAudit, toTradeSearch
+  EMPTY_AUDIT_FILTER, activeAuditFilters, auditFilterError, auditParams, auditPeriod, isOrderId, missingAuditCriteria,
+  normalizeAudit, parseAudit, toTradeSearch
 } from './audit';
 
 describe('Audit filter', () => {
@@ -47,6 +47,16 @@ describe('Audit filter', () => {
   it('counts the fields in use', () => {
     expect(activeAuditFilters(EMPTY_AUDIT_FILTER)).toBe(0);
     expect(activeAuditFilters(full)).toBe(8);
+  });
+
+  it('rejects a reversed period or a client id that is not a full id', () => {
+    const base = { ...EMPTY_AUDIT_FILTER, from: '2026-10-08T17:30', to: '2026-10-01T09:00', clientEmail: 'a@b.com' };
+    expect(auditFilterError(EMPTY_AUDIT_FILTER)).toContain('time period');
+    expect(auditFilterError(base)).toContain('on or before');
+    const ok = { ...base, from: '2026-10-01T09:00', to: '2026-10-08T17:30' };
+    expect(auditFilterError({ ...ok, clientId: 'c-1' })).toContain('full client id');
+    expect(auditFilterError({ ...ok, clientId: '123e4567-e89b-12d3-a456-426614174000' })).toBeNull();
+    expect(auditFilterError(ok)).toBeNull();
   });
 
   it('needs the period and a client, by id or email, before it can be searched', () => {
