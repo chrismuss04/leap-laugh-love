@@ -1,16 +1,17 @@
 package com.leap.leaplaughlove.order.working;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
 import com.leap.leaplaughlove.order.client.AccountClient;
 import com.leap.leaplaughlove.order.client.AccountValidationDto;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
 import com.leap.leaplaughlove.order.quote.CurrentQuoteService;
-import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
 import com.leap.leaplaughlove.order.validation.TradeValidationResult;
 import com.leap.leaplaughlove.order.validation.TradeValidationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,6 +44,7 @@ public class OrderModificationService {
     private final CurrentQuoteService currentQuoteService;
     private final TradeValidationService tradeValidationService;
     private final ReservationService reservationService;
+    private final MarketClock marketClock;
 
     /**
      * Constructs an OrderModificationService.
@@ -57,6 +59,26 @@ public class OrderModificationService {
                                     AccountClient accountClient, CurrentQuoteService currentQuoteService,
                                     TradeValidationService tradeValidationService,
                                     ReservationService reservationService) {
+        this(openOrderService, orderRepository, accountClient, currentQuoteService, tradeValidationService,
+                reservationService, MarketClock.alwaysOpen());
+    }
+
+    /**
+     * Constructs an OrderModificationService whose DAY orders end with the trading day.
+     * @param openOrderService finds and locks the client's open order
+     * @param orderRepository locks the account while holds are counted
+     * @param accountClient reads the account's cash and holdings
+     * @param currentQuoteService reads the live quote a stop is checked against
+     * @param tradeValidationService checks the changed order is affordable
+     * @param reservationService counts what the account's other open orders hold
+     * @param marketClock decides when a DAY order's day ends
+     */
+    @Autowired
+    public OrderModificationService(OpenOrderService openOrderService, OrderRepository orderRepository,
+                                    AccountClient accountClient, CurrentQuoteService currentQuoteService,
+                                    TradeValidationService tradeValidationService,
+                                    ReservationService reservationService, MarketClock marketClock) {
+        this.marketClock = marketClock;
         this.openOrderService = openOrderService;
         this.orderRepository = orderRepository;
         this.accountClient = accountClient;
@@ -104,7 +126,7 @@ public class OrderModificationService {
         }
         Order.TimeInForce timeInForce = resolveTimeInForce(order, request);
         OffsetDateTime expiresAt = timeInForce != order.getTimeInForce()
-                ? OrderSubmissionService.expiryOf(timeInForce, OffsetDateTime.now())
+                ? SessionPolicy.expiryOf(timeInForce, OffsetDateTime.now(), order.isExtendedHours(), marketClock)
                 : order.getExpiresAt();
 
         Instrument instrument = order.getInstrument();

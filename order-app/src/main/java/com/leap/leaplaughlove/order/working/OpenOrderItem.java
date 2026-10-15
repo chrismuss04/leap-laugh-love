@@ -30,6 +30,7 @@ import java.util.UUID;
  * @param ocoGroupId for a bracket's exit order, the group its two legs share: one executes, the other is cancelled
  * @param bracketTakeProfitPrice for a buy with a bracket, the take-profit price it will open at its fill
  * @param bracketStopLossPrice for a buy with a bracket, the stop-loss price it will open at its fill
+ * @param extendedHours whether a LIMIT order may also fill in pre-market and after-hours
  */
 public record OpenOrderItem(
         UUID orderId,
@@ -52,7 +53,8 @@ public record OpenOrderItem(
         UUID parentOrderId,
         UUID ocoGroupId,
         BigDecimal bracketTakeProfitPrice,
-        BigDecimal bracketStopLossPrice
+        BigDecimal bracketStopLossPrice,
+        boolean extendedHours
 ) {
     /**
      * Describes an order, whose instrument must be loaded.
@@ -81,6 +83,7 @@ public record OpenOrderItem(
                 order.getParentOrderId(),
                 order.getOcoGroupId(),
                 order.getBracketTakeProfitPrice(),
-                order.getBracketStopLossPrice());
+                order.getBracketStopLossPrice(),
+                order.isExtendedHours());
     }
 }

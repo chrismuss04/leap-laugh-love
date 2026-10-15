@@ -81,6 +81,8 @@ CREATE TABLE trading.orders (
     bracket_stop_loss_price NUMERIC(18,6),
     parent_order_id UUID,
     oco_group_id UUID,
+    extended_hours BOOLEAN NOT NULL DEFAULT FALSE,
+    collar_price NUMERIC(18,6),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );

@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.order.submission;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
 import com.leap.leaplaughlove.order.order.Order;
@@ -19,6 +21,7 @@ import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
 import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
 import com.leap.leaplaughlove.order.quote.StaleQuoteException;
 import com.leap.leaplaughlove.order.working.ReservationService;
+import com.leap.leaplaughlove.order.working.SessionPolicy;
 import com.leap.leaplaughlove.order.working.TrailingStop;
 import com.leap.leaplaughlove.order.working.TriggerEvaluator;
 import org.slf4j.Logger;
@@ -46,6 +49,10 @@ import java.util.UUID;
  * fill yet are stored OPEN, holding back the cash or shares they may need (see
  * {@link ReservationService}), and {@code OrderTriggerEngine} fills them through
  * {@link #fillOpenOrder} once the market reaches their price.
+ *
+ * <p>Market hours ({@link SessionPolicy}): a market order can only be placed in regular hours.
+ * Other orders can be placed at any time but only execute in a session they may trade in - an
+ * order that would fill at once outside it is left OPEN instead, until that session comes.
  */
 @Service
 public class OrderSubmissionService {
@@ -67,6 +74,7 @@ public class OrderSubmissionService {
     private final TransactionTemplate transactionTemplate;
     private final OrderEventPublisher orderEventPublisher;
     private final ReservationService reservationService;
+    private final MarketClock marketClock;
 
     /**
      * What the first step of a submission decided: a finished rejection, an OPEN order waiting
@@ -94,6 +102,7 @@ public class OrderSubmissionService {
      * @param transactionTemplate runs each step of a submission in its own transaction
      * @param orderEventPublisher reports each order to Kafka once it is final
      * @param reservationService works out what the account's open orders hold back
+     * @param marketClock decides which market session an order is placed and filled in
      */
     @Autowired
     public OrderSubmissionService(AccountClient accountClient,
@@ -105,7 +114,9 @@ public class OrderSubmissionService {
                                   CurrentQuoteService currentQuoteService,
                                   TransactionTemplate transactionTemplate,
                                   OrderEventPublisher orderEventPublisher,
-                                  ReservationService reservationService) {
+                                  ReservationService reservationService,
+                                  MarketClock marketClock) {
+        this.marketClock = marketClock;
         this.accountClient = accountClient;
         this.instrumentRepository = instrumentRepository;
         this.orderRepository = orderRepository;
@@ -116,6 +127,34 @@ public class OrderSubmissionService {
         this.transactionTemplate = transactionTemplate;
         this.orderEventPublisher = orderEventPublisher;
         this.reservationService = reservationService;
+    }
+
+    /**
+     * Constructs an OrderSubmissionService with market hours off: the market is always open.
+     * @param accountClient the client used for account-related operations
+     * @param instrumentRepository the repository for accessing instrument data
+     * @param orderRepository the repository for persisting order data
+     * @param executionRepository the repository for persisting execution data
+     * @param fillRecorder the component responsible for recording fill details
+     * @param tradeValidationService the service used for validating trades
+     * @param currentQuoteService the service used for obtaining current market quotes
+     * @param transactionTemplate runs each step of a submission in its own transaction
+     * @param orderEventPublisher reports each order to Kafka once it is final
+     * @param reservationService works out what the account's open orders hold back
+     */
+    public OrderSubmissionService(AccountClient accountClient,
+                                  InstrumentRepository instrumentRepository,
+                                  OrderRepository orderRepository,
+                                  ExecutionRepository executionRepository,
+                                  FillRecorder fillRecorder,
+                                  TradeValidationService tradeValidationService,
+                                  CurrentQuoteService currentQuoteService,
+                                  TransactionTemplate transactionTemplate,
+                                  OrderEventPublisher orderEventPublisher,
+                                  ReservationService reservationService) {
+        this(accountClient, instrumentRepository, orderRepository, executionRepository, fillRecorder,
+                tradeValidationService, currentQuoteService, transactionTemplate, orderEventPublisher,
+                reservationService, MarketClock.alwaysOpen());
     }
 
     /**
@@ -297,6 +336,7 @@ public class OrderSubmissionService {
      */
     private FirstStep acceptOrReject(OrderSubmissionRequest request) {
         Order.OrderType orderType = request.effectiveOrderType();
+        MarketSession session = marketClock.session();
 
         // 1. Resolve instrument
         Instrument instrument = resolveInstrument(request);
@@ -316,6 +356,11 @@ public class OrderSubmissionService {
         Order order = orderRepository.saveAndFlush(
                 newOrder(request, instrument, accountValidation, maxSlippagePercent));
 
+        if (orderType == Order.OrderType.MARKET && session != MarketSession.REGULAR) {
+            return new FirstStep(rejectOrder(order, accountValidation,
+                    SessionPolicy.marketOrderClosedReason(session)), null, null);
+        }
+
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
         ExecutionQuote quote;
         BigDecimal executionPrice;
@@ -329,7 +374,7 @@ public class OrderSubmissionService {
         }
 
         if (orderType != Order.OrderType.MARKET) {
-            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice);
+            return placeConditionalOrder(order, accountValidation, available, holds, executionPrice, session);
         }
 
         return fillMarketOrder(request, order, accountValidation, available, holds, quote, executionPrice,
@@ -429,8 +474,8 @@ public class OrderSubmissionService {
         return maxSlippagePercent;
     }
 
-    private static Order newOrder(OrderSubmissionRequest request, Instrument instrument,
-                                  AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
+    private Order newOrder(OrderSubmissionRequest request, Instrument instrument,
+                           AccountValidationDto accountValidation, BigDecimal maxSlippagePercent) {
         Order.OrderType orderType = request.effectiveOrderType();
         OffsetDateTime now = OffsetDateTime.now();
         Order order = new Order(request.accountId(), instrument, request.side(), request.quantity(), now);
@@ -439,10 +484,11 @@ public class OrderSubmissionService {
         if (request.hasBracket()) {
             order.setBracket(request.bracketTakeProfitPrice(), request.bracketStopLossPrice());
         }
+        order.setExtendedHours(request.isForExtendedHours());
         if (orderType != Order.OrderType.MARKET) {
             Order.TimeInForce timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;
             order.setConditions(orderType, request.limitPrice(), request.stopPrice(), timeInForce,
-                    expiryOf(timeInForce, now));
+                    SessionPolicy.expiryOf(timeInForce, now, request.isForExtendedHours(), marketClock));
             if (orderType.hasTrail()) {
                 order.setTrailing(request.trailAmount(), request.trailPercent());
             }
@@ -459,11 +505,12 @@ public class OrderSubmissionService {
      * @param available the same, less what other open orders hold
      * @param holds what other open orders hold
      * @param executionPrice the side's live executable price
+     * @param session the market session in force; outside one the order may trade in, it waits
      * @return the rejection, the OPEN order, or the accepted order and its execution
      */
     private FirstStep placeConditionalOrder(Order order, AccountValidationDto accountValidation,
                                             AccountValidationDto available, ReservationService.Holds holds,
-                                            BigDecimal executionPrice) {
+                                            BigDecimal executionPrice, MarketSession session) {
         Order.OrderType orderType = order.getOrderType();
         Order.Side side = order.getSide();
 
@@ -508,7 +555,7 @@ public class OrderSubmissionService {
         }
 
         TriggerEvaluator.Evaluation evaluation = TriggerEvaluator.evaluate(order, executionPrice);
-        if (evaluation.fills()) {
+        if (evaluation.fills() && SessionPolicy.canExecute(order, session)) {
             // A limit the market is already at or better than fills now, at the live price.
             OffsetDateTime acceptTime = OffsetDateTime.now();
             order.markAccepted(acceptTime);
@@ -535,6 +582,10 @@ public class OrderSubmissionService {
     private FirstStep acceptOpenOrder(UUID orderId, BigDecimal fillPrice, boolean stopReached, String bearerToken) {
         Order order = lockForFill(orderId);
         if (order == null || order.getStatus() != Order.Status.OPEN) {
+            return null;
+        }
+        // The engine checked the session too, but it may have changed since (e.g. at the close).
+        if (!SessionPolicy.canExecute(order, marketClock.session())) {
             return null;
         }
         // Loaded inside the transaction, so settling and publishing can read it afterwards.
@@ -658,7 +709,8 @@ public class OrderSubmissionService {
     }
 
     /**
-     * When an order with the given time in force expires if it hasn't filled.
+     * When an order with the given time in force expires if it hasn't filled, with market hours
+     * off. With market hours on, see {@link SessionPolicy#expiryOf}.
      * @param timeInForce DAY or GTC
      * @param now when the order is placed
      * @return midnight US Eastern time after placing for DAY, 90 days later for GTC
@@ -787,7 +839,8 @@ public class OrderSubmissionService {
                 order.getExpiresAt(),
                 order.getReservedCash(),
                 order.getTrailAmount(),
-                order.getTrailPercent()
+                order.getTrailPercent(),
+                order.isExtendedHours()
         );
     }
 }

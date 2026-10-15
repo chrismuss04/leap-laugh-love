@@ -19,6 +19,7 @@ import java.util.UUID;
  * @param fillPrice the price it filled at, for FILLED and ACCEPTED
  * @param reason why it was rejected, for REJECTED
  * @param at when this happened
+ * @param extendedHours whether it was a LIMIT order that could also fill in extended hours
  */
 public record OrderUpdate(
         UUID orderId,
@@ -29,8 +30,26 @@ public record OrderUpdate(
         String status,
         BigDecimal fillPrice,
         String reason,
-        OffsetDateTime at
+        OffsetDateTime at,
+        boolean extendedHours
 ) {
+    /**
+     * An update about a regular-hours order.
+     * @param orderId the order
+     * @param symbol the instrument's symbol
+     * @param side BUY or SELL
+     * @param quantity whole shares ordered
+     * @param orderType the order type
+     * @param status how it ended
+     * @param fillPrice the price it filled at, if it did
+     * @param reason why it was rejected, if it was
+     * @param at when this happened
+     */
+    public OrderUpdate(UUID orderId, String symbol, String side, long quantity, String orderType, String status,
+                       BigDecimal fillPrice, String reason, OffsetDateTime at) {
+        this(orderId, symbol, side, quantity, orderType, status, fillPrice, reason, at, false);
+    }
+
     /**
      * Describes how an order, whose instrument must be loaded, has just ended.
      * @param order the order
@@ -49,6 +68,7 @@ public record OrderUpdate(
                 status.name(),
                 fillPrice,
                 reason,
-                OffsetDateTime.now());
+                OffsetDateTime.now(),
+                order.isExtendedHours());
     }
 }

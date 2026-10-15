@@ -126,6 +126,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-reporting-order-outcomes.sql` | `CANCELLED` and `EXPIRED` in `reporting.orders` |
 | `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders` (rerun any time to rebuild) |
 | `migrate-price-candles-key.sql` | New primary key on `marketdata.price_candles` (stop market-data-app first) |
+| `migrate-market-hours.sql` | `extended_hours` and `collar_price` on orders (market hours) |
 
 `reporting.orders` has no migration; it needs `docker compose down -v` once.
 

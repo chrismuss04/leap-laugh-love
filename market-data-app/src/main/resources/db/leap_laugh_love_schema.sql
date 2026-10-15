@@ -131,6 +131,12 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     bracket_stop_loss_price NUMERIC(18,6) CHECK (bracket_stop_loss_price IS NULL OR bracket_stop_loss_price > 0),
     parent_order_id UUID,
     oco_group_id UUID,
+    -- Market hours: an extended-hours LIMIT order may also fill in pre-market (4:00-9:30 ET) and
+    -- after-hours (16:00-20:00 ET); every other order only executes in regular hours.
+    extended_hours BOOLEAN NOT NULL DEFAULT FALSE,
+    -- A market order queued while the market is closed fills at the open only within this price:
+    -- the most a buy pays, the least a sell takes.
+    collar_price NUMERIC(18,6) CHECK (collar_price IS NULL OR collar_price > 0),
     CONSTRAINT orders_limit_price_by_type
         CHECK ((order_type IN ('LIMIT', 'STOP_LIMIT')) = (limit_price IS NOT NULL)),
     -- A trailing stop's stop is set once the market price is known, after the order is stored.

@@ -79,6 +79,15 @@ public class MarketClock {
     }
 
     /**
+     * A clock with market hours off: always the regular session. For code built without Spring,
+     * e.g. in tests, and for callers that predate market hours.
+     * @return an always-open clock on the system time
+     */
+    public static MarketClock alwaysOpen() {
+        return new MarketClock(Clock.systemUTC(), Mode.ALWAYS_OPEN, null, null);
+    }
+
+    /**
      * Returns the current instant, by this clock.
      * @return now
      */

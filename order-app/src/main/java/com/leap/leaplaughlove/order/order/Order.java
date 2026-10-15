@@ -180,6 +180,12 @@ public class Order {
     @Column(name = "oco_group_id")
     private UUID ocoGroupId;
 
+    @Column(name = "extended_hours", nullable = false)
+    private boolean extendedHours;
+
+    @Column(name = "collar_price", precision = 18, scale = 6)
+    private BigDecimal collarPrice;
+
     @Column(name = "notice_pending", nullable = false)
     private boolean noticePending;
 
@@ -267,6 +273,24 @@ public class Order {
         this.stopPrice = stopPrice;
         this.timeInForce = timeInForce;
         this.expiresAt = expiresAt;
+    }
+
+    /**
+     * Lets a LIMIT order also fill in pre-market and after-hours, not only in regular hours.
+     * Called once, before the order is first stored.
+     * @param extendedHours whether it trades in extended hours
+     */
+    public void setExtendedHours(boolean extendedHours) {
+        this.extendedHours = extendedHours;
+    }
+
+    /**
+     * Sets the price a market order queued for the open may fill within: the most a buy pays, the
+     * least a sell takes. Called once, before the order is first stored.
+     * @param collarPrice the collar
+     */
+    public void setCollarPrice(BigDecimal collarPrice) {
+        this.collarPrice = collarPrice;
     }
 
     /**
@@ -613,6 +637,16 @@ public class Order {
      * @return the group ID, or null if this is not a bracket exit
      */
     public UUID getOcoGroupId() { return ocoGroupId; }
+    /**
+     * Returns whether this LIMIT order may also fill in pre-market and after-hours.
+     * @return true for an extended-hours order
+     */
+    public boolean isExtendedHours() { return extendedHours; }
+    /**
+     * Returns the price a market order queued for the open may fill within.
+     * @return the collar, or null if the order wasn't queued
+     */
+    public BigDecimal getCollarPrice() { return collarPrice; }
     /**
      * Returns whether this order went OPEN and its outcome has not yet been emailed.
      * @return true while an outcome email is owed
