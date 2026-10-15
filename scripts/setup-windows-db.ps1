@@ -44,7 +44,8 @@ $scripts = @(
     'seed_trading.sql',
     'seed_marketdata.sql',
     'seed_sp500_marketdata.sql',
-    'seed_sp500_trading.sql'
+    'seed_sp500_trading.sql',
+    'seed_reporting.sql'
 )
 
 if (-not $PsqlPath) {

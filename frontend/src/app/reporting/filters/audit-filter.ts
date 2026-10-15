@@ -126,15 +126,28 @@ export class AuditFilterComponent implements OnChanges {
       accountId: v.accountId, symbol: v.symbol,
       side: (v.side || null) as OrderSide | null, status: (v.status || null) as OrderStatus | null
     });
-    const error = missingAuditCriteria(filter)
-      ?? (filter.from! > filter.to! ? '"Submitted from" must be on or before "Submitted to".' : null)
-      ?? (filter.clientId && !isUuid(filter.clientId) ? 'Enter a full client id, or search by email instead.' : null);
+    const error = this.validate(filter);
     if (error) {
       this.formError.set(error);
       return;
     }
     this.formError.set('');
     this.apply.emit(filter);
+  }
+
+  /** The first problem with the filter, or null when it can be applied. */
+  private validate(filter: AuditFilter): string | null {
+    const missing = missingAuditCriteria(filter);
+    if (missing) {
+      return missing;
+    }
+    if (filter.from! > filter.to!) {
+      return '"Submitted from" must be on or before "Submitted to".';
+    }
+    if (filter.clientId && !isUuid(filter.clientId)) {
+      return 'Enter a full client id, or search by email instead.';
+    }
+    return null;
   }
 
   reset(): void {

@@ -34,7 +34,7 @@
     <table class="audit-log">
       <caption class="sr-only">Orders matching the audit filters, newest first</caption>
       <thead>
-        <tr><th>Submitted (UTC)</th><th>Client</th><th>Account</th><th>Order</th><th>Status</th><th></th></tr>
+        <tr><th>Submitted (UTC)</th><th>Client</th><th>Account</th><th>Order</th><th>Status</th><th><span class="sr-only">Actions</span></th></tr>
       </thead>
       <tbody>
         <tr *ngFor="let order of orders(); trackBy: trackOrder" data-testid="audit-log-row">
