@@ -18,8 +18,12 @@ import { ProtectionPickerComponent } from '../../shared/protection-picker';
 import { formatProtection, protectionBand } from '../../shared/price-protection';
 import {
   ORDER_TYPES, QuoteOffset, describeOrder, distanceLabel, distanceTo, orderTypeHint, orderTypeLabel,
-  reservePricePerShare, sentenceText, timeInForceLabel, toCents, trailText
+  queuedCollar, reservePricePerShare, sentenceText, timeInForceLabel, toCents, trailText
 } from '../../shared/order-types';
+import { MarketStatusService } from '../../services/market-status';
+import {
+  canExecuteIn, easternMoment, isExtendedSession, sessionLabel, sessionName, sessionTone
+} from '../../shared/market-session';
 import { ChartLine, OrderChartComponent } from '../order-chart/order-chart';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
@@ -57,6 +61,12 @@ export interface PriceChip {
  * Price protection (market orders only): reviewing captures the price the order is quoted at (the
  * ask for a buy, the bid for a sell), and order-app rejects the order if it would fill further than
  * the account's saved protection - or the one picked on the ticket - from that price.
+ *
+ * Market hours: the ticket follows the session the header shows (MarketStatusService, started by
+ * the header). Outside regular hours a market order is queued for the open, holding buying power at
+ * its 5% collar instead of using price protection; a limit order can opt in to extended hours; and
+ * stops are flagged as waiting for regular trading. Until the session is known, it is treated as
+ * regular hours.
  *
  * The app is zoneless, so all template state lives in signals: an HTTP callback or a parent's
  * timer that sets a plain field wouldn't schedule a refresh.
@@ -263,6 +273,74 @@ export class TradePanelComponent implements OnChanges, OnInit {
     : this.side() === 'BUY' ? 'the ask' : 'the bid');
 
   readonly isMarket = computed(() => this.orderType() === 'MARKET');
+
+  // ---- Market hours ----
+  private readonly market = inject(MarketStatusService);
+  readonly marketSession = computed(() => this.market.session());
+  /** A market order placed now waits for the open: the market isn't in regular hours. */
+  readonly queued = computed(() => this.isMarket() && !canExecuteIn(this.marketSession(), 'MARKET', false));
+  /** A queued order's collar: the most a buy pays, or the least a sell takes, at the open. */
+  readonly collar = computed(() => this.queued() ? queuedCollar(this.side(), this.sidePrice()) : null);
+  /** The client's own extended-hours pick; until they make one, it's on during extended hours. */
+  private readonly extendedHoursChoice = signal<boolean | null>(null);
+  /** Only limit orders trade in extended hours. */
+  readonly extendedHoursAvailable = computed(() => this.orderType() === 'LIMIT');
+  readonly extendedHours = computed(() =>
+    this.extendedHoursAvailable() && (this.extendedHoursChoice() ?? isExtendedSession(this.marketSession())));
+  /** Whether this order could execute in the session now in force. */
+  readonly executesNow = computed(() => canExecuteIn(this.marketSession(), this.orderType(), this.extendedHours()));
+
+  /** "Mon 9:30 AM ET": when regular trading next opens, while it isn't under way. */
+  readonly opensAt = computed(() => {
+    const status = this.market.status();
+    if (!status || status.session === 'REGULAR' || !status.nextRegularOpen) {
+      return null;
+    }
+    return easternMoment(status.nextRegularOpen, this.market.now());
+  });
+
+  /** "Pre-market", "After-hours" or "Closed" beside the price, outside regular hours. */
+  readonly sessionTag = computed(() => {
+    const session = this.marketSession();
+    return session && session !== 'REGULAR' ? { text: sessionName(session), tone: sessionTone(session) } : null;
+  });
+
+  /** The strip under the header outside regular hours: "After-hours · Next open Mon 9:30 AM ET". */
+  readonly sessionStrip = computed(() => {
+    const session = this.marketSession();
+    if (!session || session === 'REGULAR') {
+      return null;
+    }
+    const opens = this.opensAt();
+    return {
+      tone: sessionTone(session),
+      label: sessionLabel(session),
+      text: opens ? `Next open ${opens}` : 'Regular trading is paused'
+    };
+  });
+
+  /** Why this order won't execute right now, under the type picker; null when it can. */
+  readonly sessionNote = computed(() => {
+    if (this.executesNow()) {
+      return null;
+    }
+    const opens = this.opensAt();
+    if (this.isMarket()) {
+      return `Market orders outside regular hours are queued and placed at the open${opens ? ` (${opens})` : ''}.`;
+    }
+    if (this.hasStop() || this.hasTrail()) {
+      return 'Stops only trigger during regular market hours (9:30 AM – 4:00 PM ET).';
+    }
+    return isExtendedSession(this.marketSession())
+      ? 'Without extended hours, this waits for regular trading.'
+      : `This waits for the next session it can trade in${opens ? `, by ${opens} at the latest` : ''}.`;
+  });
+
+  setExtendedHours(on: boolean): void {
+    if (this.step() === 'edit') {
+      this.extendedHoursChoice.set(on);
+    }
+  }
   readonly hasLimit = computed(() => this.orderType() === 'LIMIT' || this.orderType() === 'STOP_LIMIT');
   readonly hasStop = computed(() => this.orderType() === 'STOP' || this.orderType() === 'STOP_LIMIT');
   readonly hasTrail = computed(() => this.orderType() === 'TRAILING_STOP');
@@ -572,6 +650,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   /** What a buy needs in buying power: the estimate, or what an open order holds back. */
   readonly costToHold = computed(() => {
+    if (this.queued()) {
+      const collar = this.collar();
+      return collar != null && this.validQuantity() ? toCents(collar * this.quantity()!) : null;
+    }
     if (this.isMarket()) {
       return this.estimate();
     }
@@ -725,7 +807,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     if (this.orderType() === 'LIMIT' && limit != null) {
       if (buy ? limit >= price : limit <= price) {
-        return `Your limit is ${buy ? 'at or above' : 'at or below'} ${this.sideReference()}, so this will fill right away.`;
+        return `Your limit is ${buy ? 'at or above' : 'at or below'} ${this.sideReference()}, so this will fill ${this.executesNow() ? 'right away' : 'as soon as it can trade'}.`;
       }
     }
     if (this.orderType() === 'STOP_LIMIT' && limit != null && stop != null) {
@@ -871,7 +953,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
     trailAmount: this.trailUnit() === 'AMOUNT' ? this.trailValue() : null,
     trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null,
     bracketTakeProfit: this.bracketActive() ? this.takeProfit() : null,
-    bracketStopLoss: this.bracketActive() ? this.stopLoss() : null
+    bracketStopLoss: this.bracketActive() ? this.stopLoss() : null,
+    extendedHours: this.extendedHours(),
+    ...(this.queued() ? { queuedFor: this.opensAt() } : {})
   }));
 
   /** "5%" or "$2.00": the trail as entered. */
@@ -913,7 +997,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const side = this.side();
     this.quotedPrice.set(this.sidePrice());
     this.quoteRequest?.unsubscribe();
-    if (!symbol || !this.isMarket()) {
+    if (!symbol || !this.isMarket() || this.queued()) {
       return;
     }
     this.quoteRequest = this.marketData.getQuote(symbol).subscribe({
@@ -992,8 +1076,13 @@ export class TradePanelComponent implements OnChanges, OnInit {
         ...(this.hasTrail()
           ? this.trailUnit() === 'PERCENT' ? { trailPercent: this.trailValue()! } : { trailAmount: toCents(this.trailValue()!) }
           : {}),
+        ...(this.extendedHours() ? { extendedHours: true } : {}),
         timeInForce: this.timeInForce()
       };
+    }
+    if (this.queued()) {
+      // Queued for the open: its collar stands in for price protection.
+      return base;
     }
     const quotedPrice = this.quotedPrice();
     const protection = this.protection();
@@ -1058,6 +1147,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.pricesTouched.set(false);
     this.bracketOn.set(false);
     this.bracketTouched.set(false);
+    this.extendedHoursChoice.set(null);
     this.takeProfit.set(null);
     this.stopLoss.set(null);
     this.limitPrice.set(null);
@@ -1067,6 +1157,12 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
 
+  /** Whether the result is a market order queued for the open. */
+  readonly queuedResult = computed(() => {
+    const result = this.result();
+    return result?.status === 'OPEN' && result.orderType === 'MARKET';
+  });
+
   /** For an OPEN result: what it's waiting for, e.g. "AAPL falls to $140.00". */
   readonly waitingFor = computed(() => {
     const result = this.result();
@@ -1074,6 +1170,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
       return null;
     }
     const buy = result.side === 'BUY';
+    if (result.orderType === 'MARKET') {
+      const opens = this.opensAt();
+      return `the market opens${opens ? ` (${opens})` : ''}`;
+    }
     if (result.orderType === 'TRAILING_STOP') {
       return `${result.symbol} ${buy ? 'rises' : 'falls'} ${trailText(result.trailAmount, result.trailPercent)} from its ${buy ? 'low' : 'high'}`;
     }

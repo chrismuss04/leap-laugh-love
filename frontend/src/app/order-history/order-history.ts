@@ -1,6 +1,6 @@
 import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { orderTypeLabel, trailText } from '../shared/order-types';
+import { isQueuedOrder, orderTypeLabel, trailText } from '../shared/order-types';
 import { formatMoney } from '../shared/format';
 import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
@@ -20,6 +20,8 @@ export class OrderHistoryComponent implements OnInit {
   expandedOrderId = signal<string | null>(null);
 
   typeLabel = orderTypeLabel;
+  /** A market order waiting for the open. */
+  queued = isQueuedOrder;
 
   /** The prices a limit or stop order was placed with, e.g. "stop $140.00 · limit $139.00". */
   conditionText(order: OrderHistoryItem): string | null {

@@ -445,3 +445,58 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+/* Market hours: the same session colours as the header's market status pill. */
+[data-tone='open'] { --tone: var(--gain); }
+[data-tone='pre'] { --tone: var(--warning); }
+[data-tone='after'] { --tone: var(--info); }
+[data-tone='closed'] { --tone: var(--muted-foreground); }
+
+.price-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* "After-hours" beside the price: the price is from a thin session, or frozen while closed. */
+.session-tag {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  color: var(--tone);
+  background: color-mix(in srgb, var(--tone) 14%, transparent);
+  white-space: nowrap;
+}
+
+.session-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 16px;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--tone) 24%, var(--border));
+  background: color-mix(in srgb, var(--tone) 7%, transparent);
+  font-size: 12.5px;
+  color: var(--muted-foreground);
+}
+
+.session-strip strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+
+.session-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--tone);
+}
+
+.session-strip[data-tone='closed'] .session-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--tone);
+}

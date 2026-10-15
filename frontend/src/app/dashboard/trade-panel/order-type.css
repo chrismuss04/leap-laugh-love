@@ -368,3 +368,23 @@
 .template-name { flex: 1 1 10rem; min-width: 0; }
 .template-message { margin: 0; font-size: 0.8rem; }
 .template-message.error { color: var(--loss, #dc2626); }
+
+/* Market hours: why this order won't execute right now. */
+.session-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--info-muted);
+  color: var(--foreground);
+  font-size: 12.5px;
+  line-height: 1.4;
+  animation: reveal 0.18s ease-out;
+}
+.session-note svg { flex-shrink: 0; margin-top: 1px; color: var(--info); }
+
+@media (prefers-reduced-motion: reduce) {
+  .session-note { animation: none; }
+}

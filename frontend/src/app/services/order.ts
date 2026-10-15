@@ -83,6 +83,11 @@ export interface OrderSubmissionRequest {
    */
   bracketTakeProfitPrice?: number;
   bracketStopLossPrice?: number;
+  /**
+   * For a LIMIT order: also trade in pre-market (4:00-9:30 AM ET) and after-hours (4:00-8:00 PM ET),
+   * not only in regular hours. Other types only ever execute in regular hours.
+   */
+  extendedHours?: boolean;
 }
 
 /** A change to an open order. Only the fields given change; each must apply to the order's type. */
@@ -107,6 +112,8 @@ export interface OrderUpdate {
   fillPrice: number | null;
   reason: string | null;
   at: string;
+  /** Whether it was a limit order that could also fill in extended hours. */
+  extendedHours?: boolean;
 }
 
 export interface OrderSubmissionResponse {
@@ -138,9 +145,19 @@ export interface OrderSubmissionResponse {
   reservedCash?: number | null;
   trailAmount?: number | null;
   trailPercent?: number | null;
+  /** Whether a limit order may also fill in pre-market and after-hours. */
+  extendedHours?: boolean;
+  /**
+   * For a market order placed outside regular hours, queued for the open: the most a buy pays, or
+   * the least a sell takes, per share. It fills at the opening price only within this.
+   */
+  collarPrice?: number | null;
 }
 
-/** An order waiting for the market to reach its price. */
+/**
+ * An order waiting for the market to reach its price - or, for a market order placed outside
+ * regular hours, waiting for the open.
+ */
 export interface OpenOrder {
   orderId: string;
   accountId: string;
@@ -148,7 +165,8 @@ export interface OpenOrder {
   side: OrderSide;
   quantity: number;
   status: OrderStatus;
-  orderType: Exclude<OrderType, 'MARKET'>;
+  /** MARKET only for an order queued for the open. */
+  orderType: OrderType;
   limitPrice: number | null;
   stopPrice: number | null;
   timeInForce: TimeInForce;
@@ -170,6 +188,12 @@ export interface OpenOrder {
   /** For a buy with a bracket: the exit prices it will open when it fills. */
   bracketTakeProfitPrice?: number | null;
   bracketStopLossPrice?: number | null;
+  /** Whether a limit order may also fill in pre-market and after-hours. */
+  extendedHours?: boolean;
+  /** Whether this is a market order queued for the next open. */
+  queued?: boolean;
+  /** For a queued market order: the most a buy pays, or the least a sell takes, per share. */
+  collarPrice?: number | null;
 }
 
 @Injectable({

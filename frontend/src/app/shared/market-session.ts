@@ -80,6 +80,25 @@ const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: '
 const LONG_DATE = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short', month: 'short', day: 'numeric' });
 const DATE_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: EASTERN, year: 'numeric', month: '2-digit', day: '2-digit' });
 
+/**
+ * Whether an order on these terms executes in a session, as order-app decides (SessionPolicy):
+ * everything in regular hours, only extended-hours limit orders in pre-market and after-hours, and
+ * nothing while closed. A null session (status not loaded yet) counts as regular hours.
+ */
+export function canExecuteIn(session: MarketSession | null, orderType: string, extendedHours: boolean): boolean {
+  switch (session ?? 'REGULAR') {
+    case 'REGULAR': return true;
+    case 'PRE_MARKET':
+    case 'AFTER_HOURS': return orderType === 'LIMIT' && extendedHours;
+    default: return false;
+  }
+}
+
+/** Whether a session is pre-market or after-hours. */
+export function isExtendedSession(session: MarketSession | null): boolean {
+  return session === 'PRE_MARKET' || session === 'AFTER_HOURS';
+}
+
 /** "Market open", "Pre-market", "After-hours", "Market closed". */
 export function sessionLabel(session: MarketSession): string {
   return LABELS[session];

@@ -43,11 +43,18 @@
       <div *ngIf="bracketActive()"><dt>Take profit</dt><dd class="num">{{ money(takeProfit()) }}</dd></div>
       <div *ngIf="bracketActive()"><dt>Stop loss</dt><dd class="num">{{ money(stopLoss()) }}</dd></div>
       <div *ngIf="isMarket()"><dt>Estimated price per share</dt><dd class="num">{{ money(sidePrice()) }}</dd></div>
-      <div *ngIf="isMarket()"><dt>Price protection</dt><dd class="num">{{ protectionSummary() }}</dd></div>
+      <div *ngIf="isMarket() && !queued()"><dt>Price protection</dt><dd class="num">{{ protectionSummary() }}</dd></div>
+      <div *ngIf="queued()"><dt>Placed at</dt><dd>Market open<span *ngIf="opensAt()"> · {{ opensAt() }}</span></dd></div>
+      <div *ngIf="queued()"><dt>Price collar</dt><dd class="num">{{ side() === 'BUY' ? 'Up to' : 'At least' }} {{ money(collar()) }}</dd></div>
+      <div *ngIf="extendedHours()"><dt>Trading hours</dt><dd>Regular and extended</dd></div>
       <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
         <dd class="num">{{ money(estimate()) }}</dd></div>
     </dl>
-    <p *ngIf="isMarket()" class="confirmation-warning">Confirming submits this market order for execution.
+    <p *ngIf="queued()" class="confirmation-warning">Confirming queues this market order for the open. It fills at
+      the opening price, but only {{ side() === 'BUY' ? 'up to' : 'down to' }} {{ money(collar()) }} a share — if the
+      market opens beyond that, it isn't filled and nothing changes hands.<span *ngIf="side() === 'BUY'"> Until then
+      {{ money(costToHold()) }} of your buying power is set aside for it.</span> You can cancel it any time before the open.</p>
+    <p *ngIf="isMarket() && !queued()" class="confirmation-warning">Confirming submits this market order for execution.
       The final price may differ from this live estimate<span *ngIf="protection() !== null">, but it
       won't fill outside your price protection</span>. A filled trade cannot be cancelled.<span
       *ngIf="bracketActive()"> Once it fills, a take-profit and a stop-loss sell open to protect it; when one
@@ -72,7 +79,11 @@
         <p class="name" *ngIf="name()">{{ name() }}</p>
       </div>
       <span class="prices">
-        <span class="live-price num" [appRollingNumber]="price()"></span>
+        <span class="price-line">
+          <span *ngIf="sessionTag() as tag" class="session-tag" [attr.data-tone]="tag.tone"
+                data-testid="session-tag">{{ tag.text }}</span>
+          <span class="live-price num" [appRollingNumber]="price()"></span>
+        </span>
         <span *ngIf="bid() !== null && ask() !== null" class="bid-ask num" data-testid="bid-ask"
               title="A buy fills at the ask, a sell at the bid">
           <span [class.active]="side() === 'SELL'">Bid {{ money(bid()) }}</span>
@@ -81,6 +92,11 @@
         </span>
       </span>
     </header>
+
+    <p *ngIf="sessionStrip() as strip" class="session-strip" [attr.data-tone]="strip.tone" data-testid="session-strip">
+      <span class="session-dot" aria-hidden="true"></span>
+      <span><strong>{{ strip.label }}</strong> · {{ strip.text }}</span>
+    </p>
 
     <!-- Result -->
     <div *ngIf="step() === 'result' && result() as result" class="result" role="status" data-testid="trade-result">
@@ -115,14 +131,28 @@
               <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
             </svg>
           </div>
-          <p class="result-title">{{ typeLabel(result.orderType) }} order placed</p>
-          <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
-            {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
-            once {{ waitingFor() }}. It's good {{ result.timeInForce === 'GTC' ? 'until you cancel it' : 'for today' }},
-            and you can cancel it any time from Open orders.</p>
-          <dl class="summary" *ngIf="result.reservedCash">
-            <div><dt>Set aside from buying power</dt><dd class="num">{{ money(result.reservedCash) }}</dd></div>
-          </dl>
+          <ng-container *ngIf="queuedResult(); else placedOpen">
+            <p class="result-title">Queued for market open</p>
+            <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
+              {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
+              when {{ waitingFor() }}, at the opening price. You can cancel it any time before then from Open orders.</p>
+            <dl class="summary">
+              <div *ngIf="result.collarPrice"><dt>Price collar</dt>
+                <dd class="num">{{ result.side === 'BUY' ? 'Up to' : 'At least' }} {{ money(result.collarPrice) }}</dd></div>
+              <div *ngIf="result.reservedCash"><dt>Set aside until the open</dt><dd class="num">{{ money(result.reservedCash) }}</dd></div>
+            </dl>
+          </ng-container>
+          <ng-template #placedOpen>
+            <p class="result-title">{{ typeLabel(result.orderType) }} order placed</p>
+            <p class="result-text" data-testid="trade-open">We'll {{ result.side === 'BUY' ? 'buy' : 'sell' }}
+              {{ result.quantity | number }} {{ result.quantity === 1 ? 'share' : 'shares' }} of {{ result.symbol }}
+              once {{ waitingFor() }}. It's good {{ result.timeInForce === 'GTC' ? 'until you cancel it' : 'for today' }}<span
+                *ngIf="result.extendedHours">, including extended hours</span>,
+              and you can cancel it any time from Open orders.</p>
+            <dl class="summary" *ngIf="result.reservedCash">
+              <div><dt>Set aside from buying power</dt><dd class="num">{{ money(result.reservedCash) }}</dd></div>
+            </dl>
+          </ng-template>
         </ng-container>
       </ng-template>
       <ng-template #rejected>
@@ -147,7 +177,14 @@
 
     <!-- Review -->
     <div *ngIf="step() === 'review' || step() === 'submitting'" class="review">
-      <p class="review-text" *ngIf="isMarket()">
+      <p class="review-text" *ngIf="queued()" data-testid="review-queued">
+        You're queuing a <strong>market order</strong> to {{ side() === 'BUY' ? 'buy' : 'sell' }}
+        <strong>{{ quantity() | number }} {{ quantity() === 1 ? 'share' : 'shares' }}</strong> of {{ symbol() }}
+        for the market open<span *ngIf="opensAt()"> ({{ opensAt() }})</span>. It fills at the opening price, but only
+        {{ side() === 'BUY' ? 'up to' : 'down to' }} <strong>{{ money(collar()) }}</strong> a share — 5% from the
+        current price. If the market opens beyond that, it isn't filled.
+      </p>
+      <p class="review-text" *ngIf="isMarket() && !queued()">
         You're placing a <strong>market order</strong> to {{ side() === 'BUY' ? 'buy' : 'sell' }}
         <strong>{{ quantity() | number }} {{ quantity() === 1 ? 'share' : 'shares' }}</strong> of {{ symbol() }}.
         It will fill right away at the best available price, which may differ slightly from the estimate.
@@ -166,11 +203,14 @@
         <div><dt>{{ quoteOffset() ? (side() === 'BUY' ? 'Ask price' : 'Bid price') : 'Market price' }}</dt>
           <dd class="num">{{ money(sidePrice()) }}</dd></div>
         <div *ngIf="!isMarket()"><dt>Good for</dt><dd>{{ tifLabel(timeInForce()) }}</dd></div>
-        <div *ngIf="isMarket()"><dt>Price protection</dt><dd class="num" data-testid="review-protection">{{ protectionSummary() }}</dd></div>
+        <div *ngIf="extendedHours()"><dt>Trading hours</dt><dd data-testid="review-extended">Regular and extended</dd></div>
+        <div *ngIf="isMarket() && !queued()"><dt>Price protection</dt><dd class="num" data-testid="review-protection">{{ protectionSummary() }}</dd></div>
+        <div *ngIf="queued()"><dt>Price collar</dt>
+          <dd class="num" data-testid="review-collar">{{ side() === 'BUY' ? 'Up to' : 'At least' }} {{ money(collar()) }}</dd></div>
         <div *ngIf="bracketActive()"><dt>Take profit</dt><dd class="num">{{ money(takeProfit()) }}</dd></div>
         <div *ngIf="bracketActive()"><dt>Stop loss</dt><dd class="num">{{ money(stopLoss()) }}</dd></div>
         <div *ngIf="riskRewardText() as text"><dt>If it fills</dt><dd class="num" data-testid="review-risk-reward">{{ text }}</dd></div>
-        <div *ngIf="!isMarket() && side() === 'BUY'"><dt>Set aside while open</dt>
+        <div *ngIf="(!isMarket() || queued()) && side() === 'BUY'"><dt>{{ queued() ? 'Set aside until the open' : 'Set aside while open' }}</dt>
           <dd class="num" data-testid="review-hold">{{ money(costToHold()) }}</dd></div>
         <div class="total"><dt>{{ side() === 'BUY' ? 'Estimated cost' : 'Estimated credit' }}</dt>
           <dd class="num">{{ money(estimate()) }}</dd></div>
@@ -178,7 +218,7 @@
       <ng-container *ngTemplateOutlet="impactTpl"></ng-container>
       <p *ngIf="submitError()" class="error" role="alert">{{ submitError() }}</p>
       <button type="button" class="cta" (click)="submit()" [disabled]="step() === 'submitting'">
-        <span *ngIf="step() !== 'submitting'">{{ side() === 'BUY' ? 'Submit buy' : 'Submit sell' }}</span>
+        <span *ngIf="step() !== 'submitting'">{{ queued() ? (side() === 'BUY' ? 'Queue buy' : 'Queue sell') : (side() === 'BUY' ? 'Submit buy' : 'Submit sell') }}</span>
         <span *ngIf="step() === 'submitting'" class="spinner" aria-label="Placing order"></span>
       </button>
       <button type="button" class="ghost" (click)="edit()" [disabled]="step() === 'submitting'">Edit order</button>
@@ -234,7 +274,14 @@
                   [class.on]="orderType() === t.type" [attr.aria-checked]="orderType() === t.type"
                   (click)="setOrderType(t.type)">{{ t.label }}</button>
         </div>
-        <p class="type-hint">{{ typeHint() }}</p>
+        <p *ngIf="!queued()" class="type-hint">{{ typeHint() }}</p>
+        <p *ngIf="sessionNote() as note" class="session-note" data-testid="session-note">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.8" />
+          <path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+          <span>{{ note }}</span>
+        </p>
       </div>
 
       <div *ngIf="(!isMarket() || bracketActive()) && priceHistory().length > 1" class="order-chart">
@@ -327,6 +374,18 @@
           <span class="hit-rate-note">{{ hitRateNote() }}</span></p>
       </div>
 
+      <div *ngIf="extendedHoursAvailable()" class="extended" data-testid="extended-hours">
+        <label class="bracket-toggle field-row">
+          <span class="bracket-text">
+            <span class="field-label">Extended hours</span>
+            <span class="bracket-sub">Also trade 4:00–9:30 AM and 4:00–8:00 PM ET. Fewer traders means wider
+              spreads and bigger price swings.</span>
+          </span>
+          <input type="checkbox" role="switch" class="switch" name="extendedHours"
+                 [ngModel]="extendedHours()" (ngModelChange)="setExtendedHours($event)" />
+        </label>
+      </div>
+
       <div *ngIf="bracketAvailable()" class="bracket" data-testid="bracket">
         <label class="bracket-toggle field-row">
           <span class="bracket-text">
@@ -389,7 +448,15 @@
         </span>
       </div>
 
-      <div *ngIf="isMarket()" class="protection">
+      <div *ngIf="queued()" class="field-row" data-testid="collar-row">
+        <span class="price-label">
+          <span class="field-label">Price collar</span>
+          <span class="distance">5% from {{ sideReference() }}, instead of price protection</span>
+        </span>
+        <span class="field-value num">{{ side() === 'BUY' ? 'Up to' : 'At least' }} {{ money(collar()) }}</span>
+      </div>
+
+      <div *ngIf="isMarket() && !queued()" class="protection">
         <button type="button" class="field-row protection-toggle" (click)="protectionOpen.set(!protectionOpen())"
                 [attr.aria-expanded]="protectionOpen()" aria-controls="trade-protection">
           <span class="field-label">Price protection</span>
@@ -440,7 +507,7 @@
         </ng-template>
       </p>
 
-      <button type="submit" class="cta" [disabled]="!canReview()">Review order</button>
+      <button type="submit" class="cta" [disabled]="!canReview()">{{ queued() ? 'Review queued order' : 'Review order' }}</button>
     </form>
   </ng-container>
 

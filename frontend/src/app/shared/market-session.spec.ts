@@ -1,5 +1,5 @@
 import {
-  MarketStatus, TradingDay, dayNote, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
+  MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
   sessionName, sessionShortLabel, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
@@ -26,6 +26,17 @@ function status(overrides: Partial<MarketStatus>): MarketStatus {
 const at = (iso: string) => Date.parse(iso);
 
 describe('market session helpers', () => {
+  it('knows which orders execute in which session, as order-app does', () => {
+    expect(canExecuteIn('REGULAR', 'STOP', false)).toBe(true);
+    expect(canExecuteIn('PRE_MARKET', 'LIMIT', true)).toBe(true);
+    expect(canExecuteIn('AFTER_HOURS', 'LIMIT', false)).toBe(false);
+    expect(canExecuteIn('AFTER_HOURS', 'MARKET', false)).toBe(false);
+    expect(canExecuteIn('CLOSED', 'LIMIT', true)).toBe(false);
+    expect(canExecuteIn(null, 'MARKET', false)).toBe(true);
+    expect(isExtendedSession('PRE_MARKET')).toBe(true);
+    expect(isExtendedSession('CLOSED')).toBe(false);
+  });
+
   it('labels and colours each session', () => {
     expect(sessionLabel('REGULAR')).toBe('Market open');
     expect(sessionLabel('CLOSED')).toBe('Market closed');

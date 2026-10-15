@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { OrderHistoryItem } from '../../services/order';
 import { formatMoney } from '../../shared/format';
-import { orderTypeLabel } from '../../shared/order-types';
+import { isQueuedOrder, orderTypeLabel } from '../../shared/order-types';
 
 /** The client's latest orders, with a link through to the full order history page. */
 @Component({
@@ -35,7 +35,7 @@ import { orderTypeLabel } from '../../shared/order-types';
             </span>
             <span class="sub num">{{ fillText(order) }}</span>
           </span>
-          <span class="status" [attr.data-status]="order.status">{{ order.status | titlecase }}</span>
+          <span class="status" [attr.data-status]="order.status">{{ queued(order) ? 'Queued' : (order.status | titlecase) }}</span>
         </li>
       </ol>
     </section>
@@ -82,6 +82,9 @@ export class RecentActivityComponent {
     if (order.status === 'CANCELLED' || order.status === 'EXPIRED') {
       return `${type} order`;
     }
+    if (filled === 0 && isQueuedOrder(order)) {
+      return 'Market order · at the open';
+    }
     if (filled === 0) {
       // Waiting: show the price it waits for.
       const price = order.orderType === 'STOP' || order.orderType === 'STOP_LIMIT' ? order.stopPrice : order.limitPrice;
@@ -89,6 +92,11 @@ export class RecentActivityComponent {
     }
     const average = fills.reduce((sum, fill) => sum + fill.price * fill.quantity, 0) / filled;
     return `${type} @ ${formatMoney(average)}`;
+  }
+
+  /** A market order waiting for the open. */
+  queued(order: OrderHistoryItem): boolean {
+    return isQueuedOrder(order);
   }
 
   trackById(_: number, order: OrderHistoryItem): string {
