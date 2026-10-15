@@ -52,8 +52,8 @@ export default defineConfig({
   projects: [
     // Confirms the stack is up and seeded before anything else runs, with a message that says
     // which service is missing rather than every test timing out.
-    { name: 'setup', testMatch: /.*\.setup\.ts/ },
-    { name: 'api', testMatch: /tests[\\/]api[\\/].*\.spec\.ts/, dependencies: ['setup'] },
+    { name: 'setup', testMatch: '**/*.setup.ts' },
+    { name: 'api', testMatch: 'tests/api/**/*.spec.ts', dependencies: ['setup'] },
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, ...browserProject },
     ...(ALL_BROWSERS
       ? [

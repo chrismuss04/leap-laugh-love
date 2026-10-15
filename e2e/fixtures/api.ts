@@ -196,9 +196,8 @@ export class Api {
 
   /** Cancels every open order, so one test's held cash and shares don't leak into the next. */
   async cancelAllOpenOrders(): Promise<void> {
-    for (const order of await this.openOrders()) {
-      await this.post(`/api/order/orders/${order.orderId}/cancel`);
-    }
+    const open = await this.openOrders();
+    await Promise.all(open.map(order => this.post(`/api/order/orders/${order.orderId}/cancel`)));
   }
 
   async templates(): Promise<{ templateId: string; name: string }[]> {
@@ -206,9 +205,9 @@ export class Api {
   }
 
   async deleteAllTemplates(): Promise<void> {
-    for (const template of await this.templates()) {
-      await this.request.delete(`/api/order/templates/${template.templateId}`, { headers: this.headers() });
-    }
+    const templates = await this.templates();
+    await Promise.all(templates.map(template =>
+      this.request.delete(`/api/order/templates/${template.templateId}`, { headers: this.headers() })));
   }
 
   async orderHistory(page = 0, size = 20): Promise<OrderHistoryPage> {
