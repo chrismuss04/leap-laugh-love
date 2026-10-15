@@ -127,6 +127,13 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-javadoc-plugin</artifactId>
+                        <configuration>
+                            <!-- Dark theme matching the app, layered over the stock stylesheet. -->
+                            <addStylesheets>
+                                <!-- Resolved against src/main/javadoc. -->
+                                <addStylesheet>../../../docs-theme/javadoc/theme.css</addStylesheet>
+                            </addStylesheets>
+                        </configuration>
                         <executions>
                             <execution>
                                 <id>aggregate-javadoc</id>
@@ -142,6 +149,40 @@
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-resources-plugin</artifactId>
                         <executions>
+                            <!-- Runs in every module, after JaCoCo's report, to replace its stylesheet. -->
+                            <execution>
+                                <id>theme-jacoco-report</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <configuration>
+                                    <outputDirectory>${jacoco.output.dir}/jacoco-resources</outputDirectory>
+                                    <overwrite>true</overwrite>
+                                    <resources>
+                                        <resource>
+                                            <directory>${maven.multiModuleProjectDirectory}/docs-theme/jacoco-report</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-site-pages</id>
+                                <phase>prepare-package</phase>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <inherited>false</inherited> <!-- run only once at the root -->
+                                <configuration>
+                                    <outputDirectory>${maven.multiModuleProjectDirectory}/docs</outputDirectory>
+                                    <overwrite>true</overwrite>
+                                    <resources>
+                                        <resource>
+                                            <directory>${maven.multiModuleProjectDirectory}/docs-theme/site</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
                             <execution>
                                 <id>copy-javadoc-to-docs-root</id>
                                 <phase>prepare-package</phase>
