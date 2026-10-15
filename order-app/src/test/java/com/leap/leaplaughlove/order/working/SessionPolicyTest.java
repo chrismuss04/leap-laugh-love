@@ -78,15 +78,4 @@ class SessionPolicyTest {
         assertThat(SessionPolicy.expiryOf(Order.TimeInForce.GTC, placed, false, real))
                 .isEqualTo(placed.plusDays(90));
     }
-
-    @Test
-    void explainsWhyAMarketOrderWasRefused() {
-        assertThat(SessionPolicy.marketOrderClosedReason(MarketSession.AFTER_HOURS))
-                .contains("regular market hours")
-                .contains("after-hours")
-                .contains("extended hours");
-        assertThat(SessionPolicy.marketOrderClosedReason(MarketSession.CLOSED))
-                .contains("closed")
-                .contains("limit order");
-    }
 }

@@ -75,6 +75,7 @@ class MarketHoursIntegrationTest {
     @Autowired private AccountRepository accountRepository;
     @Autowired private OrderSubmissionService orderSubmissionService;
     @Autowired private OpenOrderService openOrderService;
+    @Autowired private OrderModificationService orderModificationService;
     @Autowired private OrderUpdateBroadcaster broadcaster;
     @Autowired private TransactionTemplate transactionTemplate;
     @Autowired private EntityManager entityManager;
@@ -115,16 +116,141 @@ class MarketHoursIntegrationTest {
     // ---- Market orders ----
 
     @Test
-    @DisplayName("a market order outside regular hours is rejected with the reason, and nothing settles")
-    void marketOrderOutsideRegularHoursIsRejected() throws Exception {
+    @DisplayName("a market buy after hours is queued for the open, holding cash at its 5% collar")
+    void marketOrderOutsideRegularHoursIsQueued() throws Exception {
         session(MarketSession.AFTER_HOURS);
 
-        place("{\"side\":\"BUY\",\"quantity\":5}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("REJECTED"))
-                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.containsString("regular market hours")));
+        UUID orderId = UUID.fromString(objectMapper.readTree(place("{\"side\":\"BUY\",\"quantity\":5}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.orderType").value("MARKET"))
+                .andExpect(jsonPath("$.timeInForce").value("DAY"))
+                // The ask is $150.00, so the collar is $157.50 and five shares hold $787.50.
+                .andExpect(jsonPath("$.collarPrice").value(157.50))
+                .andExpect(jsonPath("$.reservedCash").value(787.50))
+                .andExpect(jsonPath("$.execution").doesNotExist())
+                .andReturn().getResponse().getContentAsString()).get("orderId").asText());
 
         verify(accountClient, never()).settleOrder(any(), any());
+        OpenOrderItem listed = openOrderService.listOpen(OWNER).stream()
+                .filter(item -> item.orderId().equals(orderId)).findFirst().orElseThrow();
+        assertTrue(listed.queued());
+        assertEquals(0, new BigDecimal("157.50").compareTo(listed.collarPrice()));
+    }
+
+    @Test
+    @DisplayName("a queued market order must be affordable at its collar")
+    void queuedMarketOrderNeedsCashForItsCollar() throws Exception {
+        session(MarketSession.CLOSED);
+
+        // 64 x $150.00 = $9,600 fits the $10,000 balance, but 64 x $157.50 = $10,080 doesn't.
+        place("{\"side\":\"BUY\",\"quantity\":64}")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("REJECTED"))
+                .andExpect(jsonPath("$.rejectionReason").value(org.hamcrest.Matchers.startsWith("Insufficient funds")));
+    }
+
+    @Test
+    @DisplayName("a queued market order ignores the account's saved price tolerance")
+    void queuedMarketOrderNeedsNoQuotedPrice() throws Exception {
+        session(MarketSession.PRE_MARKET);
+        AccountValidationDto withTolerance = new AccountValidationDto(true, true, new BigDecimal("10000.00"), 25L,
+                "USD", "ACC-OWNER-USD", new BigDecimal("0.50"));
+        when(accountClient.getValidationData(eq(OWNER_ACCOUNT), eq(AAPL))).thenReturn(withTolerance);
+
+        place("{\"side\":\"BUY\",\"quantity\":5}")
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    @DisplayName("a queued market buy fills at the open, at the opening ask")
+    void queuedMarketOrderFillsAtTheOpen() throws Exception {
+        session(MarketSession.CLOSED);
+        UUID orderId = queue("{\"side\":\"BUY\",\"quantity\":5}");
+
+        assertEquals(0, engine.evaluateOpenOrders(), "nothing fills while the market is closed");
+        session(MarketSession.PRE_MARKET);
+        assertEquals(0, engine.evaluateOpenOrders(), "nor in pre-market");
+
+        // The market opens 2% higher: within the collar.
+        openingQuote("152.50", "153.00");
+        session(MarketSession.REGULAR);
+        assertEquals(1, engine.evaluateOpenOrders());
+
+        Order filled = reload(orderId);
+        assertEquals(Order.Status.FILLED, filled.getStatus());
+        verify(accountClient).settleOrderAs(eq(OWNER_ACCOUNT), any(SettlementRequest.class), anyString());
+    }
+
+    @Test
+    @DisplayName("a queued market buy is refused at the open when the price gaps beyond its collar")
+    void queuedMarketOrderBeyondItsCollarIsRefused() throws Exception {
+        session(MarketSession.AFTER_HOURS);
+        UUID orderId = queue("{\"side\":\"BUY\",\"quantity\":5}");
+
+        // Opens 8% higher: past the $157.50 collar.
+        openingQuote("161.50", "162.00");
+        session(MarketSession.REGULAR);
+        engine.evaluateOpenOrders();
+
+        Order refused = reload(orderId);
+        assertEquals(Order.Status.REJECTED, refused.getStatus());
+        assertTrue(refused.getRejectionReason().contains("price collar of $157.50"), refused.getRejectionReason());
+        assertTrue(refused.getRejectionReason().contains("nothing was charged"));
+        verify(accountClient, never()).settleOrderAs(any(), any(), anyString());
+    }
+
+    @Test
+    @DisplayName("a queued market sell is refused at the open when the price gaps below its collar")
+    void queuedMarketSellBelowItsCollarIsRefused() throws Exception {
+        session(MarketSession.CLOSED);
+        UUID orderId = queue("{\"side\":\"SELL\",\"quantity\":5}");
+        // The bid is $149.50, so the collar is $142.03 (rounded for display).
+        assertEquals(0, new BigDecimal("142.025").compareTo(reload(orderId).getCollarPrice()));
+
+        openingQuote("140.00", "140.50");
+        session(MarketSession.REGULAR);
+        engine.evaluateOpenOrders();
+
+        Order refused = reload(orderId);
+        assertEquals(Order.Status.REJECTED, refused.getStatus());
+        assertTrue(refused.getRejectionReason().contains("no shares were sold"), refused.getRejectionReason());
+    }
+
+    @Test
+    @DisplayName("cancelling a queued market order releases what it held")
+    void cancellingAQueuedOrderReleasesItsHold() throws Exception {
+        session(MarketSession.CLOSED);
+        UUID orderId = queue("{\"side\":\"BUY\",\"quantity\":60}");
+
+        // 60 x $157.50 = $9,450 is held, so a second order for $787.50 more can't be afforded...
+        place("{\"side\":\"BUY\",\"quantity\":5}")
+                .andExpect(jsonPath("$.status").value("REJECTED"));
+
+        openOrderService.cancel(OWNER, orderId);
+        entityManager.flush();
+
+        // ...until the first is cancelled.
+        place("{\"side\":\"BUY\",\"quantity\":5}")
+                .andExpect(jsonPath("$.status").value("OPEN"));
+    }
+
+    @Test
+    @DisplayName("a queued market order's quantity can change, re-holding at its collar, but not its time in force")
+    void modifyingAQueuedOrder() throws Exception {
+        session(MarketSession.CLOSED);
+        UUID orderId = queue("{\"side\":\"BUY\",\"quantity\":5}");
+
+        OpenOrderItem changed = orderModificationService.modify(OWNER, orderId,
+                new ModifyOrderRequest(10L, null, null, null, null, null));
+        assertEquals(0, new BigDecimal("1575.00").compareTo(changed.reservedCash()));
+
+        org.springframework.web.server.ResponseStatusException refused = org.junit.jupiter.api.Assertions.assertThrows(
+                org.springframework.web.server.ResponseStatusException.class,
+                () -> orderModificationService.modify(OWNER, orderId,
+                        new ModifyOrderRequest(null, null, null, null, null, Order.TimeInForce.GTC)));
+        assertTrue(refused.getReason().contains("good for that trading day only"));
     }
 
     @Test
@@ -236,6 +362,21 @@ class MarketHoursIntegrationTest {
     }
 
     // ---- Helpers ----
+
+    private UUID queue(String fields) throws Exception {
+        String body = place(fields)
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("OPEN"))
+                .andExpect(jsonPath("$.orderType").value("MARKET"))
+                .andReturn().getResponse().getContentAsString();
+        return UUID.fromString(objectMapper.readTree(body).get("orderId").asText());
+    }
+
+    private void openingQuote(String bid, String ask) {
+        QuoteSnapshot opening = new QuoteSnapshot("AAPL", new BigDecimal(bid), 100L, new BigDecimal(ask), 100L,
+                new BigDecimal(bid), 100L, "NASDAQ", OffsetDateTime.now());
+        when(currentQuoteService.getFreshQuotes(anyString())).thenReturn(Map.of("AAPL", opening));
+    }
 
     private ResultActions place(String fields) throws Exception {
         String body = "{\"accountId\":\"" + OWNER_ACCOUNT + "\",\"symbol\":\"AAPL\"," + fields.substring(1);

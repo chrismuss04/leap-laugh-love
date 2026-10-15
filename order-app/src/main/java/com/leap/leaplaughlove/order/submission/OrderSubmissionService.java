@@ -36,7 +36,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
 import java.util.UUID;
 
@@ -50,9 +52,11 @@ import java.util.UUID;
  * {@link ReservationService}), and {@code OrderTriggerEngine} fills them through
  * {@link #fillOpenOrder} once the market reaches their price.
  *
- * <p>Market hours ({@link SessionPolicy}): a market order can only be placed in regular hours.
- * Other orders can be placed at any time but only execute in a session they may trade in - an
- * order that would fill at once outside it is left OPEN instead, until that session comes.
+ * <p>Market hours ({@link SessionPolicy}): orders only execute in a session they may trade in - an
+ * order that would fill at once outside it is left OPEN instead, until that session comes. A
+ * market order placed outside regular hours is queued for the next open: it holds cash at its
+ * collar ({@link ReservationService#collarFor}) and fills at the opening price, unless that is
+ * beyond the collar.
  */
 @Service
 public class OrderSubmissionService {
@@ -343,7 +347,11 @@ public class OrderSubmissionService {
 
         // 2. Pre-trade check via AccountClient
         AccountValidationDto accountValidation = fetchAccountValidation(request, instrument);
-        BigDecimal maxSlippagePercent = resolveMaxSlippage(request, orderType, accountValidation);
+        // A market order outside regular hours waits for the open, when the quote it was placed at
+        // is hours old: its collar stands in for a price tolerance.
+        boolean queueForOpen = orderType == Order.OrderType.MARKET && session != MarketSession.REGULAR;
+        BigDecimal maxSlippagePercent = queueForOpen ? null
+                : resolveMaxSlippage(request, orderType, accountValidation);
 
         // Cash and shares other open orders hold aren't free for this one. The account's row lock
         // keeps two orders from counting the same cash or shares at once.
@@ -356,10 +364,6 @@ public class OrderSubmissionService {
         Order order = orderRepository.saveAndFlush(
                 newOrder(request, instrument, accountValidation, maxSlippagePercent));
 
-        if (orderType == Order.OrderType.MARKET && session != MarketSession.REGULAR) {
-            return new FirstStep(rejectOrder(order, accountValidation,
-                    SessionPolicy.marketOrderClosedReason(session)), null, null);
-        }
 
         // 4. Resolve execution price (bid for SELL, ask for BUY from CurrentQuoteService)
         ExecutionQuote quote;
@@ -375,6 +379,9 @@ public class OrderSubmissionService {
 
         if (orderType != Order.OrderType.MARKET) {
             return placeConditionalOrder(order, accountValidation, available, holds, executionPrice, session);
+        }
+        if (queueForOpen) {
+            return queueMarketOrder(order, accountValidation, available, holds, executionPrice);
         }
 
         return fillMarketOrder(request, order, accountValidation, available, holds, quote, executionPrice,
@@ -430,6 +437,68 @@ public class OrderSubmissionService {
         // 7. Execution success: record the FILLED execution; settlement follows once it is committed
         Execution execution = fillRecorder.recordExecution(order, executionPrice, quote, OffsetDateTime.now());
         return new FirstStep(null, order, execution);
+    }
+
+    /**
+     * Queues a MARKET order placed outside regular hours for the next open. It must be affordable
+     * at its collar - the most it could cost - which it holds while it waits.
+     * @param order the stored SUBMITTED order
+     * @param accountValidation the account's validation data from account-app
+     * @param available the same, less what other open orders hold
+     * @param holds what other open orders hold
+     * @param executionPrice the side's executable price now, which the collar is measured from
+     * @return the rejection, or the OPEN order
+     */
+    private FirstStep queueMarketOrder(Order order, AccountValidationDto accountValidation,
+                                       AccountValidationDto available, ReservationService.Holds holds,
+                                       BigDecimal executionPrice) {
+        Order.Side side = order.getSide();
+        String bracketProblem = bracketProblem(order, executionPrice);
+        if (bracketProblem != null) {
+            return new FirstStep(rejectOrder(order, accountValidation, bracketProblem), null, null);
+        }
+
+        BigDecimal collar = ReservationService.collarFor(side, executionPrice);
+        TradeValidationResult validationResult = tradeValidationService.validateTrade(
+                available, order.getInstrument(), side, order.getQuantity(), collar);
+        if (!validationResult.isValid()) {
+            return new FirstStep(rejectOrder(order, accountValidation,
+                    ReservationService.explain(validationResult.reason(), side, holds)), null, null);
+        }
+
+        // Good for the trading day it is queued for: a DAY order placed at that open.
+        Instant opensAt = marketClock.nextRegularOpen();
+        OffsetDateTime placedFor = opensAt != null ? opensAt.atOffset(ZoneOffset.UTC) : OffsetDateTime.now();
+        order.queueForOpen(collar, SessionPolicy.dayExpiry(placedFor, false));
+        order.markOpen(ReservationService.reservedCash(side, order.getQuantity(), collar));
+        order = orderRepository.saveAndFlush(order);
+        return new FirstStep(null, order, null);
+    }
+
+    /**
+     * Why a market order queued for the open can't fill at this price: the open was beyond its
+     * collar.
+     * @param order the queued order
+     * @param fillPrice the side's executable price at the open
+     * @return the reason, or null if the price is within the collar (or the order has none)
+     */
+    static String collarProblem(Order order, BigDecimal fillPrice) {
+        BigDecimal collar = order.getCollarPrice();
+        if (collar == null) {
+            return null;
+        }
+        boolean buy = order.getSide() == Order.Side.BUY;
+        boolean beyond = buy ? fillPrice.compareTo(collar) > 0 : fillPrice.compareTo(collar) < 0;
+        if (!beyond) {
+            return null;
+        }
+        return String.format("%s opened at $%s, %s this queued order's price collar of $%s "
+                        + "(5%% from the price when it was placed) - order not filled, %s",
+                order.getInstrument().getSymbol(),
+                fillPrice.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                buy ? "above" : "below",
+                collar.setScale(2, RoundingMode.HALF_UP).toPlainString(),
+                buy ? "nothing was charged" : "no shares were sold");
     }
 
     /**
@@ -588,6 +657,10 @@ public class OrderSubmissionService {
         if (!SessionPolicy.canExecute(order, marketClock.session())) {
             return null;
         }
+        String collarProblem = collarProblem(order, fillPrice);
+        if (collarProblem != null) {
+            return new FirstStep(rejectOrder(order, null, collarProblem), order, null);
+        }
         // Loaded inside the transaction, so settling and publishing can read it afterwards.
         Instrument instrument = order.getInstrument();
         instrument.getSymbol();
@@ -700,7 +773,9 @@ public class OrderSubmissionService {
      */
     private static String executionReason(Order order) {
         return switch (order.getOrderType()) {
-            case MARKET -> "Executed at market price";
+            case MARKET -> order.isQueuedForOpen()
+                    ? "Queued for the open; executed at the opening market price"
+                    : "Executed at market price";
             case LIMIT -> "Executed at limit price or better";
             case STOP -> "Stop price reached; executed at market price";
             case STOP_LIMIT -> "Stop price reached; executed at limit price or better";
@@ -840,7 +915,8 @@ public class OrderSubmissionService {
                 order.getReservedCash(),
                 order.getTrailAmount(),
                 order.getTrailPercent(),
-                order.isExtendedHours()
+                order.isExtendedHours(),
+                order.getCollarPrice()
         );
     }
 }

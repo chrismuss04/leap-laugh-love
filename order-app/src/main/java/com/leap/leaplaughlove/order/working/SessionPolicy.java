@@ -87,22 +87,4 @@ public final class SessionPolicy {
     private static ZonedDateTime endOf(MarketCalendar.TradingDay day, boolean extendedHours) {
         return extendedHours ? day.afterHoursClose() : day.regularClose();
     }
-
-    /**
-     * Why a market order can't be placed outside regular hours, for its rejection.
-     * @param session the session in force (not REGULAR)
-     * @return the reason
-     */
-    public static String marketOrderClosedReason(MarketSession session) {
-        String now = switch (session) {
-            case PRE_MARKET -> "It's pre-market now";
-            case AFTER_HOURS -> "It's after-hours now";
-            default -> "The market is closed now";
-        };
-        String alternative = session.isExtendedHours()
-                ? "place a limit order with extended hours on, or try again at the open"
-                : "place a limit order to work at the open, or try again then";
-        return "Market orders can only be placed during regular market hours (9:30 AM - 4:00 PM ET). "
-                + now + ": " + alternative + " - order rejected";
-    }
 }

@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
         CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP')),
     limit_price NUMERIC(18,6) CHECK (limit_price IS NULL OR limit_price > 0),
     stop_price NUMERIC(18,6) CHECK (stop_price IS NULL OR stop_price > 0),
-    -- NULL for a market order, which never waits.
+    -- NULL for a market order that fills at once; DAY for one queued for the next open.
     time_in_force TEXT CHECK (time_in_force IS NULL OR time_in_force IN ('DAY', 'GTC')),
     expires_at TIMESTAMPTZ,
     -- When a stop order's stop price was reached.

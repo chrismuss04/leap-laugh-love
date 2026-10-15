@@ -124,6 +124,10 @@ public class OrderModificationService {
             trailPercent = request.trailPercent();
             stopPrice = TrailingStop.stopFor(side, order.getTrailPeak(), trailAmount, trailPercent);
         }
+        if (order.isQueuedForOpen() && request.timeInForce() != null
+                && request.timeInForce() != order.getTimeInForce()) {
+            throw badRequest("A market order queued for the open is good for that trading day only");
+        }
         Order.TimeInForce timeInForce = resolveTimeInForce(order, request);
         OffsetDateTime expiresAt = timeInForce != order.getTimeInForce()
                 ? SessionPolicy.expiryOf(timeInForce, OffsetDateTime.now(), order.isExtendedHours(), marketClock)
@@ -139,7 +143,8 @@ public class OrderModificationService {
         orderRepository.lockAccount(order.getAccountId());
         ReservationService.Holds holds = reservationService.holdsFor(
                 order.getAccountId(), instrument.getInstrumentId(), order.getOrderId());
-        BigDecimal reservePrice = ReservationService.reservePricePerShare(type, limitPrice, stopPrice);
+        BigDecimal reservePrice = ReservationService.reservePricePerShare(type, limitPrice, stopPrice,
+                order.getCollarPrice());
         TradeValidationResult result = tradeValidationService.validateTrade(
                 ReservationService.available(account, holds), instrument, side, quantity, reservePrice);
         if (!result.isValid()) {

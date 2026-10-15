@@ -15,7 +15,7 @@ import java.util.UUID;
  * @param side BUY or SELL
  * @param quantity whole shares ordered
  * @param status OPEN, or the status a cancel just moved it to
- * @param orderType LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+ * @param orderType LIMIT, STOP, STOP_LIMIT or TRAILING_STOP; MARKET for a market order queued for the open
  * @param limitPrice the limit price, for LIMIT and STOP_LIMIT
  * @param stopPrice the stop price, for STOP and STOP_LIMIT; a trailing stop's current stop
  * @param timeInForce DAY or GTC
@@ -31,6 +31,8 @@ import java.util.UUID;
  * @param bracketTakeProfitPrice for a buy with a bracket, the take-profit price it will open at its fill
  * @param bracketStopLossPrice for a buy with a bracket, the stop-loss price it will open at its fill
  * @param extendedHours whether a LIMIT order may also fill in pre-market and after-hours
+ * @param queued whether this is a market order queued for the next open
+ * @param collarPrice for a queued market order, the most a buy pays or the least a sell takes
  */
 public record OpenOrderItem(
         UUID orderId,
@@ -54,7 +56,9 @@ public record OpenOrderItem(
         UUID ocoGroupId,
         BigDecimal bracketTakeProfitPrice,
         BigDecimal bracketStopLossPrice,
-        boolean extendedHours
+        boolean extendedHours,
+        boolean queued,
+        BigDecimal collarPrice
 ) {
     /**
      * Describes an order, whose instrument must be loaded.
@@ -84,6 +88,8 @@ public record OpenOrderItem(
                 order.getOcoGroupId(),
                 order.getBracketTakeProfitPrice(),
                 order.getBracketStopLossPrice(),
-                order.isExtendedHours());
+                order.isExtendedHours(),
+                order.isQueuedForOpen(),
+                order.getCollarPrice());
     }
 }

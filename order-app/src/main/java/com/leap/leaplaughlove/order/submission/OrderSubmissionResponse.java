@@ -30,6 +30,8 @@ import java.util.UUID;
  * @param trailAmount for a TRAILING_STOP, the dollars its stop trails the best price by
  * @param trailPercent for a TRAILING_STOP, the percent its stop trails the best price by
  * @param extendedHours whether a LIMIT order may also fill in pre-market and after-hours
+ * @param collarPrice for a market order queued for the open, the most a buy pays or the least a
+ *                    sell takes; null otherwise
  */
 public record OrderSubmissionResponse(
         UUID orderId,
@@ -55,7 +57,8 @@ public record OrderSubmissionResponse(
         BigDecimal reservedCash,
         BigDecimal trailAmount,
         BigDecimal trailPercent,
-        boolean extendedHours
+        boolean extendedHours,
+        BigDecimal collarPrice
 ) {
     /**
      * A response as returned before market hours existed: a regular-hours order.
@@ -93,7 +96,7 @@ public record OrderSubmissionResponse(
                                    BigDecimal trailPercent) {
         this(orderId, accountId, accountNumber, instrumentId, symbol, side, quantity, status, submittedAt,
                 acceptedAt, rejectedAt, filledAt, rejectionReason, execution, accountBalanceAfter, orderType,
-                limitPrice, stopPrice, timeInForce, expiresAt, reservedCash, trailAmount, trailPercent, false);
+                limitPrice, stopPrice, timeInForce, expiresAt, reservedCash, trailAmount, trailPercent, false, null);
     }
 
     /**
@@ -121,7 +124,7 @@ public record OrderSubmissionResponse(
                                    ExecutionDto execution, BigDecimal accountBalanceAfter) {
         this(orderId, accountId, accountNumber, instrumentId, symbol, side, quantity, status, submittedAt,
                 acceptedAt, rejectedAt, filledAt, rejectionReason, execution, accountBalanceAfter,
-                "MARKET", null, null, null, null, null, null, null, false);
+                "MARKET", null, null, null, null, null, null, null, false, null);
     }
 
         /**

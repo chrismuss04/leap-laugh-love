@@ -25,7 +25,8 @@ import com.leap.leaplaughlove.order.instrument.Instrument;
  * Decoupled from Account JPA entity: stores accountId directly.
  * Follows the audit lifecycle: SUBMITTED -> ACCEPTED or REJECTED -> FILLED. Orders other than
  * market orders wait in between: SUBMITTED -> OPEN -> ACCEPTED -> FILLED once the market reaches
- * their price, or OPEN -> CANCELLED or EXPIRED if it never does.
+ * their price, or OPEN -> CANCELLED or EXPIRED if it never does. A market order placed outside
+ * regular hours waits OPEN the same way, for the next open.
  */
 @Entity
 @Table(name = "orders", schema = "trading")
@@ -285,12 +286,16 @@ public class Order {
     }
 
     /**
-     * Sets the price a market order queued for the open may fill within: the most a buy pays, the
-     * least a sell takes. Called once, before the order is first stored.
+     * Queues a market order placed outside regular hours for the next open: it works for that
+     * trading day and fills at the opening price, but only within its collar - the most a buy pays,
+     * the least a sell takes. Called once, before the order goes OPEN.
      * @param collarPrice the collar
+     * @param expiresAt the close of the trading day it is queued for
      */
-    public void setCollarPrice(BigDecimal collarPrice) {
+    public void queueForOpen(BigDecimal collarPrice, OffsetDateTime expiresAt) {
         this.collarPrice = collarPrice;
+        this.timeInForce = TimeInForce.DAY;
+        this.expiresAt = expiresAt;
     }
 
     /**
@@ -647,6 +652,11 @@ public class Order {
      * @return the collar, or null if the order wasn't queued
      */
     public BigDecimal getCollarPrice() { return collarPrice; }
+    /**
+     * Returns whether this is a market order queued for the open.
+     * @return true for a market order placed outside regular hours
+     */
+    public boolean isQueuedForOpen() { return getOrderType() == OrderType.MARKET && collarPrice != null; }
     /**
      * Returns whether this order went OPEN and its outcome has not yet been emailed.
      * @return true while an outcome email is owed
