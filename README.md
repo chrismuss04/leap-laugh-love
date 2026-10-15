@@ -33,6 +33,7 @@ Trunk-based development.
 - [Kafka and the reporting ETL](#kafka-and-the-reporting-etl)
 - [Database](#database)
 - [Price history and candle widths](#price-history-and-candle-widths)
+- [Market hours](#market-hours)
 
 ---
 
@@ -1272,7 +1273,7 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Account** | `GET /api/account/internal/accounts/{id}/validation-data` | Pre-trade validation data (account status, cash balance, holding in the instrument, saved price tolerance) for order-app | Bearer JWT (client or service) |
 | **Account** | `POST /api/account/internal/accounts/{id}/settlement` | Settle a filled order against cash and positions; called by order-app | Bearer JWT (client or service) |
 | **Account** | `GET /actuator/health` | Account service health check | Permitted |
-| **Order** | `POST /api/order/orders` | Place an order (BUY/SELL). `orderType` is `MARKET` (default, fills at once), `LIMIT`, `STOP`, `STOP_LIMIT` or `TRAILING_STOP`; the others wait `OPEN` for their price (`limitPrice`, `stopPrice`, `trailAmount`/`trailPercent`, `timeInForce` `DAY`/`GTC`). A BUY may carry `bracketTakeProfitPrice` and `bracketStopLossPrice` | Bearer JWT (client) |
+| **Order** | `POST /api/order/orders` | Place an order (BUY/SELL). `orderType` is `MARKET` (default, fills at once), `LIMIT`, `STOP`, `STOP_LIMIT` or `TRAILING_STOP`; the others wait `OPEN` for their price (`limitPrice`, `stopPrice`, `trailAmount`/`trailPercent`, `timeInForce` `DAY`/`GTC`). A BUY may carry `bracketTakeProfitPrice` and `bracketStopLossPrice`. A `MARKET` order outside regular hours is queued `OPEN` for the next open with a 5% `collarPrice`; a `LIMIT` order may set `extendedHours` to also fill in pre-market and after-hours (see [Market hours](#market-hours)) | Bearer JWT (client) |
 | **Order** | `GET /api/order/orders/open` | The client's open orders across accounts, newest first | Bearer JWT (client) |
 | **Order** | `PATCH /api/order/orders/{id}` | Change an open order's quantity, limit or stop price, trail or time in force; on a bracket's exit, the quantity changes on both legs | Bearer JWT (client) |
 | **Order** | `POST /api/order/orders/{id}/cancel` | Cancel an open order, releasing the cash or shares it held; `409` if it already filled | Bearer JWT (client) |
@@ -1288,6 +1289,7 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT (client or service) |
 | **Market Data** | `GET /api/marketdata/quotes` | Latest ingested quote (bid, ask, last, sizes) for every instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
+| **Market Data** | `GET /api/marketdata/market/status` | The market session now (`PRE_MARKET`, `REGULAR`, `AFTER_HOURS`, `CLOSED`), when it next changes, when regular trading next opens, and today's hours | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/stream` | Server-Sent-Events push of live price ticks (optional `?symbols=` filter) | Bearer JWT (client) |
 | **Market Data** | `GET /actuator/health` | Market data service health check | Permitted |
 | **Reporting** | `GET /api/reporting/analyst/scorecard` | Volume, filled orders, average trade value, active clients and registrations per month, each with month-over-month and year-over-year % change | Bearer JWT (commercial analyst) |
@@ -1391,7 +1393,7 @@ cd e2e && npm install && npx playwright install chromium
 npm test            # or: npm run test:smoke, npm run test:ui
 ```
 
-See [e2e/README.md](e2e/README.md) for running without Docker and writing new tests.
+See [e2e/README.md](e2e/README.md) for running without Docker, writing new tests, and the separate market hours suite (`npm run test:market-hours`), which needs a stack pinned to one session.
 
 ### Reporting ETL (pytest)
 
@@ -1756,3 +1758,44 @@ Settings under `marketdata.history.backfill`: `enabled` (default `true`), `step-
 - **`spring.task.scheduling.pool-size`** gives the tick and the candle flush their own threads.
 - **Candles are queued and flushed in batches** rather than written on the tick thread. A crash can lose up to one flush interval of candles.
 - **The backfill uses `SplittableRandom`**, which measured ~4.5x faster than `java.util.Random` here.
+
+---
+
+## Market hours
+
+Leapfolio follows the US equity market's sessions, in US Eastern time, on the NYSE calendar (weekends, holidays and 1 PM early closes included):
+
+| Session | Hours (ET) | What can trade |
+| --- | --- | --- |
+| Pre-market | 4:00 – 9:30 AM | Limit orders placed for extended hours |
+| Regular | 9:30 AM – 4:00 PM | Every order type |
+| After-hours | 4:00 – 8:00 PM | Limit orders placed for extended hours |
+| Closed | overnight, weekends, holidays | Nothing; orders wait |
+
+The header's market status pill shows the session and what happens next; clicking it opens today's hours on a timeline.
+
+### How orders behave
+
+- **Market orders** only fill in regular hours. Placed at any other time, a market order is **queued for the next open**: it holds buying power (or shares) while it waits, fills at the opening price, and can be cancelled until then. Its **price collar** replaces price protection: a buy pays at most 5% above the ask when it was placed, a sell takes at least 5% below the bid. A buy needs the cash for the collar, not just the price. If the market opens beyond the collar the order is refused and nothing moves.
+- **Limit orders** can opt in to **extended hours** (`extendedHours: true`, the ticket's "Extended hours" switch) and then also fill in pre-market and after-hours. Without it they wait for regular trading, even when they could fill at once. Only limit orders accept it.
+- **Stop, stop-limit and trailing-stop orders** only trigger in regular hours; a trailing stop does not trail on extended-hours prices.
+- **DAY orders** end with their trading day: at the regular close, or the end of after-hours for an extended-hours order. One placed after that time (or on a non-trading day) is good for the next trading day.
+
+`OrderSubmissionService` places orders, `SessionPolicy` decides who may execute in which session, and `OrderTriggerEngine` only works orders the session allows. The schema change is `scripts/migrate-market-hours.sql`.
+
+### The simulated market
+
+`MarketSimulationEngine` follows the session too: regular hours trade at normal volatility, extended hours at `marketdata.simulation.extended-vol-factor` (0.4) of it with a spread `marketdata.ingestion.extended-spread-factor` (4) times wider, and while closed prices **stand still**. Quotes keep updating at the frozen price so the app always has one. When trading resumes, each price jumps once - the opening gap - by what it would have moved over the closed time, capped at `marketdata.simulation.gap-cap-pct` (3%, which is inside the 5% collar). Ticks made while closed are not charted. The price history generated on first boot is still 24/7.
+
+### Trying it at any hour
+
+`MARKET_HOURS_MODE` is `REAL` (the NYSE clock, the default) or `ALWAYS_OPEN`. To demo a session at any time of day, pin one for both order-app and market-data-app:
+
+| Variable | |
+| --- | --- |
+| `MARKET_HOURS_FORCE_SESSION` | `PRE_MARKET`, `REGULAR`, `AFTER_HOURS` or `CLOSED` |
+| `MARKET_HOURS_FORCE_MINUTES` | How long the pinned session lasts before the market opens; `0` (default) pins it for good |
+
+Docker: set them in `.env`, then `docker compose up -d` (see `.env.example`). Windows without Docker: `.\scripts\start-local.ps1 -MarketSession AFTER_HOURS`, or `-MarketSession CLOSED -MarketOpensInMinutes 3` to watch a queued order fill, or `-AlwaysOpen` for no market hours at all. The e2e and CI stacks run `ALWAYS_OPEN`, so market orders fill at any hour; `e2e/README.md` describes the market hours suite, which pins a session instead.
+
+`GET /api/marketdata/market/status` returns the session, when it next changes, when regular trading next opens and today's hours.

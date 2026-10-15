@@ -42,6 +42,23 @@ export interface OpenOrderResponse {
   status: string;
   parentOrderId?: string | null;
   ocoGroupId?: string | null;
+  /** Whether a limit order may also fill in pre-market and after-hours. */
+  extendedHours?: boolean;
+  /** Whether this is a market order queued for the open. */
+  queued?: boolean;
+  /** For a queued market order: the most a buy pays, or the least a sell takes. */
+  collarPrice?: number | null;
+}
+export type MarketSession = 'PRE_MARKET' | 'REGULAR' | 'AFTER_HOURS' | 'CLOSED';
+/** GET /api/marketdata/market/status: the session in force and when regular trading next opens. */
+export interface MarketStatus {
+  session: MarketSession;
+  now: string;
+  nextSession: MarketSession | null;
+  nextTransitionAt: string | null;
+  nextRegularOpen: string | null;
+  mode: 'REAL' | 'ALWAYS_OPEN';
+  forced: boolean;
 }
 export interface OrderHistoryPage {
   content: { orderId: string; symbol: string; side: string; quantity: number; status: string; submittedAt: string; completedAt?: string }[];
@@ -199,6 +216,11 @@ export class Api {
   }
 
   // ---- Market data ----
+
+  /** The market session now, and when regular trading next opens. */
+  async marketStatus(): Promise<MarketStatus> {
+    return this.json(await this.get('/api/marketdata/market/status'), 'get the market status');
+  }
 
   /** The latest ingested quote: what order-app prices an order against. */
   async latestQuote(symbol: string): Promise<LatestQuote> {
