@@ -24,9 +24,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Staff roles: order-app is for clients only, apart from the activity reports, which are for
- * commercial analysts only. Every token here has a live session in its own session table, so the
- * role is the only thing that differs between them.
+ * Staff roles: order-app is for clients only, except trade reconstruction (Trading Operations
+ * only) and the activity reports (commercial analysts only). Every token here has a live session
+ * in its own session table, so the role is the only thing that differs between them.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -83,10 +83,84 @@ class RoleAccessTest {
     }
 
     @Test
+    @Sql("/db/order_submission_test_setup.sql")
+    @DisplayName("Trading Operations can search and count trades, read the audit reports, and trace and download a trade")
+    void tradingOperationsCanReconstructTrades() throws Exception {
+        String token = tokenFor(Role.TRADING_OPERATIONS);
+        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z")
+                        .param("clientEmail", "owner@example.com"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/orders/counts").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z")
+                        .param("clientEmail", "owner@example.com"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/reports/rejections").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01T00:00:00Z").param("to", "2026-10-08T00:00:00Z"))
+                .andExpect(status().isOk());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk());
+        // 404, not 403: the role got through.
+        UUID unknown = UUID.randomUUID();
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown).header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+        mockMvc.perform(get("/api/order/ops/orders/" + unknown + "/timeline.csv").header("Authorization", "Bearer " + token))
+                .andExpect(status().isNotFound());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"CLIENT", "COMMERCIAL_ANALYST"})
+    @DisplayName("clients and commercial analysts can't reconstruct trades or read the audit reports")
+    void othersCannotReconstructTrades(Role role) throws Exception {
+        String token = tokenFor(role);
+        UUID orderId = UUID.randomUUID();
+        mockMvc.perform(get("/api/order/ops/orders").header("Authorization", "Bearer " + token).param("symbol", "AAPL"))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId + "/timeline").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId + "/timeline.csv").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/" + orderId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/orders/counts").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/reports/rejections").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("trade reconstruction and the audit reports without a token are unauthorized")
+    void tradeReconstructionWithoutTokenIsUnauthorized() throws Exception {
+        mockMvc.perform(get("/api/order/ops/orders").param("symbol", "AAPL"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/orders/" + UUID.randomUUID()))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/orders/counts"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/reports/rejections"))
+                .andExpect(status().isUnauthorized());
+        mockMvc.perform(get("/api/order/ops/reports/stuck-orders"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     @Sql("/db/reporting_orders_test_setup.sql")
     @DisplayName("a commercial analyst can read activity reports")
     void analystCanReadActivityReports() throws Exception {
         mockMvc.perform(get("/api/order/reports/activity").header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST))
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    @Sql({"/db/reporting_orders_test_setup.sql", "/db/reporting_clients_test_setup.sql"})
+    @DisplayName("a commercial analyst can read business insights")
+    void analystCanReadBusinessInsights() throws Exception {
+        mockMvc.perform(get("/api/order/reports/insights").header("Authorization", "Bearer " + tokenFor(Role.COMMERCIAL_ANALYST))
                         .param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isOk());
     }
@@ -100,6 +174,9 @@ class RoleAccessTest {
                         .param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isForbidden());
         mockMvc.perform(get("/api/order/reports/instruments").header("Authorization", "Bearer " + token))
+                .andExpect(status().isForbidden());
+        mockMvc.perform(get("/api/order/reports/insights").header("Authorization", "Bearer " + token)
+                        .param("from", "2026-10-01").param("to", "2026-10-07"))
                 .andExpect(status().isForbidden());
     }
 

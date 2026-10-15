@@ -16,6 +16,20 @@ export const ORDER_TYPES: { type: OrderType; label: string }[] = [
  */
 export const STOP_BUY_BUFFER = 1.05;
 
+/**
+ * How far a market order queued for the open may fill from the price when it was placed: a buy pays
+ * at most 5% more, a sell takes at least 5% less (see order-app's ReservationService).
+ */
+export const QUEUED_MARKET_COLLAR = 0.05;
+
+/** A queued market order's collar: 5% above the ask for a buy, 5% below the bid for a sell. */
+export function queuedCollar(side: OrderSide, price: number | null): number | null {
+  if (price == null) {
+    return null;
+  }
+  return side === 'BUY' ? price * (1 + QUEUED_MARKET_COLLAR) : price * (1 - QUEUED_MARKET_COLLAR);
+}
+
 /** "Limit", "Stop limit"... */
 export function orderTypeLabel(type: OrderType | null | undefined): string {
   return ORDER_TYPES.find(t => t.type === (type ?? 'MARKET'))?.label ?? 'Market';
@@ -48,8 +62,15 @@ export function timeInForceLabel(timeInForce: TimeInForce | null | undefined): s
   return timeInForce === 'GTC' ? 'Until cancelled' : 'Good for day';
 }
 
-/** What the order holds back per share while open: its limit, or its stop plus the stop-buy buffer. */
-export function reservePricePerShare(type: OrderType, limitPrice: number | null, stopPrice: number | null): number | null {
+/**
+ * What the order holds back per share while open: its limit, its stop plus the stop-buy buffer, or,
+ * for a market order queued for the open, its collar.
+ */
+export function reservePricePerShare(type: OrderType, limitPrice: number | null, stopPrice: number | null,
+                                     collarPrice: number | null = null): number | null {
+  if (type === 'MARKET') {
+    return collarPrice;
+  }
   if (type === 'LIMIT' || type === 'STOP_LIMIT') {
     return limitPrice;
   }
@@ -86,6 +107,10 @@ export interface OrderDescription {
   /** A buy's bracket: the sells that open when it fills. */
   bracketTakeProfit?: number | null;
   bracketStopLoss?: number | null;
+  /** For a limit order: whether it also trades in pre-market and after-hours. */
+  extendedHours?: boolean;
+  /** For a market order placed outside regular hours: when the open it waits for is, e.g. "Mon 9:30 AM ET". */
+  queuedFor?: string | null;
 }
 
 /** "$5.00" or "2%": how far a trailing stop trails, or "$—" before it's entered. */
@@ -114,25 +139,48 @@ export function describeOrder(order: OrderDescription): SentencePart[] {
   ];
 }
 
+/** "10 shares", "1 share", or "shares" before a quantity is entered. */
+function sharesText(quantity: number | null): string {
+  if (quantity == null || quantity < 1) {
+    return 'shares';
+  }
+  return `${quantity.toLocaleString('en-US')} ${quantity === 1 ? 'share' : 'shares'}`;
+}
+
+/** ", good for today, including extended hours.": how long the order works, and when. */
+function untilPart(order: OrderDescription): SentencePart {
+  const until = order.timeInForce === 'GTC' ? ', good until cancelled' : ', good for today';
+  const extended = order.type === 'LIMIT' && order.extendedHours ? ', including extended hours' : '';
+  return { text: until + extended + '.' };
+}
+
+/** A market order: now, or queued for the open when the market isn't in regular hours. */
+function describeMarket(order: OrderDescription, verb: string, shares: string): SentencePart[] {
+  const start: SentencePart[] = [{ text: `${capitalise(verb)} ` }, { text: shares, strong: true }];
+  if (order.queuedFor === undefined) {
+    return [...start, { text: ` of ${order.symbol} now at the best available price.` }];
+  }
+  const when: SentencePart[] = order.queuedFor
+    ? [{ text: ' (' }, { text: order.queuedFor, strong: true }, { text: ')' }]
+    : [];
+  return [
+    ...start, { text: ` of ${order.symbol} at the market open` }, ...when,
+    { text: ', within 5% of the current price.' }
+  ];
+}
+
 function describeEntry(order: OrderDescription): SentencePart[] {
   const verb = order.side === 'BUY' ? 'buy' : 'sell';
-  const shares = order.quantity != null && order.quantity >= 1
-    ? `${order.quantity.toLocaleString('en-US')} ${order.quantity === 1 ? 'share' : 'shares'}`
-    : 'shares';
-  const limit = order.limitPrice != null ? formatMoney(order.limitPrice) : '$—';
-  const stop = order.stopPrice != null ? formatMoney(order.stopPrice) : '$—';
+  const shares = sharesText(order.quantity);
+  const limit = order.limitPrice == null ? '$—' : formatMoney(order.limitPrice);
+  const stop = order.stopPrice == null ? '$—' : formatMoney(order.stopPrice);
   const orBetter = order.side === 'BUY' ? 'or lower' : 'or higher';
   const moves = order.side === 'BUY' ? 'rises' : 'falls';
-  const until: SentencePart = {
-    text: order.timeInForce === 'GTC' ? ', good until cancelled.' : ', good for today.'
-  };
+  const until = untilPart(order);
 
   switch (order.type) {
     case 'MARKET':
-      return [
-        { text: `${capitalise(verb)} ` }, { text: shares, strong: true },
-        { text: ` of ${order.symbol} now at the best available price.` }
-      ];
+      return describeMarket(order, verb, shares);
     case 'LIMIT':
       return [
         { text: `${capitalise(verb)} ` }, { text: shares, strong: true }, { text: ` of ${order.symbol} at ` },
@@ -212,8 +260,15 @@ export function distanceLabel(target: number | null, price: number | null, refer
   if (distance.percent < 0.005) {
     return `At ${reference}`;
   }
-  const digits = distance.percent < 1 ? 2 : distance.percent < 10 ? 1 : 0;
-  return `${distance.percent.toFixed(digits)}% ${distance.direction === 'rise' ? 'above' : 'below'} ${reference}`;
+  return `${distance.percent.toFixed(percentDigits(distance.percent))}% ${distance.direction === 'rise' ? 'above' : 'below'} ${reference}`;
+}
+
+/** Two decimals under 1%, one under 10%, none above. */
+function percentDigits(percent: number): number {
+  if (percent < 1) {
+    return 2;
+  }
+  return percent < 10 ? 1 : 0;
 }
 
 /** Rounds to cents, for prices picked from chips. */
@@ -249,7 +304,12 @@ export function holdsByAccount(orders: OpenOrder[]): Record<string, AccountHolds
   return holds;
 }
 
-/** "Limit buy", "Stop sell"... */
+/** Whether an order is a market order waiting OPEN for the market to open. */
+export function isQueuedOrder(order: { status: string; orderType?: OrderType | null }): boolean {
+  return order.status === 'OPEN' && (order.orderType ?? 'MARKET') === 'MARKET';
+}
+
+/** "Limit buy", "Stop sell", "Market buy" (a market order queued for the open)... */
 export function openOrderTitle(order: Pick<OpenOrder, 'orderType' | 'side'>): string {
   return `${orderTypeLabel(order.orderType)} ${order.side === 'BUY' ? 'buy' : 'sell'}`;
 }

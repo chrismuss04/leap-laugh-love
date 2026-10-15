@@ -26,6 +26,12 @@ public class ReservationService {
      */
     public static final BigDecimal STOP_BUY_BUFFER = new BigDecimal("1.05");
 
+    /**
+     * How far a market order queued for the open may fill from the price when it was queued: a buy
+     * pays at most 5% more, a sell takes at least 5% less. A buy holds cash at that most.
+     */
+    public static final BigDecimal QUEUED_MARKET_COLLAR = new BigDecimal("0.05");
+
     /** Stands in for "no order to leave out" in the repository's sums. */
     private static final UUID NO_ORDER = new UUID(0L, 0L);
 
@@ -94,10 +100,46 @@ public class ReservationService {
      * @return the price per share to hold cash for
      */
     public static BigDecimal reservePricePerShare(Order.OrderType type, BigDecimal limitPrice, BigDecimal stopPrice) {
+        return reservePricePerShare(type, limitPrice, stopPrice, null);
+    }
+
+    /**
+     * The most one share could cost when an order on these conditions fills: its limit for a
+     * LIMIT or STOP_LIMIT order, its stop plus {@link #STOP_BUY_BUFFER} for a STOP order, and its
+     * collar for a market order queued for the open.
+     * @param type the order type
+     * @param limitPrice the limit price, if any
+     * @param stopPrice the stop price, if any
+     * @param collarPrice a queued market order's collar, if any
+     * @return the price per share to hold cash for
+     * @throws IllegalArgumentException for a market order with no collar, which never waits
+     */
+    public static BigDecimal reservePricePerShare(Order.OrderType type, BigDecimal limitPrice, BigDecimal stopPrice,
+                                                  BigDecimal collarPrice) {
+        if (type == Order.OrderType.MARKET) {
+            if (collarPrice == null) {
+                throw new IllegalArgumentException("Only a market order queued for the open holds cash");
+            }
+            return collarPrice;
+        }
         if (type.hasLimit()) {
             return limitPrice;
         }
         return stopPrice.multiply(STOP_BUY_BUFFER).setScale(4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * The collar for a market order queued for the open: {@link #QUEUED_MARKET_COLLAR} above the
+     * ask for a buy, below the bid for a sell.
+     * @param side the order's side
+     * @param price the side's executable price when it is queued
+     * @return the most a buy pays, or the least a sell takes, per share
+     */
+    public static BigDecimal collarFor(Order.Side side, BigDecimal price) {
+        BigDecimal factor = side == Order.Side.BUY
+                ? BigDecimal.ONE.add(QUEUED_MARKET_COLLAR)
+                : BigDecimal.ONE.subtract(QUEUED_MARKET_COLLAR);
+        return price.multiply(factor).setScale(4, RoundingMode.HALF_UP);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.marketdata.history;
 
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
 import com.leap.leaplaughlove.marketdata.simulation.PriceState;
@@ -107,6 +108,20 @@ class PriceCandleAccumulatorTest {
                 .findFirst()
                 .orElseThrow(() -> new AssertionError(
                         "no " + width + "s candle at " + bucketStart + " in " + candles.size() + " candles"));
+    }
+
+    @Test
+    @DisplayName("ticks made while the market is closed are left out of every candle")
+    void testClosedTicksAreIgnored() {
+        tick(HOUR_BOUNDARY, "150.00");
+        accumulator.onPriceTick(new PriceTickEvent(new PriceState("AAPL", new BigDecimal("999.00"),
+                OffsetDateTime.ofInstant(Instant.ofEpochSecond(HOUR_BOUNDARY + 10), ZoneOffset.UTC),
+                MarketSession.CLOSED)));
+        tick(HOUR_BOUNDARY + 60, "151.00");
+
+        PriceCandle minute = candleAt(flushAndCapture(), 60, HOUR_BOUNDARY);
+        assertEquals(0, new BigDecimal("150.00").compareTo(minute.getHigh()),
+                "a frozen closed-market price is not a trade");
     }
 
     @Test

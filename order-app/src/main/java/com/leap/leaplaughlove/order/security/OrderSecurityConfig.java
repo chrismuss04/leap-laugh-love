@@ -22,7 +22,7 @@ import org.springframework.web.cors.CorsConfigurationSource;
  * Security configuration for the Order app.
  * Includes CORS, CSRF, Session Management, and JWT Authentication.
  */
-// Session Timeout & Revocation: common-security is outside each app's component scan.
+// Session Timeout & Revocation: common is outside each app's component scan.
 @org.springframework.context.annotation.Import(ClientSessionValidator.class)
 @Configuration
 public class OrderSecurityConfig {
@@ -46,6 +46,8 @@ public class OrderSecurityConfig {
                         // SSE emitters complete via an ASYNC re-dispatch that the JWT filter skips;
                         // the original REQUEST dispatch was already authenticated
                         .dispatcherTypeMatchers(DispatcherType.ASYNC).permitAll()
+                        // Reads every client's trades, so Trading Operations only.
+                        .requestMatchers("/api/order/ops/**").hasRole("TRADING_OPERATIONS")
                         // Activity reports read reporting.orders, not trading data: analysts only.
                         .requestMatchers("/api/order/reports/**").hasRole("COMMERCIAL_ANALYST")
                         // Everything else is client-only: staff tokens are refused here (403).

@@ -46,7 +46,7 @@ export class MarketDataService {
 
   private allPrices$?: Observable<LatestPrice[]>;
 
-  constructor(private http: HttpClient) {}
+  constructor(private readonly http: HttpClient) {}
 
   /** Latest price of every simulated instrument. Cached: it backs symbol search, not live figures. */
   getAllLatestPrices(): Observable<LatestPrice[]> {
@@ -97,11 +97,18 @@ export class MarketDataService {
     );
   }
 
-  /** Last 24 hours of 5-minute closes, for sparklines. Empty on failure - a sparkline is decoration. */
+  /**
+   * The latest day of 5-minute closes (288 of them), for sparklines and the order ticket's chart.
+   * Empty on failure - a sparkline is decoration.
+   *
+   * Candles are only recorded while the market trades, so this reaches back up to a week for them
+   * and takes the newest: while the market is closed, or paused for the night or a weekend, it is
+   * the last stretch that traded rather than nothing at all.
+   */
   getIntradayCloses(symbol: string): Observable<number[]> {
     const to = new Date();
-    const from = new Date(to.getTime() - 86_400_000);
-    return this.getHistory(symbol, from, to, 300, 300).pipe(
+    const from = new Date(to.getTime() - 7 * 86_400_000);
+    return this.getHistory(symbol, from, to, 300, 288).pipe(
       map(candles => candles.map(candle => candle.close)),
       catchError(() => of([]))
     );

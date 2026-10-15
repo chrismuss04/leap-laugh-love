@@ -27,3 +27,86 @@
   color: var(--loss);
   font-size: 14px;
 }
+
+.download {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.btn-download {
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  transition: filter 0.15s ease;
+}
+
+.btn-download:hover:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.btn-download:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.download-error {
+  color: var(--loss);
+  font-size: 13px;
+}
+
+.order-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 16px 24px;
+}
+
+.order-summary dt {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+
+.order-summary dd {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--foreground);
+  overflow-wrap: anywhere;
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.records {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+/* No colour on cells, so a signed amount's gain or loss colour shows. */
+.records th,
+.records td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.records th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+}
+
+/* Quantities and amounts line up on the right; times stay with their headings on the left. */
+.records .amount {
+  text-align: right;
+  white-space: nowrap;
+}

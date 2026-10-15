@@ -100,6 +100,11 @@ describe('OrderStreamService', () => {
     signedOut.stop();
   });
 
+  it('has nothing to stream until started', () => {
+    (service as unknown as { connect(): void }).connect();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('closes when stopped', async () => {
     fetchMock.mockResolvedValue(sse());
     service.start();

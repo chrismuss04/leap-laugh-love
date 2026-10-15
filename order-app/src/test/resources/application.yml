@@ -38,3 +38,9 @@ order:
     email:
       # Tests have no mail server; OrderFillMailerTest and the wiring test enable it explicitly.
       enabled: false
+
+market:
+  hours:
+    # Tests place market orders that fill at once whatever the hour; MarketHours tests pin sessions
+    # on their own clocks.
+    mode: ALWAYS_OPEN

@@ -68,6 +68,10 @@ marketdata:
 order:
   execution:
     max-quote-age-seconds: 5
+  ops:
+    # Trading Operations' stuck-order report lists orders still SUBMITTED or ACCEPTED this long
+    # after they were submitted (see TradeOpsReportService).
+    stuck-after-minutes: ${ORDER_OPS_STUCK_AFTER_MINUTES:5}
   notifications:
     # Emails a client when an order that waited fills, is refused or expires (see OrderFillMailer).
     email:
@@ -100,3 +104,11 @@ trading:
     interval-ms: 1000
     # Expire DAY and GTC orders past their time in force.
     expiry-interval-ms: 30000
+
+market:
+  hours:
+    # REAL follows the NYSE clock; ALWAYS_OPEN trades around the clock. A forced session pins
+    # PRE_MARKET, REGULAR, AFTER_HOURS or CLOSED for force-minutes (0 = for good), for demos.
+    mode: ${MARKET_HOURS_MODE:REAL}
+    force-session: ${MARKET_HOURS_FORCE_SESSION:}
+    force-minutes: ${MARKET_HOURS_FORCE_MINUTES:0}

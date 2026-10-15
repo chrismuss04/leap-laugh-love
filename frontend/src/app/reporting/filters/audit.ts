@@ -1,8 +1,10 @@
 import { ParamMap, Params } from '@angular/router';
+import { TradeSearch } from '../../services/trade-ops';
 
 /**
- * Staff Dashboards: what trading operations narrows the order audit to. Every field is optional
- * and kept in the URL under its own name, so an audit view can be bookmarked or shared.
+ * Staff Dashboards: what trading operations narrows the order audit to, kept in the URL under each
+ * field's own name so an audit view can be bookmarked or shared. A search needs the period and the
+ * client (by id or email); every other field is optional.
  */
 export const ORDER_STATUSES = [
   'SUBMITTED', 'OPEN', 'ACCEPTED', 'REJECTED', 'FILLED', 'CANCELLED', 'EXPIRED'
@@ -18,6 +20,8 @@ export interface AuditFilter {
   /** Submitted at or before, as a datetime-local value (yyyy-mm-ddThh:mm). */
   to: string | null;
   clientId: string | null;
+  clientEmail: string | null;
+  /** An account id or account number. */
   accountId: string | null;
   symbol: string | null;
   side: OrderSide | null;
@@ -25,7 +29,7 @@ export interface AuditFilter {
 }
 
 export const EMPTY_AUDIT_FILTER: AuditFilter = {
-  from: null, to: null, clientId: null, accountId: null, symbol: null, side: null, status: null
+  from: null, to: null, clientId: null, clientEmail: null, accountId: null, symbol: null, side: null, status: null
 };
 
 const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
@@ -37,6 +41,7 @@ export function parseAudit(params: ParamMap): AuditFilter {
     from: params.get('from'),
     to: params.get('to'),
     clientId: params.get('clientId'),
+    clientEmail: params.get('clientEmail'),
     accountId: params.get('accountId'),
     symbol: params.get('symbol'),
     side: params.get('side') as OrderSide | null,
@@ -51,6 +56,7 @@ export function normalizeAudit(filter: AuditFilter): AuditFilter {
     from: filter.from && DATE_TIME.test(filter.from) ? filter.from : null,
     to: filter.to && DATE_TIME.test(filter.to) ? filter.to : null,
     clientId: text(filter.clientId),
+    clientEmail: text(filter.clientEmail),
     accountId: text(filter.accountId),
     symbol: text(filter.symbol)?.toUpperCase() ?? null,
     side: ORDER_SIDES.includes(filter.side!) ? filter.side : null,
@@ -68,7 +74,69 @@ export function activeAuditFilters(filter: AuditFilter): number {
   return Object.values(filter).filter(value => value !== null).length;
 }
 
+/** Whether the text is a UUID, as orders, clients and accounts are keyed by. */
+export function isUuid(value: string | null | undefined): boolean {
+  return !!value && UUID.test(value.trim());
+}
+
 /** Whether the text is an order id. Orders are keyed by UUID (trading.orders.order_id). */
 export function isOrderId(value: string | null | undefined): boolean {
-  return !!value && UUID.test(value.trim());
+  return isUuid(value);
+}
+
+/** Why the filter can't be searched yet, or null when it can: it needs a period and a client. */
+export function missingAuditCriteria(filter: AuditFilter): string | null {
+  if (!filter.from || !filter.to) {
+    return 'Enter a time period: both "Submitted from" and "Submitted to".';
+  }
+  if (!filter.clientId && !filter.clientEmail) {
+    return 'Enter a client id or client email.';
+  }
+  return null;
+}
+
+/** Why the filter can't be submitted, or null when it can: missing criteria, a reversed period or a malformed client id. */
+export function auditFilterError(filter: AuditFilter): string | null {
+  const missing = missingAuditCriteria(filter);
+  if (missing) {
+    return missing;
+  }
+  if (filter.from! > filter.to!) {
+    return '"Submitted from" must be on or before "Submitted to".';
+  }
+  if (filter.clientId && !isUuid(filter.clientId)) {
+    return 'Enter a full client id, or search by email instead.';
+  }
+  return null;
+}
+
+/**
+ * The filter's period as ISO date-times, from inclusive and to exclusive, or null without both ends.
+ * Submitted from and to are local datetime-local minutes and both inclusive, so the period runs
+ * from the start of the first to the end of the last.
+ */
+export function auditPeriod(filter: AuditFilter): { from: string; to: string } | null {
+  if (!filter.from || !filter.to) { return null; }
+  return {
+    from: new Date(filter.from).toISOString(),
+    to: new Date(new Date(filter.to).getTime() + 60_000).toISOString()
+  };
+}
+
+/**
+ * The trade search for a filter that can be searched, over its {@link auditPeriod}; an account
+ * that isn't a UUID is an account number.
+ */
+export function toTradeSearch(filter: AuditFilter): TradeSearch {
+  const account = filter.accountId ?? undefined;
+  return {
+    ...auditPeriod(filter)!,
+    clientId: filter.clientId ?? undefined,
+    clientEmail: filter.clientEmail ?? undefined,
+    accountId: isUuid(account) ? account : undefined,
+    accountNumber: account && !isUuid(account) ? account : undefined,
+    symbol: filter.symbol ?? undefined,
+    side: filter.side ?? undefined,
+    status: filter.status ?? undefined
+  };
 }

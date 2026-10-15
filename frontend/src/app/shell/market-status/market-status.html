@@ -1,0 +1,73 @@
+<ng-template #glyph let-session>
+  <span class="glyph" aria-hidden="true" [ngSwitch]="session">
+    <svg *ngSwitchCase="'PRE_MARKET'" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linecap="round">
+      <circle cx="8" cy="8" r="2.75" />
+      <path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05" />
+    </svg>
+    <svg *ngSwitchCase="'AFTER_HOURS'" width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+         stroke-width="1.5" stroke-linejoin="round">
+      <path d="M13.5 9.6A5.75 5.75 0 0 1 6.4 2.5a5.75 5.75 0 1 0 7.1 7.1Z" />
+    </svg>
+    <span *ngSwitchDefault class="dot"></span>
+  </span>
+</ng-template>
+
+<div class="market-status" *ngIf="market.status() as status" (keydown.escape)="close()">
+  <!-- Announced when the session changes; the countdown stays visual-only. -->
+  <span class="sr-only" role="status">{{ label(status.session) }}</span>
+
+  <button type="button" class="pill fade-in" data-testid="market-status" [attr.data-tone]="tone(status.session)"
+          [attr.aria-expanded]="open()" aria-haspopup="dialog" aria-controls="market-hours-card" (click)="toggle()">
+    <ng-container *ngTemplateOutlet="glyph; context: { $implicit: status.session }"></ng-container>
+    <span class="pill-label wide">{{ label(status.session) }}</span>
+    <span class="pill-label narrow">{{ shortLabel(status.session) }}</span>
+    <ng-container *ngIf="market.nextChange() as next">
+      <span class="pill-sep wide" aria-hidden="true">·</span>
+      <span class="pill-next num wide">{{ next }}</span>
+    </ng-container>
+  </button>
+
+  <div class="backdrop" *ngIf="open()" (click)="close()"></div>
+  <section *ngIf="open()" id="market-hours-card" class="card" role="dialog" aria-labelledby="market-hours-title"
+           [attr.data-tone]="tone(status.session)">
+    <header class="card-head">
+      <ng-container *ngTemplateOutlet="glyph; context: { $implicit: status.session }"></ng-container>
+      <div>
+        <h2 id="market-hours-title">{{ label(status.session) }}</h2>
+        <p class="card-next num" *ngIf="market.nextChange() as next">{{ next }}</p>
+      </div>
+    </header>
+
+    <ng-container *ngIf="segments().length">
+      <div class="timeline" aria-hidden="true">
+        <span *ngFor="let segment of segments()" class="segment" [attr.data-tone]="tone(segment.session)"
+              [class.current]="isCurrent(segment.session)"
+              [style.left.%]="segment.start" [style.width.%]="segment.width"></span>
+        <span *ngIf="nowPosition() !== null" class="now" [style.left.%]="nowPosition()"></span>
+      </div>
+      <div class="ticks" aria-hidden="true">
+        <span>4 AM</span><span>Noon</span><span>8 PM</span>
+      </div>
+
+      <ul class="sessions" aria-label="Today's trading sessions">
+        <li *ngFor="let segment of segments()" [attr.data-tone]="tone(segment.session)"
+            [class.current]="isCurrent(segment.session)">
+          <span class="swatch" aria-hidden="true"></span>
+          <span class="session-name">{{ name(segment.session) }}</span>
+          <span class="session-range num">{{ segment.range }}</span>
+          <span class="now-badge" *ngIf="isCurrent(segment.session)">Now</span>
+        </li>
+      </ul>
+    </ng-container>
+
+    <p class="note" *ngIf="note() as text">{{ text }}</p>
+
+    <p class="next-open" *ngIf="nextOpen() as next">
+      <span>Next regular open</span>
+      <span class="num">{{ next }}</span>
+    </p>
+
+    <p class="footnote">All times are US Eastern.</p>
+  </section>
+</div>

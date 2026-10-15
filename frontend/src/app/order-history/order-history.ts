@@ -1,6 +1,6 @@
 import { Component, computed, inject, OnInit, signal, WritableSignal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { orderTypeLabel, trailText } from '../shared/order-types';
+import { isQueuedOrder, orderTypeLabel, trailText } from '../shared/order-types';
 import { formatMoney } from '../shared/format';
 import { AuthService } from '../services/auth.service';
 import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/order';
@@ -12,14 +12,16 @@ import { OrderService, OrderHistoryItem, OrderHistoryPage } from '../services/or
     styleUrl: './order-history.css'
 })
 export class OrderHistoryComponent implements OnInit {
-  orders = signal<OrderHistoryItem[]>([]);
-  currentPage = signal(0);
-  totalPages = signal(0);
-  loading = signal(false);
-  error = signal<string | null>(null);
-  expandedOrderId = signal<string | null>(null);
+  readonly orders = signal<OrderHistoryItem[]>([]);
+  readonly currentPage = signal(0);
+  readonly totalPages = signal(0);
+  readonly loading = signal(false);
+  readonly error = signal<string | null>(null);
+  readonly expandedOrderId = signal<string | null>(null);
 
-  typeLabel = orderTypeLabel;
+  readonly typeLabel = orderTypeLabel;
+  /** A market order waiting for the open. */
+  readonly queued = isQueuedOrder;
 
   /** The prices a limit or stop order was placed with, e.g. "stop $140.00 · limit $139.00". */
   conditionText(order: OrderHistoryItem): string | null {
@@ -33,16 +35,16 @@ export class OrderHistoryComponent implements OnInit {
     return parts.length ? parts.join(' · ') : null;
   }
 
-  year = signal<number | null>(null);
-  month = signal<number | null>(null);
-  day = signal<number | null>(null);
+  readonly year = signal<number | null>(null);
+  readonly month = signal<number | null>(null);
+  readonly day = signal<number | null>(null);
 
   readonly years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i);
   readonly months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
-  days = computed(() => {
+  readonly days = computed(() => {
     const year = this.year();
     const month = this.month();
     if (year === null || month === null) {
@@ -52,8 +54,8 @@ export class OrderHistoryComponent implements OnInit {
     return Array.from({ length: daysInMonth }, (_, i) => i + 1);
   });
 
-  private authService = inject(AuthService);
-  private orderService = inject(OrderService);
+  private readonly authService = inject(AuthService);
+  private readonly orderService = inject(OrderService);
 
   ngOnInit() {
     if (!this.authService.isAuthenticated()) {

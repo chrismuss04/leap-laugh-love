@@ -6,6 +6,11 @@
   <p class="eyebrow">Order lifecycle</p>
   <h1 class="font-display headline-page">Trace <em>order</em></h1>
   <p class="order-id" data-testid="lifecycle-order-id"><code>{{ orderId() }}</code></p>
+  <div class="download" *ngIf="validId()">
+    <button type="button" class="btn-download" data-testid="lifecycle-download" [disabled]="downloading()"
+            (click)="downloadCsv()">{{ downloading() ? 'Downloading…' : 'Download CSV' }}</button>
+    <span class="download-error" *ngIf="downloadError()" role="alert">{{ downloadError() }}</span>
+  </div>
 </div>
 
 <div *ngIf="!validId(); else trace" class="notice" role="alert">
@@ -17,7 +22,19 @@
   <section class="section grid" aria-label="Order lifecycle">
     <app-report-panel class="span-all" eyebrow="Who and what" heading="Order summary"
                       description="The client and account that placed the order, the instrument, side, quantity and fill price, and its current status."
-                      source="trading.orders · trading.accounts · iam.clients"></app-report-panel>
+                      source="trading.orders · trading.accounts · iam.clients"
+                      [state]="recordsState()" [message]="recordsMessage()" (retry)="retryRecords()">
+      <dl class="order-summary" *ngIf="records() as records" data-testid="order-summary">
+        <div><dt>Client</dt><dd>{{ records.order.summary.clientEmail }}</dd></div>
+        <div><dt>Account</dt><dd>{{ records.order.summary.accountNumber }}</dd></div>
+        <div><dt>Order</dt><dd>{{ records.order.summary.side }} {{ records.order.summary.quantity }} {{ records.order.summary.symbol }}</dd></div>
+        <div><dt>Type</dt><dd>{{ records.order.orderType | titlecase }}</dd></div>
+        <div><dt>Submitted (UTC)</dt><dd class="num">{{ records.order.summary.submittedAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</dd></div>
+        <div><dt>Fill price</dt><dd class="num">{{ fillPrice() === null ? '—' : (fillPrice() | currency: 'USD') }}</dd></div>
+        <div><dt>Status</dt><dd>{{ records.order.summary.status | titlecase }}</dd></div>
+        <div *ngIf="records.order.rejectionReason"><dt>Rejection reason</dt><dd>{{ records.order.rejectionReason }}</dd></div>
+      </dl>
+    </app-report-panel>
 
     <app-report-panel class="span-all" eyebrow="End to end, with timestamps" heading="Lifecycle timeline" state="ready"
                       description="Each step from submission to the reporting store, when it happened, and how long after the step before.">
@@ -26,14 +43,70 @@
 
     <app-report-panel class="span-all" eyebrow="Order and executions" heading="Executions"
                       description="Each fill or rejection the execution engine recorded for this order, with its time and reason."
-                      source="trading.executions"></app-report-panel>
+                      source="trading.executions"
+                      [state]="executionsState()" [message]="panelMessage()" (retry)="retryRecords()">
+      <div class="table-scroll">
+        <table class="records">
+          <caption class="sr-only">Execution records for this order, oldest first</caption>
+          <thead>
+            <tr><th>Executed (UTC)</th><th>Result</th><th class="amount">Quantity</th><th class="amount">Price</th><th>Reason</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let execution of records()?.executions" data-testid="execution-row">
+              <td class="num">{{ execution.executedAt | date: 'yyyy-MM-dd HH:mm:ss.SSS' : 'UTC' }}</td>
+              <td>{{ execution.status | titlecase }}</td>
+              <td class="num amount">{{ execution.fillQuantity ?? '—' }}</td>
+              <td class="num amount">{{ execution.fillPrice === null ? '—' : (execution.fillPrice | currency: 'USD' : 'symbol' : '1.2-6') }}</td>
+              <td>{{ execution.reason ?? '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </app-report-panel>
 
     <app-report-panel eyebrow="Cash ledger" heading="Cash entries"
                       description="Buy and sell settlements this order posted to the account's cash ledger, with amounts and times."
-                      source="trading.cash_ledger"></app-report-panel>
+                      source="trading.cash_ledger"
+                      [state]="cashEntriesState()" [message]="panelMessage()" (retry)="retryRecords()">
+      <div class="table-scroll">
+        <table class="records">
+          <caption class="sr-only">Cash ledger entries for this order, oldest first</caption>
+          <thead>
+            <tr><th>Posted (UTC)</th><th>Entry</th><th class="amount">Amount</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let entry of records()?.cashEntries" data-testid="cash-entry-row">
+              <td class="num">{{ entry.createdAt | date: 'yyyy-MM-dd HH:mm:ss.SSS' : 'UTC' }}</td>
+              <td>{{ entry.entryType }}</td>
+              <td class="num amount" [class.text-gain]="entry.amount > 0" [class.text-loss]="entry.amount < 0">
+                {{ entry.amount > 0 ? '+' : '' }}{{ entry.amount | currency: entry.currency }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </app-report-panel>
 
     <app-report-panel eyebrow="Holdings ledger" heading="Position movements"
                       description="Fills this order moved into or out of the account's holdings, with quantities and times."
-                      source="trading.position_movements"></app-report-panel>
+                      source="trading.position_movements"
+                      [state]="positionMovementsState()" [message]="panelMessage()" (retry)="retryRecords()">
+      <div class="table-scroll">
+        <table class="records">
+          <caption class="sr-only">Position movements for this order, oldest first</caption>
+          <thead>
+            <tr><th>Moved (UTC)</th><th>Movement</th><th class="amount">Quantity</th><th class="amount">Cost</th></tr>
+          </thead>
+          <tbody>
+            <tr *ngFor="let movement of records()?.positionMovements" data-testid="position-movement-row">
+              <td class="num">{{ movement.createdAt | date: 'yyyy-MM-dd HH:mm:ss.SSS' : 'UTC' }}</td>
+              <td>{{ movement.movementType }}</td>
+              <td class="num amount">{{ movement.quantityDelta > 0 ? '+' : '' }}{{ movement.quantityDelta }}</td>
+              <td class="num amount">{{ movement.costDelta > 0 ? '+' : '' }}{{ movement.costDelta | currency: 'USD' }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </app-report-panel>
   </section>
 </ng-template>

@@ -35,6 +35,16 @@ export class TradePanel {
   readonly takeProfit: Locator;
   readonly stopLoss: Locator;
   readonly riskReward: Locator;
+  // Market hours
+  /** The strip under the header outside regular hours: "After-hours · Next open Fri 9:30 AM ET". */
+  readonly sessionStrip: Locator;
+  /** "After-hours" / "Closed" beside the live price. */
+  readonly sessionTag: Locator;
+  /** Why the chosen order won't execute right now. */
+  readonly sessionNote: Locator;
+  /** A queued market order's price collar, in place of price protection. */
+  readonly collarRow: Locator;
+  readonly extendedHours: Locator;
   // Templates
   readonly templates: Locator;
   readonly saveAsTemplate: Locator;
@@ -54,7 +64,8 @@ export class TradePanel {
     this.estimate = this.root.locator('.field-row.total .field-value');
     this.hint = this.root.locator('.hint');
     this.sellAll = this.root.getByRole('button', { name: 'Sell all' });
-    this.reviewButton = this.root.getByRole('button', { name: 'Review order' });
+    // "Review queued order" for a market order queued for the open.
+    this.reviewButton = this.root.getByRole('button', { name: /^Review (queued )?order$/ });
     this.reviewText = this.root.locator('.review-text');
     this.submitButton = this.root.locator('.review .cta');
     this.editButton = this.root.getByRole('button', { name: 'Edit order' });
@@ -73,6 +84,11 @@ export class TradePanel {
     this.takeProfit = this.root.locator('#trade-take-profit');
     this.stopLoss = this.root.locator('#trade-stop-loss');
     this.riskReward = page.getByTestId('risk-reward');
+    this.sessionStrip = page.getByTestId('session-strip');
+    this.sessionTag = page.getByTestId('session-tag');
+    this.sessionNote = page.getByTestId('session-note');
+    this.collarRow = page.getByTestId('collar-row');
+    this.extendedHours = this.root.getByRole('switch', { name: /Extended hours/ });
     this.templates = page.getByTestId('templates');
     this.saveAsTemplate = this.root.getByRole('button', { name: 'Save as template' });
     this.templateName = this.root.getByLabel('Template name');

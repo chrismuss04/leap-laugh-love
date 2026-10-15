@@ -226,6 +226,11 @@ class TradingSchemaIntegrationTest {
             if (statement.contains("INSERT INTO trading.executions")) {
                 assertFalse(statement.contains("'FILLED'"),
                     "Seed data should not hard-code a filled execution: " + statement.strip());
+                // Copying o.status is only safe for rejected orders.
+                if (statement.contains("o.status")) {
+                    assertTrue(statement.contains("o.rejected_at IS NOT NULL"),
+                        "Seed executions copied from orders should only cover rejected ones: " + statement.strip());
+                }
             }
         }
     }
@@ -250,6 +255,34 @@ class TradingSchemaIntegrationTest {
         assertFalse(seed.contains("INSERT INTO trading.positions"),
             "Seed data should not insert positions");
         assertTrue(seed.contains("filled_at"), "Filled orders should still carry their fill time");
+    }
+
+    @Test
+    @DisplayName("Seed data should give each mock client a funded account, opened after registering")
+    void testSeedDataMockAccounts() throws Exception {
+        String seed = readFile(SEED_FILE);
+
+        assertTrue(seed.contains("WHERE c.phone LIKE '(646) 555-02__'"),
+            "Mock accounts should be opened for the mock clients from seed_iam.sql");
+        assertTrue(seed.contains("c.created_at + INTERVAL '1 day'"),
+            "A mock account should open the day after its client registered");
+        assertTrue(seed.contains("format('dddddddd-dddd-dddd-dddd-ffffffff%s'"),
+            "Mock deposits should have fixed ids, so re-runs never double-fund an account");
+    }
+
+    @Test
+    @DisplayName("Mock order history should only sell what was bought, and leave fills to SeededFillService")
+    void testSeedDataMockOrders() throws Exception {
+        String seed = readFile(SEED_FILE);
+
+        assertTrue(seed.contains("CROSS JOIN generate_series(1, 8) AS k"), "Each trading mock client should place 8 orders");
+        assertTrue(seed.contains("WHEN k IN (2, 4, 7) THEN (6 + (n * 5 + p * 7) % 15) / 2"),
+            "Each sell should sell half of the earlier buy of the same instrument");
+        assertTrue(seed.contains("WHERE m.n % 5 <> 0"), "Every fifth mock client should never trade");
+        assertTrue(seed.contains("'Insufficient funds', 'Insufficient position quantity'"),
+            "Rejected mock orders should vary their reason");
+        assertTrue(seed.contains("format('cccccccc-cccc-cccc-%s-%s'"),
+            "Mock orders should have fixed ids, so re-runs don't duplicate them");
     }
 
     @Test

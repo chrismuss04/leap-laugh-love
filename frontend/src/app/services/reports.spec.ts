@@ -76,4 +76,15 @@ describe('ReportsService', () => {
     request.flush([{ id: 'aapl-id', symbol: 'AAPL' }, { id: 'msft-id', symbol: 'MSFT' }]);
     expect(symbols).toEqual(['AAPL', 'MSFT']);
   });
+
+  // Verify the insights request carries only the period.
+  it('requests business insights for a period', () => {
+    service.getInsights('2026-10-01', '2026-10-07').subscribe();
+    const request = http.expectOne(r => r.url === '/api/order/reports/insights');
+    expect(request.request.method).toBe('GET');
+    expect(request.request.params.keys().sort()).toEqual(['from', 'to']);
+    expect(request.request.params.get('from')).toBe('2026-10-01');
+    expect(request.request.params.get('to')).toBe('2026-10-07');
+    request.flush({});
+  });
 });

@@ -26,4 +26,13 @@ test.describe('Shell', () => {
   test('the live indicator connects to the price stream @smoke', async () => {
     await expect(shell.liveStatus).toHaveAttribute('data-status', 'live', { timeout: 20_000 });
   });
+
+  // The suite's stack has market hours off (docker-compose.e2e.yml), so it trades around the clock.
+  test('the market status pill says the market is open, and its card explains why', async () => {
+    await expect(shell.marketStatus).toContainText('Market open');
+
+    await shell.marketStatus.click();
+
+    await expect(shell.marketHours).toContainText('trading is open around the clock');
+  });
 });

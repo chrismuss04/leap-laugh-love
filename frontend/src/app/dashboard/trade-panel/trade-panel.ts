@@ -7,7 +7,7 @@ import { Subscription } from 'rxjs';
 import { TradeAccount } from '../models';
 import { OrderService, OrderSide, OrderSubmissionRequest, OrderSubmissionResponse, OrderType, TimeInForce } from '../../services/order';
 import { RollingNumberComponent } from '../../shared/rolling-number';
-import { formatMoney } from '../../shared/format';
+import { formatMoney, isPositive } from '../../shared/format';
 import { Candle, MarketDataService } from '../../services/market-data';
 import { HIT_RATE_DAYS, hitRateDisclaimer, hitRateHint } from '../../shared/price-hit-rate';
 import { concentrationWarning, orderImpact } from '../../shared/order-impact';
@@ -18,8 +18,12 @@ import { ProtectionPickerComponent } from '../../shared/protection-picker';
 import { formatProtection, protectionBand } from '../../shared/price-protection';
 import {
   ORDER_TYPES, QuoteOffset, describeOrder, distanceLabel, distanceTo, orderTypeHint, orderTypeLabel,
-  reservePricePerShare, sentenceText, timeInForceLabel, toCents, trailText
+  queuedCollar, reservePricePerShare, sentenceText, timeInForceLabel, toCents, trailText
 } from '../../shared/order-types';
+import { MarketStatusService } from '../../services/market-status';
+import {
+  canExecuteIn, easternMoment, isExtendedSession, sessionLabel, sessionName, sessionTone
+} from '../../shared/market-session';
 import { ChartLine, OrderChartComponent } from '../order-chart/order-chart';
 // Order placement confirmation: use the authenticated client's experience level.
 import { ClientProfile, ProfileService } from '../../services/profile';
@@ -31,6 +35,26 @@ const PRICE_MOVED_REASON = 'Price moved';
 
 /** A limit or stop further than this from the market may never be reached, so the ticket says so. */
 const FAR_FROM_MARKET_PERCENT = 25;
+
+/** "1 share" / "2 shares": the word for a count. */
+function plural(count: number, one: string, many: string): string {
+  return count === 1 ? one : many;
+}
+
+/** "+2%" / "−2%": a chip's step up or down from a price. */
+function percentLabel(step: number, up: boolean): string {
+  return (up ? '+' : '−') + step + '%';
+}
+
+/** "Ask" for a buy, "Bid" for a sell: the quote side it fills at. */
+function quoteSideLabel(side: OrderSide): 'Ask' | 'Bid' {
+  return side === 'BUY' ? 'Ask' : 'Bid';
+}
+
+/** " (Mon 9:30 AM ET)" after a phrase, or nothing when there's no text. */
+function inParentheses(text: string | null): string {
+  return text ? ' (' + text + ')' : '';
+}
 
 /** A one-tap price for a limit or stop field. */
 export interface PriceChip {
@@ -57,6 +81,12 @@ export interface PriceChip {
  * Price protection (market orders only): reviewing captures the price the order is quoted at (the
  * ask for a buy, the bid for a sell), and order-app rejects the order if it would fill further than
  * the account's saved protection - or the one picked on the ticket - from that price.
+ *
+ * Market hours: the ticket follows the session the header shows (MarketStatusService, started by
+ * the header). Outside regular hours a market order is queued for the open, holding buying power at
+ * its 5% collar instead of using price protection; a limit order can opt in to extended hours; and
+ * stops are flagged as waiting for regular trading. Until the session is known, it is treated as
+ * regular hours.
  *
  * The app is zoneless, so all template state lives in signals: an HTTP callback or a parent's
  * timer that sets a plain field wouldn't schedule a refresh.
@@ -114,7 +144,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   /** Sets the ticket up from a template, with prices worked out from the market right now. */
   applyTemplate(template: OrderTemplate): void {
     const price = template.side === 'BUY' ? this.ask() ?? this.price() : this.bid() ?? this.price();
-    if (this.step() !== 'edit' || price == null || !(price > 0)) {
+    if (this.step() !== 'edit' || !isPositive(price)) {
       return;
     }
     const applied = applyTemplate(template, price);
@@ -258,11 +288,84 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly sidePrice = computed(() => (this.side() === 'BUY' ? this.ask() : this.bid()) ?? this.price());
 
   /** "the ask" / "the bid", or "the current price" while there's no quote. */
-  readonly sideReference = computed(() => this.quoteOffset() == null
-    ? 'the current price'
-    : this.side() === 'BUY' ? 'the ask' : 'the bid');
+  readonly sideReference = computed(() => {
+    if (this.quoteOffset() == null) {
+      return 'the current price';
+    }
+    return this.side() === 'BUY' ? 'the ask' : 'the bid';
+  });
 
   readonly isMarket = computed(() => this.orderType() === 'MARKET');
+
+  // ---- Market hours ----
+  private readonly market = inject(MarketStatusService);
+  readonly marketSession = computed(() => this.market.session());
+  /** A market order placed now waits for the open: the market isn't in regular hours. */
+  readonly queued = computed(() => this.isMarket() && !canExecuteIn(this.marketSession(), 'MARKET', false));
+  /** A queued order's collar: the most a buy pays, or the least a sell takes, at the open. */
+  readonly collar = computed(() => this.queued() ? queuedCollar(this.side(), this.sidePrice()) : null);
+  /** The client's own extended-hours pick; until they make one, it's on during extended hours. */
+  private readonly extendedHoursChoice = signal<boolean | null>(null);
+  /** Only limit orders trade in extended hours. */
+  readonly extendedHoursAvailable = computed(() => this.orderType() === 'LIMIT');
+  readonly extendedHours = computed(() =>
+    this.extendedHoursAvailable() && (this.extendedHoursChoice() ?? isExtendedSession(this.marketSession())));
+  /** Whether this order could execute in the session now in force. */
+  readonly executesNow = computed(() => canExecuteIn(this.marketSession(), this.orderType(), this.extendedHours()));
+
+  /** "Mon 9:30 AM ET": when regular trading next opens, while it isn't under way. */
+  readonly opensAt = computed(() => {
+    const status = this.market.status();
+    if (!status || status.session === 'REGULAR' || !status.nextRegularOpen) {
+      return null;
+    }
+    return easternMoment(status.nextRegularOpen, this.market.now());
+  });
+
+  /** "Pre-market", "After-hours" or "Closed" beside the price, outside regular hours. */
+  readonly sessionTag = computed(() => {
+    const session = this.marketSession();
+    return session && session !== 'REGULAR' ? { text: sessionName(session), tone: sessionTone(session) } : null;
+  });
+
+  /** The strip under the header outside regular hours: "After-hours · Next open Mon 9:30 AM ET". */
+  readonly sessionStrip = computed(() => {
+    const session = this.marketSession();
+    if (!session || session === 'REGULAR') {
+      return null;
+    }
+    const opens = this.opensAt();
+    return {
+      tone: sessionTone(session),
+      label: sessionLabel(session),
+      text: opens ? `Next open ${opens}` : 'Regular trading is paused'
+    };
+  });
+
+  /** Why this order won't execute right now, under the type picker; null when it can. */
+  readonly sessionNote = computed(() => {
+    if (this.executesNow()) {
+      return null;
+    }
+    const opens = this.opensAt();
+    if (this.isMarket()) {
+      return `Market orders outside regular hours are queued and placed at the open${inParentheses(opens)}.`;
+    }
+    if (this.hasStop() || this.hasTrail()) {
+      return 'Stops only trigger during regular market hours (9:30 AM – 4:00 PM ET).';
+    }
+    if (isExtendedSession(this.marketSession())) {
+      return 'Without extended hours, this waits for regular trading.';
+    }
+    const latest = opens ? ', by ' + opens + ' at the latest' : '';
+    return `This waits for the next session it can trade in${latest}.`;
+  });
+
+  setExtendedHours(on: boolean): void {
+    if (this.step() === 'edit') {
+      this.extendedHoursChoice.set(on);
+    }
+  }
   readonly hasLimit = computed(() => this.orderType() === 'LIMIT' || this.orderType() === 'STOP_LIMIT');
   readonly hasStop = computed(() => this.orderType() === 'STOP' || this.orderType() === 'STOP_LIMIT');
   readonly hasTrail = computed(() => this.orderType() === 'TRAILING_STOP');
@@ -285,9 +388,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
           this.stopPrice.set(stop);
         }
         if (this.hasLimit() && this.limitPrice() == null) {
-          this.limitPrice.set(type === 'STOP_LIMIT'
-            ? this.stopPrice() ?? stop
-            : toCents(side === 'BUY' ? price * 0.99 : price * 1.01));
+          const limit = toCents(side === 'BUY' ? price * 0.99 : price * 1.01);
+          this.limitPrice.set(type === 'STOP_LIMIT' ? this.stopPrice() ?? stop : limit);
         }
       });
     });
@@ -325,7 +427,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly hitRate = computed(() => {
     const symbol = this.symbol();
     const loaded = this.dayCandles();
-    if (!symbol || !loaded || loaded.symbol !== symbol || this.isMarket()) {
+    if (!symbol || loaded?.symbol !== symbol || this.isMarket()) {
       return null;
     }
     return hitRateHint({
@@ -349,7 +451,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (!account || !this.validQuantity()) {
       return null;
     }
-    if (price == null || !(price > 0) || market == null) {
+    if (!isPositive(price) || market == null) {
       return null;
     }
     return orderImpact({
@@ -402,7 +504,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
       return;
     }
     this.trailUnit.set(unit);
-    if (value == null || price == null || !(price > 0)) {
+    if (value == null || !isPositive(price)) {
       this.trailValue.set(this.defaultTrail());
     } else {
       this.trailValue.set(unit === 'AMOUNT' ? toCents(price * value / 100) : Math.round(value / price * 1000) / 10);
@@ -438,7 +540,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   /** The protection this order is placed with: the ticket's pick, else the account's saved one. */
   readonly protection = computed(() => {
     const override = this.protectionOverride();
-    return override && override.accountId === this.accountId() ? override.value : this.savedProtection();
+    return override?.accountId === this.accountId() ? override.value : this.savedProtection();
   });
 
   /** "±0.5%" or "Off". */
@@ -558,7 +660,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly initialStop = computed(() => {
     const price = this.sidePrice();
     const trail = this.trailValue();
-    if (!this.hasTrail() || price == null || trail == null || !(trail > 0)) {
+    if (!this.hasTrail() || price == null || !isPositive(trail)) {
       return null;
     }
     const distance = this.trailUnit() === 'PERCENT' ? price * trail / 100 : trail;
@@ -572,6 +674,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   /** What a buy needs in buying power: the estimate, or what an open order holds back. */
   readonly costToHold = computed(() => {
+    if (this.queued()) {
+      const collar = this.collar();
+      return collar != null && this.validQuantity() ? toCents(collar * this.quantity()!) : null;
+    }
     if (this.isMarket()) {
       return this.estimate();
     }
@@ -592,7 +698,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   private bracketChips(percents: number[], direction: 1 | -1): PriceChip[] {
     const entry = this.estimatePrice();
-    if (entry == null || !(entry > 0)) {
+    if (!isPositive(entry)) {
       return [];
     }
     return percents.map(percent => ({
@@ -646,7 +752,6 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly blocker = computed(() => {
     const account = this.account();
     const quantity = this.quantity();
-    const sharesHeld = this.sharesHeld();
     const price = this.sidePrice();
     if (!this.symbol()) {
       return 'Choose a symbol to trade';
@@ -663,59 +768,75 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (!this.validQuantity()) {
       return 'Enter a whole number of shares';
     }
-    if (this.hasTrail()) {
-      const trail = this.trailValue();
-      if (trail == null || !(trail > 0)) {
-        return 'Enter how far to trail';
-      }
-      if (this.trailUnit() === 'PERCENT' && (trail < 0.1 || trail > 50)) {
-        return 'Trail by between 0.1% and 50%';
-      }
-      const stop = this.initialStop();
-      if (stop == null || stop <= 0) {
-        return 'The trail must be smaller than the price';
-      }
+    return this.trailBlocker()
+      ?? this.bracketBlocker()
+      ?? this.priceBlocker(price)
+      ?? this.holdingsBlocker(account.buyingPower, quantity);
+  });
+
+  /** A trailing stop's trail that can't be placed. */
+  private trailBlocker(): string | null {
+    if (!this.hasTrail()) {
+      return null;
     }
-    const bracketBlock = this.bracketBlocker();
-    if (bracketBlock) {
-      return bracketBlock;
+    const trail = this.trailValue();
+    if (!isPositive(trail)) {
+      return 'Enter how far to trail';
     }
+    if (this.trailUnit() === 'PERCENT' && (trail < 0.1 || trail > 50)) {
+      return 'Trail by between 0.1% and 50%';
+    }
+    const stop = this.initialStop();
+    return stop == null || stop <= 0 ? 'The trail must be smaller than the price' : null;
+  }
+
+  /** A missing limit or stop price, or a stop on the wrong side of the market. */
+  private priceBlocker(price: number): string | null {
     if (this.hasStop() && !TradePanelComponent.validPrice(this.stopPrice())) {
       return 'Enter a stop price';
     }
     if (this.hasLimit() && !TradePanelComponent.validPrice(this.limitPrice())) {
       return 'Enter a limit price';
     }
-    if (this.hasStop()) {
-      const stop = this.stopPrice()!;
-      if (this.side() === 'SELL' && stop >= price) {
-        return `A sell stop must be below ${this.sideReference()} (${formatMoney(price)})`;
-      }
-      if (this.side() === 'BUY' && stop <= price) {
-        return `A buy stop must be above ${this.sideReference()} (${formatMoney(price)})`;
-      }
+    if (!this.hasStop()) {
+      return null;
     }
-    if (this.side() === 'BUY' && this.costToHold()! > account.buyingPower) {
-      return `Not enough buying power (${formatMoney(account.buyingPower)} available)`;
+    const stop = this.stopPrice()!;
+    if (this.side() === 'SELL' && stop >= price) {
+      return `A sell stop must be below ${this.sideReference()} (${formatMoney(price)})`;
     }
-    if (this.side() === 'SELL' && quantity > sharesHeld) {
-      const onHold = this.sharesOnHold();
-      if (onHold > 0) {
-        return `Only ${sharesHeld} ${sharesHeld === 1 ? 'share is' : 'shares are'} free to sell — ${onHold} ${onHold === 1 ? 'is' : 'are'} held for open orders`;
-      }
-      return sharesHeld === 0
-        ? `You don't own any ${this.symbol()} in this account`
-        : `You only have ${sharesHeld} ${sharesHeld === 1 ? 'share' : 'shares'} to sell`;
+    if (this.side() === 'BUY' && stop <= price) {
+      return `A buy stop must be above ${this.sideReference()} (${formatMoney(price)})`;
     }
     return null;
-  });
+  }
+
+  /** Not enough buying power for a buy, or shares for a sell. */
+  private holdingsBlocker(buyingPower: number, quantity: number): string | null {
+    if (this.side() === 'BUY') {
+      return this.costToHold()! > buyingPower
+        ? `Not enough buying power (${formatMoney(buyingPower)} available)`
+        : null;
+    }
+    const sharesHeld = this.sharesHeld();
+    if (quantity <= sharesHeld) {
+      return null;
+    }
+    const onHold = this.sharesOnHold();
+    if (onHold > 0) {
+      const free = plural(sharesHeld, 'share is', 'shares are');
+      const held = plural(onHold, 'is', 'are');
+      return `Only ${sharesHeld} ${free} free to sell — ${onHold} ${held} held for open orders`;
+    }
+    if (sharesHeld === 0) {
+      return `You don't own any ${this.symbol()} in this account`;
+    }
+    return `You only have ${sharesHeld} ${plural(sharesHeld, 'share', 'shares')} to sell`;
+  }
 
   /** Something worth knowing before placing the order, which doesn't stop it. */
   readonly warning = computed(() => {
     const price = this.sidePrice();
-    const limit = this.limitPrice();
-    const stop = this.stopPrice();
-    const buy = this.side() === 'BUY';
     if (price == null || this.isMarket()) {
       return null;
     }
@@ -723,23 +844,49 @@ export class TradePanelComponent implements OnChanges, OnInit {
       const distance = distanceTo(this.initialStop(), price);
       return distance && distance.percent < 0.5 ? 'A very tight trail can trigger on ordinary price moves.' : null;
     }
-    if (this.orderType() === 'LIMIT' && limit != null) {
-      if (buy ? limit >= price : limit <= price) {
-        return `Your limit is ${buy ? 'at or above' : 'at or below'} ${this.sideReference()}, so this will fill right away.`;
-      }
-    }
-    if (this.orderType() === 'STOP_LIMIT' && limit != null && stop != null) {
-      if (buy ? limit < stop : limit > stop) {
-        return `Your limit is ${buy ? 'below' : 'above'} your stop, so this only fills if the price ${buy ? 'falls back' : 'recovers'} after reaching your stop.`;
-      }
-    }
-    const target = this.hasStop() ? stop : limit;
-    const distance = distanceTo(target, price);
-    if (distance && distance.percent > FAR_FROM_MARKET_PERCENT) {
-      return `Your ${this.hasStop() ? 'stop' : 'limit'} is ${Math.round(distance.percent)}% from ${this.sideReference()}, so it may take a long time to reach — or never be reached.`;
-    }
-    return null;
+    return this.marketableLimitWarning(price) ?? this.stopLimitWarning() ?? this.farFromMarketWarning(price);
   });
+
+  /** A limit already at or better than the market fills as soon as it can trade. */
+  private marketableLimitWarning(price: number): string | null {
+    const limit = this.limitPrice();
+    if (this.orderType() !== 'LIMIT' || limit == null) {
+      return null;
+    }
+    const buy = this.side() === 'BUY';
+    if (buy ? limit < price : limit > price) {
+      return null;
+    }
+    const where = buy ? 'at or above' : 'at or below';
+    const when = this.executesNow() ? 'right away' : 'as soon as it can trade';
+    return `Your limit is ${where} ${this.sideReference()}, so this will fill ${when}.`;
+  }
+
+  /** A stop limit whose limit is past its stop only fills if the price comes back. */
+  private stopLimitWarning(): string | null {
+    const limit = this.limitPrice();
+    const stop = this.stopPrice();
+    if (this.orderType() !== 'STOP_LIMIT' || limit == null || stop == null) {
+      return null;
+    }
+    const buy = this.side() === 'BUY';
+    if (buy ? limit >= stop : limit <= stop) {
+      return null;
+    }
+    const side = buy ? 'below' : 'above';
+    const move = buy ? 'falls back' : 'recovers';
+    return `Your limit is ${side} your stop, so this only fills if the price ${move} after reaching your stop.`;
+  }
+
+  /** A limit or stop so far from the market it may never be reached. */
+  private farFromMarketWarning(price: number): string | null {
+    const kind = this.hasStop() ? 'stop' : 'limit';
+    const distance = distanceTo(this.hasStop() ? this.stopPrice() : this.limitPrice(), price);
+    if (!distance || distance.percent <= FAR_FROM_MARKET_PERCENT) {
+      return null;
+    }
+    return `Your ${kind} is ${Math.round(distance.percent)}% from ${this.sideReference()}, so it may take a long time to reach — or never be reached.`;
+  }
 
   /** "0.32% below the ask", for the limit or stop field: measured from the price this side fills at. */
   readonly limitDistance = computed(() => distanceLabel(this.limitPrice(), this.sidePrice(), this.sideReference()));
@@ -755,7 +902,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
       }
       const steps = [0, 0.5, 1, 2];
       return steps.map(step => ({
-        label: step === 0 ? 'At stop' : `${buy ? '+' : '−'}${step}%`,
+        label: step === 0 ? 'At stop' : percentLabel(step, buy),
         value: toCents(stop! * (1 + (buy ? step : -step) / 100))
       }));
     }
@@ -763,10 +910,10 @@ export class TradePanelComponent implements OnChanges, OnInit {
     if (price == null) {
       return [];
     }
-    const current = this.quoteOffset() == null ? 'Current' : buy ? 'Ask' : 'Bid';
+    const current = this.quoteOffset() == null ? 'Current' : quoteSideLabel(this.side());
     return [0, 1, 2, 5].map(step => ({
       // Better than the market: lower for a buy, higher for a sell.
-      label: step === 0 ? current : `${buy ? '−' : '+'}${step}%`,
+      label: step === 0 ? current : percentLabel(step, !buy),
       value: toCents(price * (1 + (buy ? -step : step) / 100))
     }));
   });
@@ -779,7 +926,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     }
     const buy = this.side() === 'BUY';
     const chips = [2, 5, 10].map(step => ({
-      label: `${buy ? '+' : '−'}${step}%`,
+      label: percentLabel(step, buy),
       value: toCents(price * (1 + (buy ? step : -step) / 100))
     }));
     const cost = this.averageCost();
@@ -810,10 +957,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const lines: ChartLine[] = [];
     const market = this.sidePrice();
     if (market != null) {
-      lines.push({
-        id: 'market', label: this.quoteOffset() ? (this.side() === 'BUY' ? 'Ask' : 'Bid') : 'Price',
-        value: market, tone: 'muted', draggable: false
-      });
+      const label = this.quoteOffset() ? quoteSideLabel(this.side()) : 'Price';
+      lines.push({ id: 'market', label, value: market, tone: 'muted', draggable: false });
     }
     if (this.hasStop() && TradePanelComponent.validPrice(this.stopPrice())) {
       lines.push({ id: 'stop', label: 'Stop', value: this.stopPrice()!, tone: 'warning', draggable: true });
@@ -836,7 +981,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
   /** A line was dragged (or nudged with the keyboard) on the chart to a new price. */
   onChartLine(change: { id: string; value: number }): void {
     const value = toCents(change.value);
-    if (!(value > 0)) {
+    if (!isPositive(value)) {
       return;
     }
     if (change.id === 'takeProfit') {
@@ -871,7 +1016,9 @@ export class TradePanelComponent implements OnChanges, OnInit {
     trailAmount: this.trailUnit() === 'AMOUNT' ? this.trailValue() : null,
     trailPercent: this.trailUnit() === 'PERCENT' ? this.trailValue() : null,
     bracketTakeProfit: this.bracketActive() ? this.takeProfit() : null,
-    bracketStopLoss: this.bracketActive() ? this.stopLoss() : null
+    bracketStopLoss: this.bracketActive() ? this.stopLoss() : null,
+    extendedHours: this.extendedHours(),
+    ...(this.queued() ? { queuedFor: this.opensAt() } : {})
   }));
 
   /** "5%" or "$2.00": the trail as entered. */
@@ -913,7 +1060,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     const side = this.side();
     this.quotedPrice.set(this.sidePrice());
     this.quoteRequest?.unsubscribe();
-    if (!symbol || !this.isMarket()) {
+    if (!symbol || !this.isMarket() || this.queued()) {
       return;
     }
     this.quoteRequest = this.marketData.getQuote(symbol).subscribe({
@@ -989,11 +1136,14 @@ export class TradePanelComponent implements OnChanges, OnInit {
         orderType: this.orderType(),
         ...(this.hasLimit() ? { limitPrice: toCents(this.limitPrice()!) } : {}),
         ...(this.hasStop() ? { stopPrice: toCents(this.stopPrice()!) } : {}),
-        ...(this.hasTrail()
-          ? this.trailUnit() === 'PERCENT' ? { trailPercent: this.trailValue()! } : { trailAmount: toCents(this.trailValue()!) }
-          : {}),
+        ...this.trailFields(),
+        ...(this.extendedHours() ? { extendedHours: true } : {}),
         timeInForce: this.timeInForce()
       };
+    }
+    if (this.queued()) {
+      // Queued for the open: its collar stands in for price protection.
+      return base;
     }
     const quotedPrice = this.quotedPrice();
     const protection = this.protection();
@@ -1002,6 +1152,16 @@ export class TradePanelComponent implements OnChanges, OnInit {
       ...(quotedPrice != null ? { quotedPrice } : {}),
       ...(protection != null ? { maxSlippagePercent: protection } : {})
     };
+  }
+
+  /** A trailing stop's trail as order-app takes it: a percent, or an amount in cents. */
+  private trailFields(): Pick<OrderSubmissionRequest, 'trailPercent' | 'trailAmount'> {
+    if (!this.hasTrail()) {
+      return {};
+    }
+    return this.trailUnit() === 'PERCENT'
+      ? { trailPercent: this.trailValue()! }
+      : { trailAmount: toCents(this.trailValue()!) };
   }
 
   // Order placement confirmation: revalidate live buying power and prevent repeat submissions.
@@ -1058,6 +1218,7 @@ export class TradePanelComponent implements OnChanges, OnInit {
     this.pricesTouched.set(false);
     this.bracketOn.set(false);
     this.bracketTouched.set(false);
+    this.extendedHoursChoice.set(null);
     this.takeProfit.set(null);
     this.stopLoss.set(null);
     this.limitPrice.set(null);
@@ -1067,13 +1228,22 @@ export class TradePanelComponent implements OnChanges, OnInit {
 
   readonly fillPrice = computed(() => this.result()?.execution?.fillPrice ?? null);
 
+  /** Whether the result is a market order queued for the open. */
+  readonly queuedResult = computed(() => {
+    const result = this.result();
+    return result?.status === 'OPEN' && result.orderType === 'MARKET';
+  });
+
   /** For an OPEN result: what it's waiting for, e.g. "AAPL falls to $140.00". */
   readonly waitingFor = computed(() => {
     const result = this.result();
-    if (!result || result.status !== 'OPEN') {
+    if (result?.status !== 'OPEN') {
       return null;
     }
     const buy = result.side === 'BUY';
+    if (result.orderType === 'MARKET') {
+      return `the market opens${inParentheses(this.opensAt())}`;
+    }
     if (result.orderType === 'TRAILING_STOP') {
       return `${result.symbol} ${buy ? 'rises' : 'falls'} ${trailText(result.trailAmount, result.trailPercent)} from its ${buy ? 'low' : 'high'}`;
     }

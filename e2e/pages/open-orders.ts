@@ -5,11 +5,17 @@ export class OpenOrders {
   readonly card: Locator;
   readonly rows: Locator;
   readonly ocoBadges: Locator;
+  /** "Queued" badges on market orders waiting for the open. */
+  readonly queuedBadges: Locator;
+  /** "Ext" badges on limit orders that may also fill in extended hours. */
+  readonly extendedBadges: Locator;
 
   constructor(readonly page: Page) {
     this.card = page.getByTestId('open-orders');
     this.rows = page.getByTestId('open-order');
     this.ocoBadges = page.getByTestId('oco-badge');
+    this.queuedBadges = page.getByTestId('queued-badge');
+    this.extendedBadges = page.getByTestId('ext-badge');
   }
 
   /** The row for an order, by its title and size, e.g. ("Limit buy", 2). */

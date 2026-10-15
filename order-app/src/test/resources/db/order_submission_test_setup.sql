@@ -1,6 +1,7 @@
 CREATE SCHEMA IF NOT EXISTS iam;
 CREATE SCHEMA IF NOT EXISTS trading;
 
+DROP TABLE IF EXISTS trading.ops_access_log CASCADE;
 DROP TABLE IF EXISTS trading.position_movements CASCADE;
 DROP TABLE IF EXISTS trading.positions CASCADE;
 DROP TABLE IF EXISTS trading.cash_ledger CASCADE;
@@ -80,6 +81,8 @@ CREATE TABLE trading.orders (
     bracket_stop_loss_price NUMERIC(18,6),
     parent_order_id UUID,
     oco_group_id UUID,
+    extended_hours BOOLEAN NOT NULL DEFAULT FALSE,
+    collar_price NUMERIC(18,6),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );
@@ -109,7 +112,22 @@ CREATE TABLE trading.executions (
     status VARCHAR(20) NOT NULL CHECK (status IN ('FILLED', 'REJECTED')),
     executed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
     reason VARCHAR(500),
+    quote_bid NUMERIC(18,6),
+    quote_ask NUMERIC(18,6),
+    quote_last NUMERIC(18,6),
+    quote_timestamp TIMESTAMP WITH TIME ZONE,
+    quote_exchange VARCHAR(50),
     FOREIGN KEY (order_id) REFERENCES trading.orders (order_id)
+);
+
+CREATE TABLE trading.ops_access_log (
+    access_id UUID PRIMARY KEY,
+    staff_id UUID NOT NULL,
+    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV', 'VIEW_ORDER',
+                                                  'VIEW_ORDER_COUNTS', 'VIEW_REJECTIONS', 'VIEW_STUCK_ORDERS')),
+    order_id UUID,
+    search_criteria VARCHAR(1000),
+    accessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE trading.cash_ledger (

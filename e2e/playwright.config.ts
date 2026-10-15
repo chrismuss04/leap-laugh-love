@@ -15,14 +15,15 @@ const ALL_BROWSERS = !!process.env.E2E_ALL_BROWSERS;
 
 /** Browser projects share everything but the device; API specs run once, not per browser. */
 const browserProject = {
-  testIgnore: /tests[\\/](api|recovery)[\\/]/,
+  testIgnore: /tests[\\/](api|recovery|market-hours)[\\/]/,
   dependencies: ['setup']
 };
 
 export default defineConfig({
   testDir: './tests',
-  // Disruptive tests run only through playwright.recovery.config.ts and the isolated harness.
-  testIgnore: /tests[\\/]recovery[\\/]/,
+  // Disruptive tests run only through playwright.recovery.config.ts and the isolated harness; the
+  // market hours tests need a stack pinned to one session (playwright.market-hours.config.ts).
+  testIgnore: /tests[\\/](recovery|market-hours)[\\/]/,
   fullyParallel: true,
   forbidOnly: CI,
   retries: CI ? 1 : 0,
@@ -51,8 +52,8 @@ export default defineConfig({
   projects: [
     // Confirms the stack is up and seeded before anything else runs, with a message that says
     // which service is missing rather than every test timing out.
-    { name: 'setup', testMatch: /.*\.setup\.ts/ },
-    { name: 'api', testMatch: /tests[\\/]api[\\/].*\.spec\.ts/, dependencies: ['setup'] },
+    { name: 'setup', testMatch: '**/*.setup.ts' },
+    { name: 'api', testMatch: 'tests/api/**/*.spec.ts', dependencies: ['setup'] },
     { name: 'chromium', use: { ...devices['Desktop Chrome'] }, ...browserProject },
     ...(ALL_BROWSERS
       ? [
