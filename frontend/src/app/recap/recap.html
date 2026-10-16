@@ -1,0 +1,62 @@
+<div class="page">
+  <div class="page-container">
+    <h1 class="sr-only">Your monthly recap</h1>
+
+    @if (loading()) {
+      <div class="viewer">
+        <div class="stage skeleton" aria-busy="true" aria-label="Loading your recap"></div>
+      </div>
+    } @else if (error()) {
+      <div class="message" data-testid="recap-error">
+        <p class="error-message" role="alert">{{ error() }}</p>
+        <button type="button" class="ctl" (click)="load()">Try again</button>
+      </div>
+    } @else if (response(); as r) {
+      @if (cards().length === 0) {
+        <div class="message" data-testid="recap-empty">
+          <h2 class="font-display headline-page">Nothing to recap for {{ monthName(r.month) }}</h2>
+          <p class="page-subtext">You didn’t trade that month or hold anything through it. A recap arrives at the start of each month after one you trade in.</p>
+          <a routerLink="/dashboard" class="ctl">Go to the dashboard</a>
+        </div>
+      } @else {
+        <section class="viewer" [attr.aria-label]="monthName(r.month) + ' recap'">
+          <div class="stage" [class.paused]="paused()" [style.--recap-card-duration]="duration" tabindex="0" role="group" aria-roledescription="story"
+               [attr.aria-label]="stageLabel()" (click)="onStageClick($event)" (keydown)="onStageKey($event)">
+            <div class="progress" [style.--dur]="duration">
+              @for (c of cards(); track c; let k = $index) {
+                <span class="seg" [class.done]="k < index()" [class.now]="k === index()">
+                  <i (animationend)="onSegmentEnd(k)"></i>
+                </span>
+              }
+            </div>
+
+            @switch (card()) {
+              @case ('intro') { <app-recap-intro-card [month]="r.month" [quiet]="r.recap.quiet" /> }
+              @case ('money') { <app-recap-money-card [moneyMoved]="r.recap.moneyMoved" /> }
+              @case ('tickers') { <app-recap-tickers-card [tickers]="r.recap.topTickers" /> }
+              @case ('gainer') { <app-recap-gainer-card [gainer]="r.recap.topGainer!" [topPercent]="r.recap.topPercent" /> }
+              @case ('bench') {
+                <app-recap-bench-card [month]="r.month" [returnPct]="r.recap.tradingReturn.returnPct!"
+                                      [benchmark]="r.recap.benchmark!" />
+              }
+              @case ('tops') { <app-recap-tops-card [recap]="r.recap" /> }
+            }
+          </div>
+
+          <div class="controls">
+            <button type="button" class="ctl" aria-label="Previous card" [disabled]="index() === 0" (click)="prev()">←</button>
+            <span class="counter" aria-live="polite">{{ index() + 1 }} / {{ cards().length }}</span>
+            <button type="button" class="ctl" aria-label="Next card" [disabled]="isLast()" (click)="next()">→</button>
+            <button type="button" class="ctl" (click)="togglePause()">{{ paused() ? 'Play' : 'Pause' }}</button>
+          </div>
+          <p class="hint">
+            Click the right side of the card to go forward, the left side to go back. Arrow keys and space work too.
+          </p>
+          @if (!r.ranked) {
+            <p class="hint" data-testid="recap-unranked">Rankings are added once every client’s recap for the month is built, shortly after it ends.</p>
+          }
+        </section>
+      }
+    }
+  </div>
+</div>
