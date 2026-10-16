@@ -13,6 +13,8 @@ import { createSpyObj } from '../../testing/create-spy-obj';
 import { ToolsComponent } from './tools';
 import { TOOL_ROUTES } from './tools.routes';
 import { MiniDonutComponent } from './previews/mini-donut';
+import { By } from '@angular/platform-browser';
+import { TRADE_PLAN_KEY, TradePlanService } from './trade-plan';
 
 describe('Trading Tools', () => {
   const position = (symbol: string, quantity: number) =>
@@ -46,6 +48,8 @@ describe('Trading Tools', () => {
     harness.detectChanges();
   }
 
+  afterEach(() => sessionStorage.clear());
+
   // Chromium has view transitions; most specs drive plain navigation, and the two that don't stub it.
   beforeEach(() => Object.defineProperty(document, 'startViewTransition', { value: undefined, configurable: true, writable: true }));
   afterEach(() => { delete (document as unknown as Record<string, unknown>)['startViewTransition']; });
@@ -53,7 +57,12 @@ describe('Trading Tools', () => {
   beforeEach(() => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
-    const marketApi = createSpyObj('MarketDataService', ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
+    const marketApi = createSpyObj('MarketDataService',
+      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
+    // Every quote sits 10 cents either side of its last trade.
+    marketApi.getQuote.mockImplementation((symbol: string) =>
+      of({ symbol, lastPrice: 100, askPrice: 100.1, bidPrice: 99.9, quoteTimestamp: '' }));
+    sessionStorage.clear();
     stream = { prices: signal<Record<string, number>>({}), watch: vi.fn() };
     holdingsApi.getHoldings.mockReturnValue(of(twoAccounts));
     holdingsApi.getAccounts.mockReturnValue(of([]));
@@ -271,6 +280,209 @@ describe('Trading Tools', () => {
       balanceApi.getBalance.mockReturnValue(of(balances(['a1'])));
       await open('/tools');
       expect(el().querySelector('app-account-switcher')).toBeNull();
+    });
+  });
+
+  describe('trade plan tray', () => {
+    const plan = (): TradePlanService =>
+      harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
+    const q = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(`app-tools ${selector}`)!;
+    const qa = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(`app-tools ${selector}`));
+    const text = (selector: string) => q(selector).textContent!.replace(/\s+/g, ' ').trim();
+    const rows = () => qa('li.order').map(row => Array.from(row.querySelectorAll<HTMLElement>('.side, .symbol, .value, .source'))
+      .map(cell => cell.textContent!.trim()).concat(row.querySelector<HTMLInputElement>('input')!.value).join(' '));
+    const expand = () => { q<HTMLButtonElement>('[data-testid="tray-toggle"]').click(); harness.detectChanges(); };
+    const add = (...args: Parameters<TradePlanService['addPlan']>) => { plan().addPlan(...args); harness.detectChanges(); };
+
+    // a1 holds 10 AAPL (at 150) and $1,000 cash; quotes are 10 cents either side.
+    const sellAndBuy = () => add('rebalance', 'a1', [
+      { symbol: 'AAPL', side: 'SELL', quantity: 2 }, { symbol: 'MSFT', side: 'BUY', quantity: 1 }
+    ]);
+
+    it('docks collapsed on every tools page, saying when it is empty', async () => {
+      await open('/tools/draw');
+      expect(text('[data-testid="tray-summary"]')).toBe('Trade plan · no orders yet');
+      expect(q('[data-testid="tray-toggle"]').getAttribute('aria-expanded')).toBe('false');
+      expect(document.querySelector('app-tools [data-testid="tray-panel"]')).toBeNull();
+    });
+
+    it('shows the count and net cash impact collapsed, and announces adds', async () => {
+      await open('/tools');
+      sellAndBuy();
+      // +2 x 149.90 - 400.10
+      expect(text('[data-testid="tray-summary"]')).toBe('2 orders · −$100.30 cash');
+      expect(text('.badge')).toBe('2');
+      expect(text('[data-testid="tray-announcer"]')).toBe('2 orders from Rebalance added to your plan.');
+    });
+
+    it('lists each order and projects cash and allocation after them all', async () => {
+      await open('/tools');
+      sellAndBuy();
+      expand();
+      expect(q('[data-testid="tray-toggle"]').getAttribute('aria-expanded')).toBe('true');
+      expect(rows()).toEqual(['Sell AAPL $299.80 Rebalance 2', 'Buy MSFT $400.10 Rebalance 1']);
+      // 8 AAPL at 150, 1 MSFT at 400 and $899.70 cash.
+      expect(qa('[data-testid="tray-projection"] dl div').map(d => `${d.querySelector('dt')!.textContent} ${d.querySelector('dd')!.textContent}`))
+        .toEqual(['Cash after $899.70', 'AAPL 48%', 'MSFT 16%', 'Cash 36%']);
+      expect(q('[data-testid="tray-projection"] app-mini-donut svg').getAttribute('aria-label'))
+        .toBe('Allocation: AAPL 48%, MSFT 16%, Cash 36%');
+    });
+
+    it('revalues orders with live prices', async () => {
+      await open('/tools');
+      sellAndBuy();
+      expand();
+      stream.prices.set({ MSFT: 500 });
+      harness.detectChanges();
+      expect(rows()[1]).toBe('Buy MSFT $500.10 Rebalance 1');
+      expect(text('[data-testid="tray-summary"]')).toBe('2 orders · −$200.30 cash');
+    });
+
+    it('edits a quantity, refusing less than one share inline', async () => {
+      await open('/tools');
+      sellAndBuy();
+      expand();
+      const input = qa('li.order')[1].querySelector<HTMLInputElement>('input')!;
+      input.value = '0';
+      input.dispatchEvent(new Event('change'));
+      harness.detectChanges();
+      expect(text('li.order .error')).toBe('Enter a whole number of shares, 1 or more.');
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(plan().orders().find(o => o.symbol === 'MSFT')!.quantity).toBe(1);
+
+      // 4 x 400.10 is more than $1,000 cash plus $299.80 from the sale.
+      input.value = '4';
+      input.dispatchEvent(new Event('change'));
+      harness.detectChanges();
+      expect(document.querySelector('app-tools li.order .error')).toBeNull();
+      expect(rows()[1]).toBe('Buy MSFT $1,600.40 Rebalance 4');
+      expect(qa('[data-warning="not-enough-cash"]')).toHaveLength(1);
+    });
+
+    it('removes one order, or clears them all', async () => {
+      await open('/tools');
+      sellAndBuy();
+      expand();
+      qa('li.order')[0].querySelector<HTMLButtonElement>('button.remove')!.click();
+      harness.detectChanges();
+      expect(rows()).toEqual(['Buy MSFT $400.10 Rebalance 1']);
+
+      qa('.panel-head button').find(b => b.textContent!.includes('Clear all'))!.click();
+      harness.detectChanges();
+      expect(qa('li.order')).toHaveLength(0);
+      expect(text('[data-testid="tray-summary"]')).toBe('Trade plan · no orders yet');
+    });
+
+    it('flags opposite orders on one symbol and nets them', async () => {
+      await open('/tools');
+      add('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 5 }]);
+      add('raise-cash', 'a1', [{ symbol: 'AAPL', side: 'SELL', quantity: 3 }]);
+      expand();
+      expect(text('[data-conflict="AAPL"]')).toContain('The plan both buys and sells AAPL.');
+      q<HTMLButtonElement>('[data-conflict="AAPL"] button').click();
+      harness.detectChanges();
+      expect(rows()).toEqual(['Buy AAPL $300.20 Netted 2']);
+      expect(document.querySelector('app-tools [data-conflict]')).toBeNull();
+    });
+
+    it('warns about selling more than the account holds', async () => {
+      await open('/tools');
+      add('raise-cash', 'a1', [{ symbol: 'AAPL', side: 'SELL', quantity: 12 }]);
+      expand();
+      expect(text('[data-warning="oversell"]')).toBe('The plan sells 12 AAPL but the account holds 10.');
+    });
+
+    it('collapses on Escape and hands focus back to its toggle', async () => {
+      await open('/tools');
+      expand();
+      q('[data-testid="tray-panel"]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      harness.detectChanges();
+      expect(document.querySelector('app-tools [data-testid="tray-panel"]')).toBeNull();
+      expect(document.activeElement).toBe(q('[data-testid="tray-toggle"]'));
+    });
+
+    it('keeps the plan while moving between tools', async () => {
+      await open('/tools');
+      sellAndBuy();
+      await router.navigateByUrl('/tools/rebalance?account=a1');
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+      expect(text('[data-testid="tray-summary"]')).toBe('2 orders · −$100.30 cash');
+    });
+
+    it('comes back after a refresh, on the plan\'s account', async () => {
+      // What the tray saved before the page reloaded; the round trip itself is in trade-plan.spec.ts.
+      sessionStorage.setItem(TRADE_PLAN_KEY, JSON.stringify({
+        owner: '', accountId: 'a2', orders: [{ id: 'o1', source: 'basket', symbol: 'MSFT', side: 'BUY', quantity: 1 }]
+      }));
+      await open('/tools');
+      expect(router.url).toBe('/tools?account=a2');
+      expect(text('[data-testid="tray-summary"]')).toBe('1 order · −$400.10 cash');
+    });
+
+    it('drops a stored plan for an account that is not the client\'s', async () => {
+      sessionStorage.setItem(TRADE_PLAN_KEY, JSON.stringify({
+        owner: '', accountId: 'closed', orders: [{ id: 'o1', source: 'basket', symbol: 'AAPL', side: 'BUY', quantity: 1 }]
+      }));
+      await open('/tools');
+      expect(plan().isEmpty()).toBe(true);
+      expect(plan().accountId()).toBe('a1');
+    });
+  });
+
+  describe('switching account with a plan', () => {
+    const plan = (): TradePlanService =>
+      harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
+    const dialog = () => document.querySelector<HTMLElement>('app-tools [data-testid="switch-dialog"]');
+    async function go(url: string): Promise<void> {
+      await router.navigateByUrl(url);
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+    }
+
+    it('switches freely while the plan is empty', async () => {
+      await open('/tools?account=a1');
+      await go('/tools?account=a2');
+      expect(dialog()).toBeNull();
+      expect(plan().accountId()).toBe('a2');
+    });
+
+    it('asks to stay or clear, and staying goes back with the plan', async () => {
+      await open('/tools?account=a1');
+      plan().addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 1 }]);
+      await go('/tools/draw?account=a2');
+      expect(dialog()!.textContent).toContain('Your plan has 1 order for Brokerage ··0001');
+      await new Promise(resolve => queueMicrotask(() => resolve(null)));
+      expect(document.activeElement).toBe(dialog()!.querySelector('[data-testid="stay"]'));
+
+      dialog()!.querySelector<HTMLButtonElement>('[data-testid="stay"]')!.click();
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+      expect(router.url).toBe('/tools/draw?account=a1');
+      expect(dialog()).toBeNull();
+      expect(plan().count()).toBe(1);
+    });
+
+    it('stays on Escape', async () => {
+      await open('/tools?account=a1');
+      plan().addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 1 }]);
+      await go('/tools?account=a2');
+      dialog()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      await harness.fixture.whenStable();
+      expect(router.url).toBe('/tools?account=a1');
+    });
+
+    it('clears the plan and switches', async () => {
+      await open('/tools?account=a1');
+      plan().addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 1 }]);
+      await go('/tools?account=a2');
+      dialog()!.querySelector<HTMLButtonElement>('[data-testid="clear-and-switch"]')!.click();
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+      expect(dialog()).toBeNull();
+      expect(router.url).toBe('/tools?account=a2');
+      expect(plan().isEmpty()).toBe(true);
+      expect(plan().accountId()).toBe('a2');
     });
   });
 });

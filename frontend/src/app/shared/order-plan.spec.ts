@@ -1,4 +1,4 @@
-import { OrderPlan, PlanInput, planOrders } from './order-plan';
+import { OrderPlan, PlanInput, ProjectionInput, planOrders, projectOrders } from './order-plan';
 
 describe('planOrders', () => {
   const prices = { AAPL: 100, MSFT: 200, NVDA: 50, PENNY: 0.5 };
@@ -260,5 +260,67 @@ describe('planOrders', () => {
     expect(result.orders).toEqual([]);
     expect(result.cashShareAfter).toBe(0);
     expect(result.allocationAfter).toEqual([{ symbol: 'AAPL', quantity: 0, value: 0, share: 0, targetShare: null }]);
+  });
+});
+
+describe('projectOrders', () => {
+  const prices = { AAPL: 100, MSFT: 200 };
+  const project = (input: Partial<ProjectionInput>) =>
+    projectOrders({ positions: [], prices, cash: 0, orders: [], cashBuffer: 0, ...input });
+
+  it('prices each order at its ask or bid and projects the account after', () => {
+    const result = project({
+      positions: [{ symbol: 'AAPL', quantity: 10 }],
+      cash: 1000,
+      quoteOffsets: { AAPL: { ask: 0.1, bid: -0.1 }, MSFT: { ask: 0.5, bid: -0.5 } },
+      orders: [{ symbol: 'AAPL', side: 'SELL', quantity: 4 }, { symbol: 'MSFT', side: 'BUY', quantity: 2 }]
+    });
+    expect(result.orders).toEqual([
+      { symbol: 'AAPL', side: 'SELL', quantity: 4, quotedPrice: 99.9, estimatedValue: 399.6 },
+      { symbol: 'MSFT', side: 'BUY', quantity: 2, quotedPrice: 200.5, estimatedValue: 401 }
+    ]);
+    expect(result.cashImpact).toBe(-1.4);
+    expect(result.cashAfter).toBe(998.6);
+    expect(result.allocationAfter.map(h => `${h.symbol} ${h.quantity}`)).toEqual(['AAPL 6', 'MSFT 2']);
+    expect(result.allocationAfter.every(h => h.targetShare === null)).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it('warns when the buys outrun cash plus what the sells raise', () => {
+    const result = project({ cash: 150, orders: [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }] });
+    expect(result.warnings.map(w => w.code)).toEqual(['not-enough-cash']);
+    expect(result.cashAfter).toBe(-50);
+  });
+
+  it('keeps the cash buffer by default', () => {
+    const result = projectOrders({ positions: [], prices, cash: 200, orders: [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }] });
+    expect(result.warnings.map(w => w.code)).toEqual(['not-enough-cash']);
+  });
+
+  it('warns once per symbol sold past the shares held, across orders', () => {
+    const result = project({
+      positions: [{ symbol: 'AAPL', quantity: 3 }],
+      orders: [
+        { symbol: 'MSFT', side: 'SELL', quantity: 1 },
+        { symbol: 'AAPL', side: 'SELL', quantity: 2 },
+        { symbol: 'AAPL', side: 'SELL', quantity: 2 }
+      ]
+    });
+    expect(result.warnings.map(w => `${w.code} ${w.symbol}`)).toEqual(['oversell AAPL', 'oversell MSFT']);
+    expect(result.warnings[0].message).toBe('The plan sells 4 AAPL but the account holds 3.');
+    expect(result.allocationAfter).toEqual([]);
+  });
+
+  it('values an order without a price at nothing and says so', () => {
+    const result = project({ cash: 10, orders: [{ symbol: 'NEW', side: 'BUY', quantity: 1 }, { symbol: 'NEW', side: 'BUY', quantity: 2 }] });
+    expect(result.orders.map(o => o.estimatedValue)).toEqual([0, 0]);
+    expect(result.warnings.map(w => `${w.code} ${w.symbol}`)).toEqual(['no-price NEW']);
+  });
+
+  it('projects nothing for no orders', () => {
+    const result = project({ positions: [{ symbol: 'AAPL', quantity: 1 }], cash: 100 });
+    expect(result.orders).toEqual([]);
+    expect(result.cashImpact).toBe(0);
+    expect(result.cashShareAfter).toBe(0.5);
   });
 });

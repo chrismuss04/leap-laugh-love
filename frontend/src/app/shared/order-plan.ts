@@ -75,7 +75,8 @@ export interface PlannedHolding {
   targetShare: number | null;
 }
 
-export type PlanWarningCode = 'not-enough-cash' | 'too-small' | 'no-price' | 'targets-over-100' | 'invalid-target';
+export type PlanWarningCode =
+  'not-enough-cash' | 'too-small' | 'no-price' | 'targets-over-100' | 'invalid-target' | 'oversell';
 
 export interface PlanWarning {
   code: PlanWarningCode;
@@ -124,16 +125,8 @@ export function planOrders(input: PlanInput): OrderPlan {
   const warnings: PlanWarning[] = [];
   const warn = (code: PlanWarningCode, symbol: string | null, message: string) => warnings.push({ code, symbol, message });
 
-  const held = new Map<string, number>();
-  for (const position of input.positions) {
-    if (position.quantity > 0) {
-      held.set(position.symbol, (held.get(position.symbol) ?? 0) + position.quantity);
-    }
-  }
-  const lastPrice = (symbol: string): number | null => {
-    const price = input.prices[symbol];
-    return Number.isFinite(price) && price > 0 ? price : null;
-  };
+  const held = heldShares(input.positions);
+  const lastPrice = priceLookup(input.prices);
 
   // The account's value now, which percentage targets are a share of.
   let totalValue = input.cash;
@@ -222,17 +215,126 @@ export function planOrders(input: PlanInput): OrderPlan {
 
   // Where the account ends up if every order fills at its quoted price.
   const cashAfter = cents(input.cash + proceeds - buys.reduce((sum, o) => sum + o.quantity * o.price, 0));
+  const { allocationAfter, cashShareAfter } = projectHoldings(held, orders, cashAfter, lastPrice, [...targets.keys()],
+    symbol => targetShareOf(targets.get(symbol), lastPrice(symbol), totalValue, percentScale));
+
+  return { orders, cashAfter, allocationAfter, cashShareAfter, warnings };
+}
+
+/** One order as a person (or a tool) asked for it, before it is priced. */
+export interface OrderLine {
+  symbol: string;
+  side: PlanSide;
+  quantity: number;
+}
+
+export interface ProjectionInput {
+  positions: PlanPosition[];
+  prices: Record<string, number>;
+  quoteOffsets?: Record<string, PlanQuoteOffset>;
+  cash: number;
+  /** The orders, in any order; they are assumed to run sells first, as planOrders lists them. */
+  orders: OrderLine[];
+  /** Headroom kept on buys, as in planOrders. Defaults to 0.5%. */
+  cashBuffer?: number;
+}
+
+export interface OrderProjection {
+  /** Each order priced at its ask or bid, in the order given. */
+  orders: PlannedOrder[];
+  /** Sale proceeds less buy costs: what the orders do to cash. */
+  cashImpact: number;
+  cashAfter: number;
+  allocationAfter: PlannedHolding[];
+  cashShareAfter: number;
+  /** 'not-enough-cash' when the buys outrun cash plus proceeds; 'oversell' per symbol sold past its shares; 'no-price'. */
+  warnings: PlanWarning[];
+}
+
+/**
+ * What a list of orders, from any number of tools and edited by hand, would do to an account.
+ * Unlike planOrders it changes nothing - it prices the orders and warns about what can't fill.
+ */
+export function projectOrders(input: ProjectionInput): OrderProjection {
+  const cashBuffer = Math.max(0, input.cashBuffer ?? DEFAULT_CASH_BUFFER);
+  const warnings: PlanWarning[] = [];
+  const held = heldShares(input.positions);
+  const lastPrice = priceLookup(input.prices);
+
+  const noPrice = new Set<string>();
+  const orders = input.orders.map(line => {
+    const price = lastPrice(line.symbol);
+    if (price === null) {
+      noPrice.add(line.symbol);
+    }
+    const offset = input.quoteOffsets?.[line.symbol];
+    const quoted = price === null ? 0 : price + ((line.side === 'BUY' ? offset?.ask : offset?.bid) ?? 0);
+    return toOrder({ symbol: line.symbol, quantity: line.quantity, price: quoted }, line.side);
+  });
+  for (const symbol of [...noPrice].sort()) {
+    warnings.push({ code: 'no-price', symbol, message: `There's no price for ${symbol} yet, so its value is unknown.` });
+  }
+
+  const sold = new Map<string, number>();
+  for (const order of orders.filter(o => o.side === 'SELL')) {
+    sold.set(order.symbol, (sold.get(order.symbol) ?? 0) + order.quantity);
+  }
+  for (const [symbol, quantity] of [...sold].sort(([a], [b]) => (a < b ? -1 : 1))) {
+    const shares = held.get(symbol) ?? 0;
+    if (quantity > shares) {
+      warnings.push({ code: 'oversell', symbol,
+        message: `The plan sells ${quantity} ${symbol} but the account holds ${shares}.` });
+    }
+  }
+
+  const exact = (side: PlanSide) => orders.filter(o => o.side === side).reduce((sum, o) => sum + o.quantity * o.quotedPrice, 0);
+  const proceeds = exact('SELL');
+  const cost = exact('BUY');
+  if (cost * (1 + cashBuffer) > input.cash + proceeds + EPSILON) {
+    warnings.push({ code: 'not-enough-cash', symbol: null,
+      message: 'The buys cost more than the account’s cash plus what the sells raise.' });
+  }
+
+  const cashAfter = cents(input.cash + proceeds - cost);
+  const { allocationAfter, cashShareAfter } = projectHoldings(held, orders, cashAfter, lastPrice, [], () => null);
+  return { orders, cashImpact: cents(proceeds - cost), cashAfter, allocationAfter, cashShareAfter, warnings };
+}
+
+function heldShares(positions: PlanPosition[]): Map<string, number> {
+  const held = new Map<string, number>();
+  for (const position of positions) {
+    if (position.quantity > 0) {
+      held.set(position.symbol, (held.get(position.symbol) ?? 0) + position.quantity);
+    }
+  }
+  return held;
+}
+
+function priceLookup(prices: Record<string, number>): (symbol: string) => number | null {
+  return symbol => {
+    const price = prices[symbol];
+    return Number.isFinite(price) && price > 0 ? price : null;
+  };
+}
+
+/**
+ * Holdings after the orders fill, valued at last trade, by symbol. Symbols left with no shares
+ * are omitted unless listed in keep.
+ */
+function projectHoldings(held: Map<string, number>, orders: PlannedOrder[], cashAfter: number,
+                         lastPrice: (symbol: string) => number | null, keep: string[],
+                         targetShare: (symbol: string) => number | null): { allocationAfter: PlannedHolding[]; cashShareAfter: number } {
   const sharesAfter = new Map(held);
   for (const order of orders) {
     sharesAfter.set(order.symbol, (sharesAfter.get(order.symbol) ?? 0) + (order.side === 'BUY' ? order.quantity : -order.quantity));
   }
-  const symbolsAfter = new Set([...sharesAfter.keys(), ...targets.keys()]);
-  const valued = [...symbolsAfter]
+  const kept = new Set(keep);
+  const valued = [...new Set([...sharesAfter.keys(), ...keep])]
     .map(symbol => {
-      const quantity = sharesAfter.get(symbol) ?? 0;
+      const quantity = Math.max(sharesAfter.get(symbol) ?? 0, 0);
       return { symbol, quantity, value: quantity * (lastPrice(symbol) ?? 0) };
     })
-    .filter(h => h.quantity > 0 || targets.has(h.symbol));
+    .filter(h => h.quantity > 0 || kept.has(h.symbol));
   const totalAfter = cashAfter + valued.reduce((sum, h) => sum + h.value, 0);
   const share = (value: number) => (totalAfter > 0 ? value / totalAfter : 0);
   const allocationAfter = valued.sort(bySymbol).map(h => ({
@@ -240,10 +342,9 @@ export function planOrders(input: PlanInput): OrderPlan {
     quantity: h.quantity,
     value: cents(h.value),
     share: share(h.value),
-    targetShare: targetShareOf(targets.get(h.symbol), lastPrice(h.symbol), totalValue, percentScale)
+    targetShare: targetShare(h.symbol)
   }));
-
-  return { orders, cashAfter, allocationAfter, cashShareAfter: share(cashAfter), warnings };
+  return { allocationAfter, cashShareAfter: share(cashAfter) };
 }
 
 /** Drops orders of no shares silently, and orders worth less than the minimum with a warning. */

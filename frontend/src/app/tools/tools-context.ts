@@ -1,11 +1,14 @@
-import { Injectable, computed, effect, inject, untracked } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { DestroyRef, Injectable, computed, effect, inject, signal, untracked } from '@angular/core';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { filter, map } from 'rxjs';
 import { AccountValuationService } from '../services/account-valuation';
+import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
 import { AccountView, HoldingView } from '../dashboard/models';
+import { PlanQuoteOffset } from '../shared/order-plan';
 import { ACCOUNT_PARAM } from './tools-catalog';
+import { TradePlanService } from './trade-plan';
 
 /** One slice of an account's allocation: a holding, the rest of its holdings, or cash. */
 export interface AllocationSlice {
@@ -23,6 +26,22 @@ const SLICE_COLORS = ['#5b9dff', '#a78bfa', '#2dd4bf', '#f5b041', '#f472b6'];
 const OTHER_COLOR = '#64748b';
 const CASH_COLOR = '#3f3f4a';
 
+/** Donut slices for some holdings and cash: the largest holdings, everything else, then cash. */
+export function allocationSlices(holdings: { symbol: string; value: number }[], cash: number): AllocationSlice[] {
+  const priced = holdings.filter(h => h.value > 0).sort((a, b) => b.value - a.value);
+  const top = priced.slice(0, MAX_SLICES);
+  const rest = priced.slice(MAX_SLICES).reduce((sum, h) => sum + h.value, 0);
+  const slices = top.map((h, i) => ({ key: h.symbol, label: h.symbol, value: h.value, color: SLICE_COLORS[i] }));
+  if (rest > 0) {
+    slices.push({ key: 'other', label: 'Other', value: rest, color: OTHER_COLOR });
+  }
+  if (cash > 0) {
+    slices.push({ key: 'cash', label: 'Cash', value: cash, color: CASH_COLOR });
+  }
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  return slices.map(s => ({ ...s, share: total ? s.value / total : 0 }));
+}
+
 /**
  * Trading Tools: the account every tool acts on, valued live. Provided by the tools page, so the
  * hub and each tool share one load and one account as the client moves between them. The account
@@ -32,7 +51,10 @@ const CASH_COLOR = '#3f3f4a';
 export class ToolsContext {
   private readonly valuation = inject(AccountValuationService);
   private readonly stream = inject(PriceStreamService);
+  private readonly marketData = inject(MarketDataService);
   private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
+  readonly plan = inject(TradePlanService);
 
   /** The current URL, kept current across navigations between the hub and tools. */
   readonly url = toSignal(
@@ -48,45 +70,56 @@ export class ToolsContext {
   readonly loading = this.valuation.accountsLoading;
   readonly error = this.valuation.accountError;
   readonly multiAccount = this.valuation.multiAccount;
+  /** Latest price per symbol: the live stream over a REST snapshot. */
+  readonly prices = this.valuation.prices;
 
-  /** The account in the URL, or the client's first account until the URL names one. */
+  /**
+   * The account in the URL; without one, the account the trade plan is for, else the client's
+   * first account.
+   */
   readonly account = computed<AccountView | null>(() => {
     const accounts = this.accounts();
-    return accounts.find(a => a.accountId === this.accountParam()) ?? accounts[0] ?? null;
+    return accounts.find(a => a.accountId === this.accountParam())
+      ?? accounts.find(a => a.accountId === this.plan.accountId())
+      ?? accounts[0] ?? null;
+  });
+
+  /** The account the trade plan's orders are for, once loaded. */
+  readonly planAccount = computed(() => this.accounts().find(a => a.accountId === this.plan.accountId()) ?? null);
+
+  /**
+   * True while the client has moved to another account with orders still planned for this one;
+   * the tools page asks whether to go back or clear the plan.
+   */
+  readonly switchPending = computed(() => {
+    const account = this.account();
+    const planAccount = this.planAccount();
+    return !this.plan.isEmpty() && !!account && !!planAccount && account.accountId !== planAccount.accountId;
   });
 
   /** The account's open positions, priced live, largest first. */
-  readonly holdings = computed<HoldingView[]>(() => {
-    const account = this.account();
-    const positions = this.valuation.holdingsResponse()?.accounts.find(a => a.accountId === account?.accountId)?.positions;
-    return account ? this.valuation.priceHoldings(this.valuation.openPositions(positions)) : [];
-  });
+  readonly holdings = computed<HoldingView[]>(() => this.holdingsOf(this.account()?.accountId ?? null));
+
+  /** The trade plan account's open positions, priced live. */
+  readonly planHoldings = computed<HoldingView[]>(() => this.holdingsOf(this.plan.accountId()));
 
   /** The account's value split into its largest holdings, everything else, and cash. */
   readonly allocation = computed<AllocationSlice[]>(() => {
     const account = this.account();
-    if (!account) {
-      return [];
-    }
-    const priced = this.holdings().filter(h => (h.marketValue ?? 0) > 0);
-    const top = priced.slice(0, MAX_SLICES);
-    const rest = priced.slice(MAX_SLICES).reduce((sum, h) => sum + h.marketValue!, 0);
-    const slices = top.map((h, i) => ({ key: h.symbol, label: h.symbol, value: h.marketValue!, color: SLICE_COLORS[i] }));
-    if (rest > 0) {
-      slices.push({ key: 'other', label: 'Other', value: rest, color: OTHER_COLOR });
-    }
-    if (account.cash > 0) {
-      slices.push({ key: 'cash', label: 'Cash', value: account.cash, color: CASH_COLOR });
-    }
-    const total = slices.reduce((sum, s) => sum + s.value, 0);
-    return slices.map(s => ({ ...s, share: total ? s.value / total : 0 }));
+    return account
+      ? allocationSlices(this.holdings().map(h => ({ symbol: h.symbol, value: h.marketValue ?? 0 })), account.cash)
+      : [];
   });
 
+  /** Ask and bid offsets from the last trade, for the symbols in the trade plan. */
+  readonly quoteOffsets = signal<Record<string, PlanQuoteOffset>>({});
+  private readonly requestedQuotes = new Set<string>();
+
   constructor() {
-    // Previews are live, so keep every held symbol on the price stream.
+    // Previews and the plan are live, so keep every held and planned symbol on the price stream.
     effect(() => {
       if (!this.loading()) {
-        this.stream.watch(this.valuation.heldSymbols());
+        this.stream.watch([...this.valuation.heldSymbols(), ...this.plan.symbols()]);
       }
     });
 
@@ -96,6 +129,31 @@ export class ToolsContext {
       const param = this.accountParam();
       if (account && param !== account.accountId) {
         untracked(() => this.selectAccount(account.accountId, true));
+      }
+    });
+
+    // An empty plan follows the account; one for an account the client no longer has is dropped.
+    effect(() => {
+      const account = this.account();
+      if (!account) {
+        return;
+      }
+      untracked(() => {
+        const planFor = this.plan.accountId();
+        if (planFor && !this.accounts().some(a => a.accountId === planFor)) {
+          this.plan.clear();
+        }
+        this.plan.adopt(account.accountId);
+      });
+    });
+
+    // Market orders fill at the ask or bid, so planned orders are valued at those.
+    effect(() => {
+      for (const symbol of this.plan.symbols()) {
+        if (!this.requestedQuotes.has(symbol)) {
+          this.requestedQuotes.add(symbol);
+          untracked(() => this.loadQuote(symbol));
+        }
       }
     });
   }
@@ -111,11 +169,50 @@ export class ToolsContext {
     this.router.navigateByUrl(tree, { replaceUrl });
   }
 
+  /** Answers the account-switch prompt: go back to the plan's account... */
+  stayOnPlanAccount(): void {
+    const accountId = this.plan.accountId();
+    if (accountId) {
+      this.selectAccount(accountId, true);
+    }
+  }
+
+  /** ...or drop the plan and carry on with the new account. */
+  clearPlanAndSwitch(): void {
+    const account = this.account();
+    this.plan.clear();
+    if (account) {
+      this.plan.adopt(account.accountId);
+    }
+  }
+
   /** The link to a tool, or to the hub, on the current account. */
   urlFor(toolId: string | null): string {
     const accountId = this.account()?.accountId;
     const tree = this.router.createUrlTree(toolId ? ['/tools', toolId] : ['/tools'],
       { queryParams: accountId ? { [ACCOUNT_PARAM]: accountId } : {} });
     return this.router.serializeUrl(tree);
+  }
+
+  private holdingsOf(accountId: string | null): HoldingView[] {
+    const positions = this.valuation.holdingsResponse()?.accounts.find(a => a.accountId === accountId)?.positions;
+    return accountId ? this.valuation.priceHoldings(this.valuation.openPositions(positions)) : [];
+  }
+
+  private loadQuote(symbol: string): void {
+    this.marketData.getQuote(symbol)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: quote => {
+          const last = Number(quote.lastPrice);
+          const ask = Number(quote.askPrice) - last;
+          const bid = Number(quote.bidPrice) - last;
+          if (Number.isFinite(ask) && Number.isFinite(bid)) {
+            this.quoteOffsets.update(current => ({ ...current, [symbol]: { ask, bid } }));
+          }
+        },
+        // Without a quote the order is valued at the last trade.
+        error: () => this.requestedQuotes.delete(symbol)
+      });
   }
 }
