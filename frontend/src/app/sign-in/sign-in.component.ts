@@ -16,6 +16,11 @@ function recoveryViewFor(url: string): RecoveryView | null {
   return null;
 }
 
+/** Trading Tools: whether a URL is a Trading Tools page, which a shared link may open straight onto. */
+export function isToolsUrl(url: string): boolean {
+  return /^\/tools(\/|$)/.test(url.split(/[?#]/)[0]);
+}
+
 @Component({
     selector: 'app-sign-in',
     templateUrl: './sign-in.component.html',
@@ -23,6 +28,12 @@ function recoveryViewFor(url: string): RecoveryView | null {
     standalone: false
 })
 export class SignInComponent implements OnInit {
+  /**
+   * Trading Tools: the tools link this page load opened on, so signing in lands there rather than
+   * on the dashboard. Taken once, so whoever signs in after a logout starts at home.
+   */
+  static deepLink: string | null = isToolsUrl(location.pathname) ? location.pathname + location.search : null;
+
   // Session Timeout & Revocation: stays reactive if logout confirmation later fails.
   readonly sessionMessage = inject(AuthService).sessionMessage;
   // Form and state variables
@@ -96,7 +107,12 @@ export class SignInComponent implements OnInit {
         // Staff Dashboards: signing out leaves the router on the last page, and both staff roles
         // share /reporting - so re-match the route even when the URL hasn't changed, or the next
         // staff member to sign in gets the previous one's dashboard.
-        this.router.navigateByUrl(this.authService.homeUrl(), { onSameUrlNavigation: 'reload' });
+        // Trading Tools: a client who opened a tool's link goes to that tool; staff still go home.
+        const deepLink = SignInComponent.deepLink;
+        SignInComponent.deepLink = null;
+        const target = deepLink && !this.authService.isStaff() && this.router.url === deepLink
+          ? deepLink : this.authService.homeUrl();
+        this.router.navigateByUrl(target, { onSameUrlNavigation: 'reload' });
       },
       error: (error) => {
         this.isLoading.set(false);

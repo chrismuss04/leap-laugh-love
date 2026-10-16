@@ -6,20 +6,23 @@ import { AccountView } from '../models';
 /**
  * Tabs for scoping a page: every account combined, or one account. Each tab is a link, so an
  * account view has its own URL and the browser's back button returns to the overview. Used by the
- * dashboard (/dashboard/:accountId) and the Accounts page (/accounts/:accountId).
+ * dashboard (/dashboard/:accountId) and the Accounts page (/accounts/:accountId). Trading Tools keeps
+ * its tool in the path, so it names the account in a query parameter instead (/tools/rebalance?account=a1).
  */
 @Component({
     selector: 'app-account-switcher',
     imports: [CommonModule, RouterLink],
     template: `
     <nav class="switcher" aria-label="Accounts">
-      <a class="tab" [routerLink]="basePath" [class.on]="selected === null"
+      <a *ngIf="showAll" class="tab" [routerLink]="basePath" [class.on]="selected === null"
          [attr.aria-current]="selected === null ? 'page' : null">
         All accounts
       </a>
       <ng-container *ngIf="!loading">
         <a *ngFor="let account of accounts; trackBy: trackById" class="tab fade-in"
-           [routerLink]="[basePath, account.accountId]" [class.on]="account.accountId === selected"
+           [routerLink]="queryParam ? basePath : [basePath, account.accountId]"
+           [queryParams]="queryParamsFor(account)" [queryParamsHandling]="queryParam ? 'merge' : ''"
+           [class.on]="account.accountId === selected"
            [attr.aria-current]="account.accountId === selected ? 'page' : null"
            [attr.aria-label]="account.name">
           <span class="dot" [style.background]="account.color" aria-hidden="true"></span>
@@ -73,6 +76,14 @@ export class AccountSwitcherComponent {
   @Input() loading = false;
   /** Route of the all-accounts view; an account's tab links to basePath/:accountId. */
   @Input() basePath = '/dashboard';
+  /** Names the account in this query parameter on basePath, rather than as a path segment. */
+  @Input() queryParam: string | null = null;
+  /** Whether to offer the all-accounts view; off where a page always acts on one account. */
+  @Input() showAll = true;
+
+  queryParamsFor(account: AccountView): Record<string, string> | null {
+    return this.queryParam ? { [this.queryParam]: account.accountId } : null;
+  }
 
   trackById(_: number, account: AccountView): string {
     return account.accountId;
