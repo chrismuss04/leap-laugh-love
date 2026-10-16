@@ -9,6 +9,7 @@ import com.leap.leaplaughlove.common.security.JwtService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -18,7 +19,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 
 /**
  * Configures Spring Security for the reporting service: stateless JWT authentication (reusing
- * iam-app's {@link JwtService}), with every report for commercial analysts only.
+ * iam-app's {@link JwtService}), with every report for commercial analysts only, and monthly recaps
+ * for clients only.
  */
 // Session Timeout & Revocation: common is outside each app's component scan.
 @Import(ClientSessionValidator.class)
@@ -47,6 +49,8 @@ public class ReportingSecurityConfig {
                         // let Spring Boot's internal error forward render the real status instead
                         // of falling through to the role check and masking it as a 401
                         .requestMatchers("/error").permitAll()
+                        // Monthly recaps: each client reads their own; staff tokens are refused (403).
+                        .requestMatchers(HttpMethod.GET, "/api/reporting/recaps/**").hasRole("CLIENT")
                         // Analyst-only: client and trading operations tokens are refused here (403).
                         .anyRequest().hasRole("COMMERCIAL_ANALYST"))
                 .exceptionHandling(handling -> handling

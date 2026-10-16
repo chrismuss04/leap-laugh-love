@@ -579,3 +579,28 @@ CREATE TABLE IF NOT EXISTS reporting.clients (
 -- Supports registration counts over a reporting period.
 CREATE INDEX IF NOT EXISTS idx_reporting_clients_registered_at
     ON reporting.clients (registered_at);
+
+-- Sector Reference: the GICS sector of each tradable symbol, for the monthly client recap's
+-- "Top Sector". Static reference data from seed_reporting_sectors.sql, keyed by the symbol
+-- reporting.orders carries. No foreign keys, like the rest of the reporting schema. A symbol with
+-- no row here is left out of the sector totals, never guessed.
+CREATE TABLE IF NOT EXISTS reporting.instrument_sectors (
+    symbol TEXT PRIMARY KEY,
+    sector TEXT NOT NULL
+);
+
+-- Monthly Client Recaps: one stored recap per client per UTC month, built by reporting-app's
+-- monthly job from reporting.orders fills, reporting.instrument_sectors and market data prices, so opening a
+-- recap reads one row instead of aggregating. The only reporting table reporting-app writes. Not
+-- append-only: a rerun of the job replaces the month's rows.
+CREATE TABLE IF NOT EXISTS reporting.client_recaps (
+    client_id UUID NOT NULL,
+    -- First day of the UTC month the recap covers.
+    month DATE NOT NULL CHECK (EXTRACT(DAY FROM month) = 1),
+    -- Version of the payload's JSON shape, so readers can tell an old recap from a new one.
+    schema_version SMALLINT NOT NULL CHECK (schema_version > 0),
+    payload JSONB NOT NULL,
+    generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Also serves "a client's latest recap", scanned backwards by month.
+    PRIMARY KEY (client_id, month)
+);
