@@ -5,6 +5,7 @@ import { provideLocationMocks } from '@angular/common/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { Subject, of, throwError } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
 import { BalanceService } from '../services/balance';
 import { ClientHoldings, HoldingsService } from '../services/holdings';
 import { MarketDataService } from '../services/market-data';
@@ -15,6 +16,10 @@ import { TOOL_ROUTES } from './tools.routes';
 import { MiniDonutComponent } from './previews/mini-donut';
 import { By } from '@angular/platform-browser';
 import { TRADE_PLAN_KEY, TradePlanService } from './trade-plan';
+import { OrderService, OrderStatus, OrderSubmissionRequest, OrderSubmissionResponse } from '../services/order';
+import { MarketStatusService } from '../services/market-status';
+import { ToolsComponent as ToolsPage } from './tools';
+import { SKIPPED_MESSAGE, UNKNOWN_MESSAGE } from './plan-submission';
 
 describe('Trading Tools', () => {
   const position = (symbol: string, quantity: number) =>
@@ -34,6 +39,16 @@ describe('Trading Tools', () => {
   let balanceApi: ReturnType<typeof createSpyObj<BalanceService>>;
   let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: ReturnType<typeof vi.fn> };
   let harness: RouterTestingHarness;
+  let orderApi: ReturnType<typeof createSpyObj<OrderService>>;
+  let marketApi: ReturnType<typeof createSpyObj<MarketDataService>>;
+  let session: ReturnType<typeof signal<string | null>>;
+  /** A filled market order, as order-app answers one. */
+  const filled = (request: OrderSubmissionRequest, status: OrderStatus = 'FILLED'): OrderSubmissionResponse => ({
+    orderId: `order-${request.symbol}`, accountId: request.accountId, accountNumber: 'ACC-0001', symbol: request.symbol,
+    side: request.side, quantity: request.quantity, status, submittedAt: '', filledAt: null, rejectionReason: null,
+    execution: { executionId: 'x', fillQuantity: request.quantity, fillPrice: request.quotedPrice!, status: 'FILLED', executedAt: '', reason: null },
+    accountBalanceAfter: null
+  });
   let router: Router;
 
   const el = (): HTMLElement => harness.routeNativeElement!.closest('app-tools') ?? harness.fixture.nativeElement;
@@ -57,12 +72,16 @@ describe('Trading Tools', () => {
   beforeEach(() => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
-    const marketApi = createSpyObj('MarketDataService',
+    marketApi = createSpyObj('MarketDataService',
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
     // Every quote sits 10 cents either side of its last trade.
     marketApi.getQuote.mockImplementation((symbol: string) =>
       of({ symbol, lastPrice: 100, askPrice: 100.1, bidPrice: 99.9, quoteTimestamp: '' }));
     sessionStorage.clear();
+    orderApi = createSpyObj('OrderService', ['submitOrder', 'getOpenOrders']);
+    orderApi.submitOrder.mockImplementation((request: OrderSubmissionRequest) => of(filled(request)));
+    orderApi.getOpenOrders.mockReturnValue(of([]));
+    session = signal<string | null>('REGULAR');
     stream = { prices: signal<Record<string, number>>({}), watch: vi.fn() };
     holdingsApi.getHoldings.mockReturnValue(of(twoAccounts));
     holdingsApi.getAccounts.mockReturnValue(of([]));
@@ -81,7 +100,9 @@ describe('Trading Tools', () => {
         { provide: HoldingsService, useValue: holdingsApi },
         { provide: BalanceService, useValue: balanceApi },
         { provide: MarketDataService, useValue: marketApi },
-        { provide: PriceStreamService, useValue: stream }
+        { provide: PriceStreamService, useValue: stream },
+        { provide: OrderService, useValue: orderApi },
+        { provide: MarketStatusService, useValue: { session } }
       ]
     });
   });
@@ -483,6 +504,225 @@ describe('Trading Tools', () => {
       expect(router.url).toBe('/tools?account=a2');
       expect(plan().isEmpty()).toBe(true);
       expect(plan().accountId()).toBe('a2');
+    });
+  });
+
+  describe('reviewing and submitting the plan', () => {
+    const plan = (): TradePlanService =>
+      harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
+    const q = <T extends Element = HTMLElement>(selector: string) => document.querySelector<T>(`app-tools ${selector}`);
+    const sheet = () => q('[data-testid="review-sheet"]');
+    /** Each match's text, its child elements' texts joined by spaces. */
+    const cells = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(`app-tools ${selector}`))
+      .map(el => (el.children.length ? Array.from(el.children).map(c => c.textContent!.trim()).join(' ') : el.textContent!)
+        .replace(/\s+/g, ' ').trim());
+    const submitButton = () => q<HTMLButtonElement>('[data-testid="submit"]')!;
+    async function settle(): Promise<void> {
+      for (let i = 0; i < 5; i++) {
+        await new Promise(resolve => setTimeout(resolve));
+      }
+      harness.detectChanges();
+    }
+    async function review(...plans: Parameters<TradePlanService['addPlan']>[]): Promise<void> {
+      for (const args of plans) {
+        plan().addPlan(...args);
+      }
+      harness.detectChanges();
+      q<HTMLButtonElement>('[data-testid="tray-toggle"]')!.click();
+      harness.detectChanges();
+      q<HTMLButtonElement>('[data-testid="review-plan"]')!.click();
+      harness.detectChanges();
+    }
+    // a1 holds 10 AAPL (at 150) and $1,000 cash; quotes are 10 cents either side.
+    const sellAndBuy: Parameters<TradePlanService['addPlan']> = ['rebalance', 'a1', [
+      { symbol: 'AAPL', side: 'SELL', quantity: 2 }, { symbol: 'MSFT', side: 'BUY', quantity: 1 }
+    ]];
+
+    it('lists every order at live prices, with the totals', async () => {
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(cells('[data-testid="review-sheet"] tbody tr')).toEqual([
+        'Sell AAPL 2 $149.90 $299.80', 'Buy MSFT 1 $400.10 $400.10'
+      ]);
+      expect(cells('[data-testid="review-totals"] div')).toEqual([
+        'Cash spent $400.10', 'Cash raised $299.80', 'Net cash change −$100.30', 'Cash after $899.70'
+      ]);
+      expect(submitButton().disabled).toBe(false);
+      expect(submitButton().textContent!.trim()).toBe('Submit 2 orders');
+      expect(document.activeElement?.textContent?.trim()).toBe('Cancel');
+    });
+
+    it('shows the account\'s saved price protection, which the server applies to every order', async () => {
+      holdingsApi.getAccounts.mockReturnValue(of([{ accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE',
+        baseCurrency: 'USD', tradingEnabled: true, maxSlippagePercent: 1, createdAt: '', inactiveSince: null }]));
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(cells('[data-testid="review-protection"] strong')).toEqual(['1%']);
+    });
+
+    it('says when price protection is off', async () => {
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(document.querySelector('app-tools [data-testid="review-protection"]')!.textContent!.replace(/\s+/g, ' ')).toContain('Price protection: Off');
+    });
+
+    it('warns about a holding the plan buys past the concentration threshold, not one it leaves alone', async () => {
+      await open('/tools');
+      // MSFT would be $1,200 of $2,500; AAPL is already 60% but isn't bought.
+      await review(['basket', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 3 }]]);
+      expect(cells('[data-testid="review-sheet"] [data-warning="concentration"]')).toEqual(['MSFT would be 48% of your portfolio.']);
+      expect(cells('[data-testid="review-sheet"] [data-warning="not-enough-cash"]')).toHaveLength(1);
+    });
+
+    it('explains what changes outside regular hours', async () => {
+      session.set('AFTER_HOURS');
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(cells('[data-testid="session-notice"]')[0]).toContain('will wait for the next open');
+    });
+
+    it('can\'t be submitted while prices load', async () => {
+      marketApi.getQuote.mockReturnValue(new Subject());
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(submitButton().disabled).toBe(true);
+      expect(cells('[data-testid="blocker"]')).toEqual(['Loading prices…']);
+    });
+
+    it('can\'t be submitted while it sells shares the account doesn\'t hold', async () => {
+      await open('/tools');
+      await review(['raise-cash', 'a1', [{ symbol: 'AAPL', side: 'SELL', quantity: 11 }]]);
+      expect(submitButton().disabled).toBe(true);
+      expect(cells('[data-testid="blocker"]')).toEqual(['The plan sells more shares than the account holds.']);
+    });
+
+    it('can\'t be submitted once the plan is empty', async () => {
+      await open('/tools');
+      await review(sellAndBuy);
+      plan().clear();
+      harness.detectChanges();
+      expect(submitButton().disabled).toBe(true);
+      expect(cells('[data-testid="blocker"]')).toEqual(['Your plan is empty.']);
+    });
+
+    it('submits at the prices on screen, empties the tray and refreshes the account', async () => {
+      await open('/tools');
+      await review(sellAndBuy);
+      submitButton().click();
+      await settle();
+
+      expect(orderApi.submitOrder.mock.calls.map(([request]) => request)).toEqual([
+        { accountId: 'a1', symbol: 'AAPL', side: 'SELL', quantity: 2, quotedPrice: 149.9, orderType: 'MARKET' },
+        { accountId: 'a1', symbol: 'MSFT', side: 'BUY', quantity: 1, quotedPrice: 400.1, orderType: 'MARKET' }
+      ]);
+      expect(cells('[data-testid="review-sheet"] li')).toEqual(['Sell 2 AAPL Filled', 'Buy 1 MSFT Filled']);
+      expect(cells('[data-testid="review-summary"]')).toEqual(['2 filled.']);
+      expect(plan().isEmpty()).toBe(true);
+      expect(holdingsApi.getHoldings).toHaveBeenCalledTimes(2);
+
+      q<HTMLButtonElement>('[data-testid="done"]')!.click();
+      harness.detectChanges();
+      expect(sheet()).toBeNull();
+    });
+
+    it('keeps a rejected order in the tray to fix and retry', async () => {
+      orderApi.submitOrder.mockImplementation((request: OrderSubmissionRequest) => request.symbol === 'MSFT'
+        ? throwError(() => new HttpErrorResponse({ status: 422, error: { message: 'Insufficient funds - order rejected' } }))
+        : of(filled(request)));
+      await open('/tools');
+      await review(sellAndBuy);
+      submitButton().click();
+      await settle();
+      expect(cells('[data-testid="review-sheet"] li')).toEqual([
+        'Sell 2 AAPL Filled', 'Buy 1 MSFT Rejected Insufficient funds - order rejected'
+      ]);
+      expect(cells('[data-testid="review-summary"]')).toEqual(['1 filled · 1 rejected.']);
+      expect(plan().orders().map(o => o.symbol)).toEqual(['MSFT']);
+    });
+
+    it('summarises open, settling, skipped and unknown orders', async () => {
+      const replies: (OrderStatus | 'none')[] = ['OPEN', 'ACCEPTED', 'none'];
+      orderApi.submitOrder.mockImplementation((request: OrderSubmissionRequest) => {
+        const reply = replies.shift()!;
+        return reply === 'none' ? throwError(() => new HttpErrorResponse({ status: 0 })) : of(filled(request, reply));
+      });
+      await open('/tools');
+      // The queued sale raises nothing; the settling buy and the unknown one spend $550.20 of $1,000,
+      // leaving too little for two more MSFT.
+      await review(
+        ['rebalance', 'a1', [{ symbol: 'AAPL', side: 'SELL', quantity: 1 }, { symbol: 'AAPL', side: 'BUY', quantity: 1 }]],
+        ['basket', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 1 }]],
+        ['draw', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 2 }]]
+      );
+      submitButton().click();
+      await settle();
+      expect(cells('[data-testid="review-sheet"] li')).toEqual([
+        'Sell 1 AAPL Open', 'Buy 1 AAPL Accepted (settling)',
+        `Buy 1 MSFT Unknown ${UNKNOWN_MESSAGE}`, `Buy 2 MSFT Skipped ${SKIPPED_MESSAGE}`
+      ]);
+      expect(cells('[data-testid="review-summary"]')).toEqual(['1 filled · 1 open · 1 skipped · 1 unknown (1 still settling).']);
+      expect(plan().orders().map(o => `${o.quantity} ${o.symbol}`)).toEqual(['2 MSFT']);
+    });
+
+    it('stays shut to closing and leaving until every request has answered, and sends nothing twice', async () => {
+      const pending = new Subject<OrderSubmissionResponse>();
+      orderApi.submitOrder.mockReturnValueOnce(pending);
+      await open('/tools');
+      await review(sellAndBuy);
+      const button = submitButton();
+      button.click();
+      button.click();
+      harness.detectChanges();
+      expect(orderApi.submitOrder).toHaveBeenCalledTimes(1);
+
+      // Backdrop, Escape and the Done button all wait.
+      q<HTMLElement>('app-plan-review .backdrop')!.click();
+      sheet()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      harness.detectChanges();
+      expect(sheet()).not.toBeNull();
+      expect(q<HTMLButtonElement>('[data-testid="done"]')!.disabled).toBe(true);
+      const page = harness.fixture.debugElement.query(By.directive(ToolsPage)).componentInstance as ToolsPage;
+      expect(page.canLeave()).toBe(false);
+
+      pending.next(filled(orderApi.submitOrder.mock.calls[0][0]));
+      pending.complete();
+      await settle();
+      expect(orderApi.submitOrder).toHaveBeenCalledTimes(2);
+      expect(page.canLeave()).toBe(true);
+      sheet()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      harness.detectChanges();
+      expect(sheet()).toBeNull();
+    });
+
+    it('counts cash already held by open orders', async () => {
+      orderApi.getOpenOrders.mockReturnValue(of([{ orderId: 'x', accountId: 'a1', symbol: 'NVDA', side: 'BUY', quantity: 1,
+        status: 'OPEN', orderType: 'LIMIT', reservedCash: 950 } as never]));
+      await open('/tools');
+      await review(['basket', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 1 }]]);
+      submitButton().click();
+      await settle();
+      expect(orderApi.submitOrder).not.toHaveBeenCalled();
+      expect(cells('[data-testid="review-summary"]')).toEqual(['1 skipped.']);
+    });
+
+    it('still opens when open orders can\'t be checked, and says so', async () => {
+      orderApi.getOpenOrders.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await open('/tools');
+      await review(sellAndBuy);
+      expect(submitButton().disabled).toBe(false);
+      expect(cells('[data-testid="review-sheet"] [role="alert"]')[0]).toContain('Couldn’t check your open orders');
+    });
+
+    it('holds the account-switch prompt back until the sheet closes', async () => {
+      await open('/tools?account=a1');
+      await review(sellAndBuy);
+      await router.navigateByUrl('/tools?account=a2');
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+      expect(q('[data-testid="switch-dialog"]')).toBeNull();
+      q<HTMLButtonElement>('[data-testid="review-sheet"] footer .secondary')!.click();
+      harness.detectChanges();
+      expect(q('[data-testid="switch-dialog"]')).not.toBeNull();
     });
   });
 });

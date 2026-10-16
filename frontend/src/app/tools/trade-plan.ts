@@ -113,6 +113,12 @@ export class TradePlanService {
     }
   }
 
+  /** Takes out the orders that were placed, keeping the rest to fix and retry. */
+  removeMany(ids: readonly string[]): void {
+    const gone = new Set(ids);
+    this.orders.update(orders => orders.filter(o => !gone.has(o.id)));
+  }
+
   clear(): void {
     if (this.orders().length) {
       this.announcement.set('Your plan was cleared.');

@@ -1,6 +1,6 @@
-import { Component, ElementRef, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, ElementRef, EventEmitter, Output, ViewChild, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { OrderProjection, PlanWarning, PlannedOrder, projectOrders } from '../shared/order-plan';
+import { PlanWarning, PlannedOrder } from '../shared/order-plan';
 import { formatMoney, formatSignedMoney } from '../shared/format';
 import { MiniDonutComponent } from './previews/mini-donut';
 import { ToolsContext, allocationSlices } from './tools-context';
@@ -67,6 +67,10 @@ interface TrayRow {
             </div>
             <div><dt>Cash</dt><dd class="num">{{ percent(projected.cashShareAfter) }}</dd></div>
           </dl>
+        </div>
+
+        <div *ngIf="!plan.isEmpty()" class="panel-foot">
+          <button type="button" class="review" (click)="review.emit()" data-testid="review-plan">Review plan</button>
         </div>
       </div>
 
@@ -178,6 +182,15 @@ interface TrayRow {
     .link { background: none; color: var(--foreground); font-size: 13px; font-weight: 600; text-decoration: underline; white-space: nowrap; }
     .link.danger { color: var(--loss); }
     .after { display: flex; align-items: center; gap: 16px; padding-top: 4px; }
+    .panel-foot { display: flex; justify-content: flex-end; }
+    .review {
+      padding: 9px 18px;
+      border-radius: 999px;
+      background: var(--primary);
+      color: var(--primary-foreground);
+      font-size: 13px;
+      font-weight: 600;
+    }
     dl { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 4px 16px; flex: 1; font-size: 13px; }
     dl div { display: flex; justify-content: space-between; gap: 8px; }
     dt { color: var(--muted-foreground); }
@@ -194,6 +207,8 @@ interface TrayRow {
 })
 export class TradePlanTrayComponent {
   @ViewChild('toggle') private toggle?: ElementRef<HTMLButtonElement>;
+  /** The client asked to review and submit the plan. */
+  @Output() review = new EventEmitter<void>();
 
   readonly plan = inject(TradePlanService);
   readonly context = inject(ToolsContext);
@@ -203,19 +218,7 @@ export class TradePlanTrayComponent {
   readonly errors = signal<Record<string, string>>({});
 
   /** Every order valued at its live ask or bid, against the account the plan is for. */
-  readonly projection = computed<OrderProjection | null>(() => {
-    const account = this.context.planAccount();
-    if (!account || this.plan.isEmpty()) {
-      return null;
-    }
-    return projectOrders({
-      positions: this.context.planHoldings().map(h => ({ symbol: h.symbol, quantity: h.quantity })),
-      prices: this.context.prices(),
-      quoteOffsets: this.context.quoteOffsets(),
-      cash: account.cash,
-      orders: this.plan.sorted()
-    });
-  });
+  readonly projection = this.context.planProjection;
 
   readonly rows = computed<TrayRow[]>(() => {
     const priced = this.projection()?.orders ?? [];

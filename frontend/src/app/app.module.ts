@@ -99,6 +99,8 @@ export const routes: Routes = [
       {
         path: 'tools',
         loadComponent: () => import('./tools/tools').then(m => m.ToolsComponent),
+        // Trading Tools: not while a plan's orders are still being sent.
+        canDeactivate: [(tools: { canLeave(): boolean }) => tools.canLeave()],
         loadChildren: () => import('./tools/tools.routes').then(m => m.TOOL_ROUTES)
       },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }

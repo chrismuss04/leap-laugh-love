@@ -1,4 +1,4 @@
-import { Component, ElementRef, OnInit, ViewChild, effect, inject } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterOutlet } from '@angular/router';
 import { AccountValuationService } from '../services/account-valuation';
@@ -7,6 +7,8 @@ import { ToolsContext } from './tools-context';
 import { ACCOUNT_PARAM } from './tools-catalog';
 import { TradePlanService } from './trade-plan';
 import { TradePlanTrayComponent } from './trade-plan-tray';
+import { PlanReviewComponent } from './plan-review';
+import { PlanSubmission } from './plan-submission';
 
 /**
  * Trading Tools: the hub at /tools and each tool at /tools/:tool. This page owns the account the
@@ -15,7 +17,7 @@ import { TradePlanTrayComponent } from './trade-plan-tray';
  */
 @Component({
     selector: 'app-tools',
-    imports: [CommonModule, RouterOutlet, AccountSwitcherComponent, TradePlanTrayComponent],
+    imports: [CommonModule, RouterOutlet, AccountSwitcherComponent, TradePlanTrayComponent, PlanReviewComponent],
     template: `
     <div class="tools-page">
       <app-account-switcher *ngIf="context.multiAccount()" class="scope" [showAll]="false"
@@ -31,10 +33,13 @@ import { TradePlanTrayComponent } from './trade-plan-tray';
       <router-outlet></router-outlet>
     </div>
 
-    <app-trade-plan-tray></app-trade-plan-tray>
+    <app-trade-plan-tray (review)="reviewOpen.set(true)"></app-trade-plan-tray>
 
-    <!-- The plan belongs to one account, so moving to another asks what to do with it. -->
-    <div *ngIf="context.switchPending()" class="backdrop">
+    <app-plan-review *ngIf="reviewOpen()" (closed)="closeReview()"></app-plan-review>
+
+    <!-- The plan belongs to one account, so moving to another asks what to do with it - once the
+         review sheet, which is about the plan's own account, has closed. -->
+    <div *ngIf="context.switchPending() && !reviewOpen()" class="backdrop">
       <div #switchDialog class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="switch-title"
            aria-describedby="switch-body" (keydown.escape)="context.stayOnPlanAccount()" data-testid="switch-dialog">
         <h2 id="switch-title">Keep your trade plan?</h2>
@@ -54,18 +59,22 @@ import { TradePlanTrayComponent } from './trade-plan-tray';
     </div>
   `,
     styleUrl: './tools.css',
-    providers: [AccountValuationService, TradePlanService, ToolsContext]
+    providers: [AccountValuationService, TradePlanService, ToolsContext, PlanSubmission]
 })
 export class ToolsComponent implements OnInit {
   @ViewChild('switchDialog') private switchDialog?: ElementRef<HTMLElement>;
 
   readonly context = inject(ToolsContext);
   readonly accountParam = ACCOUNT_PARAM;
+  private readonly submission = inject(PlanSubmission);
+
+  /** Whether the review-and-submit sheet is up. */
+  readonly reviewOpen = signal(false);
 
   constructor() {
     // Put focus in the prompt as it opens, so a keyboard user answers it before anything else.
     effect(() => {
-      if (this.context.switchPending()) {
+      if (this.context.switchPending() && !this.reviewOpen()) {
         queueMicrotask(() => this.switchDialog?.nativeElement.querySelector<HTMLButtonElement>('button')?.focus());
       }
     });
@@ -73,5 +82,16 @@ export class ToolsComponent implements OnInit {
 
   ngOnInit(): void {
     this.context.load();
+  }
+
+  closeReview(): void {
+    if (!this.submission.busy()) {
+      this.reviewOpen.set(false);
+    }
+  }
+
+  /** Leaving the tools mid-submission would hide orders still being sent, so it waits until they finish. */
+  canLeave(): boolean {
+    return !this.submission.busy();
   }
 }

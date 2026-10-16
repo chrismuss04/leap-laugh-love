@@ -6,7 +6,7 @@ import { AccountValuationService } from '../services/account-valuation';
 import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
 import { AccountView, HoldingView } from '../dashboard/models';
-import { PlanQuoteOffset } from '../shared/order-plan';
+import { OrderProjection, PlanQuoteOffset, projectOrders } from '../shared/order-plan';
 import { ACCOUNT_PARAM } from './tools-catalog';
 import { TradePlanService } from './trade-plan';
 
@@ -114,6 +114,34 @@ export class ToolsContext {
   /** Ask and bid offsets from the last trade, for the symbols in the trade plan. */
   readonly quoteOffsets = signal<Record<string, PlanQuoteOffset>>({});
   private readonly requestedQuotes = new Set<string>();
+  /** Symbols whose quote has been asked for but not answered yet. */
+  private readonly pendingQuotes = signal<ReadonlySet<string>>(new Set());
+
+  /** Every planned order valued at its live ask or bid, against the account the plan is for. */
+  readonly planProjection = computed<OrderProjection | null>(() => {
+    const account = this.planAccount();
+    if (!account || this.plan.isEmpty()) {
+      return null;
+    }
+    return projectOrders({
+      positions: this.planHoldings().map(h => ({ symbol: h.symbol, quantity: h.quantity })),
+      prices: this.prices(),
+      quoteOffsets: this.quoteOffsets(),
+      cash: account.cash,
+      orders: this.plan.sorted()
+    });
+  });
+
+  /** Whether any planned order is still waiting on its quote or its price. */
+  readonly pricesLoading = computed(() => {
+    const prices = this.prices();
+    const pending = this.pendingQuotes();
+    return this.plan.symbols().some(symbol => pending.has(symbol) || !(prices[symbol] > 0));
+  });
+
+  /** The plan account's saved price protection in percent, or null when it's off or not loaded. */
+  readonly planMaxSlippage = computed(() =>
+    this.valuation.accountSummaries().find(a => a.accountId === this.plan.accountId())?.maxSlippagePercent ?? null);
 
   constructor() {
     // Previews and the plan are live, so keep every held and planned symbol on the price stream.
@@ -200,10 +228,17 @@ export class ToolsContext {
   }
 
   private loadQuote(symbol: string): void {
+    const settle = () => this.pendingQuotes.update(pending => {
+      const next = new Set(pending);
+      next.delete(symbol);
+      return next;
+    });
+    this.pendingQuotes.update(pending => new Set(pending).add(symbol));
     this.marketData.getQuote(symbol)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: quote => {
+          settle();
           const last = Number(quote.lastPrice);
           const ask = Number(quote.askPrice) - last;
           const bid = Number(quote.bidPrice) - last;
@@ -212,7 +247,10 @@ export class ToolsContext {
           }
         },
         // Without a quote the order is valued at the last trade.
-        error: () => this.requestedQuotes.delete(symbol)
+        error: () => {
+          settle();
+          this.requestedQuotes.delete(symbol);
+        }
       });
   }
 }
