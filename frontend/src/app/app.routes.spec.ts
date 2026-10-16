@@ -97,6 +97,8 @@ describe('App routes', () => {
 
     expect(urls).toContain('/accounts');
     expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
+    // The header link and the profile menu's, which covers narrow screens.
+    expect(urls.filter(url => url === '/recap')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
     }

@@ -20,6 +20,10 @@
         <a routerLink="/holdings" routerLinkActive="active" class="nav-link">Holdings</a>
         <!-- No room on phones; the profile menu carries it there. -->
         <a routerLink="/accounts" routerLinkActive="active" class="nav-link wide-only">Accounts</a>
+        <!-- Narrow screens reach it from the profile menu. -->
+        <a routerLink="/recap" routerLinkActive="active" class="nav-link wide-only" [class.is-new]="recapUnseen()">
+          Recap<span class="sr-only" *ngIf="recapUnseen()"> (new)</span>
+        </a>
       </nav>
 
       <div class="header-right">
@@ -67,6 +71,15 @@
                 <path d="M5.5 4.25V3a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1.25M1.75 8.25h12.5" stroke-linecap="round" />
               </svg>
               Accounts
+            </button>
+            <!-- Every width, unlike the header link. -->
+            <button type="button" class="menu-item" role="menuitem" routerLink="/recap" (click)="closeMenu()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="2.75" y="1.75" width="10.5" height="12.5" rx="1.5" />
+                <path d="M5.5 11V9M8 11V6.5M10.5 11V4.5" stroke-linecap="round" />
+              </svg>
+              Monthly recap
+              <span class="pill" *ngIf="recapUnseen()">New</span>
             </button>
             <button type="button" class="menu-item" role="menuitem" routerLink="/settings" (click)="closeMenu()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
