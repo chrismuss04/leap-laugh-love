@@ -46,6 +46,7 @@ describe('App routes', () => {
   const lazyPages: [string, string, () => Promise<unknown>][] = [
     ['orders', 'OrderHistoryComponent', () => import('./order-history/order-history').then(m => m.OrderHistoryComponent)],
     ['holdings', 'HoldingsComponent', () => import('./holdings/holdings').then(m => m.HoldingsComponent)],
+    ['recap', 'RecapComponent', () => import('./recap/recap').then(m => m.RecapComponent)],
     ['profile', 'ProfileComponent', () => import('./profile/profile').then(m => m.ProfileComponent)],
     ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)]
   ];
@@ -97,6 +98,8 @@ describe('App routes', () => {
 
     expect(urls).toContain('/accounts');
     expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
+    // The header tab (wide screens) and the profile menu item (every width).
+    expect(urls.filter(url => url === '/recap')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
     }
@@ -135,7 +138,7 @@ describe('Role-based routing', () => {
         expect(router.url).toBe('/reporting');
       });
 
-      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/recap', '/profile', '/settings', '/', '/nowhere']) {
         it(`is sent from ${url} to reporting`, async () => {
           await router.navigateByUrl(url);
           expect(router.url).toBe('/reporting');

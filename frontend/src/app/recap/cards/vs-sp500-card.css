@@ -1,0 +1,30 @@
+@import './card-common.css';
+
+/* Cylinders fill the bottom half; the copy stays in the top 44%. */
+:host { background-image: url('/assets/recap/cylinders-narrow.webp'); }
+
+.copy { left: 8%; right: 8%; top: 6%; display: grid; gap: 3.5cqw; }
+h2 { font-size: 6cqw; line-height: 1.1; }
+.bench { display: grid; gap: 1.3cqw; }
+.lbl { font: 600 3.4cqw/1 var(--font-card); color: rgba(238, 239, 234, 0.75); }
+.val { font-size: 8cqw; font-variant-numeric: tabular-nums; }
+.bar { height: 2.8cqw; background: rgba(238, 239, 234, 0.12); }
+.bar i { display: block; height: 100%; transform-origin: left; }
+.me .val.outlined { -webkit-text-stroke: 0.3cqw var(--paper); }
+.me .bar i { background: var(--accent); }
+.spx .bar i { background: var(--paper); }
+.verdict { font-size: 4.1cqw; line-height: 1.35; }
+.verdict b { font-weight: 800; color: var(--accent); }
+
+/* Rotated cylinders fill the left; the copy takes the empty right. */
+@container viewer (min-width: 640px) {
+  :host { background-image: url('/assets/recap/cylinders-wide.webp'); }
+  .copy { left: 59cqw; right: 5cqw; top: 50%; transform: translateY(-50%); gap: 2.2cqw; }
+  h2 { font-size: 3cqw; white-space: nowrap; }
+  .bench { gap: 0.8cqw; }
+  .lbl { font-size: 1.5cqw; }
+  .val { font-size: 4.6cqw; }
+  .bar { height: 1.3cqw; }
+  .me .val.outlined { -webkit-text-stroke: 0.18cqw var(--paper); }
+  .verdict { font-size: 1.8cqw; }
+}

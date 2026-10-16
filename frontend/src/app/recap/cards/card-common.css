@@ -1,0 +1,50 @@
+/* What every recap card shares, imported into each card's own stylesheet. Positions come from the
+   1080x1920 Figma frames for the narrow 9:16 card, and from the frames rotated 90 degrees for the
+   16:9 one (in each card's @container viewer block). 100cqw is the card's width.
+
+   data-a and --i on elements are hooks for the animation pass: data-a marks what animates, --i
+   its order. Nothing uses them yet. */
+
+:host {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.abs { position: absolute; }
+
+.display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+
+.chip {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-display);
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* A big figure in the accent, outlined in paper like the Figma numerals. */
+.outlined {
+  color: var(--accent);
+  paint-order: stroke fill;
+}
+
+h2, p { margin: 0; }
+
+.empty-note {
+  font: 600 3.6cqw/1.35 var(--font-card);
+  color: rgba(238, 239, 234, 0.75);
+}
+
+@container viewer (min-width: 640px) {
+  .empty-note { font-size: 1.7cqw; }
+}

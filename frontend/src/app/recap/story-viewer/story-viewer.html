@@ -1,0 +1,32 @@
+<div class="viewer">
+  <div class="stage" tabindex="0" role="group" aria-roledescription="story"
+       [attr.aria-label]="stageLabel()" [class.paused]="paused()"
+       [style.--card-duration.ms]="cardDuration()"
+       (click)="onStageClick($event)" (keydown)="onKeydown($event)">
+    <div class="progress" aria-hidden="true">
+      @for (card of cards(); track $index) {
+        <span class="seg" [class.done]="$index < index()">
+          @if ($index === index()) {
+            <!-- Recreated with each card, so its fill starts over. -->
+            @for (run of showing(); track run.index) {
+              <i class="fill"></i>
+            }
+          }
+        </span>
+      }
+    </div>
+    @for (run of showing(); track run.index) {
+      <article class="card play" [attr.aria-label]="run.card.label()">
+        <ng-container [ngTemplateOutlet]="run.card.template" />
+      </article>
+    }
+  </div>
+
+  <div class="controls">
+    <button type="button" class="ctl" aria-label="Previous card" [disabled]="atStart()" (click)="previous()">←</button>
+    <span class="counter" aria-live="polite">{{ index() + 1 }} / {{ cards().length }}</span>
+    <button type="button" class="ctl" aria-label="Next card" [disabled]="atEnd()" (click)="next()">→</button>
+    <button type="button" class="ctl" (click)="togglePause()">{{ paused() ? 'Play' : 'Pause' }}</button>
+  </div>
+  <p class="hint">Click the right side of the card to go forward, the left side to go back. Arrow keys and space work too.</p>
+</div>

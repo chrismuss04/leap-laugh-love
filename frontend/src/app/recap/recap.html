@@ -1,0 +1,31 @@
+<div class="page"><div class="page-container recap-page">
+  @if (loading()) {
+    <div class="stage-skeleton skeleton" role="status" aria-label="Loading your recap"></div>
+  } @else if (error(); as message) {
+    <div class="recap-error" role="alert">
+      <p class="error-message">{{ message }}</p>
+      <button type="button" class="retry" (click)="load()">Try again</button>
+    </div>
+  } @else if (recap(); as r) {
+    <app-story-viewer [label]="monthName() + ' recap'">
+      <ng-template appStoryCard="Intro">
+        <app-intro-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+      <ng-template appStoryCard="Money moved">
+        <app-money-moved-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+      <ng-template appStoryCard="Top tickers">
+        <app-top-tickers-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+      <ng-template appStoryCard="Top gainer">
+        <app-top-gainer-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+      <ng-template appStoryCard="Versus the S&P 500">
+        <app-vs-sp500-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+      <ng-template appStoryCard="The tops">
+        <app-the-tops-card [recap]="r" [monthName]="monthName()" />
+      </ng-template>
+    </app-story-viewer>
+  }
+</div></div>

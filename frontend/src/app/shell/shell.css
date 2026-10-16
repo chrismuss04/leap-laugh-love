@@ -70,6 +70,22 @@
   background: var(--muted);
 }
 
+/* A recap the client hasn't opened yet. */
+.nav-link.is-new {
+  position: relative;
+}
+
+.nav-link.is-new::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
 .header-right {
   margin-left: auto;
   display: flex;
@@ -208,6 +224,18 @@
 
 .menu-item:hover {
   background: var(--surface-hover);
+}
+
+.menu-pill {
+  margin-left: auto;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .menu-item.danger {

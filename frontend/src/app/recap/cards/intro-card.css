@@ -1,0 +1,28 @@
+@import './card-common.css';
+
+:host { background-image: url('/assets/recap/dots-narrow.webp'); }
+
+.copy { left: 8%; right: 6%; top: 49%; display: grid; gap: 3cqw; }
+.kicker { font: 600 3.6cqw/1 var(--font-card); letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); }
+h2 { font-size: 8.4cqw; line-height: 1.08; }
+h2 span { display: block; white-space: nowrap; }
+h2 .accent { color: var(--accent); }
+.sub { font-size: 4.1cqw; line-height: 1.4; color: rgba(238, 239, 234, 0.82); max-width: 32em; }
+.tap { bottom: 5%; left: 8%; font: 600 3.3cqw/1 var(--font-card); letter-spacing: 0.08em; text-transform: uppercase; color: rgba(238, 239, 234, 0.6); }
+
+/* Phones tap; everything else clicks. */
+.touch { display: none; }
+@media (hover: none) {
+  .pointer { display: none; }
+  .touch { display: inline; }
+}
+
+/* Rotated dots: "2026" reads across the top right, so the copy takes the empty left. */
+@container viewer (min-width: 640px) {
+  :host { background-image: url('/assets/recap/dots-wide.webp'); }
+  .copy { left: 6cqw; right: auto; width: 46cqw; top: 50%; transform: translateY(-50%); gap: 1.8cqw; }
+  .kicker { font-size: 1.4cqw; }
+  h2 { font-size: 4.3cqw; }
+  .sub { font-size: 1.7cqw; max-width: 40cqw; }
+  .tap { left: 6cqw; bottom: 8%; font-size: max(12px, 1.3cqw); }
+}

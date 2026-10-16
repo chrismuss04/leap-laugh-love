@@ -93,6 +93,8 @@ export const routes: Routes = [
       // Opening accounts and moving cash between them, for all accounts or one; same pills as the dashboard.
       { path: 'accounts', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
+      // Last month's trading as a story of cards; its fonts and art load only with it.
+      { path: 'recap', loadComponent: () => import('./recap/recap').then(m => m.RecapComponent) },
       { path: 'profile', loadComponent: () => import('./profile/profile').then(m => m.ProfileComponent) },
       { path: 'settings', loadComponent: () => import('./settings/settings').then(m => m.SettingsComponent) },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }

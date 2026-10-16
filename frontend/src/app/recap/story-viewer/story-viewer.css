@@ -1,0 +1,168 @@
+/* The story stage. The viewer is a size container so the card can pick its shape from the room it
+   has: 9:16 like the Figma frames when narrow, 16:9 from 640px. The stage is a container too, so
+   card content sizes in cqw: 100cqw is the card's width. */
+
+.viewer {
+  container: viewer / inline-size;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.stage {
+  /* Card palette and type, from wrapped-reference/. */
+  --ink: #262626;
+  --paper: #eeefea;
+  --accent: var(--primary);
+  --font-display: 'Dela Gothic One', 'Arial Black', Impact, sans-serif;
+  --font-card: 'Inter', 'Segoe UI', Roboto, Arial, sans-serif;
+
+  position: relative;
+  /* Tall enough to read, short enough that the controls stay on screen. */
+  width: min(100%, max(300px, calc((100dvh - 230px) * 0.5625)), 430px);
+  aspect-ratio: 9 / 16;
+  container-type: inline-size;
+  background: var(--ink);
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border);
+  user-select: none;
+  cursor: pointer;
+}
+
+.stage:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+
+@container viewer (min-width: 640px) {
+  .stage {
+    width: min(100%, calc((100dvh - 210px) * 16 / 9));
+    aspect-ratio: 16 / 9;
+  }
+
+  .progress {
+    top: 1.5cqw;
+    left: 2cqw;
+    right: 2cqw;
+    gap: 0.6cqw;
+  }
+
+  .seg {
+    height: max(3px, 0.3cqw);
+  }
+}
+
+/* ---------- progress ---------- */
+.progress {
+  position: absolute;
+  z-index: 6;
+  top: 2.4cqw;
+  left: 3.5cqw;
+  right: 3.5cqw;
+  display: flex;
+  gap: 1cqw;
+  pointer-events: none;
+}
+
+/* The dark outline keeps the bar visible over white and teal art. */
+.seg {
+  flex: 1;
+  height: max(3px, 0.55cqw);
+  border-radius: 99px;
+  background: rgba(238, 239, 234, 0.28);
+  box-shadow: 0 0 0 1px rgba(38, 38, 38, 0.55);
+  overflow: hidden;
+}
+
+.seg .fill {
+  display: block;
+  height: 100%;
+  background: var(--paper);
+  transform-origin: left;
+  animation: fill var(--card-duration, 7s) linear forwards;
+}
+
+.seg.done {
+  background: var(--paper);
+}
+
+.stage.paused .fill {
+  animation-play-state: paused;
+}
+
+@keyframes fill {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seg .fill {
+    animation: none;
+    transform: scaleX(1);
+  }
+}
+
+/* ---------- card ---------- */
+.card {
+  position: absolute;
+  inset: 0;
+  background: var(--ink) center / cover no-repeat;
+  color: var(--paper);
+  font-family: var(--font-card);
+}
+
+/* ---------- controls ---------- */
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ctl {
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--foreground);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  height: 38px;
+  min-width: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.ctl:hover {
+  background: var(--surface-hover);
+}
+
+.ctl:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.ctl:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.counter {
+  min-width: 44px;
+  text-align: center;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  text-align: center;
+}

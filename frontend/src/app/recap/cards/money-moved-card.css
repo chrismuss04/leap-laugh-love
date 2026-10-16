@@ -1,0 +1,17 @@
+@import './card-common.css';
+
+/* No art: the figure, centred. */
+.copy { left: 0; right: 0; top: 50%; transform: translateY(-50%); display: grid; justify-items: center; gap: 5cqw; text-align: center; }
+h2 { font-size: 6.4cqw; }
+.big { font-size: 16.5cqw; -webkit-text-stroke: 0.45cqw var(--paper); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sub { font-size: 4.4cqw; }
+.sub b { font-weight: 800; }
+.meta { font-size: 3.5cqw; color: rgba(238, 239, 234, 0.6); }
+
+@container viewer (min-width: 640px) {
+  .copy { gap: 2.4cqw; }
+  h2 { font-size: 3.4cqw; }
+  .big { font-size: 10.5cqw; -webkit-text-stroke: 0.25cqw var(--paper); }
+  .sub { font-size: 2.1cqw; }
+  .meta { font-size: 1.6cqw; }
+}

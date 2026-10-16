@@ -20,6 +20,10 @@
         <a routerLink="/holdings" routerLinkActive="active" class="nav-link">Holdings</a>
         <!-- No room on phones; the profile menu carries it there. -->
         <a routerLink="/accounts" routerLinkActive="active" class="nav-link wide-only">Accounts</a>
+        <!-- Phones reach it from the profile menu, like Accounts. The dot marks a recap not yet opened. -->
+        <a routerLink="/recap" routerLinkActive="active" class="nav-link wide-only" [class.is-new]="recapSeen.unseen()">
+          Recap<span class="sr-only" *ngIf="recapSeen.unseen()"> (new)</span>
+        </a>
       </nav>
 
       <div class="header-right">
@@ -56,6 +60,14 @@
                 <path d="M2.75 14c.6-2.6 2.7-4.25 5.25-4.25s4.65 1.65 5.25 4.25" stroke-linecap="round" />
               </svg>
               Profile
+            </button>
+            <button type="button" class="menu-item" role="menuitem" routerLink="/recap" (click)="closeMenu()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="2.25" y="1.75" width="11.5" height="12.5" rx="1.5" />
+                <path d="M5 11V9M8 11V6.5M11 11V4.5" stroke-linecap="round" />
+              </svg>
+              Monthly recap
+              <span class="menu-pill" *ngIf="recapSeen.unseen()">New</span>
             </button>
             <!-- The header's Accounts link is hidden on narrow screens, so the menu carries it there. -->
             <button type="button" class="menu-item narrow-only" role="menuitem" routerLink="/instruments" (click)="closeMenu()">
