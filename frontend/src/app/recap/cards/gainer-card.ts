@@ -1,0 +1,56 @@
+import { Component, computed, input } from '@angular/core';
+import { RecapTopGainer } from '../../services/recap';
+import { linePath } from '../recap-format';
+import { CountUpDirective } from '../count-up';
+import { RecapFootComponent } from './recap-foot';
+
+/**
+ * Card 4: the symbol with the best return, its month drawn on the falling disc. The ranking under
+ * it is the client's overall trading return against everyone else's, not this symbol's, so the
+ * line says so.
+ */
+@Component({
+    selector: 'app-recap-gainer-card',
+    imports: [CountUpDirective, RecapFootComponent],
+    template: `
+    <svg class="rings" viewBox="180 -145 720 1120" aria-hidden="true">
+      <defs><clipPath id="recap-disc"><circle cx="540" cy="615" r="355" /></clipPath></defs>
+      <g fill="#262626" stroke="#eeefea" stroke-width="6">
+        <circle data-a="drop" style="--i:0" cx="540" cy="215" r="355" />
+        <circle data-a="drop" style="--i:1" cx="540" cy="315" r="355" />
+        <circle data-a="drop" style="--i:2" cx="540" cy="415" r="355" />
+        <circle data-a="drop" style="--i:3" cx="540" cy="515" r="355" />
+      </g>
+      <g data-a="drop" style="--i:4">
+        <circle cx="540" cy="615" r="355" fill="#eeefea" stroke="#eeefea" stroke-width="6" />
+        @if (line()) {
+          <g clip-path="url(#recap-disc)">
+            <path [attr.d]="line() + 'L895,980L185,980Z'" fill="var(--recap-lime)" opacity=".35" class="area" />
+            <path [attr.d]="line()" fill="none" stroke="#262626" stroke-width="10" stroke-linejoin="round"
+                  stroke-linecap="round" pathLength="1" class="spark" />
+          </g>
+        }
+      </g>
+    </svg>
+    <div class="abs box" data-a style="--i:5">
+      <div class="display box-title">My Top Gainer</div>
+      <div class="box-name">{{ gainer().symbol }}</div>
+    </div>
+    <div class="abs result">
+      <div class="up" data-a style="--i:7">Up</div>
+      <div class="display pct" data-a="pop" style="--i:8"
+           [appCountUp]="gainer().returnPct" [countUpFormat]="twoPlaces" [countUpDelay]="680"></div>
+      @if (topPercent() !== null) {
+        <div class="rank" data-a style="--i:9">My overall return: top <b>{{ topPercent() }}%</b> of Leapfolio traders</div>
+      }
+    </div>
+    <app-recap-foot class="foot" data-a style="--i:10" />`,
+    styleUrls: ['./card.css', './gainer-card.css']
+})
+export class RecapGainerCardComponent {
+  readonly gainer = input.required<RecapTopGainer>();
+  readonly topPercent = input<number | null>(null);
+
+  readonly twoPlaces = (value: number) => value.toFixed(2) + '%';
+  readonly line = computed(() => linePath(this.gainer().closes, 185, 470, 710, 300));
+}
