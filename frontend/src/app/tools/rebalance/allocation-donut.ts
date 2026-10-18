@@ -8,6 +8,8 @@ import { RollingNumberComponent } from '../../shared/rolling-number';
 import {
   Allocation, DonutSlice, OTHER_THRESHOLD, SliceArc, donutLabels, formatShare, sliceArcs, spreadLabels
 } from './allocation';
+import { TargetAllocation } from './target-allocation';
+import { FINE_STEP, STEP, WHOLE, boundaryPosition, boundarySides, formatTarget, onTarget, targetChange } from './targets';
 
 /** A label beside the ring, placed in pixels, with the leader line back to its arc. */
 interface PlacedLabel {
@@ -15,6 +17,8 @@ interface PlacedLabel {
   keys: string[];
   text: string;
   percent: string;
+  /** The keys' combined target, when it differs from what they hold now. */
+  target: string | null;
   x: number;
   y: number;
   anchor: 'start' | 'end';
@@ -29,6 +33,38 @@ interface DrawnSlice {
   dx: number;
   dy: number;
   ariaLabel: string;
+  /** Targeted at 0%: drawn as a dashed outline, to be sold off. */
+  sold: boolean;
+}
+
+/** One slice of the target ring. */
+interface TargetArc {
+  key: string;
+  color: string;
+  path: string;
+}
+
+/** A draggable boundary between two targets, on the target ring. */
+interface TargetHandle {
+  boundary: number;
+  x: number;
+  y: number;
+  /** The tick across the ring. */
+  tick: string;
+  label: string;
+  valueNow: number;
+  valueMax: number;
+  valueText: string;
+  movable: boolean;
+}
+
+/** A drag under way: the pointer, and the boundary it moves once the first move picks one. */
+interface DragSession {
+  pointerId: number;
+  /** Boundaries under the pointer at the start; several when a 0% slice sits between them. */
+  candidates: number[];
+  boundary: number | null;
+  moved: boolean;
 }
 
 /** Room each side of the ring for a leader line and a label; phones get a slimmer gutter. */
@@ -41,6 +77,11 @@ const INNER_RATIO = 0.64;
 /** A small ring keeps a bigger hole, so the total still fits inside it. */
 const NARROW_INNER_RATIO = 0.7;
 const POP = 6;
+/** The target ring: a gap outside the current ring, then the ring itself. */
+const RING_GAP = 7;
+const RING_WIDTH = 12;
+/** With a target ring, the active slice moves out less so it stays clear of it. */
+const POP_WITH_TARGETS = 3;
 const TWEEN_MS = 520;
 const TOOLTIP_WIDTH = 196;
 const TOOLTIP_HEIGHT = 112;
@@ -58,6 +99,13 @@ const easeOut = (t: number) => 1 - (1 - t) ** 3;
  *
  * Keyboard: the ring is one tab stop. Arrow keys move between slices, Enter or Space pins one,
  * Escape lets it go.
+ *
+ * Given a `targets` store, the donut also draws the target allocation as an outer ring over the
+ * current one, with a handle on each boundary between targets. Handles drag with mouse, touch or
+ * pen (pointer events, captured, with touch-action none so the page doesn't scroll), snapping to
+ * whole percentages or 0.1% with Shift. Each handle is a slider for the keyboard too: arrow keys
+ * move it 1%, Shift+arrow 0.1%, like the order chart's price handles. A slice targeted at 0% is
+ * drawn as a dashed outline, and dragging from it pulls it back out.
  */
 @Component({
   selector: 'app-allocation-donut',
@@ -69,6 +117,8 @@ export class AllocationDonutComponent {
   readonly allocation = input<Allocation | null>(null);
   readonly state = input<'loading' | 'error' | 'ready'>('ready');
   readonly errorMessage = input<string | null>(null);
+  /** The target allocation to draw and edit; without one the donut only shows the current split. */
+  readonly targets = input<TargetAllocation | null>(null);
 
   readonly retry = output<void>();
   readonly addHolding = output<void>();
@@ -76,6 +126,12 @@ export class AllocationDonutComponent {
   readonly selectedChange = output<string | null>();
 
   private chartRef?: ElementRef<HTMLElement>;
+  @ViewChild('svg') private svgRef?: ElementRef<SVGSVGElement>;
+  private session: DragSession | null = null;
+  /** Set as a drag ends, so the click that follows doesn't also pin a slice. */
+  private justDragged = false;
+  /** The boundary being dragged, for styling. */
+  readonly dragging = signal<number | null>(null);
 
   private readonly zone = inject(NgZone);
   private readonly destroyRef = inject(DestroyRef);
@@ -107,16 +163,18 @@ export class AllocationDonutComponent {
 
   /** The arcs drawn right now: the live arcs, or a frame on the way to them. */
   readonly arcs = signal<SliceArc[]>([]);
-  private readonly targetArcs = computed(() => sliceArcs(this.slices()));
+  private readonly liveArcs = computed(() => sliceArcs(this.slices()));
 
   readonly geometry = computed(() => {
     const w = this.width();
     const h = this.height();
     const narrow = w < NARROW;
-    const outer = Math.max(44, Math.min(h / 2 - 14, w / 2 - (narrow ? NARROW_GUTTER : LABEL_GUTTER)));
+    const ring = this.targets() ? RING_GAP + RING_WIDTH : 0;
+    const outer = Math.max(44, Math.min(h / 2 - 14 - ring, w / 2 - (narrow ? NARROW_GUTTER : LABEL_GUTTER) - ring));
     const inner = outer * (narrow ? NARROW_INNER_RATIO : INNER_RATIO);
-    // Below this the hole only has room for the figure itself.
-    return { w, h, cx: w / 2, cy: h / 2, outer, inner, roomy: inner >= 72 };
+    // `edge` is the outside of everything drawn: labels and the details card sit beyond it.
+    // Below `roomy` the hole only has room for the figure itself.
+    return { w, h, cx: w / 2, cy: h / 2, outer, inner, edge: outer + ring, roomy: inner >= 72 };
   });
 
   readonly drawn = computed<DrawnSlice[]>(() => {
@@ -125,6 +183,8 @@ export class AllocationDonutComponent {
     if (!w) {
       return [];
     }
+    const plan = this.targets();
+    const pop = plan ? POP_WITH_TARGETS : POP;
     const byKey = new Map(arcs.map(a => [a.key, a]));
     return this.slices().flatMap(slice => {
       const arc = byKey.get(slice.key);
@@ -135,15 +195,72 @@ export class AllocationDonutComponent {
       return [{
         slice,
         path: annulus(cx, cy, outer, inner, arc.start, arc.end),
-        dx: Math.sin(middle) * POP,
-        dy: -Math.cos(middle) * POP,
-        ariaLabel: this.describe(slice)
+        dx: Math.sin(middle) * pop,
+        dy: -Math.cos(middle) * pop,
+        ariaLabel: this.describe(slice),
+        sold: !!plan && plan.targetOf(slice.key) === 0 && slice.share > 0
       }];
     });
   });
 
+  /** The target ring's slices, in the same order and colours as the current ring. */
+  readonly targetArcs = computed<TargetArc[]>(() => {
+    const plan = this.targets();
+    const { cx, cy, outer, w } = this.geometry();
+    if (!plan || !w) {
+      return [];
+    }
+    const colors = new Map(this.slices().map(s => [s.key, s.color]));
+    const targets = plan.targets();
+    let start = 0;
+    return plan.keys().flatMap((key, i) => {
+      const from = start;
+      start += targets[i];
+      if (targets[i] <= 0) {
+        return [];
+      }
+      return [{
+        key,
+        color: colors.get(key) ?? 'var(--muted-foreground)',
+        path: annulus(cx, cy, outer + RING_GAP + RING_WIDTH, outer + RING_GAP, turn(from), turn(start))
+      }];
+    });
+  });
+
+  /** A handle on every boundary between targets; the seam at 12 o'clock stays put. */
+  readonly handles = computed<TargetHandle[]>(() => {
+    const plan = this.targets();
+    const { cx, cy, outer, w } = this.geometry();
+    if (!plan || !w) {
+      return [];
+    }
+    const targets = plan.targets();
+    const keys = plan.keys();
+    const locked = plan.lockedFlags();
+    const middle = outer + RING_GAP + RING_WIDTH / 2;
+    return keys.slice(0, -1).map((key, boundary) => {
+      const angle = turn(boundaryPosition(targets, boundary));
+      const sides = boundarySides(locked, boundary);
+      const at = (radius: number) => `${r(cx + Math.sin(angle) * radius)},${r(cy - Math.cos(angle) * radius)}`;
+      const before = sides?.before ?? boundary;
+      const after = sides?.after ?? boundary + 1;
+      return {
+        boundary,
+        x: r(cx + Math.sin(angle) * middle),
+        y: r(cy - Math.cos(angle) * middle),
+        tick: `M${at(outer + RING_GAP - 2)} L${at(outer + RING_GAP + RING_WIDTH + 2)}`,
+        label: `Target between ${plan.label(key)} and ${plan.label(keys[boundary + 1])}`,
+        valueNow: targets[before] / 10,
+        valueMax: (targets[before] + targets[after]) / 10,
+        valueText: plan.boundaryText(boundary),
+        movable: !!sides
+      };
+    });
+  });
+
   readonly labels = computed<PlacedLabel[]>(() => {
-    const { cx, cy, outer, w, h } = this.geometry();
+    const { cx, cy, edge: outer, w, h } = this.geometry();
+    const plan = this.targets();
     const slices = this.slices();
     const arcs = this.arcs();
     if (!w || arcs.length !== slices.length) {
@@ -169,6 +286,8 @@ export class AllocationDonutComponent {
           keys: label.keys,
           text: label.text,
           percent: formatShare(label.share),
+          // Phones keep labels short; the targets table has every target.
+          target: plan && w >= NARROW ? this.changedTarget(plan, label.keys, label.share) : null,
           x,
           y,
           anchor: side === 'right' ? 'start' : 'end',
@@ -185,8 +304,8 @@ export class AllocationDonutComponent {
   readonly tooltip = computed(() => {
     const slice = this.activeSlice();
     const arc = this.arcs().find(a => a.key === slice?.key);
-    const { cx, cy, outer, w, h } = this.geometry();
-    if (!slice || !arc || !w) {
+    const { cx, cy, edge: outer, w, h } = this.geometry();
+    if (!slice || !arc || !w || this.dragging() !== null) {
       return null;
     }
     const middle = this.slices().length === 1 ? Math.PI / 2 : (arc.start + arc.end) / 2;
@@ -195,10 +314,16 @@ export class AllocationDonutComponent {
     const py = cy - Math.cos(middle) * (outer + 8);
     const right = Math.sin(middle) >= 0;
     const left = right ? px + 8 : px - 8 - TOOLTIP_WIDTH;
+    const plan = this.targets();
+    const target = plan?.targetOf(slice.key) ?? null;
+    const height = TOOLTIP_HEIGHT + (target !== null ? 44 : 0);
     return {
       slice,
+      target: target !== null ? formatTarget(target) : null,
+      /** Dollars to buy (positive) or sell to reach the target. */
+      change: target !== null ? targetChange(target, slice.share, this.total()) : null,
       left: clamp(left, 4, w - TOOLTIP_WIDTH - 4),
-      top: clamp(py - TOOLTIP_HEIGHT / 2, 4, h - TOOLTIP_HEIGHT - 4)
+      top: clamp(py - height / 2, 4, h - height - 4)
     };
   });
 
@@ -218,12 +343,13 @@ export class AllocationDonutComponent {
 
   money = formatMoney;
   share = formatShare;
+  abs = Math.abs;
   formatShares = (value: number | null) => (value == null ? '—' : shares.format(value));
 
   constructor() {
     // Ease from what's drawn to the live arcs whenever slices change size, appear or go.
     effect(() => {
-      const to = this.targetArcs();
+      const to = this.liveArcs();
       untracked(() => this.animateTo(to));
     });
 
@@ -289,10 +415,16 @@ export class AllocationDonutComponent {
   }
 
   hover(key: string | null): void {
+    if (this.session?.moved) {
+      return;
+    }
     this.hovered.set(key);
   }
 
   toggle(key: string): void {
+    if (this.justDragged) {
+      return;
+    }
     const next = this.selected() === key ? null : key;
     this.selected.set(next);
     this.selectedChange.emit(next);
@@ -340,6 +472,89 @@ export class AllocationDonutComponent {
     svg?.querySelector<SVGElement>(`[data-key="${CSS.escape(next)}"]`)?.focus();
   }
 
+  /** A handle pressed: starts a drag on its boundary, or on whichever coincident one the first move picks. */
+  startHandleDrag(event: PointerEvent, boundary: number): void {
+    const targets = this.targets()?.targets() ?? [];
+    const at = boundaryPosition(targets, boundary);
+    const candidates = this.handles().filter(h => boundaryPosition(targets, h.boundary) === at).map(h => h.boundary);
+    this.startDrag(event, candidates);
+  }
+
+  /** A 0% slice pressed: pulls it back out from whichever side the pointer moves to. */
+  startSoldDrag(event: PointerEvent, key: string): void {
+    const plan = this.targets();
+    const index = plan?.keys().indexOf(key) ?? -1;
+    if (!plan || index < 0) {
+      return;
+    }
+    const candidates = [index - 1, index].filter(b => b >= 0 && b < plan.keys().length - 1);
+    this.startDrag(event, candidates);
+  }
+
+  onDragMove(event: PointerEvent): void {
+    const session = this.session;
+    const plan = this.targets();
+    if (!session || !plan || event.pointerId !== session.pointerId) {
+      return;
+    }
+    const targets = plan.targets();
+    const reference = boundaryPosition(targets, session.boundary ?? session.candidates[0]);
+    // The nearest way round to the pointer, so crossing 12 o'clock doesn't jump a whole turn.
+    const raw = this.positionAt(event);
+    const position = [raw - WHOLE, raw, raw + WHOLE].reduce((a, b) => (Math.abs(b - reference) < Math.abs(a - reference) ? b : a));
+    if (session.boundary === null) {
+      if (Math.abs(position - reference) < 2) {
+        return;
+      }
+      // Clockwise moves the last of the coincident boundaries, so the 0% slice before it grows.
+      session.boundary = position > reference ? Math.max(...session.candidates) : Math.min(...session.candidates);
+    }
+    session.moved = true;
+    this.hovered.set(null);
+    this.dragging.set(session.boundary);
+    plan.dragTo(session.boundary, position, event.shiftKey ? FINE_STEP : STEP);
+  }
+
+  endDrag(event: PointerEvent): void {
+    const session = this.session;
+    if (!session || event.pointerId !== session.pointerId) {
+      return;
+    }
+    try {
+      this.svgRef?.nativeElement.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // Nothing was captured.
+    }
+    this.session = null;
+    this.dragging.set(null);
+    if (session.moved && session.boundary !== null) {
+      this.targets()?.finishDrag(session.boundary);
+      this.justDragged = true;
+      setTimeout(() => { this.justDragged = false; });
+    }
+  }
+
+  /** Arrow keys move a boundary 1% (Shift: 0.1%); up and right are clockwise, as on the order chart. */
+  onHandleKey(event: KeyboardEvent, boundary: number): void {
+    const step = event.shiftKey ? FINE_STEP : STEP;
+    let delta = 0;
+    switch (event.key) {
+      case 'ArrowUp':
+      case 'ArrowRight': delta = step; break;
+      case 'ArrowDown':
+      case 'ArrowLeft': delta = -step; break;
+      default: return;
+    }
+    event.preventDefault();
+    this.targets()?.nudge(boundary, delta);
+  }
+
+  isLocked(key: string): boolean {
+    return this.targets()?.isLocked(key) ?? false;
+  }
+
+  trackHandle = (_: number, handle: TargetHandle) => handle.boundary;
+  trackTarget = (_: number, arc: TargetArc) => arc.key;
   trackSlice = (_: number, drawn: DrawnSlice) => drawn.slice.key;
   trackLabel = (_: number, label: PlacedLabel) => label.key;
   trackKey = (_: number, slice: DonutSlice) => slice.key;
@@ -350,7 +565,43 @@ export class AllocationDonutComponent {
       parts.push(`${shares.format(slice.shares)} share${slice.shares === 1 ? '' : 's'}`);
     }
     parts.push(`${formatShare(slice.share)} of account`);
+    const target = this.targets()?.targetOf(slice.key);
+    if (target != null) {
+      parts.push(`target ${formatTarget(target)}`);
+    }
     return parts.join(', ');
+  }
+
+  /** The keys' combined target, or null when it reads the same as what they hold now. */
+  private changedTarget(plan: TargetAllocation, keys: string[], share: number): string | null {
+    const target = keys.reduce((sum, key) => sum + (plan.targetOf(key) ?? 0), 0);
+    return onTarget(target, share) || formatTarget(target) === formatShare(share) ? null : formatTarget(target);
+  }
+
+  private startDrag(event: PointerEvent, candidates: number[]): void {
+    if ((event.button !== 0 && event.pointerType === 'mouse') || candidates.length === 0) {
+      return;
+    }
+    try {
+      // Keeps the drag going when the pointer leaves the handle, or the chart.
+      this.svgRef?.nativeElement.setPointerCapture?.(event.pointerId);
+    } catch {
+      // No active pointer to capture (e.g. a synthetic event); moves over the chart still drag.
+    }
+    this.session = { pointerId: event.pointerId, candidates, boundary: candidates.length === 1 ? candidates[0] : null, moved: false };
+    event.preventDefault();
+  }
+
+  /** The pointer's angle around the centre, in tenths of a percent clockwise from 12 o'clock. */
+  private positionAt(event: PointerEvent): number {
+    const svg = this.svgRef?.nativeElement;
+    const { cx, cy } = this.geometry();
+    if (!svg) {
+      return 0;
+    }
+    const rect = svg.getBoundingClientRect();
+    const angle = Math.atan2(event.clientX - rect.left - cx, -(event.clientY - rect.top - cy));
+    return ((angle < 0 ? angle + Math.PI * 2 : angle) / (Math.PI * 2)) * WHOLE;
   }
 
   private animateTo(to: SliceArc[]): void {
@@ -391,6 +642,9 @@ export class AllocationDonutComponent {
 }
 
 const r = (value: number) => Math.round(value * 100) / 100;
+
+/** Tenths of a percent as an angle: radians clockwise from 12 o'clock. */
+const turn = (tenths: number) => (tenths / WHOLE) * Math.PI * 2;
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), Math.max(min, max));
 
 /** A ring segment between two angles (radians, clockwise from 12 o'clock); a full turn is a whole ring. */

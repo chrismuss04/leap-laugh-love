@@ -31,12 +31,22 @@
     <ng-container *ngSwitchDefault>
       <div class="layout">
         <div #chart class="chart" (pointerleave)="hover(null)">
-          <svg *ngIf="width()" [attr.width]="width()" [attr.height]="height()" class="fade-in">
+          <svg #svg *ngIf="width()" [attr.width]="width()" [attr.height]="height()" class="fade-in"
+               [class.dragging]="dragging() !== null"
+               (pointermove)="onDragMove($event)" (pointerup)="endDrag($event)" (pointercancel)="endDrag($event)">
+            <defs>
+              <!-- Locked targets are hatched, so locking reads without colour. -->
+              <pattern id="donut-lock-hatch" width="5" height="5" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+                <rect width="2" height="5" class="hatch" />
+              </pattern>
+            </defs>
             <g role="listbox" [attr.aria-label]="summary()" aria-orientation="horizontal">
               <g *ngFor="let d of drawn(); trackBy: trackSlice" class="slice-wrap"
                  [class.active]="active() === d.slice.key" [class.dim]="isDimmed(d.slice.key)"
                  [style.transform]="active() === d.slice.key ? 'translate(' + d.dx + 'px,' + d.dy + 'px)' : null">
-                <path class="slice" [attr.d]="d.path" [attr.fill]="d.slice.color" fill-rule="evenodd"
+                <path class="slice" [class.sold]="d.sold" [attr.d]="d.path" [attr.fill]="d.slice.color" fill-rule="evenodd"
+                      [style.stroke]="d.sold ? d.slice.color : null"
+                      (pointerdown)="d.sold && startSoldDrag($event, d.slice.key)"
                       role="option" [attr.data-key]="d.slice.key" [attr.data-kind]="d.slice.kind"
                       [attr.aria-label]="d.ariaLabel" [attr.aria-selected]="selected() === d.slice.key"
                       [attr.tabindex]="tabStop() === d.slice.key ? 0 : -1"
@@ -44,6 +54,16 @@
                       (focus)="onFocus(d.slice.key, $event)" (blur)="onBlur()"
                       (keydown)="onKey($event, d.slice.key)" />
               </g>
+            </g>
+
+            <!-- The target allocation, as a thinner ring around the current one. -->
+            <g *ngIf="targets()" class="target-ring" aria-hidden="true">
+              <ng-container *ngFor="let arc of targetArcs(); trackBy: trackTarget">
+                <path class="target" [attr.d]="arc.path" [attr.fill]="arc.color" fill-rule="evenodd"
+                      [attr.data-target]="arc.key" [class.dim]="isDimmed(arc.key)" />
+                <path *ngIf="isLocked(arc.key)" class="target-lock" [attr.d]="arc.path" fill="url(#donut-lock-hatch)"
+                      fill-rule="evenodd" [attr.data-locked]="arc.key" />
+              </ng-container>
             </g>
 
             <!-- Keyboard focus gets a ring drawn over every slice, so neighbours can't hide it. -->
@@ -61,7 +81,22 @@
                 <text [attr.x]="label.x" [attr.y]="label.y" [attr.text-anchor]="label.anchor">
                   <tspan class="label-symbol">{{ label.text }}</tspan>
                   <tspan class="label-percent num" [attr.x]="label.x" dy="15">{{ label.percent }}</tspan>
+                  <tspan *ngIf="label.target" class="label-target num"> → {{ label.target }}</tspan>
                 </text>
+              </g>
+            </g>
+
+            <!-- A handle on each boundary between targets: drag it, or focus it and use the arrow keys. -->
+            <g *ngIf="targets()" class="handles">
+              <g *ngFor="let handle of handles(); trackBy: trackHandle" class="handle" role="slider" tabindex="0"
+                 [class.active]="dragging() === handle.boundary" [class.stuck]="!handle.movable"
+                 [attr.data-boundary]="handle.boundary" [attr.aria-label]="handle.label"
+                 aria-valuemin="0" [attr.aria-valuemax]="handle.valueMax" [attr.aria-valuenow]="handle.valueNow"
+                 [attr.aria-valuetext]="handle.valueText" [attr.aria-disabled]="!handle.movable"
+                 (pointerdown)="startHandleDrag($event, handle.boundary)" (keydown)="onHandleKey($event, handle.boundary)">
+                <path class="tick" [attr.d]="handle.tick" />
+                <circle class="hit" [attr.cx]="handle.x" [attr.cy]="handle.y" r="18" />
+                <circle class="knob" [attr.cx]="handle.x" [attr.cy]="handle.y" r="7" />
               </g>
             </g>
           </svg>
@@ -88,6 +123,11 @@
               <div><dt>Value</dt><dd class="num" data-testid="tip-value">{{ money(tip.slice.value) }}</dd></div>
               <div *ngIf="tip.slice.shares !== null"><dt>Shares</dt><dd class="num" data-testid="tip-shares">{{ formatShares(tip.slice.shares) }}</dd></div>
               <div><dt>Allocation</dt><dd class="num" data-testid="tip-share">{{ share(tip.slice.share) }}</dd></div>
+              <ng-container *ngIf="tip.target !== null">
+                <div class="tip-target"><dt>Target</dt><dd class="num" data-testid="tip-target">{{ tip.target }}</dd></div>
+                <div><dt>{{ tip.change! >= 0 ? 'To buy' : 'To sell' }}</dt>
+                  <dd class="num" data-testid="tip-change">{{ money(abs(tip.change!)) }}</dd></div>
+              </ng-container>
             </dl>
           </div>
         </div>

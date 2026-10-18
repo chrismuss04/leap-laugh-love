@@ -52,7 +52,10 @@ export const SLICE_PALETTE = ['#5b9dff', '#f5b041', '#a78bfa', '#2dd4bf', '#f472
 /** Cash is always this grey, which no holding uses. */
 export const CASH_COLOR = '#8b8b99';
 
-export function buildAllocation(holdings: AllocationHolding[], cash: number): Allocation {
+/**
+ * @param options.alwaysCash give cash a slice even at $0, so a target can still be set for it.
+ */
+export function buildAllocation(holdings: AllocationHolding[], cash: number, options: { alwaysCash?: boolean } = {}): Allocation {
   const unpriced: string[] = [];
   const priced: { holding: AllocationHolding; value: number }[] = [];
   for (const holding of holdings) {
@@ -83,7 +86,7 @@ export function buildAllocation(holdings: AllocationHolding[], cash: number): Al
     grouped: shareOf(value) < OTHER_THRESHOLD
   }));
   // Cash keeps its own grey slice and label, however small; an empty account shows it alone.
-  if (cashValue > 0 || slices.length === 0) {
+  if (cashValue > 0 || slices.length === 0 || options.alwaysCash) {
     slices.push({
       key: 'cash', kind: 'cash', label: 'Cash', name: 'Cash', shares: null, value: cashValue,
       share: total > 0 ? shareOf(cashValue) : 1, color: CASH_COLOR, grouped: false

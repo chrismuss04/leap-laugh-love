@@ -353,6 +353,35 @@ describe('Trading Tools', () => {
       expect(donut().querySelector('path.slice[data-key="AAPL"]')).not.toBeNull();
     });
 
+    it('lets the client set targets on the donut or in the table under it', async () => {
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+      // a1: AAPL $1,500 (60%) and cash $1,000 (40%), one boundary between them.
+      expect(donut().querySelectorAll('.handle')).toHaveLength(1);
+      const aapl = el().querySelector<HTMLInputElement>('input[data-target-input="AAPL"]')!;
+      expect(aapl.value).toBe('60');
+
+      aapl.value = '80';
+      aapl.dispatchEvent(new Event('change'));
+      harness.detectChanges();
+      expect(el().querySelector<HTMLInputElement>('input[data-target-input="cash"]')!.value).toBe('20');
+      expect(donut().querySelector('.handle')!.getAttribute('aria-valuenow')).toBe('80');
+      expect(el().querySelector('[data-change="AAPL"]')!.textContent).toContain('$500.00');
+    });
+
+    it('starts targets afresh on another account', async () => {
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+      const aapl = el().querySelector<HTMLInputElement>('input[data-target-input="AAPL"]')!;
+      aapl.value = '80';
+      aapl.dispatchEvent(new Event('change'));
+      await harness.navigateByUrl('/tools/rebalance?account=a2');
+      await drawn();
+      // a2: 2 MSFT at 400 against 2,000 cash.
+      expect(el().querySelector<HTMLInputElement>('input[data-target-input="MSFT"]')!.value).toBe('28.6');
+      expect(el().querySelector<HTMLButtonElement>('[data-testid="reset-targets"]')!.disabled).toBe(true);
+    });
+
     it('shows only cash and a prompt to add a holding for an account with no holdings', async () => {
       holdingsApi.getHoldings.mockReturnValue(of({
         accounts: [{ accountId: 'a1', accountNumber: 'ACC-0001', baseCurrency: 'USD', positions: [] }]
@@ -362,6 +391,9 @@ describe('Trading Tools', () => {
       await drawn();
       expect(Array.from(donut().querySelectorAll('path.slice')).map(p => p.getAttribute('data-key'))).toEqual(['cash']);
       expect(donut().querySelector('[data-testid="donut-empty"]')!.textContent).toContain('Add a holding');
+      // Nothing to reshape yet, so no target ring or table.
+      expect(donut().querySelector('.handle')).toBeNull();
+      expect(el().querySelector('app-target-table')).toBeNull();
     });
   });
 
