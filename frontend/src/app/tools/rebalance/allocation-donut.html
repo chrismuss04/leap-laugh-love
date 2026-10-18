@@ -1,0 +1,149 @@
+<div class="donut" [attr.data-state]="state()">
+  <ng-container [ngSwitch]="state()">
+
+    <!-- Loading: the ring and legend's shapes, shimmering. -->
+    <div *ngSwitchCase="'loading'" class="layout" data-testid="donut-loading" aria-busy="true">
+      <span class="sr-only" role="status">Loading your allocation…</span>
+      <div class="chart-skeleton" aria-hidden="true">
+        <span class="skeleton ring"></span>
+        <span class="skeleton centre-line"></span>
+      </div>
+      <ul class="legend" aria-hidden="true">
+        <li *ngFor="let row of [1, 2, 3, 4]" class="legend-skeleton">
+          <span class="skeleton sk-swatch"></span>
+          <span class="skeleton text"></span>
+          <span class="skeleton figure"></span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Error: what went wrong and a way to try again. -->
+    <div *ngSwitchCase="'error'" class="error" role="alert" data-testid="donut-error">
+      <svg class="error-icon" viewBox="0 0 48 48" width="48" height="48" aria-hidden="true">
+        <circle cx="24" cy="24" r="16" fill="none" stroke="currentColor" stroke-width="6" stroke-dasharray="14 6" />
+        <path d="M24 17v9M24 31v.5" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
+      </svg>
+      <h2>We couldn't load your allocation</h2>
+      <p>{{ errorMessage() || 'Something went wrong fetching your holdings.' }}</p>
+      <button type="button" class="primary" (click)="retry.emit()" data-testid="donut-retry">Retry</button>
+    </div>
+
+    <ng-container *ngSwitchDefault>
+      <div class="layout">
+        <div #chart class="chart" (pointerleave)="hover(null)">
+          <svg *ngIf="width()" [attr.width]="width()" [attr.height]="height()" class="fade-in">
+            <g role="listbox" [attr.aria-label]="summary()" aria-orientation="horizontal">
+              <g *ngFor="let d of drawn(); trackBy: trackSlice" class="slice-wrap"
+                 [class.active]="active() === d.slice.key" [class.dim]="isDimmed(d.slice.key)"
+                 [style.transform]="active() === d.slice.key ? 'translate(' + d.dx + 'px,' + d.dy + 'px)' : null">
+                <path class="slice" [attr.d]="d.path" [attr.fill]="d.slice.color" fill-rule="evenodd"
+                      role="option" [attr.data-key]="d.slice.key" [attr.data-kind]="d.slice.kind"
+                      [attr.aria-label]="d.ariaLabel" [attr.aria-selected]="selected() === d.slice.key"
+                      [attr.tabindex]="tabStop() === d.slice.key ? 0 : -1"
+                      (pointerenter)="hover(d.slice.key)" (click)="toggle(d.slice.key)"
+                      (focus)="onFocus(d.slice.key, $event)" (blur)="onBlur()"
+                      (keydown)="onKey($event, d.slice.key)" />
+              </g>
+            </g>
+
+            <!-- Keyboard focus gets a ring drawn over every slice, so neighbours can't hide it. -->
+            <ng-container *ngFor="let d of drawn(); trackBy: trackSlice">
+              <path *ngIf="keyboardFocus() && focused() === d.slice.key" class="focus-ring" [attr.d]="d.path"
+                    fill-rule="evenodd" aria-hidden="true"
+                    [attr.transform]="'translate(' + d.dx + ',' + d.dy + ')'" />
+            </ng-container>
+
+            <g class="labels" aria-hidden="true">
+              <g *ngFor="let label of labels(); trackBy: trackLabel" class="label"
+                 [class.active]="labelActive(label)" [class.dim]="active() !== null && !labelActive(label)"
+                 [attr.data-label]="label.text">
+                <path class="leader" [attr.d]="label.leader" />
+                <text [attr.x]="label.x" [attr.y]="label.y" [attr.text-anchor]="label.anchor">
+                  <tspan class="label-symbol">{{ label.text }}</tspan>
+                  <tspan class="label-percent num" [attr.x]="label.x" dy="15">{{ label.percent }}</tspan>
+                </text>
+              </g>
+            </g>
+          </svg>
+
+          <!-- The account's total, live, in the hole. -->
+          <div *ngIf="width()" class="centre" aria-hidden="true"
+               [style.left.px]="geometry().cx" [style.top.px]="geometry().cy"
+               [style.width.px]="geometry().inner * 1.8"
+               [style.--total-size.px]="geometry().inner * 0.26">
+            <span class="centre-label">Total value</span>
+            <span class="centre-total num" data-testid="donut-total" [appRollingNumber]="total()"></span>
+            <span *ngIf="geometry().roomy" class="centre-caption">{{ centreCaption() }}</span>
+          </div>
+
+          <!-- Details for the slice pointed at or focused. -->
+          <div *ngIf="tooltip() as tip" class="tooltip" role="tooltip" data-testid="donut-tooltip"
+               [style.left.px]="tip.left" [style.top.px]="tip.top" [style.--accent]="tip.slice.color">
+            <div class="tip-head">
+              <span class="tip-swatch" aria-hidden="true"></span>
+              <strong>{{ tip.slice.label }}</strong>
+              <span class="tip-name" *ngIf="tip.slice.kind === 'holding' && tip.slice.name !== tip.slice.label">{{ tip.slice.name }}</span>
+            </div>
+            <dl>
+              <div><dt>Value</dt><dd class="num" data-testid="tip-value">{{ money(tip.slice.value) }}</dd></div>
+              <div *ngIf="tip.slice.shares !== null"><dt>Shares</dt><dd class="num" data-testid="tip-shares">{{ formatShares(tip.slice.shares) }}</dd></div>
+              <div><dt>Allocation</dt><dd class="num" data-testid="tip-share">{{ share(tip.slice.share) }}</dd></div>
+            </dl>
+          </div>
+        </div>
+
+        <!-- The same slices as a list: every figure readable at a glance, and a second way in. -->
+        <div class="legend-panel">
+          <ul class="legend" aria-label="Holdings by value">
+            <ng-container *ngFor="let slice of holdings(); trackBy: trackKey">
+              <li *ngIf="slice.grouped && slice === grouped()[0]" class="legend-group" data-testid="legend-other">
+                <span>Other</span>
+                <span class="group-note">each under {{ otherThreshold }}</span>
+                <span class="num">{{ share(groupedShare()) }}</span>
+              </li>
+              <li>
+                <ng-container *ngTemplateOutlet="row; context: { $implicit: slice }"></ng-container>
+              </li>
+            </ng-container>
+            <li *ngIf="cash() as cashSlice" class="legend-cash">
+              <ng-container *ngTemplateOutlet="row; context: { $implicit: cashSlice }"></ng-container>
+            </li>
+          </ul>
+
+          <p *ngIf="unpriced().length" class="unpriced" data-testid="donut-unpriced">
+            Waiting for a price on {{ unpriced().join(', ') }}.
+          </p>
+        </div>
+      </div>
+
+      <!-- Nothing invested yet: point the way to the first holding. -->
+      <div *ngIf="isEmpty()" class="empty" data-testid="donut-empty">
+        <div>
+          <h2>Your account is all cash</h2>
+          <p>Add a holding to start shaping how your money is split.</p>
+        </div>
+        <button type="button" class="primary" (click)="addHolding.emit()" data-testid="add-holding">
+          <span aria-hidden="true">+</span> Add a holding
+        </button>
+      </div>
+    </ng-container>
+  </ng-container>
+</div>
+
+<ng-template #row let-slice>
+  <button type="button" class="legend-row" [class.grouped]="slice.grouped" [class.active]="active() === slice.key"
+          [class.dim]="isDimmed(slice.key)" [attr.aria-pressed]="selected() === slice.key"
+          [attr.data-key]="slice.key" [style.--accent]="slice.color"
+          (pointerenter)="hover(slice.key)" (pointerleave)="hover(null)" (click)="toggle(slice.key)">
+    <span class="swatch" aria-hidden="true"></span>
+    <span class="who">
+      <span class="symbol">{{ slice.label }}</span>
+      <span class="name">{{ slice.kind === 'cash' ? 'Uninvested' : formatShares(slice.shares) + (slice.shares === 1 ? ' share' : ' shares') }}</span>
+    </span>
+    <span class="figures">
+      <span class="value num">{{ money(slice.value) }}</span>
+      <span class="percent num">{{ share(slice.share) }}</span>
+    </span>
+    <span class="bar" aria-hidden="true"><span [style.width.%]="slice.share * 100"></span></span>
+  </button>
+</ng-template>

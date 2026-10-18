@@ -304,6 +304,67 @@ describe('Trading Tools', () => {
     });
   });
 
+  describe('rebalance donut', () => {
+    const donut = () => el().querySelector('app-allocation-donut')!;
+    const total = () => donut().querySelector('[data-testid="donut-total"]')?.textContent ?? '';
+    /** Lets the donut measure itself and draw. */
+    async function drawn(): Promise<void> {
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        harness.detectChanges();
+      }
+      await harness.fixture.whenStable();
+    }
+
+    it("draws the selected account's holdings and cash, with its total in the centre", async () => {
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+      // a1: 10 AAPL at 150 plus 1000 cash.
+      expect(Array.from(donut().querySelectorAll('path.slice')).map(p => p.getAttribute('data-key'))).toEqual(['AAPL', 'cash']);
+      expect(total()).toContain('$2,500.00');
+    });
+
+    it('resizes slices and the total from the live price stream', async () => {
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+      stream.prices.set({ AAPL: 300 });
+      harness.detectChanges();
+      await drawn();
+      expect(total()).toContain('$4,000.00');
+      const percents = Array.from(donut().querySelectorAll('.legend-row .percent')).map(p => p.textContent!.trim());
+      expect(percents).toEqual(['75%', '25%']);
+    });
+
+    it('shows a skeleton ring while loading, and an error with Retry if loading fails', async () => {
+      holdingsApi.getHoldings.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 503 })));
+      await open('/tools/rebalance?account=a1');
+      expect(donut().querySelector('[data-testid="donut-error"]')).not.toBeNull();
+
+      const pending = new Subject<ClientHoldings>();
+      holdingsApi.getHoldings.mockReturnValue(pending);
+      donut().querySelector<HTMLButtonElement>('[data-testid="donut-retry"]')!.click();
+      harness.detectChanges();
+      expect(donut().querySelector('[data-testid="donut-loading"]')).not.toBeNull();
+
+      pending.next(twoAccounts);
+      pending.complete();
+      harness.detectChanges();
+      await drawn();
+      expect(donut().querySelector('path.slice[data-key="AAPL"]')).not.toBeNull();
+    });
+
+    it('shows only cash and a prompt to add a holding for an account with no holdings', async () => {
+      holdingsApi.getHoldings.mockReturnValue(of({
+        accounts: [{ accountId: 'a1', accountNumber: 'ACC-0001', baseCurrency: 'USD', positions: [] }]
+      }));
+      balanceApi.getBalance.mockReturnValue(of(balances(['a1'])));
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+      expect(Array.from(donut().querySelectorAll('path.slice')).map(p => p.getAttribute('data-key'))).toEqual(['cash']);
+      expect(donut().querySelector('[data-testid="donut-empty"]')!.textContent).toContain('Add a holding');
+    });
+  });
+
   describe('trade plan tray', () => {
     const plan = (): TradePlanService =>
       harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
