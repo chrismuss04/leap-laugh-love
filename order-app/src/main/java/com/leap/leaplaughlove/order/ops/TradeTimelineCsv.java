@@ -13,6 +13,11 @@ public final class TradeTimelineCsv {
     private TradeTimelineCsv() {
     }
 
+    /**
+     * Writes a timeline as CSV with a header row and CRLF line endings.
+     * @param timeline the trade's timeline
+     * @return the CSV text, one row per step
+     */
     public static String write(TradeTimeline timeline) {
         StringBuilder csv = new StringBuilder("order_id,time_utc,step,description\r\n");
         String orderId = timeline.trade().orderId().toString();

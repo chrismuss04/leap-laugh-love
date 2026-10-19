@@ -1,0 +1,52 @@
+/* Loaded after the stock javadoc stylesheet via <addStylesheets>. The stock sheet is driven by these variables. */
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:wght@600&family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  color-scheme: dark;
+  --body-font-family: 'DM Sans', system-ui, sans-serif;
+  --block-font-family: 'DM Sans', system-ui, sans-serif;
+  --code-font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --body-text-color: #f0ede8;
+  --block-text-color: #f0ede8;
+  --body-background-color: #0d0d0f;
+  --section-background-color: #0d0d0f;
+  --detail-background-color: #0d0d0f;
+  --code-background-color: #1a1a1f;
+  --mark-background-color: #1a1a1f;
+  --detail-block-color: #121216;
+  --navbar-background-color: #121216;
+  --navbar-text-color: #f0ede8;
+  --subnav-background-color: #141417;
+  --subnav-link-color: #f0ede8;
+  --member-heading-background-color: #141417;
+  --selected-background-color: #2dd4bf;
+  --selected-text-color: #0d0d0f;
+  --selected-link-color: #0d0d0f;
+  --table-header-color: #1a1a1f;
+  --even-row-color: #0d0d0f;
+  --odd-row-color: #121216;
+  --title-color: #f0ede8;
+  --link-color: #2dd4bf;
+  --link-color-active: #5eead4;
+  --toc-background-color: #121216;
+  --toc-highlight-color: #1a1a20;
+  --toc-hover-color: #1a1a20;
+  --snippet-background-color: #121216;
+  --snippet-highlight-color: rgba(45, 212, 191, .3);
+  --border-color: #242430;
+  --table-border-color: #242430;
+  --tab-border-radius: 8px 8px 0 0;
+  --search-input-background-color: #1a1a1f;
+  --search-input-text-color: #f0ede8;
+  --search-input-placeholder-color: #6b6b7a;
+  --search-tag-highlight-color: rgba(45, 212, 191, .35);
+  --button-border-color: #242430;
+  --button-active-filter: brightness(90%);
+  --button-focus-filter: brightness(120%);
+  --invalid-tag-background-color: #2a0d0d;
+  --invalid-tag-text-color: #ff6b6b;
+}
+h1, h2.title, .title { font-family: 'Fraunces', serif; font-weight: 600; }
+::selection { background: #2dd4bf; color: #0d0d0f; }
+.top-nav, .sub-nav { border-bottom: 1px solid var(--border-color); }
+a:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid #2dd4bf; outline-offset: 2px; }

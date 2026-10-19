@@ -41,6 +41,11 @@ public class ExecutionQuote {
         this.exchange = exchange;
     }
 
+    /**
+     * Captures the quote an execution was priced from.
+     * @param quote the market data snapshot
+     * @return the quote as stored with the execution
+     */
     public static ExecutionQuote of(QuoteSnapshot quote) {
         return new ExecutionQuote(quote.bidPrice(), quote.askPrice(), quote.lastPrice(),
                 quote.quoteTimestamp(), quote.exchange());
@@ -60,13 +65,18 @@ public class ExecutionQuote {
         return price != null && price.compareTo(BigDecimal.ZERO) > 0;
     }
 
+    /** @return the best bid at the time of the quote, or null if the quote had none */
     public BigDecimal getBid() { return bid; }
 
+    /** @return the best ask at the time of the quote, or null if the quote had none */
     public BigDecimal getAsk() { return ask; }
 
+    /** @return the last traded price at the time of the quote, or null if the quote had none */
     public BigDecimal getLast() { return last; }
 
+    /** @return when the market data provider produced the quote */
     public OffsetDateTime getQuotedAt() { return quotedAt; }
 
+    /** @return the exchange the quote came from */
     public String getExchange() { return exchange; }
 }

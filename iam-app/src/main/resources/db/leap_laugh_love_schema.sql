@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS trading.orders (
         CHECK (order_type IN ('MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT', 'TRAILING_STOP')),
     limit_price NUMERIC(18,6) CHECK (limit_price IS NULL OR limit_price > 0),
     stop_price NUMERIC(18,6) CHECK (stop_price IS NULL OR stop_price > 0),
-    -- NULL for a market order, which never waits.
+    -- NULL for a market order that fills at once; DAY for one queued for the next open.
     time_in_force TEXT CHECK (time_in_force IS NULL OR time_in_force IN ('DAY', 'GTC')),
     expires_at TIMESTAMPTZ,
     -- When a stop order's stop price was reached.
@@ -246,6 +246,12 @@ CREATE TABLE IF NOT EXISTS trading.orders (
     bracket_stop_loss_price NUMERIC(18,6) CHECK (bracket_stop_loss_price IS NULL OR bracket_stop_loss_price > 0),
     parent_order_id UUID,
     oco_group_id UUID,
+    -- Market hours: an extended-hours LIMIT order may also fill in pre-market (4:00-9:30 ET) and
+    -- after-hours (16:00-20:00 ET); every other order only executes in regular hours.
+    extended_hours BOOLEAN NOT NULL DEFAULT FALSE,
+    -- A market order queued while the market is closed fills at the open only within this price:
+    -- the most a buy pays, the least a sell takes.
+    collar_price NUMERIC(18,6) CHECK (collar_price IS NULL OR collar_price > 0),
     CONSTRAINT orders_limit_price_by_type
         CHECK ((order_type IN ('LIMIT', 'STOP_LIMIT')) = (limit_price IS NOT NULL)),
     -- A trailing stop's stop is set once the market price is known, after the order is stored.
@@ -279,6 +285,13 @@ CREATE INDEX IF NOT EXISTS idx_orders_parent
 -- Backs OrderRepository's chronological (newest-first) paginated history lookup by account.
 CREATE INDEX IF NOT EXISTS idx_orders_account_submitted_at_order_id
     ON trading.orders (account_id, submitted_at DESC, order_id DESC);
+
+-- Backs Trading Operations' stuck-order report: orders across every client still waiting to execute.
+CREATE INDEX IF NOT EXISTS idx_orders_awaiting_execution_submitted_at
+    ON trading.orders (submitted_at) WHERE status IN ('SUBMITTED', 'ACCEPTED');
+-- Backs Trading Operations' rejections-by-reason report over a period across every client.
+CREATE INDEX IF NOT EXISTS idx_orders_rejected_submitted_at
+    ON trading.orders (submitted_at) WHERE status = 'REJECTED';
 
 -- Order templates: a saved ticket setup (side, type, time in force, percent offsets from the market
 -- price, bracket percents) a client applies in one tap. Percent offsets, not prices, so a template
@@ -425,7 +438,8 @@ CREATE TABLE IF NOT EXISTS trading.ops_access_log (
     access_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     staff_id UUID NOT NULL
         REFERENCES iam.reporting_service_credentials (service_id) ON DELETE RESTRICT,
-    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    action TEXT NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV', 'VIEW_ORDER',
+                                           'VIEW_ORDER_COUNTS', 'VIEW_REJECTIONS', 'VIEW_STUCK_ORDERS')),
     order_id UUID,
     search_criteria TEXT,
     accessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()

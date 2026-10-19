@@ -4,6 +4,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { OpenOrder } from '../../services/order';
 import { OpenOrdersComponent } from './open-orders';
+import { MarketStatusService } from '../../services/market-status';
+import { MarketSession } from '../../shared/market-session';
 
 describe('OpenOrdersComponent', () => {
   let fixture: ComponentFixture<OpenOrdersComponent>;
@@ -49,6 +51,58 @@ describe('OpenOrdersComponent', () => {
     expect(text()).toContain('AAPL needs to fall 5.0%');
     expect(text()).toContain('Until cancelled · $190.00 set aside');
     expect(component.rows()[0].proximity).toBeCloseTo(0.5);
+  });
+
+  describe('market hours', () => {
+    function session(value: MarketSession): void {
+      TestBed.inject(MarketStatusService).status.set({
+        session: value, now: new Date().toISOString(), nextSession: null, nextTransitionAt: null,
+        nextRegularOpen: '2026-10-16T13:30:00Z',
+        today: { date: '2026-10-15', open: true, holiday: null, earlyClose: false,
+          preMarketOpen: null, regularOpen: null, regularClose: null, afterHoursClose: null },
+        mode: 'REAL', forced: false
+      });
+    }
+
+    it('shows a queued market order waiting for the open, with its collar and no price bar', () => {
+      session('CLOSED');
+      fixture.componentRef.setInput('orders', [order({
+        orderType: 'MARKET', limitPrice: null, timeInForce: 'DAY', reservedCash: 525, collarPrice: 105, queued: true
+      })]);
+      fixture.detectChanges();
+
+      expect(text()).toContain('Queued Market buy · 2');
+      expect(fixture.nativeElement.querySelector('[data-testid="queued-badge"]')).not.toBeNull();
+      expect(text()).toContain('At open');
+      expect(text()).toContain('Executes at the open');
+      expect(text()).toContain('9:30 AM ET');
+      expect(text()).toContain('up to $105.00');
+      expect(text()).toContain('For the next open · $525.00 set aside');
+      expect(fixture.nativeElement.querySelector('.progress')).toBeNull();
+    });
+
+    it('marks an extended-hours limit, and says when an order is waiting for market hours', () => {
+      session('AFTER_HOURS');
+      fixture.componentRef.setInput('orders', [
+        order({ orderId: 'ext', extendedHours: true }),
+        order({ orderId: 'reg', side: 'SELL', orderType: 'STOP', limitPrice: null, stopPrice: 101, reservedCash: null })
+      ]);
+      fixture.detectChanges();
+
+      const rows = component.rows();
+      expect(fixture.nativeElement.querySelectorAll('[data-testid="ext-badge"]').length).toBe(1);
+      expect(rows[0].status).toBe('AAPL needs to fall 5.0%');
+      // A sell stop at $101 with the price at $100 has been passed, but stops wait for regular hours.
+      expect(rows[1].status).toBe('At its price · waiting for market hours');
+    });
+
+    it('does not offer to change a queued order\'s time in force', () => {
+      session('CLOSED');
+      fixture.componentRef.setInput('orders', [order({ orderType: 'MARKET', limitPrice: null, timeInForce: 'DAY', queued: true })]);
+      fixture.detectChanges();
+      click('Edit');
+      expect(fixture.nativeElement.querySelector('[data-testid="edit-order"]').textContent).not.toContain('Good for');
+    });
   });
 
   it('says when a stop limit has been triggered and now waits on its limit', () => {

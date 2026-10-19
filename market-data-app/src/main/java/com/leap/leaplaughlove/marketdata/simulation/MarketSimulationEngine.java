@@ -1,9 +1,12 @@
 package com.leap.leaplaughlove.marketdata.simulation;
 
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.marketdata.history.PriceCandle;
 import com.leap.leaplaughlove.marketdata.history.PriceCandleRepository;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
 import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrumentRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
@@ -15,6 +18,9 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
@@ -28,6 +34,20 @@ import java.util.random.RandomGenerator;
  * active
  * instrument on a fixed schedule and publishing a {@link PriceTickEvent} per
  * tick.
+ *
+ * <p>
+ * Prices follow the market session ({@link MarketClock}):
+ * <ul>
+ * <li>REGULAR: full volatility.</li>
+ * <li>PRE_MARKET and AFTER_HOURS: thin trading, so volatility is scaled down by
+ * {@code extended-vol-factor}.</li>
+ * <li>CLOSED: the price is frozen. Ticks are still published at that price, so
+ * quotes stay fresh and the app keeps showing the last price.</li>
+ * </ul>
+ * When trading resumes after a closed stretch, each price first jumps once - the
+ * opening gap - by the move GBM would have made over the time it was closed,
+ * capped at {@code gap-cap-pct}. It is drawn from the instrument's own seeded
+ * random generator, like every other step.
  */
 @Service
 public class MarketSimulationEngine {
@@ -57,6 +77,12 @@ public class MarketSimulationEngine {
     private final ApplicationEventPublisher eventPublisher;
     private final long tickIntervalMs;
     private final List<Integer> candleBucketSeconds;
+    private final MarketClock marketClock;
+    private final double extendedVolFactor;
+    private final double gapCapFraction;
+
+    /** When the market last closed, or null while it is trading. */
+    private Instant closedSince;
 
     private final Map<String, InstrumentSimState> statesBySymbol = new ConcurrentHashMap<>();
 
@@ -78,13 +104,53 @@ public class MarketSimulationEngine {
     public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
             PriceCandleRepository candleRepository,
             ApplicationEventPublisher eventPublisher,
+            long tickIntervalMs,
+            List<Integer> candleBucketSeconds) {
+        this(instrumentRepository, candleRepository, eventPublisher, tickIntervalMs, candleBucketSeconds,
+                new MarketClock(Clock.systemUTC(), MarketClock.Mode.ALWAYS_OPEN, null, null), 1.0, 0.0);
+    }
+
+    /**
+     * Creates a new MarketSimulationEngine whose prices follow the market session.
+     *
+     * @param instrumentRepository repository used to look up active instruments at
+     *                             startup
+     * @param candleRepository     repository used to resume each instrument's last
+     *                             persisted price
+     * @param eventPublisher       publisher used to broadcast
+     *                             {@link PriceTickEvent}s
+     * @param tickIntervalMs       the interval, in milliseconds, between simulation
+     *                             ticks
+     * @param candleBucketSeconds  the candle widths, in seconds, searched for the
+     *                             price to resume from
+     * @param marketClock          decides the session each tick is made in
+     * @param extendedVolFactor    volatility multiplier in pre-market and
+     *                             after-hours, e.g. 0.4
+     * @param gapCapPct            the largest opening gap, in percent; 0 for none
+     */
+    @Autowired
+    public MarketSimulationEngine(SimulatedInstrumentRepository instrumentRepository,
+            PriceCandleRepository candleRepository,
+            ApplicationEventPublisher eventPublisher,
             @Value("${marketdata.simulation.tick-interval-ms:1000}") long tickIntervalMs,
-            @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}") List<Integer> candleBucketSeconds) {
+            @Value("${marketdata.simulation.candle-bucket-seconds:60,300,3600,86400}") List<Integer> candleBucketSeconds,
+            MarketClock marketClock,
+            @Value("${marketdata.simulation.extended-vol-factor:0.4}") double extendedVolFactor,
+            @Value("${marketdata.simulation.gap-cap-pct:3}") double gapCapPct) {
+        if (extendedVolFactor < 0) {
+            throw new IllegalArgumentException("extended-vol-factor must not be negative");
+        }
+        if (gapCapPct < 0) {
+            throw new IllegalArgumentException("gap-cap-pct must not be negative");
+        }
         this.instrumentRepository = instrumentRepository;
         this.candleRepository = candleRepository;
         this.eventPublisher = eventPublisher;
         this.tickIntervalMs = tickIntervalMs;
         this.candleBucketSeconds = List.copyOf(candleBucketSeconds);
+        this.marketClock = marketClock;
+        this.extendedVolFactor = extendedVolFactor;
+        this.gapCapFraction = gapCapPct / 100.0;
     }
 
     /**
@@ -117,7 +183,8 @@ public class MarketSimulationEngine {
             PriceState initialState = new PriceState(
                     instrument.getSymbol(),
                     startingPrice.setScale(PRICE_SCALE, RoundingMode.HALF_UP),
-                    OffsetDateTime.now());
+                    OffsetDateTime.now(),
+                    marketClock.session());
             statesBySymbol.put(instrument.getSymbol(), new InstrumentSimState(
                     instrument.getDisplayName(),
                     instrument.getDrift().doubleValue(),
@@ -133,19 +200,73 @@ public class MarketSimulationEngine {
      * {@link PriceTickEvent} for each.
      */
     @Scheduled(fixedRateString = "${marketdata.simulation.tick-interval-ms:1000}")
-    public void tick() {
+    public synchronized void tick() {
+        Instant now = marketClock.now();
+        MarketSession session = marketClock.sessionAt(now);
+        double gapYears = closedYearsEndingAt(now, session);
+
         double dt = tickIntervalMs / 1000.0 / SECONDS_PER_YEAR;
+        double volatilityFactor = session.isExtendedHours() ? extendedVolFactor : 1.0;
+        OffsetDateTime asOf = OffsetDateTime.now();
         statesBySymbol.forEach((symbol, state) -> {
-            double nextPrice = GbmPriceGenerator.nextPrice(
-                    state.current().price().doubleValue(), state.drift(), state.volatility(), dt, state.random());
+            double price = state.current().price().doubleValue();
+            if (session != MarketSession.CLOSED) {
+                if (gapYears > 0 && gapCapFraction > 0) {
+                    price = openingGap(price, state, gapYears);
+                }
+                double volatility = state.volatility() * volatilityFactor;
+                if (volatility > 0) {
+                    price = GbmPriceGenerator.nextPrice(price, state.drift(), volatility, dt, state.random());
+                }
+            }
             PriceState next = new PriceState(
                     symbol,
-                    BigDecimal.valueOf(nextPrice).setScale(PRICE_SCALE, RoundingMode.HALF_UP),
-                    OffsetDateTime.now());
+                    BigDecimal.valueOf(price).setScale(PRICE_SCALE, RoundingMode.HALF_UP),
+                    asOf,
+                    session);
             state.update(next);
             eventPublisher.publishEvent(new PriceTickEvent(next));
         });
     }
+
+    /**
+     * Tracks closed stretches across ticks.
+     *
+     * @param now     this tick's time
+     * @param session this tick's session
+     * @return how long, in years, the market was closed if this tick reopens it;
+     *         0 otherwise
+     */
+    private double closedYearsEndingAt(Instant now, MarketSession session) {
+        double closedYears = 0;
+        if (session == MarketSession.CLOSED) {
+            if (closedSince == null) {
+                closedSince = now;
+            }
+        } else {
+            if (closedSince != null) {
+                closedYears = Duration.between(closedSince, now).toMillis() / 1000.0 / SECONDS_PER_YEAR;
+            }
+            closedSince = null;
+        }
+        return closedYears;
+    }
+
+    /**
+     * The price after the opening gap: the GBM move over the closed stretch,
+     * capped at {@code gap-cap-pct} either way.
+     *
+     * @param price       the price the market closed at
+     * @param state       the instrument's simulation state
+     * @param closedYears how long the market was closed, in years
+     * @return the price trading reopens from
+     */
+    private double openingGap(double price, InstrumentSimState state, double closedYears) {
+        double gapped = GbmPriceGenerator.nextPrice(price, state.drift(), state.volatility(), closedYears,
+                state.random());
+        return Math.clamp(gapped, price * (1 - gapCapFraction), price * (1 + gapCapFraction));
+    }
+
 
     /**
      * Gets the latest simulated price for a single instrument symbol.

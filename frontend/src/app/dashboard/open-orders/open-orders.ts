@@ -7,6 +7,8 @@ import { formatMoney } from '../../shared/format';
 import {
   QuoteOffset, distanceTo, openOrderTitle, quoteSide, requiredMove, trailText, waitingPrice
 } from '../../shared/order-types';
+import { MarketStatusService } from '../../services/market-status';
+import { canExecuteIn, easternMoment } from '../../shared/market-session';
 
 /** What the edit form shows for one order while it is being changed. */
 interface Draft {
@@ -36,11 +38,117 @@ interface OpenOrderRow {
   /** The first/last row of a linked pair, to draw them as one block. */
   groupStart: boolean;
   groupEnd: boolean;
+  /** A market order queued for the open: it has no price to wait for, only the open. */
+  queued: boolean;
+}
+
+/** Where an order stands against the price it fills at. */
+interface PricePosition {
+  /** The price it fills at: the ask or bid, or the last trade until its quote is in. */
+  price: number | null;
+  distance: { percent: number; direction: 'rise' | 'fall' } | null;
+  reached: boolean;
+  /** Whether the price is from a quote (so it can be named as the ask or bid). */
+  quoted: boolean;
+}
+
+/** A bracket's two exits are listed together, in the position of the first of them. */
+function withLinkedLegsTogether(all: OpenOrder[]): OpenOrder[] {
+  const orders: OpenOrder[] = [];
+  for (const order of all) {
+    if (orders.includes(order)) {
+      continue;
+    }
+    orders.push(order);
+    if (order.ocoGroupId) {
+      orders.push(...all.filter(o => o !== order && o.ocoGroupId === order.ocoGroupId));
+    }
+  }
+  return orders;
+}
+
+/** How many open legs each bracket group has. */
+function groupSizes(orders: OpenOrder[]): Map<string, number> {
+  const sizes = new Map<string, number>();
+  for (const order of orders) {
+    if (order.ocoGroupId) {
+      sizes.set(order.ocoGroupId, (sizes.get(order.ocoGroupId) ?? 0) + 1);
+    }
+  }
+  return sizes;
+}
+
+/** The price an order fills at: the last trade moved to the ask (buy) or bid (sell) once quoted. */
+function fillPrice(order: OpenOrder, last: number | null, offset: QuoteOffset | undefined): number | null {
+  if (last == null) {
+    return null;
+  }
+  if (!offset) {
+    return last;
+  }
+  return last + (order.side === 'BUY' ? offset.ask : offset.bid);
+}
+
+/** "Ask at $462.80", or "At its price" before the quote is in. */
+function atPrice(order: OpenOrder, at: PricePosition): string {
+  return at.quoted ? `${quoteSide(order.side)} at ${formatMoney(at.price)}` : 'At its price';
+}
+
+/** "Ask $462.95 · needs to fall 0.03%", measured from the last trade until there's a quote. */
+function needsToMove(order: OpenOrder, at: PricePosition): string {
+  const distance = at.distance!;
+  const digits = distance.percent < 1 ? 2 : 1;
+  const move = `needs to ${distance.direction} ${distance.percent.toFixed(digits)}%`;
+  return at.quoted ? `${quoteSide(order.side)} ${formatMoney(at.price)} · ${move}` : `${order.symbol} ${move}`;
+}
+
+/** How a limit or stop order stands, including when the session won't let it execute yet. */
+function orderStatus(order: OpenOrder, at: PricePosition, executable: boolean): string {
+  let status: string;
+  if (!at.distance) {
+    status = 'Waiting for a live price';
+  } else if (at.reached) {
+    status = `${atPrice(order, at)} · ${executable ? 'filling' : 'waiting for market hours'}`;
+  } else {
+    status = executable ? needsToMove(order, at) : `Waiting for market hours · ${needsToMove(order, at)}`;
+  }
+  return order.orderType === 'STOP_LIMIT' && order.triggeredAt ? `Stop reached · ${status}` : status;
+}
+
+/** "Executes at the open · Fri 9:30 AM ET · up to $191.71" for a market order queued for the open. */
+function queuedStatus(order: OpenOrder, executable: boolean, opensAt: string | null): string {
+  const limit = order.side === 'BUY' ? 'up to ' : 'at least ';
+  const collar = order.collarPrice == null ? '' : ' · ' + limit + formatMoney(order.collarPrice);
+  if (executable) {
+    return 'Filling at the open' + collar;
+  }
+  const when = opensAt ? ' · ' + opensAt : '';
+  return 'Executes at the open' + when + collar;
+}
+
+/** 0 (far) to 1 (at the price), for the proximity bar. */
+function proximity(distance: PricePosition['distance'], reached: boolean): number {
+  if (!distance) {
+    return 0;
+  }
+  return reached ? 1 : Math.max(0, 1 - distance.percent / NEAR_PERCENT);
+}
+
+/** "Trails 2% from its high $152.00", for a trailing stop. */
+function trailDescription(order: OpenOrder): string | null {
+  if (order.orderType !== 'TRAILING_STOP') {
+    return null;
+  }
+  const from = order.side === 'BUY' ? 'low' : 'high';
+  const peak = order.trailPeak == null ? '' : ' ' + formatMoney(order.trailPeak);
+  return `Trails ${trailText(order.trailAmount, order.trailPercent)} from its ${from}${peak}`;
 }
 
 /**
- * The client's open orders - limit and stop orders waiting for their price - with how far the
- * market has to move for each and a two-step cancel. Hidden while there are none.
+ * The client's open orders - limit and stop orders waiting for their price, and market orders
+ * queued for the open - with how far the market has to move for each and a two-step cancel. An
+ * order the market session won't let execute yet (a stop after hours, say) says it is waiting for
+ * market hours. Hidden while there are none.
  */
 @Component({
   selector: 'app-open-orders',
@@ -62,14 +170,18 @@ interface OpenOrderRow {
               <span class="symbol">{{ row.order.symbol }}</span>
               <span *ngIf="row.linked" class="oco" data-testid="oco-badge"
                     title="One cancels the other: when one of these sells executes, the other is cancelled">OCO</span>
+              <span *ngIf="row.queued" class="badge queued" data-testid="queued-badge"
+                    title="Placed outside regular hours: it fills at the opening price">Queued</span>
+              <span *ngIf="row.order.extendedHours" class="badge ext" data-testid="ext-badge"
+                    title="Can also fill in pre-market (4:00–9:30 AM ET) and after-hours (4:00–8:00 PM ET)">Ext</span>
               <span class="title" [class.buy]="row.order.side === 'BUY'" [class.sell]="row.order.side === 'SELL'">
                 {{ row.title }} · {{ row.order.quantity | number }}
               </span>
             </span>
-            <span class="target num">{{ money(row.target) }}</span>
+            <span class="target num">{{ row.queued ? 'At open' : money(row.target) }}</span>
           </div>
 
-          <div class="progress" role="meter" aria-valuemin="0" aria-valuemax="100"
+          <div *ngIf="!row.queued" class="progress" role="meter" aria-valuemin="0" aria-valuemax="100"
                [attr.aria-valuenow]="round(row.proximity * 100)" [attr.aria-label]="row.status">
             <span class="bar" [style.width.%]="row.proximity * 100" [class.near]="row.proximity > 0.8"></span>
           </div>
@@ -99,7 +211,7 @@ interface OpenOrderRow {
           </div>
 
           <div class="meta">
-            <span>{{ row.order.timeInForce === 'GTC' ? 'Until cancelled' : 'Good for today' }}</span>
+            <span>{{ row.queued ? 'For the next open' : row.order.timeInForce === 'GTC' ? 'Until cancelled' : 'Good for today' }}</span>
             <span *ngIf="row.order.reservedCash"> · {{ money(row.order.reservedCash) }} set aside</span>
             <span *ngIf="row.trail"> · {{ row.trail }}</span>
             <span *ngIf="row.account"> · {{ row.account }}</span>
@@ -119,7 +231,7 @@ interface OpenOrderRow {
               <span>Trail ({{ row.order.trailPercent != null ? '%' : '$' }})</span>
               <input name="trail" class="num" type="number" min="0.01" step="0.01" inputmode="decimal"
                      [ngModel]="draft().trail" (ngModelChange)="patch('trail', $event)" /></label>
-            <div class="edit-field"><span>Good for</span>
+            <div *ngIf="!row.queued" class="edit-field"><span>Good for</span>
               <span class="tif" role="radiogroup" aria-label="Time in force">
                 <button type="button" role="radio" [class.on]="draft().tif === 'DAY'" [attr.aria-checked]="draft().tif === 'DAY'"
                         (click)="patch('tif', 'DAY')">Today</button>
@@ -155,6 +267,11 @@ interface OpenOrderRow {
       font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px;
       background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary);
     }
+    .badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 1px 6px; border-radius: 999px;
+    }
+    .badge.queued { background: var(--info-muted); color: var(--info); }
+    .badge.ext { background: var(--warning-muted); color: var(--warning); }
     /* A bracket's two exits read as one block: joined by an accent bar, with no divider between them. */
     .row.linked { border-left: 3px solid var(--primary); }
     .row.linked.group-end { border-top: 0; }
@@ -222,6 +339,8 @@ export class OpenOrdersComponent {
   @Output() changed = new EventEmitter<OpenOrder>();
 
   private readonly orderService = inject(OrderService);
+  /** Read only: the header keeps it current. */
+  private readonly market = inject(MarketStatusService);
 
   readonly confirming = signal<string | null>(null);
   readonly cancelling = signal<string | null>(null);
@@ -241,64 +360,40 @@ export class OpenOrdersComponent {
     const offsets = this.quoteOffsets();
     const accounts = this.accountNumbers();
     const multiAccount = Object.keys(accounts).length > 1;
-    // A bracket's two exits are listed together, in the position of the first of them.
-    const orders: OpenOrder[] = [];
-    for (const order of this.orders()) {
-      if (orders.includes(order)) {
-        continue;
-      }
-      orders.push(order);
-      if (order.ocoGroupId) {
-        orders.push(...this.orders().filter(o => o !== order && o.ocoGroupId === order.ocoGroupId));
-      }
-    }
-    const sizes = new Map<string, number>();
-    for (const order of orders) {
-      if (order.ocoGroupId) {
-        sizes.set(order.ocoGroupId, (sizes.get(order.ocoGroupId) ?? 0) + 1);
-      }
-    }
+    const session = this.market.session();
+    const status = this.market.status();
+    const opensAt = status?.nextRegularOpen && status.session !== 'REGULAR'
+      ? easternMoment(status.nextRegularOpen, this.market.now())
+      : null;
+    const orders = withLinkedLegsTogether(this.orders());
+    const sizes = groupSizes(orders);
     return orders.map((order, index) => {
       // Only a pair still working together is a linked pair: a lone leg is a normal order.
       const linked = !!order.ocoGroupId && (sizes.get(order.ocoGroupId) ?? 0) > 1;
+      const previousGroup = orders[index - 1]?.ocoGroupId;
       const target = waitingPrice(order);
-      const last = prices[order.symbol] ?? null;
       const offset = offsets[order.symbol];
-      // The price this order fills at; the last trade until its quote has been seen.
-      const price = last == null ? null : last + (offset ? (order.side === 'BUY' ? offset.ask : offset.bid) : 0);
+      const price = fillPrice(order, prices[order.symbol] ?? null, offset);
       const distance = distanceTo(target, price);
-      const side = quoteSide(order.side);
       // Reached once the price is at the target or past it in the direction the order waits for.
       const reached = !!distance && (distance.percent === 0 || distance.direction !== requiredMove(order));
-      let status: string;
-      if (!distance) {
-        status = 'Waiting for a live price';
-      } else if (reached) {
-        status = offset ? `${side} at ${formatMoney(price)} · filling` : 'At its price · filling';
-      } else {
-        const digits = distance.percent < 1 ? 2 : 1;
-        // Without a quote yet, the distance is from the last trade, so it isn't labelled as the ask or bid.
-        status = offset
-          ? `${side} ${formatMoney(price)} · needs to ${distance.direction} ${distance.percent.toFixed(digits)}%`
-          : `${order.symbol} needs to ${distance.direction} ${distance.percent.toFixed(digits)}%`;
-      }
-      if (order.orderType === 'STOP_LIMIT' && order.triggeredAt) {
-        status = `Stop reached · ${status}`;
-      }
+      // The session may not let it execute yet: a stop after hours, a limit without extended hours...
+      const executable = canExecuteIn(session, order.orderType, !!order.extendedHours);
+      const queued = order.orderType === 'MARKET';
       return {
         order,
         title: openOrderTitle(order),
         target,
-        status,
-        proximity: !distance ? 0 : reached ? 1 : Math.max(0, 1 - distance.percent / NEAR_PERCENT),
+        status: queued
+          ? queuedStatus(order, executable, opensAt)
+          : orderStatus(order, { price, distance, reached, quoted: !!offset }, executable),
+        proximity: proximity(distance, reached),
         account: multiAccount ? accounts[order.accountId] ?? null : null,
-        trail: order.orderType === 'TRAILING_STOP'
-          ? `Trails ${trailText(order.trailAmount, order.trailPercent)} from its ${order.side === 'BUY' ? 'low' : 'high'}`
-            + (order.trailPeak != null ? ` ${formatMoney(order.trailPeak)}` : '')
-          : null,
+        trail: trailDescription(order),
         linked,
-        groupStart: linked && orders[index - 1]?.ocoGroupId !== order.ocoGroupId,
-        groupEnd: linked && orders[index - 1]?.ocoGroupId === order.ocoGroupId
+        groupStart: linked && previousGroup !== order.ocoGroupId,
+        groupEnd: linked && previousGroup === order.ocoGroupId,
+        queued
       };
     });
   });
@@ -364,7 +459,7 @@ export class OpenOrdersComponent {
         changes.trailAmount = draft.trail;
       }
     }
-    if (draft.tif !== order.timeInForce) {
+    if (draft.tif !== order.timeInForce && order.orderType !== 'MARKET') {
       changes.timeInForce = draft.tif;
     }
     if (!Object.keys(changes).length) {

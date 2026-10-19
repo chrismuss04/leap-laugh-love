@@ -95,8 +95,38 @@ public record OrderSubmissionRequest(
 
         @Positive(message = "bracketStopLossPrice must be greater than zero")
         @Digits(integer = 12, fraction = 2, message = "bracketStopLossPrice may have at most two decimal places")
-        BigDecimal bracketStopLossPrice
+        BigDecimal bracketStopLossPrice,
+
+        Boolean extendedHours
 ) {
+
+    /**
+     * An order placed before market hours existed: it trades in regular hours only.
+     * @param accountId the account to trade in
+     * @param symbol the instrument's symbol, used when instrumentId is absent
+     * @param instrumentId the instrument's ID
+     * @param side BUY or SELL
+     * @param quantity the whole-share quantity
+     * @param quotedPrice the price the client was quoted when placing the order
+     * @param maxSlippagePercent the price tolerance in percent for this order
+     * @param orderType MARKET (when null), LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+     * @param limitPrice the worst price to fill at, for LIMIT and STOP_LIMIT orders
+     * @param stopPrice the price that sets a STOP or STOP_LIMIT order working
+     * @param timeInForce DAY (when null) or GTC
+     * @param trailAmount for TRAILING_STOP: the trail in dollars
+     * @param trailPercent for TRAILING_STOP: the trail in percent
+     * @param bracketTakeProfitPrice for a BUY: the take-profit sell's limit price
+     * @param bracketStopLossPrice for a BUY: the stop-loss sell's stop price
+     */
+    public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
+                                  long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent,
+                                  Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
+                                  Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent,
+                                  BigDecimal bracketTakeProfitPrice, BigDecimal bracketStopLossPrice) {
+        this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, bracketTakeProfitPrice,
+                bracketStopLossPrice, null);
+    }
 
     /**
      * An order placed before bracket orders existed.
@@ -119,7 +149,7 @@ public record OrderSubmissionRequest(
                                   Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                                   Order.TimeInForce timeInForce, BigDecimal trailAmount, BigDecimal trailPercent) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
-                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null);
+                limitPrice, stopPrice, timeInForce, trailAmount, trailPercent, null, null, null);
     }
 
     /**
@@ -135,7 +165,7 @@ public record OrderSubmissionRequest(
     public OrderSubmissionRequest(UUID accountId, String symbol, UUID instrumentId, Order.Side side,
                                   long quantity, BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent,
-                null, null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
     }
 
     /**
@@ -157,7 +187,7 @@ public record OrderSubmissionRequest(
                                   Order.OrderType orderType, BigDecimal limitPrice, BigDecimal stopPrice,
                                   Order.TimeInForce timeInForce) {
         this(accountId, symbol, instrumentId, side, quantity, quotedPrice, maxSlippagePercent, orderType,
-                limitPrice, stopPrice, timeInForce, null, null, null, null);
+                limitPrice, stopPrice, timeInForce, null, null, null, null, null);
     }
 
     /**
@@ -167,6 +197,26 @@ public record OrderSubmissionRequest(
     @JsonIgnore
     public Order.OrderType effectiveOrderType() {
         return orderType != null ? orderType : Order.OrderType.MARKET;
+    }
+
+    /**
+     * Whether the order may also trade in pre-market and after-hours.
+     * @return true only when asked for
+     */
+    @JsonIgnore
+    public boolean isForExtendedHours() {
+        return Boolean.TRUE.equals(extendedHours);
+    }
+
+    /**
+     * Only limit orders trade in extended hours: thin markets make a market price - or a stop that
+     * turns into one - unsafe there.
+     * @return false when extendedHours is set on anything but a LIMIT order
+     */
+    @JsonIgnore
+    @AssertTrue(message = "extendedHours applies to LIMIT orders only")
+    public boolean isExtendedHoursForLimitOnly() {
+        return !isForExtendedHours() || effectiveOrderType() == Order.OrderType.LIMIT;
     }
 
     /**

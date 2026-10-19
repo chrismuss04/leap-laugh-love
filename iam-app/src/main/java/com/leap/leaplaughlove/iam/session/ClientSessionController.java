@@ -11,6 +11,10 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.Instant;
 
+/**
+ * Endpoints for the caller's current login session. Both routes require the current authenticated
+ * session, and take its identity from the verified token, never from the request.
+ */
 @RestController
 @RequestMapping("/api/iam/session")
 public class ClientSessionController {
@@ -44,6 +48,12 @@ public class ClientSessionController {
         return new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Session is no longer active");
     }
 
+    /**
+     * Records activity on the caller's session, keeping it from timing out.
+     * @param authentication the caller's verified token
+     * @return 204 if the session is still live
+     * @throws ResponseStatusException 401 if the session is expired, revoked or idle
+     */
     @PostMapping("/activity")
     public ResponseEntity<Void> activity(Authentication authentication) {
         Instant now = Instant.now();
@@ -57,6 +67,12 @@ public class ClientSessionController {
         return ResponseEntity.noContent().build();
     }
 
+    /**
+     * Revokes the caller's session, leaving their other devices' sessions alone.
+     * @param authentication the caller's verified token
+     * @return 204 once the session is revoked
+     * @throws ResponseStatusException 401 if the session is no longer active
+     */
     @PostMapping("/logout")
     public ResponseEntity<Void> logout(Authentication authentication) {
         Instant now = Instant.now();

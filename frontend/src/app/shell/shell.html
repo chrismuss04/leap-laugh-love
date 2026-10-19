@@ -24,9 +24,13 @@
         <a routerLink="/recap" routerLinkActive="active" class="nav-link wide-only" [class.is-new]="recapUnseen()">
           Recap<span class="sr-only" *ngIf="recapUnseen()"> (new)</span>
         </a>
+        <!-- Trading Tools: clients only - staff never get the shell. -->
+        <a routerLink="/tools" routerLinkActive="active" class="nav-link wide-only">Tools</a>
       </nav>
 
       <div class="header-right">
+        <app-market-status></app-market-status>
+
         <span class="live-status" [attr.data-status]="stream.status()" role="status">
           <span class="live-dot" aria-hidden="true"></span>
           <span class="live-label">{{ statusLabel() }}</span>
@@ -80,6 +84,13 @@
               </svg>
               Monthly recap
               <span class="pill" *ngIf="recapUnseen()">New</span>
+            </button>
+            <button type="button" class="menu-item narrow-only" role="menuitem" routerLink="/tools" (click)="closeMenu()">
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="2" y="2" width="5" height="5" rx="1" /><rect x="9" y="2" width="5" height="5" rx="1" />
+                <rect x="2" y="9" width="5" height="5" rx="1" /><rect x="9" y="9" width="5" height="5" rx="1" />
+              </svg>
+              Tools
             </button>
             <button type="button" class="menu-item" role="menuitem" routerLink="/settings" (click)="closeMenu()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">

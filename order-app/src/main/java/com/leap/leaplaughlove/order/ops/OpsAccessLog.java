@@ -13,7 +13,10 @@ import java.util.UUID;
 @Repository
 public class OpsAccessLog {
 
-    public enum Action { SEARCH, VIEW_TIMELINE, DOWNLOAD_CSV }
+    /** The kind of lookup being recorded. */
+    public enum Action {
+        SEARCH, VIEW_TIMELINE, DOWNLOAD_CSV, VIEW_ORDER, VIEW_ORDER_COUNTS, VIEW_REJECTIONS, VIEW_STUCK_ORDERS
+    }
 
     private final JdbcTemplate jdbc;
 

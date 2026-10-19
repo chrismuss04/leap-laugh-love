@@ -20,6 +20,14 @@
   .\scripts\start-local.ps1 -SkipBuild          # reuse the jars from the last build
 .EXAMPLE
   .\scripts\start-local.ps1 -LightHistory       # generate a month of price history, not a year
+.EXAMPLE
+  .\scripts\start-local.ps1 -MarketSession AFTER_HOURS
+  # Demo market hours at any time of day: pin a session instead of following the NYSE clock.
+.EXAMPLE
+  .\scripts\start-local.ps1 -MarketSession CLOSED -MarketOpensInMinutes 3
+  # Closed for 3 minutes, then the market opens: watch prices gap at the open.
+.EXAMPLE
+  .\scripts\start-local.ps1 -AlwaysOpen         # market hours off: trade around the clock
 #>
 [CmdletBinding()]
 param(
@@ -29,6 +37,13 @@ param(
     # history instead of a year - much quicker, at the cost of shorter charts.
     [switch]$LightHistory,
     [switch]$NoBrowser,
+    # Market hours: pin a session for a demo instead of following the NYSE clock.
+    [ValidateSet('PRE_MARKET', 'REGULAR', 'AFTER_HOURS', 'CLOSED')]
+    [string]$MarketSession,
+    # With -MarketSession: how long the pinned session lasts before the market opens (0 = for good).
+    [int]$MarketOpensInMinutes = 0,
+    # Market hours off: trading is open around the clock.
+    [switch]$AlwaysOpen,
     [string]$DbHost = 'localhost',
     [int]$DbPort = 5432
 )
@@ -107,6 +122,19 @@ $env:ACCOUNT_SERVICE_BASE_URL = 'http://localhost:8082'
 # No Kafka runs natively, so order-app doesn't publish order events (reporting-etl runs in Docker
 # only); otherwise every completed order would wait on a broker that isn't there.
 $env:REPORTING_EVENTS_ENABLED = 'false'
+# Market hours: the switches win over .env, which wins over the defaults (the real NYSE clock).
+# order-app and market-data-app must agree, and both inherit these.
+foreach ($name in 'MARKET_HOURS_MODE', 'MARKET_HOURS_FORCE_SESSION', 'MARKET_HOURS_FORCE_MINUTES') {
+    if ($dotEnv[$name]) { Set-Item "env:$name" $dotEnv[$name] }
+}
+if ($AlwaysOpen) {
+    $env:MARKET_HOURS_MODE = 'ALWAYS_OPEN'
+}
+if ($MarketSession) {
+    $env:MARKET_HOURS_MODE = 'REAL'
+    $env:MARKET_HOURS_FORCE_SESSION = $MarketSession
+    $env:MARKET_HOURS_FORCE_MINUTES = "$MarketOpensInMinutes"
+}
 if ($LightHistory) {
     $env:MARKETDATA_HISTORY_BACKFILL_TIERS = '86400:30,3600:7,300:2,60:1'
 }
@@ -217,6 +245,14 @@ if ($pending.Count -gt 0) {
 } else {
     Write-Host 'Leapfolio is running at http://localhost:4200' -ForegroundColor Green
     Write-Host 'Sign in as alice.johnson@leap.com / Password123!'
+    if ($env:MARKET_HOURS_MODE -eq 'ALWAYS_OPEN') {
+        Write-Host 'Market hours: off (always open)'
+    } elseif ($env:MARKET_HOURS_FORCE_SESSION) {
+        $until = if ([int]$env:MARKET_HOURS_FORCE_MINUTES -gt 0) { " for $($env:MARKET_HOURS_FORCE_MINUTES) min, then open" } else { '' }
+        Write-Host "Market hours: pinned to $($env:MARKET_HOURS_FORCE_SESSION)$until"
+    } else {
+        Write-Host 'Market hours: following the NYSE clock'
+    }
     if (-not $NoBrowser) { Start-Process "http://localhost:$frontendPort/" }
 }
 Write-Host 'Stop everything with: .\scripts\stop-local.ps1'

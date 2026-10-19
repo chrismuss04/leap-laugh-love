@@ -81,6 +81,8 @@ CREATE TABLE trading.orders (
     bracket_stop_loss_price NUMERIC(18,6),
     parent_order_id UUID,
     oco_group_id UUID,
+    extended_hours BOOLEAN NOT NULL DEFAULT FALSE,
+    collar_price NUMERIC(18,6),
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );
@@ -121,7 +123,8 @@ CREATE TABLE trading.executions (
 CREATE TABLE trading.ops_access_log (
     access_id UUID PRIMARY KEY,
     staff_id UUID NOT NULL,
-    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV')),
+    action VARCHAR(20) NOT NULL CHECK (action IN ('SEARCH', 'VIEW_TIMELINE', 'DOWNLOAD_CSV', 'VIEW_ORDER',
+                                                  'VIEW_ORDER_COUNTS', 'VIEW_REJECTIONS', 'VIEW_STUCK_ORDERS')),
     order_id UUID,
     search_criteria VARCHAR(1000),
     accessed_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -189,12 +189,11 @@ class TradeRecordRetentionIntegrationTest {
             UUID testAccountId = insertAccount(conn, insertClient(conn));
             UUID testOrderId = insertOrder(conn, testAccountId, insertInstrument(conn));
 
-            SQLException thrown = assertThrows(SQLException.class, () -> {
-                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM trading.orders WHERE order_id = ?")) {
-                    ps.setObject(1, testOrderId);
-                    ps.executeUpdate();
-                }
-            });
+            SQLException thrown;
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM trading.orders WHERE order_id = ?")) {
+                ps.setObject(1, testOrderId);
+                thrown = assertThrows(SQLException.class, ps::executeUpdate);
+            }
 
             assertTrue(thrown.getMessage().contains("immutable") || 
                       thrown.getMessage().contains("retention") ||
@@ -218,13 +217,12 @@ class TradeRecordRetentionIntegrationTest {
                 ps.executeUpdate();
             }
 
-            SQLException thrown = assertThrows(SQLException.class, () -> {
-                try (PreparedStatement ps = conn.prepareStatement(
-                        "UPDATE trading.executions SET fill_price = 150.00 WHERE execution_id = ?")) {
-                    ps.setObject(1, testExecutionId);
-                    ps.executeUpdate();
-                }
-            });
+            SQLException thrown;
+            try (PreparedStatement ps = conn.prepareStatement(
+                    "UPDATE trading.executions SET fill_price = 150.00 WHERE execution_id = ?")) {
+                ps.setObject(1, testExecutionId);
+                thrown = assertThrows(SQLException.class, ps::executeUpdate);
+            }
 
             assertTrue(thrown.getMessage().contains("immutable") || 
                       thrown.getMessage().contains("retention") ||
@@ -246,12 +244,11 @@ class TradeRecordRetentionIntegrationTest {
                 ps.executeUpdate();
             }
 
-            SQLException thrown = assertThrows(SQLException.class, () -> {
-                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM iam.clients WHERE client_id = ?")) {
-                    ps.setObject(1, testClientId);
-                    ps.executeUpdate();
-                }
-            });
+            SQLException thrown;
+            try (PreparedStatement ps = conn.prepareStatement("DELETE FROM iam.clients WHERE client_id = ?")) {
+                ps.setObject(1, testClientId);
+                thrown = assertThrows(SQLException.class, ps::executeUpdate);
+            }
 
             assertTrue(thrown.getMessage().contains("immutable") || 
                       thrown.getMessage().contains("retention") ||

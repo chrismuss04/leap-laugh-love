@@ -10,6 +10,7 @@ import { InstrumentsComponent } from './instruments/instruments';
 import { ShellComponent } from './shell/shell';
 import { AuthService } from './services/auth.service';
 import { PriceStreamService } from './services/price-stream';
+import { MarketStatusService } from './services/market-status';
 
 /** The pages that render inside the shell, i.e. every route a signed-in link can lead to. */
 const pages: Route[] = routes.find(route => route.component === ShellComponent)?.children ?? [];
@@ -47,7 +48,8 @@ describe('App routes', () => {
     ['orders', 'OrderHistoryComponent', () => import('./order-history/order-history').then(m => m.OrderHistoryComponent)],
     ['holdings', 'HoldingsComponent', () => import('./holdings/holdings').then(m => m.HoldingsComponent)],
     ['profile', 'ProfileComponent', () => import('./profile/profile').then(m => m.ProfileComponent)],
-    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)]
+    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)],
+    ['tools', 'ToolsComponent', () => import('./tools/tools').then(m => m.ToolsComponent)]
   ];
   for (const [path, name, expected] of lazyPages) {
     it(`/${path} loads ${name} on demand`, async () => {
@@ -71,7 +73,8 @@ describe('App routes', () => {
     TestBed.configureTestingModule({
       imports: [ShellComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     });
     const http = TestBed.inject(HttpTestingController);
     const now = Math.floor(Date.now() / 1000);
@@ -96,6 +99,8 @@ describe('App routes', () => {
       .map(tree => router.serializeUrl(tree!));
 
     expect(urls).toContain('/accounts');
+    // Trading Tools: in the header, and in the profile menu for phones.
+    expect(urls.filter(url => url === '/tools')).toHaveLength(2);
     expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
     // The header link and the profile menu's, which covers narrow screens.
     expect(urls.filter(url => url === '/recap')).toHaveLength(2);
@@ -137,7 +142,8 @@ describe('Role-based routing', () => {
         expect(router.url).toBe('/reporting');
       });
 
-      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings',
+        '/tools', '/tools/rebalance', '/tools/draw?account=a1', '/', '/nowhere']) {
         it(`is sent from ${url} to reporting`, async () => {
           await router.navigateByUrl(url);
           expect(router.url).toBe('/reporting');
@@ -204,6 +210,19 @@ describe('Role-based routing', () => {
       expect(router.url).toBe('/orders');
     });
 
+    // Trading Tools
+    for (const url of ['/tools', '/tools/rebalance', '/tools/raise-cash', '/tools/basket', '/tools/draw']) {
+      it(`opens ${url}`, async () => {
+        await router.navigateByUrl(url);
+        expect(router.url).toBe(url);
+      });
+    }
+
+    it('is sent from an unknown tool to the hub', async () => {
+      await router.navigateByUrl('/tools/nope');
+      expect(router.url).toBe('/tools');
+    });
+
     it('lands on the dashboard from an unknown URL', async () => {
       await router.navigateByUrl('/nowhere');
       expect(router.url).toBe('/dashboard');
@@ -229,7 +248,8 @@ describe('ShellComponent for staff', () => {
     TestBed.configureTestingModule({
       imports: [ShellComponent],
       providers: [provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
-        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } }]
+        { provide: PriceStreamService, useValue: { status: signal('idle'), stop: () => {} } },
+        { provide: MarketStatusService, useValue: { status: signal(null), session: signal(null), nextChange: signal(null), now: signal(0), start: () => {}, stop: () => {} } }]
     });
     const http = TestBed.inject(HttpTestingController);
     const fixture = TestBed.createComponent(ShellComponent);

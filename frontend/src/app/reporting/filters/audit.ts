@@ -95,16 +95,42 @@ export function missingAuditCriteria(filter: AuditFilter): string | null {
   return null;
 }
 
+/** Why the filter can't be submitted, or null when it can: missing criteria, a reversed period or a malformed client id. */
+export function auditFilterError(filter: AuditFilter): string | null {
+  const missing = missingAuditCriteria(filter);
+  if (missing) {
+    return missing;
+  }
+  if (filter.from! > filter.to!) {
+    return '"Submitted from" must be on or before "Submitted to".';
+  }
+  if (filter.clientId && !isUuid(filter.clientId)) {
+    return 'Enter a full client id, or search by email instead.';
+  }
+  return null;
+}
+
 /**
- * The trade search for a filter that can be searched. Submitted from and to are local
- * datetime-local minutes and both inclusive, so the search runs from the start of the first to the
- * end of the last; an account that isn't a UUID is an account number.
+ * The filter's period as ISO date-times, from inclusive and to exclusive, or null without both ends.
+ * Submitted from and to are local datetime-local minutes and both inclusive, so the period runs
+ * from the start of the first to the end of the last.
+ */
+export function auditPeriod(filter: AuditFilter): { from: string; to: string } | null {
+  if (!filter.from || !filter.to) { return null; }
+  return {
+    from: new Date(filter.from).toISOString(),
+    to: new Date(new Date(filter.to).getTime() + 60_000).toISOString()
+  };
+}
+
+/**
+ * The trade search for a filter that can be searched, over its {@link auditPeriod}; an account
+ * that isn't a UUID is an account number.
  */
 export function toTradeSearch(filter: AuditFilter): TradeSearch {
   const account = filter.accountId ?? undefined;
   return {
-    from: new Date(filter.from!).toISOString(),
-    to: new Date(new Date(filter.to!).getTime() + 60_000).toISOString(),
+    ...auditPeriod(filter)!,
     clientId: filter.clientId ?? undefined,
     clientEmail: filter.clientEmail ?? undefined,
     accountId: isUuid(account) ? account : undefined,

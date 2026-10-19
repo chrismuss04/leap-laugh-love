@@ -97,6 +97,14 @@ export const routes: Routes = [
       { path: 'settings', loadComponent: () => import('./settings/settings').then(m => m.SettingsComponent) },
       // Monthly recap of last month's trading, from reporting-app.
       { path: 'recap', loadComponent: () => import('./recap/recap').then(m => m.RecapComponent) },
+      // Trading Tools: the hub and each tool (/tools/:tool), on the account in ?account=.
+      {
+        path: 'tools',
+        loadComponent: () => import('./tools/tools').then(m => m.ToolsComponent),
+        // Trading Tools: not while a plan's orders are still being sent.
+        canDeactivate: [(tools: { canLeave(): boolean }) => tools.canLeave()],
+        loadChildren: () => import('./tools/tools.routes').then(m => m.TOOL_ROUTES)
+      },
       { path: '', redirectTo: 'dashboard', pathMatch: 'full' }
     ]
   },

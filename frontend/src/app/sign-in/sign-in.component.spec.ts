@@ -6,7 +6,7 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { Router, RouterModule } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 import { AuthService, LoginResponse } from '../services/auth.service';
-import { SignInComponent } from './sign-in.component';
+import { SignInComponent, isToolsUrl } from './sign-in.component';
 import { CreateAccountComponent } from '../create-account/create-account.component';
 import { ForgotPasswordComponent } from '../forgot-password/forgot-password.component';
 import { ResetPasswordComponent } from '../reset-password/reset-password.component';
@@ -64,6 +64,50 @@ describe('SignInComponent', () => {
     fill('analyst@leap.com', 'password1');
     component.onSignIn();
     expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting', { onSameUrlNavigation: 'reload' });
+  });
+
+  // Trading Tools: a tool's link opened while signed out lands on that tool once signed in.
+  describe('opened on a Trading Tools link', () => {
+    const link = '/tools/rebalance?account=a1';
+
+    beforeEach(() => {
+      auth.login.mockReturnValue(of({} as LoginResponse));
+      auth.isStaff = vi.fn().mockReturnValue(false);
+      SignInComponent.deepLink = link;
+      Object.defineProperty(router, 'url', { value: link, configurable: true });
+      fill('ada@example.com', 'password1');
+    });
+
+    afterEach(() => { SignInComponent.deepLink = null; });
+
+    it('routes a client to that tool', () => {
+      component.onSignIn();
+      expect(router.navigateByUrl).toHaveBeenCalledWith(link, { onSameUrlNavigation: 'reload' });
+    });
+
+    it('routes staff home instead', () => {
+      auth.isStaff.mockReturnValue(true);
+      auth.homeUrl.mockReturnValue('/reporting');
+      component.onSignIn();
+      expect(router.navigateByUrl).toHaveBeenCalledWith('/reporting', { onSameUrlNavigation: 'reload' });
+    });
+
+    it('only once, so the next person to sign in starts at home', () => {
+      component.onSignIn();
+      component.onSignIn();
+      expect(router.navigateByUrl).toHaveBeenLastCalledWith('/dashboard', { onSameUrlNavigation: 'reload' });
+    });
+
+    it('not once the app has moved on from it', () => {
+      Object.defineProperty(router, 'url', { value: '/dashboard', configurable: true });
+      component.onSignIn();
+      expect(router.navigateByUrl).toHaveBeenCalledWith('/dashboard', { onSameUrlNavigation: 'reload' });
+    });
+  });
+
+  it('recognises Trading Tools URLs', () => {
+    expect(['/tools', '/tools/draw', '/tools?account=a1'].every(isToolsUrl)).toBe(true);
+    expect(['/toolsy', '/dashboard', '/'].some(isToolsUrl)).toBe(false);
   });
 
   it('remembers the user when asked', () => {

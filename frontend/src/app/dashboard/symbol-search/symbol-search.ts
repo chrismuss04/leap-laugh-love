@@ -8,11 +8,14 @@ interface SearchResult {
   symbol: string;
   name: string | null;
   price: number;
+  /** Why it can't be picked here, or null when it can. */
+  reason: string | null;
 }
 
 /**
  * Symbol search across every simulated instrument. "/" focuses it from anywhere on the page;
- * arrow keys and Enter pick a result, which opens it in the trade panel.
+ * arrow keys and Enter pick a result, which opens it in the trade panel. A page can mark some
+ * results unavailable (with the reason shown beside them), and they can't be picked.
  */
 @Component({
     selector: 'app-symbol-search',
@@ -25,7 +28,14 @@ export class SymbolSearchComponent {
   @Input() names: Record<string, string> = {};
   /** Live prices, preferred over the snapshot loaded for search. */
   @Input() livePrices: Record<string, number> = {};
+  /** Why a symbol can't be picked here ("Not tradable"), or null when it can. */
+  @Input() unavailable: (symbol: string) => string | null = () => null;
+  @Input() placeholder = 'Search symbols to trade';
+  /** Whether "/" focuses this search from anywhere on the page. */
+  @Input() shortcut = true;
   @Output() pick = new EventEmitter<string>();
+  /** The same pick with the instrument's name, for pages that show it. */
+  @Output() picked = new EventEmitter<{ symbol: string; name: string | null }>();
 
   @ViewChild('input') input?: ElementRef<HTMLInputElement>;
 
@@ -44,7 +54,7 @@ export class SymbolSearchComponent {
   onGlobalKey(event: KeyboardEvent): void {
     const target = event.target as HTMLElement | null;
     const typing = target && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
-    if (event.key === '/' && !typing) {
+    if (event.key === '/' && !typing && this.shortcut) {
       event.preventDefault();
       this.input?.nativeElement.focus();
     }
@@ -77,8 +87,9 @@ export class SymbolSearchComponent {
     matches.sort((a, b) => this.rank(a.symbol, q) - this.rank(b.symbol, q) || a.symbol.localeCompare(b.symbol));
     this.results = matches.slice(0, 8).map(item => ({
       symbol: item.symbol,
-      name: this.names[item.symbol] ?? null,
-      price: this.livePrices[item.symbol] ?? item.price
+      name: this.names[item.symbol] ?? item.name ?? null,
+      price: this.livePrices[item.symbol] ?? item.price,
+      reason: this.unavailable(item.symbol)
     }));
     this.highlighted.set(0);
   }
@@ -102,8 +113,17 @@ export class SymbolSearchComponent {
     }
   }
 
+  /** Focuses the search, e.g. when a page opens it. */
+  focus(): void {
+    this.input?.nativeElement.focus();
+  }
+
   choose(result: SearchResult): void {
+    if (result.reason) {
+      return;
+    }
     this.pick.emit(result.symbol);
+    this.picked.emit({ symbol: result.symbol, name: result.name });
     this.query = '';
     this.results = [];
     this.close();

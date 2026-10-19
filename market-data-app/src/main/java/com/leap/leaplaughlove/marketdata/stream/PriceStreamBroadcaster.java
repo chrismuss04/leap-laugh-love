@@ -72,7 +72,14 @@ public class PriceStreamBroadcaster {
         return register(new SseEmitter(0L), symbolFilter);
     }
 
-    // Session Timeout & Revocation: validate on the sender thread, never on the market tick thread.
+    /**
+     * Registers a new SSE subscriber that is dropped once its login session ends. The session is
+     * validated on the sender thread, never on the market tick thread.
+     *
+     * @param symbolFilter  the symbols to send to this subscriber, or empty to send all
+     * @param sessionActive whether the subscriber's session is still live
+     * @return the emitter to return to the client
+     */
     public SseEmitter subscribe(Set<String> symbolFilter, BooleanSupplier sessionActive) {
         return register(new SseEmitter(0L), symbolFilter, sessionActive);
     }

@@ -5,6 +5,7 @@ import { AuthService } from '../services/auth.service';
 import { ClientProfile, ProfileService } from '../services/profile';
 import { PriceStreamService } from '../services/price-stream';
 import { RecapService } from '../services/recap';
+import { MarketStatusComponent } from './market-status/market-status';
 // Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
 import { SessionActivityService } from '../services/session-activity';
 // Session Timeout & Revocation
@@ -17,12 +18,13 @@ const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
 };
 
 /**
- * Layout for every signed-in page: brand, navigation, live-data status and the signed-in client.
+ * Layout for every signed-in page: brand, navigation, market session, live-data status and the
+ * signed-in client.
  * Pages render into its router outlet, so they share one header instead of each drawing its own.
  */
 @Component({
     selector: 'app-shell',
-    imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive],
+    imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, MarketStatusComponent],
     templateUrl: './shell.html',
     styleUrl: './shell.css'
 })

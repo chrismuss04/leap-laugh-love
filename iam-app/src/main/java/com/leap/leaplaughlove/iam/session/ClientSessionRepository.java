@@ -10,6 +10,10 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
+/**
+ * Persists each successful client login as a session, without storing its JWT.
+ * Staff sessions are kept separately by {@link StaffSessionRepository}.
+ */
 @Repository
 public class ClientSessionRepository {
     private final JdbcTemplate jdbcTemplate;
@@ -18,7 +22,14 @@ public class ClientSessionRepository {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    // Join the login transaction so session storage and credential updates commit together.
+    /**
+     * Stores a new session. Joins the login transaction so session storage and credential
+     * updates commit together.
+     * @param sessionId the session's ID, also carried in the token
+     * @param clientId the client who signed in
+     * @param issuedAt when the session started
+     * @param expiresAt when the session ends
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     public void create(UUID sessionId, UUID clientId, Instant issuedAt, Instant expiresAt) {
         jdbcTemplate.update("""
@@ -29,7 +40,14 @@ public class ClientSessionRepository {
                 issuedAt.atOffset(ZoneOffset.UTC), expiresAt.atOffset(ZoneOffset.UTC));
     }
 
-    // Session Timeout & Revocation: a conditional update prevents expired/revoked sessions being revived.
+    /**
+     * Records activity on a session. The update is conditional, so expired, revoked or idle
+     * sessions are never revived.
+     * @param sessionId the session
+     * @param clientId the session's client
+     * @param now the time of the activity
+     * @return true if the session was live and its activity was recorded
+     */
     @Transactional
     public boolean recordActivity(UUID sessionId, UUID clientId, Instant now) {
         return jdbcTemplate.update("""
@@ -42,7 +60,12 @@ public class ClientSessionRepository {
                         .atOffset(ZoneOffset.UTC)) == 1;
     }
 
-    // Session Timeout & Revocation: revoke only this login, preserving other devices' sessions.
+    /**
+     * Revokes one login, preserving the client's sessions on other devices.
+     * @param sessionId the session to revoke
+     * @param clientId the session's client
+     * @param now the time to record as the revocation
+     */
     @Transactional
     public void revoke(UUID sessionId, UUID clientId, Instant now) {
         jdbcTemplate.update("""
@@ -51,8 +74,12 @@ public class ClientSessionRepository {
                 """, now.atOffset(ZoneOffset.UTC), sessionId, clientId);
     }
 
-    // Password Recovery: a reset signs the client out everywhere, since whoever knew the old
-    // password may still be signed in.
+    /**
+     * Revokes every live session for a client. A password reset signs the client out everywhere,
+     * since whoever knew the old password may still be signed in.
+     * @param clientId the client whose sessions are revoked
+     * @param now the time to record as the revocation
+     */
     @Transactional
     public void revokeAll(UUID clientId, Instant now) {
         jdbcTemplate.update("""

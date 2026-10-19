@@ -51,6 +51,11 @@ public class InactiveAccountDetector {
         this.clock = clock;
     }
 
+    /**
+     * Runs the inactivity check: flags accounts that have been empty for at least the threshold,
+     * clears the flag (and the notification record) on accounts that are no longer empty, then
+     * publishes an {@link InactivityCheckedEvent}. Scheduled at 02:00 UTC by default.
+     */
     @Scheduled(cron = "${account.inactivity.cron:0 0 2 * * *}", zone = "UTC")
     @Transactional
     public void detect() {

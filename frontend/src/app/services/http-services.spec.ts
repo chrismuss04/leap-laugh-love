@@ -106,19 +106,28 @@ describe('HTTP services', () => {
 
     it('lists accounts and one account positions', () => {
       const service = TestBed.inject(HoldingsService);
-      service.getAccounts().subscribe();
-      http.expectOne('/api/account/accounts').flush([]);
-      service.getPositionsForAccount('x').subscribe();
-      http.expectOne('/api/account/accounts/x/positions').flush({});
+      const results: unknown[] = [];
+      service.getAccounts().subscribe(r => results.push(r));
+      const accounts = http.expectOne('/api/account/accounts');
+      expect(accounts.request.method).toBe('GET');
+      accounts.flush([{ accountId: 'x' }]);
+      service.getPositionsForAccount('x').subscribe(r => results.push(r));
+      const positions = http.expectOne('/api/account/accounts/x/positions');
+      expect(positions.request.method).toBe('GET');
+      positions.flush({ accountId: 'x', positions: [] });
+      expect(results).toEqual([[{ accountId: 'x' }], { accountId: 'x', positions: [] }]);
     });
   });
 
   describe('MarketDataService', () => {
     it('caches all latest prices', () => {
       const service = TestBed.inject(MarketDataService);
-      service.getAllLatestPrices().subscribe();
-      service.getAllLatestPrices().subscribe();
+      const results: unknown[] = [];
+      service.getAllLatestPrices().subscribe(r => results.push(r));
+      service.getAllLatestPrices().subscribe(r => results.push(r));
+      // One request answers both callers.
       http.expectOne('/api/marketdata/prices').flush([{ symbol: 'AAPL', price: 1 }]);
+      expect(results).toEqual([[{ symbol: 'AAPL', price: 1 }], [{ symbol: 'AAPL', price: 1 }]]);
     });
 
     it('returns no prices on failure and retries on the next call', () => {
@@ -133,10 +142,12 @@ describe('HTTP services', () => {
 
     it('fetches a quote and a latest price with the symbol encoded', () => {
       const service = TestBed.inject(MarketDataService);
-      service.getQuote('BRK/B').subscribe();
-      http.expectOne('/api/marketdata/quotes/BRK%2FB').flush({});
-      service.getLatestPrice('BRK/B').subscribe();
-      http.expectOne('/api/marketdata/prices/BRK%2FB').flush({});
+      const results: unknown[] = [];
+      service.getQuote('BRK/B').subscribe(r => results.push(r));
+      http.expectOne('/api/marketdata/quotes/BRK%2FB').flush({ symbol: 'BRK/B', lastPrice: 1 });
+      service.getLatestPrice('BRK/B').subscribe(r => results.push(r));
+      http.expectOne('/api/marketdata/prices/BRK%2FB').flush({ symbol: 'BRK/B', price: 2 });
+      expect(results).toEqual([{ symbol: 'BRK/B', lastPrice: 1 }, { symbol: 'BRK/B', price: 2 }]);
     });
 
     it('returns history oldest first', () => {
@@ -171,6 +182,19 @@ describe('HTTP services', () => {
       service.getIntradayCloses('AAPL').subscribe(r => results.push(r));
       http.expectOne(historyUrl).flush({}, failure);
       expect(results).toEqual([[1, 2], []]);
+    });
+
+    it('asks for the newest day of 5-minute candles within a week, so a closed market still has a chart', () => {
+      const service = TestBed.inject(MarketDataService);
+      service.getIntradayCloses('AAPL').subscribe();
+      const request = http.expectOne(historyUrl);
+      const { from, to, interval, size } = Object.fromEntries(request.request.params.keys().map(k => [k, request.request.params.get(k)!]));
+      request.flush({ content: [], last: true });
+
+      expect(interval).toBe('300');
+      expect(size).toBe('288');
+      const days = (Date.parse(to) - Date.parse(from)) / 86_400_000;
+      expect(days).toBeCloseTo(7, 1);
     });
   });
 });

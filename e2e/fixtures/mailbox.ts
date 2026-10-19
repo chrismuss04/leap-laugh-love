@@ -35,6 +35,13 @@ export async function emailTo(request: APIRequestContext, to: string, subject: s
   return text!;
 }
 
+/** How many emails to `to` have this subject so far, to tell a new one from those of earlier runs. */
+export async function countEmails(request: APIRequestContext, to: string, subject: string): Promise<number> {
+  const search = await request.get(`${MAILPIT_URL}/api/v1/search`, { params: { query: `to:"${to}" subject:"${subject}"` } });
+  const body = await search.json();
+  return body.messages_count ?? body.messages?.length ?? 0;
+}
+
 /** The token in the confirmation link emailed to a new applicant. */
 export async function confirmationToken(request: APIRequestContext, email: string): Promise<string> {
   const text = await emailTo(request, email, CONFIRM_SUBJECT);

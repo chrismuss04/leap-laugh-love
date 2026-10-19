@@ -17,6 +17,12 @@ public class InstrumentOverviewRepository {
         this.jdbc = jdbc;
     }
 
+    /**
+     * Loads every active instrument with the close of its last daily candle on or before the
+     * period start.
+     * @param periodStart the start of the period the baseline is measured from
+     * @return the instruments by symbol; baseline price is null where no earlier candle exists
+     */
     public List<Metadata> findAll(OffsetDateTime periodStart) {
         // A daily candle must end by periodStart. The existing candle primary key
         // supports each backwards lookup. Schemas have separate UUIDs: join by symbol.
@@ -35,6 +41,14 @@ public class InstrumentOverviewRepository {
                 Timestamp.from(periodStart.minusDays(1).toInstant()));
     }
 
+    /**
+     * An instrument's static details and its baseline price.
+     * @param symbol the ticker symbol
+     * @param name the display name
+     * @param assetClass the asset class, or null if the instrument isn't in the trading schema
+     * @param currency the currency, or null if the instrument isn't in the trading schema
+     * @param baselinePrice the close the period's change is measured from, or null if unavailable
+     */
     public record Metadata(String symbol, String name, String assetClass, String currency,
             BigDecimal baselinePrice) {}
 }

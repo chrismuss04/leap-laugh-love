@@ -1,10 +1,46 @@
 import { OpenOrder } from '../services/order';
 import {
-  describeOrder, distanceLabel, distanceTo, holdsByAccount, orderTypeHint, orderTypeLabel, requiredMove,
-  reservePricePerShare, sentenceText, trailText, waitingPrice
+  describeOrder, distanceLabel, distanceTo, holdsByAccount, isQueuedOrder, openOrderTitle, orderTypeHint,
+  orderTypeLabel, queuedCollar, requiredMove, reservePricePerShare, sentenceText, trailText, waitingPrice
 } from './order-types';
 
 describe('order types', () => {
+  describe('market hours', () => {
+    const say = (overrides: Partial<Parameters<typeof describeOrder>[0]>) => sentenceText(describeOrder({
+      side: 'BUY', type: 'MARKET', symbol: 'AAPL', quantity: 10, limitPrice: null, stopPrice: null,
+      timeInForce: 'DAY', ...overrides
+    }));
+
+    it('says when a market order is queued for the open', () => {
+      expect(say({ queuedFor: 'Mon 9:30 AM ET' }))
+        .toBe('Buy 10 shares of AAPL at the market open (Mon 9:30 AM ET), within 5% of the current price.');
+      expect(say({ side: 'SELL', queuedFor: null }))
+        .toBe('Sell 10 shares of AAPL at the market open, within 5% of the current price.');
+    });
+
+    it('says when a limit order also trades in extended hours', () => {
+      expect(say({ type: 'LIMIT', limitPrice: 145, extendedHours: true }))
+        .toBe('Buy 10 shares of AAPL at $145.00 or lower, good for today, including extended hours.');
+      expect(say({ type: 'STOP', side: 'SELL', stopPrice: 140, extendedHours: true }))
+        .not.toContain('extended hours');
+    });
+
+    it('puts the collar 5% past the price, against the order', () => {
+      expect(queuedCollar('BUY', 100)).toBeCloseTo(105);
+      expect(queuedCollar('SELL', 100)).toBeCloseTo(95);
+      expect(queuedCollar('BUY', null)).toBeNull();
+      expect(reservePricePerShare('MARKET', null, null, 105)).toBe(105);
+      expect(reservePricePerShare('MARKET', null, null)).toBeNull();
+    });
+
+    it('recognises a queued order', () => {
+      expect(isQueuedOrder({ status: 'OPEN', orderType: 'MARKET' })).toBe(true);
+      expect(isQueuedOrder({ status: 'FILLED', orderType: 'MARKET' })).toBe(false);
+      expect(isQueuedOrder({ status: 'OPEN', orderType: 'LIMIT' })).toBe(false);
+      expect(openOrderTitle({ orderType: 'MARKET', side: 'BUY' })).toBe('Market buy');
+    });
+  });
+
   const describe_ = (overrides: Partial<Parameters<typeof describeOrder>[0]>) => sentenceText(describeOrder({
     side: 'BUY', type: 'MARKET', symbol: 'AAPL', quantity: 10, limitPrice: null, stopPrice: null,
     timeInForce: 'DAY', ...overrides

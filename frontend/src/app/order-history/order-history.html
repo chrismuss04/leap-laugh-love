@@ -65,7 +65,11 @@
               [ngClass]="order.side === 'BUY' ? 'buy-row' : 'sell-row'"
               class="order-row"
               data-testid="order-row"
+              tabindex="0"
+              [attr.aria-expanded]="expandedOrderId() === order.orderId"
               (click)="toggleExpand(order.orderId)"
+              (keydown.enter)="toggleExpand(order.orderId)"
+              (keydown.space)="$event.preventDefault(); toggleExpand(order.orderId)"
             >
               <td class="expand-icon">
                 {{ expandedOrderId() === order.orderId ? '▼' : '▶' }}
@@ -77,7 +81,7 @@
                 <span *ngIf="conditionText(order) as condition" class="condition">{{ condition }}</span>
               </td>
               <td>{{ order.quantity | number: '1.0-0' }}</td>
-              <td><span class="status-badge" [attr.data-status]="order.status">{{ order.status }}</span></td>
+              <td><span class="status-badge" [attr.data-status]="order.status">{{ queued(order) ? 'QUEUED' : order.status }}</span></td>
               <td>{{ order.submittedAt | date: 'short' }}</td>
               <td>{{ order.status === 'OPEN' ? '--' : ((order.completedAt ?? order.filledAt) | date: 'short') ?? '--' }}</td>
               <td>{{ order.executions.length }}</td>

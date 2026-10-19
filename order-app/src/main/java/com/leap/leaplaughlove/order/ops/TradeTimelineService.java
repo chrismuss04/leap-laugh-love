@@ -39,25 +39,27 @@ public class TradeTimelineService {
      * @throws IllegalArgumentException if the period or client is missing, or from is not before to
      */
     public List<TradeSummary> search(TradeSearch criteria) {
-        TradeSearch search = new TradeSearch(criteria.orderId(), criteria.clientId(),
-                blankToNull(criteria.clientEmail()), criteria.accountId(), blankToNull(criteria.accountNumber()),
-                blankToNull(criteria.symbol()), criteria.side(), criteria.status(), criteria.from(), criteria.to());
-        if (search.from() == null || search.to() == null) {
-            throw new IllegalArgumentException("Give a time period to search");
-        }
-        if (search.clientId() == null && search.clientEmail() == null) {
-            throw new IllegalArgumentException("Give a client id or client email to search");
-        }
-        if (!search.from().isBefore(search.to())) {
-            throw new IllegalArgumentException("from must be before to");
-        }
-        return tradeOpsRepository.search(search);
+        return tradeOpsRepository.search(validated(criteria));
+    }
+
+    /**
+     * How many orders the same search finds, by outcome: every match, not only those
+     * {@link #search} returns. Needs the same criteria.
+     * @throws IllegalArgumentException if the period or client is missing, or from is not before to
+     */
+    public OrderCounts countByStatus(TradeSearch criteria) {
+        return tradeOpsRepository.countByStatus(validated(criteria));
+    }
+
+    /** @throws ResponseStatusException 404 if there is no such order */
+    public TradeRecords getRecords(UUID orderId) {
+        return new TradeRecords(findOrder(orderId), tradeOpsRepository.findExecutions(orderId),
+                tradeOpsRepository.findCashEntries(orderId), tradeOpsRepository.findPositionMovements(orderId));
     }
 
     /** @throws ResponseStatusException 404 if there is no such order */
     public TradeTimeline getTimeline(UUID orderId) {
-        OrderRecord order = tradeOpsRepository.findOrder(orderId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderId));
+        OrderRecord order = findOrder(orderId);
         TradeSummary trade = order.summary();
         Order.Side side = Order.Side.valueOf(trade.side());
 
@@ -107,6 +109,27 @@ public class TradeTimelineService {
 
         steps.sort(Comparator.comparing(TimelineStep::at).thenComparing(TimelineStep::type));
         return new TradeTimeline(trade, order.quotedPrice(), order.maxSlippagePercent(), steps);
+    }
+
+    private OrderRecord findOrder(UUID orderId) {
+        return tradeOpsRepository.findOrder(orderId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Order not found: " + orderId));
+    }
+
+    private static TradeSearch validated(TradeSearch criteria) {
+        TradeSearch search = new TradeSearch(criteria.orderId(), criteria.clientId(),
+                blankToNull(criteria.clientEmail()), criteria.accountId(), blankToNull(criteria.accountNumber()),
+                blankToNull(criteria.symbol()), criteria.side(), criteria.status(), criteria.from(), criteria.to());
+        if (search.from() == null || search.to() == null) {
+            throw new IllegalArgumentException("Give a time period to search");
+        }
+        if (search.clientId() == null && search.clientEmail() == null) {
+            throw new IllegalArgumentException("Give a client id or client email to search");
+        }
+        if (!search.from().isBefore(search.to())) {
+            throw new IllegalArgumentException("from must be before to");
+        }
+        return search;
     }
 
     private static String submitted(OrderRecord order) {

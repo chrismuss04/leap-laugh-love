@@ -11,6 +11,7 @@ import { TradingOpsDashboardComponent } from './trading-ops/trading-ops';
 import { OrderLifecycleComponent } from './trading-ops/order-lifecycle';
 import { AnalystDashboardComponent } from './analyst/analyst';
 import { BusinessInsights } from '../services/reports';
+import { TradeRecords } from '../services/trade-ops';
 
 // Staff Dashboards: each role's dashboard, reached through the app's real routes and staff shell.
 const ORDER_ID = '3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21';
@@ -75,6 +76,41 @@ function type(el: HTMLElement, selector: string, value: string): void {
   input.dispatchEvent(new Event('input'));
 }
 
+const STUCK_URL = '/api/order/ops/reports/stuck-orders';
+const REJECTIONS_URL = '/api/order/ops/reports/rejections';
+const COUNTS_URL = '/api/order/ops/orders/counts';
+const RECORDS_URL = `/api/order/ops/orders/${ORDER_ID}`;
+const FILTERED = '/reporting?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=alice%40leap.com';
+
+/** The text in the body of the panel with this title as rendered, so separate blocks don't run together. */
+const panelBody = (el: HTMLElement, title: string) => (Array.from(el.querySelectorAll('app-report-panel'))
+  .find(panel => panel.querySelector('h2')!.textContent!.trim() === title)!.querySelector('.panel-body') as HTMLElement)
+  .innerText.replace(/\s+/g, ' ').trim();
+/** The order summary's labels and values, each pair as "Label value". */
+const orderSummary = (el: HTMLElement) => Array.from(el.querySelectorAll('[data-testid="order-summary"] > div'))
+  .map(pair => `${text(pair.querySelector('dt') as HTMLElement)} ${text(pair.querySelector('dd') as HTMLElement)}`).join(' ');
+/** Each row's cell text, for rows with this test id. */
+const rowCells = (el: HTMLElement, testId: string) => Array.from(el.querySelectorAll(`[data-testid="${testId}"]`))
+  .map(row => Array.from(row.querySelectorAll('td')).map(cell => text(cell)));
+/** The trading operations tiles' figures as shown. */
+const orderCounts = (el: HTMLElement) =>
+  Array.from(el.querySelectorAll('[data-testid="order-counts"] .stat-value:not(.skeleton)')).map(v => text(v as HTMLElement));
+
+function records(): TradeRecords {
+  return {
+    order: {
+      summary: { orderId: ORDER_ID, submittedAt: '2026-10-02T10:00:00Z', clientEmail: 'alice@leap.com',
+        accountNumber: 'ACC-1001', symbol: 'AAPL', side: 'BUY', quantity: 10, status: 'FILLED' },
+      orderType: 'MARKET', acceptedAt: '2026-10-02T10:00:01Z', rejectedAt: null, filledAt: '2026-10-02T10:00:02Z',
+      rejectionReason: null, quotedPrice: 150, maxSlippagePercent: 1
+    },
+    executions: [{ executionId: 'e-1', status: 'FILLED', fillQuantity: 10, fillPrice: 150.05,
+      executedAt: '2026-10-02T10:00:01.500Z', reason: 'Executed at market price' }],
+    cashEntries: [{ entryType: 'BUY_SETTLEMENT', amount: -1500.5, currency: 'USD', createdAt: '2026-10-02T10:00:01.600Z' }],
+    positionMovements: [{ movementType: 'BUY_FILL', quantityDelta: 10, costDelta: 1500.5, createdAt: '2026-10-02T10:00:01.700Z' }]
+  };
+}
+
 describe('Trading operations dashboard', () => {
   let router: Router;
   let http: HttpTestingController;
@@ -87,17 +123,21 @@ describe('Trading operations dashboard', () => {
 
   afterEach(() => localStorage.clear());
 
-  it('opens at /reporting with a place for every audit report, and loads nothing yet', async () => {
+  it('opens at /reporting with every audit report live, loading only stuck orders until the filter is set', async () => {
     const { el } = await open('/reporting', TradingOpsDashboardComponent);
 
     expect(router.url).toBe('/reporting');
     expect(el.querySelector('h1')!.textContent).toContain('Order Audit');
     expect(panelTitles(el)).toEqual(['Order audit log', 'Rejections by reason', 'Stuck orders']);
-    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(2);
-    expect(el.querySelector('.panel-body')!.textContent).toContain('time period and a client id or email');
+    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(0);
+    expect(panelBody(el, 'Order audit log')).toContain('time period and a client id or email');
+    expect(panelBody(el, 'Rejections by reason')).toContain('Enter a time period');
     expect(Array.from(el.querySelectorAll('.stat-label')).map(l => l.textContent))
       .toEqual(['Orders submitted', 'Filled', 'Rejected', 'Awaiting execution']);
+    expect(orderCounts(el)).toEqual(['—', '—', '—', '—']);
+    expect(text(el.querySelector('[data-testid="counts-hint"]')!)).toContain('time period and a client id or email');
     expect(text(el.querySelector('[data-testid="filter-summary"]')!)).toBe('Showing all orders.');
+    http.expectOne(STUCK_URL);
     http.expectNone(() => true);
   });
 
@@ -138,13 +178,16 @@ describe('Trading operations dashboard', () => {
     expect(trace.querySelector('.back-link')!.getAttribute('href')).toBe('/reporting?symbol=AAPL');
   });
 
-  it('retraces an order through every step with a place for each timestamp and ledger', async () => {
+  it('retraces an order through every step, loading its records once', async () => {
     const { el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
 
     expect(el.querySelector('[data-testid="lifecycle-order-id"]')!.textContent).toContain(ORDER_ID);
     expect(el.querySelectorAll('[data-testid="lifecycle-stage"]').length).toBe(8);
     expect(panelTitles(el)).toEqual(['Order summary', 'Lifecycle timeline', 'Executions', 'Cash entries', 'Position movements']);
+    expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(0);
+    expect(el.querySelectorAll('.panel-body .loading').length).toBe(4);
     expect(el.querySelector('[role="alert"]')).toBeNull();
+    http.expectOne(RECORDS_URL);
     http.expectNone(() => true);
   });
 
@@ -174,12 +217,76 @@ describe('Trading operations dashboard', () => {
     expect(el.querySelector('[role="alert"]')!.textContent).toContain('No order has this id.');
   });
 
-  it('explains when the address does not hold an order id', async () => {
+  it('explains when the address does not hold an order id, and looks nothing up', async () => {
     const { el } = await open('/reporting/orders/not-an-order', OrderLifecycleComponent);
 
     expect(el.querySelector('[role="alert"]')!.textContent).toContain("isn't an order id");
     expect(el.querySelector('app-lifecycle-timeline')).toBeNull();
     expect(el.querySelector('[data-testid="lifecycle-download"]')).toBeNull();
+    http.expectNone(() => true);
+  });
+
+  it("shows the order's summary, executions, cash entries and position movements", async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+
+    http.expectOne(RECORDS_URL).flush(records());
+    harness.detectChanges();
+
+    expect(orderSummary(el)).toBe(
+      'Client alice@leap.com Account ACC-1001 Order BUY 10 AAPL Type Market Submitted (UTC) 2026-10-02 10:00:00 '
+      + 'Fill price $150.05 Status Filled');
+    expect(rowCells(el, 'execution-row')).toEqual([
+      ['2026-10-02 10:00:01.500', 'Filled', '10', '$150.05', 'Executed at market price']
+    ]);
+    expect(rowCells(el, 'cash-entry-row')).toEqual([['2026-10-02 10:00:01.600', 'BUY_SETTLEMENT', '-$1,500.50']]);
+    expect(el.querySelector('[data-testid="cash-entry-row"] .amount')!.classList.contains('text-loss')).toBe(true);
+    expect(rowCells(el, 'position-movement-row')).toEqual([['2026-10-02 10:00:01.700', 'BUY_FILL', '+10', '+$1,500.50']]);
+  });
+
+  it('says "No data available" in each ledger the order left nothing in, and names a rejection', async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+    const rejected = records();
+    rejected.order = { ...rejected.order, summary: { ...rejected.order.summary, status: 'REJECTED' },
+      rejectionReason: 'Insufficient cash', filledAt: null };
+    rejected.executions = [{ executionId: 'e-2', status: 'REJECTED', fillQuantity: null, fillPrice: null,
+      executedAt: '2026-10-02T10:00:01Z', reason: 'Insufficient cash' }];
+    rejected.cashEntries = [];
+    rejected.positionMovements = [];
+
+    http.expectOne(RECORDS_URL).flush(rejected);
+    harness.detectChanges();
+
+    expect(orderSummary(el)).toContain('Fill price — Status Rejected Rejection reason Insufficient cash');
+    expect(rowCells(el, 'execution-row')).toEqual([['2026-10-02 10:00:01.000', 'Rejected', '—', '—', 'Insufficient cash']]);
+    expect(panelBody(el, 'Cash entries')).toBe('No data available');
+    expect(panelBody(el, 'Position movements')).toBe('No data available');
+  });
+
+  it('says when no order has the id, without offering a retry that cannot help', async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+
+    http.expectOne(RECORDS_URL).flush({ message: 'Order not found' }, { status: 404, statusText: 'Not Found' });
+    harness.detectChanges();
+
+    expect(panelBody(el, 'Order summary')).toBe('No order has this id.');
+    expect(panelBody(el, 'Executions')).toBe('No order has this id.');
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("shows an error with a retry in each panel when the order's records fail to load", async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+
+    http.expectOne(RECORDS_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    harness.detectChanges();
+    const alerts = el.querySelectorAll('[role="alert"]');
+    expect(alerts.length).toBe(4);
+    expect(alerts[0].textContent).toContain("Couldn't load this order's records.");
+
+    (alerts[2].querySelector('button') as HTMLButtonElement).click();
+    http.expectOne(RECORDS_URL).flush(records());
+    harness.detectChanges();
+    expect(el.querySelector('[role="alert"]')).toBeNull();
+    expect(el.querySelectorAll('[data-testid="execution-row"]').length).toBe(1);
   });
 
   it('looks no orders up until the filter has a period and a client', async () => {
@@ -187,7 +294,8 @@ describe('Trading operations dashboard', () => {
 
     expect(el.querySelector('app-trade-reconstruction')).toBeNull();
     expect(el.querySelector('.panel-body')!.textContent).toContain('time period and a client id or email');
-    // Nothing is looked up (or logged) until the filter can be searched.
+    // Nothing is looked up (or logged) until the filter can be searched; stuck orders don't use it.
+    http.expectOne(STUCK_URL);
     http.expectNone(() => true);
   });
 
@@ -227,6 +335,149 @@ describe('Trading operations dashboard', () => {
       .flush({ message: 'Give a client id or client email to search' }, { status: 400, statusText: 'Bad Request' });
     harness.detectChanges();
     expect(el.querySelector('[role="alert"]')!.textContent).toContain('Give a client id or client email to search');
+  });
+
+  it('counts the orders the audit filter finds in the tiles, loading then filled', async () => {
+    const { harness, el } = await open(`${FILTERED}&symbol=AAPL`, TradingOpsDashboardComponent);
+
+    expect(el.querySelectorAll('[data-testid="stat-loading"]').length).toBe(4);
+    expect(el.querySelector('[data-testid="order-counts"]')!.getAttribute('aria-busy')).toBe('true');
+    const request = http.expectOne(request => request.url === COUNTS_URL);
+    // The same criteria as the audit log, so the tiles match the table.
+    const search = http.expectOne(request => request.url === '/api/order/ops/orders');
+    expect(request.request.params.toString()).toBe(search.request.params.toString());
+    request.flush({ submitted: 1234, filled: 1100, rejected: 34, awaitingExecution: 100 });
+    harness.detectChanges();
+
+    expect(el.querySelectorAll('[data-testid="stat-loading"]').length).toBe(0);
+    expect(orderCounts(el)).toEqual(['1,234', '1,100', '34', '100']);
+    expect(el.querySelector('[data-testid="counts-hint"]')).toBeNull();
+  });
+
+  it('shows 0 in the tiles when no orders match', async () => {
+    const { harness, el } = await open(FILTERED, TradingOpsDashboardComponent);
+
+    http.expectOne(request => request.url === COUNTS_URL).flush({ submitted: 0, filled: 0, rejected: 0, awaitingExecution: 0 });
+    harness.detectChanges();
+
+    expect(orderCounts(el)).toEqual(['0', '0', '0', '0']);
+  });
+
+  it('shows dashes and a retry when the counts fail, and counts again on retry', async () => {
+    const { harness, el } = await open(FILTERED, TradingOpsDashboardComponent);
+
+    http.expectOne(request => request.url === COUNTS_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    harness.detectChanges();
+    expect(orderCounts(el)).toEqual(['—', '—', '—', '—']);
+    const error = el.querySelector('.stats-error')!;
+    expect(error.getAttribute('role')).toBe('alert');
+    expect(error.textContent).toContain("Couldn't count the orders");
+
+    (error.querySelector('button') as HTMLButtonElement).click();
+    http.expectOne(request => request.url === COUNTS_URL).flush({ submitted: 2, filled: 1, rejected: 1, awaitingExecution: 0 });
+    harness.detectChanges();
+    expect(orderCounts(el)).toEqual(['2', '1', '1', '0']);
+    expect(el.querySelector('.stats-error')).toBeNull();
+  });
+
+  it("groups the period's rejections by reason across every client", async () => {
+    const { harness, el } = await open(`${FILTERED}&symbol=AAPL`, TradingOpsDashboardComponent);
+
+    const request = http.expectOne(request => request.url === REJECTIONS_URL);
+    expect(request.request.params.keys().sort()).toEqual(['from', 'to']);
+    expect(request.request.params.get('from')).toBe(new Date('2026-10-01T09:00').toISOString());
+    expect(request.request.params.get('to')).toBe(new Date('2026-10-08T17:31').toISOString());
+    request.flush([
+      { reason: 'Insufficient cash', count: 1200, lastRejectedAt: '2026-10-05T10:00:01Z' },
+      { reason: null, count: 1, lastRejectedAt: '2026-10-04T09:00:00Z' }
+    ]);
+    harness.detectChanges();
+
+    expect(rowCells(el, 'rejection-row')).toEqual([
+      ['Insufficient cash', '1,200', '2026-10-05 10:00:01'],
+      ['No reason recorded', '1', '2026-10-04 09:00:00']
+    ]);
+  });
+
+  it('labels rejections and stuck orders as covering every client, whatever the client filter', async () => {
+    const scope = (el: HTMLElement, title: string) => text(Array.from(el.querySelectorAll('app-report-panel'))
+      .find(panel => panel.querySelector('h2')!.textContent!.trim() === title)!
+      .querySelector('[data-testid="panel-scope"]') as HTMLElement);
+
+    const { harness, el } = await open('/reporting', TradingOpsDashboardComponent);
+    expect(scope(el, 'Rejections by reason')).toBe('All clients');
+    expect(scope(el, 'Stuck orders')).toBe('All clients · Right now');
+
+    await harness.navigateByUrl(FILTERED);
+    expect(scope(el, 'Rejections by reason')).toBe('All clients · 1 Oct 2026 09:00 – 8 Oct 2026 17:30');
+    expect(scope(el, 'Stuck orders')).toBe('All clients · Right now');
+    // The audit log and the tiles follow the filters, so only these two panels are labelled.
+    expect(el.querySelectorAll('[data-testid="panel-scope"]').length).toBe(2);
+  });
+
+  it('reloads rejections only when the period changes', async () => {
+    const { harness, el } = await open(FILTERED, TradingOpsDashboardComponent);
+    http.expectOne(request => request.url === REJECTIONS_URL).flush([]);
+    const component = harness.fixture.debugElement.query(By.directive(TradingOpsDashboardComponent))
+      .componentInstance as TradingOpsDashboardComponent;
+
+    component.applyFilters({ ...component.filters.value(), symbol: 'MSFT' });
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    http.expectNone(request => request.url === REJECTIONS_URL);
+
+    component.applyFilters({ ...component.filters.value(), from: '2026-10-02T09:00' });
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    http.expectOne(request => request.url === REJECTIONS_URL).flush([]);
+    harness.detectChanges();
+    expect(panelBody(el, 'Rejections by reason')).toBe('No data available');
+  });
+
+  it('shows an error with a retry when rejections fail to load', async () => {
+    const { harness, el } = await open(FILTERED, TradingOpsDashboardComponent);
+
+    http.expectOne(request => request.url === REJECTIONS_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    harness.detectChanges();
+    expect(panelBody(el, 'Rejections by reason')).toContain("Couldn't load rejections by reason.");
+
+    harness.fixture.debugElement.query(By.directive(TradingOpsDashboardComponent)).componentInstance.retryRejections();
+    http.expectOne(request => request.url === REJECTIONS_URL).flush([]);
+    harness.detectChanges();
+    expect(panelBody(el, 'Rejections by reason')).toBe('No data available');
+  });
+
+  it('lists stuck orders oldest first with how long each has waited, each tracing to its lifecycle', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-10-08T14:00:00Z'));
+    const { harness, el } = await open('/reporting', TradingOpsDashboardComponent);
+    expect(panelBody(el, 'Stuck orders')).toBe('');
+    expect(el.querySelectorAll('.panel-body .loading').length).toBe(1);
+
+    http.expectOne(STUCK_URL).flush([{
+      orderId: ORDER_ID, submittedAt: '2026-10-08T13:48:00Z', clientEmail: 'alice@leap.com', accountNumber: 'ACC-1001',
+      symbol: 'AAPL', side: 'BUY', quantity: 10, status: 'ACCEPTED'
+    }]);
+    harness.detectChanges();
+
+    expect(rowCells(el, 'stuck-order-row')).toEqual([
+      ['2026-10-08 13:48:00', '12 min', 'alice@leap.com', 'BUY 10 AAPL', 'Accepted', 'Trace']
+    ]);
+    expect(el.querySelector('[data-testid="stuck-order-row"] a')!.getAttribute('href')).toBe(`/reporting/orders/${ORDER_ID}`);
+  });
+
+  it('says "No data available" when nothing is stuck, and retries stuck orders that fail to load', async () => {
+    const { harness, el } = await open('/reporting', TradingOpsDashboardComponent);
+
+    http.expectOne(STUCK_URL).flush({ message: 'database down' }, { status: 503, statusText: 'Unavailable' });
+    harness.detectChanges();
+    expect(panelBody(el, 'Stuck orders')).toBe('database down Try again');
+
+    const panel = Array.from(el.querySelectorAll('app-report-panel'))
+      .find(p => p.querySelector('h2')!.textContent!.trim() === 'Stuck orders')!;
+    (panel.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    http.expectOne(STUCK_URL).flush([]);
+    harness.detectChanges();
+    expect(panelBody(el, 'Stuck orders')).toBe('No data available');
   });
 });
 

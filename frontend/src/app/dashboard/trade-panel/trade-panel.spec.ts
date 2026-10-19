@@ -413,8 +413,8 @@ describe('TradePanelComponent order confirmation', () => {
   describe('order types', () => {
     beforeEach(() => loadProfile('ADVANCED'));
 
-    function typeButton(label: string): HTMLButtonElement {
-      const found = Array.from<HTMLButtonElement>(fixture.nativeElement.querySelectorAll('.types .type'))
+    function typeButton(label: string): HTMLLabelElement {
+      const found = Array.from<HTMLLabelElement>(fixture.nativeElement.querySelectorAll('.types .type'))
         .find(b => b.textContent?.trim() === label);
       if (!found) throw new Error(`Missing order type: ${label}`);
       return found;
@@ -440,7 +440,8 @@ describe('TradePanelComponent order confirmation', () => {
       const labels = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('.types .type'))
         .map(b => b.textContent?.trim());
       expect(labels).toEqual(['Market', 'Limit', 'Stop', 'Stop limit', 'Trailing stop']);
-      expect(typeButton('Market').getAttribute('aria-checked')).toBe('true');
+      expect(typeButton('Market').querySelector('input')!.checked).toBe(true);
+      expect(typeButton('Limit').querySelector('input')!.checked).toBe(false);
       expect(fixture.nativeElement.querySelector('#trade-limit')).toBeNull();
     });
 

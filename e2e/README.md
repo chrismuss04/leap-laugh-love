@@ -73,6 +73,48 @@ point iam-app at it (`SPRING_MAIL_HOST`/`SPRING_MAIL_PORT`); tests that register
 - Every test fails on uncaught page errors and unexpected `console.error`. A test that makes a
   request fail on purpose lists it with `test.use({ allowedConsoleErrors: [/pattern/] })`.
 
+## Market hours tests
+
+The normal stack runs with market hours off (`docker-compose.e2e.yml` sets `MARKET_HOURS_MODE:
+ALWAYS_OPEN`), so market orders fill at any hour. Behaviour outside regular trading - queued market
+orders, extended-hours limit orders, stops waiting for the open, frozen and thin prices - needs a
+stack pinned to one session, so those specs live in `tests/market-hours/` with a config of their own
+(`playwright.market-hours.config.ts`, `npm run test:market-hours`). The main `npm test` skips them.
+
+Each spec file applies to one session and **skips itself on any other**, saying what it needed, so
+running against the wrong stack is harmless:
+
+| Spec | Stack pinned to | Covers |
+| --- | --- | --- |
+| `after-hours.spec.ts` | `AFTER_HOURS` (or `PRE_MARKET`) | Header pill and hours card, wider spread, a market order queued, extended-hours limit fills, a limit without it waits, stops flagged |
+| `closed.spec.ts` | `CLOSED`, for a few minutes | Frozen prices with live quotes, queueing with the 5% collar and the cash held, cancelling, the collar affordability check, limit orders waiting |
+| `opening.spec.ts` | `CLOSED`, opening within 15 minutes | A queued market order fills when the market opens, and the client is emailed (needs Mailpit) |
+
+Start the stack with the E2E seed and a pinned session, then run the suite:
+
+```bash
+# Docker: E2E_MARKET_HOURS_MODE=REAL turns market hours on; the force variables pin the session.
+export E2E_MARKET_HOURS_MODE=REAL MARKET_HOURS_FORCE_SESSION=AFTER_HOURS
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --build
+cd e2e && npm run test:market-hours
+
+# Then the closed session, which opens after 5 minutes (restart so the countdown starts afresh):
+export MARKET_HOURS_FORCE_SESSION=CLOSED MARKET_HOURS_FORCE_MINUTES=5
+docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --force-recreate order-app market-data-app
+cd e2e && npm run test:market-hours
+```
+
+Without Docker: `.\scripts\start-local.ps1 -MarketSession AFTER_HOURS`, then `.\e2e\scripts\seed-local.ps1`
+and `npm run test:market-hours`; for the closed run, `-MarketSession CLOSED -MarketOpensInMinutes 5`.
+Without Docker there is no Mailpit, so the email check at the end of `opening.spec.ts` fails.
+
+`closed.spec.ts` has to finish inside the minutes the stack is closed for (about a minute of
+testing), after which `opening.spec.ts` waits for the open. The two services each count their
+minutes from their own start, so they can disagree for a few seconds. Opening gaps are capped at 3%,
+inside the 5% collar, so the queued order always fills.
+
+These specs are not part of the Jenkins `E2E` stage.
+
 ## CI
 
 The Jenkins `E2E` stage starts the `frontend` service next to the backend and runs the suite in

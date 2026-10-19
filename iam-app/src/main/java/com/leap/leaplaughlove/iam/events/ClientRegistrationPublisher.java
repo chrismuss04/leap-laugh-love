@@ -28,6 +28,11 @@ public class ClientRegistrationPublisher {
         this.topic = topic;
     }
 
+    /**
+     * Sends a registration to Kafka once its transaction has committed. Does nothing unless
+     * {@code reporting.registrations.enabled} is true. Failures are logged and swallowed.
+     * @param event the committed registration
+     */
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void publish(ClientRegistrationEvent event) {
         if (!enabled) return;

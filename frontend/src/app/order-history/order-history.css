@@ -197,3 +197,9 @@
 .status-badge[data-status='OPEN'] { background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--primary); }
 .status-badge[data-status='SUBMITTED'],
 .status-badge[data-status='ACCEPTED'] { background: var(--info-muted); color: var(--info); }
+
+/* Rows open and close with Enter or Space too, so show where the keyboard is. */
+.order-row:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
