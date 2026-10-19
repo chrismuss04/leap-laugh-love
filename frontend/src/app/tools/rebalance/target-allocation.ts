@@ -1,7 +1,7 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Allocation, CASH_COLOR, DonutSlice, SLICE_PALETTE } from './allocation';
 import {
-  WHOLE, addSlice, boundarySides, dragBoundary, equalWeight, formatTarget, moveBoundary, removeSlice, setTarget,
+  addSlice, boundarySides, dragBoundary, equalWeight, formatTarget, moveBoundary, removeSlice, setTarget,
   targetsFromShares
 } from './targets';
 
@@ -250,10 +250,9 @@ export class TargetAllocation {
     return true;
   }
 
+  /** Targets matching the current shares; an account worth nothing splits evenly, so the ring is still whole. */
   private currentTargets(): number[] {
     const shares = this.shares();
-    const targets = targetsFromShares(this.keys().map(key => shares[key] ?? 0));
-    // An account worth nothing still has a ring: all of it in its one slice.
-    return targets.reduce((a, b) => a + b, 0) === WHOLE ? targets : this.keys().map((_, i) => (i === 0 ? WHOLE : 0));
+    return targetsFromShares(this.keys().map(key => shares[key] ?? 0));
   }
 }

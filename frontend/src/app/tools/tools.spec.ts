@@ -20,6 +20,7 @@ import { OrderService, OrderStatus, OrderSubmissionRequest, OrderSubmissionRespo
 import { MarketStatusService } from '../services/market-status';
 import { ToolsComponent as ToolsPage } from './tools';
 import { SKIPPED_MESSAGE, UNKNOWN_MESSAGE } from './plan-submission';
+import { RebalanceToolComponent } from './rebalance/rebalance-tool';
 
 describe('Trading Tools', () => {
   const position = (symbol: string, quantity: number) =>
@@ -442,7 +443,8 @@ describe('Trading Tools', () => {
       typeTarget('AAPL', '80');
       expect(trades()).toEqual(['↑ Buy 3 AAPL ≈ $450']);
 
-      // One drag step to 30%, with no time allowed to pass before checking.
+      // One drag step to 35%, with no time allowed to pass before checking. (Not 30%: exactly half a
+      // turn from 80% is a tie between the two ways round, which float noise would decide.)
       const donut = el().querySelector('app-allocation-donut')!;
       const svg = donut.querySelector('svg')!;
       const knob = donut.querySelector('.handle')!;
@@ -454,10 +456,11 @@ describe('Trading Tools', () => {
         return { clientX: box.left + width / 2 + Math.sin(angle) * 100, clientY: box.top + height / 2 - Math.cos(angle) * 100 };
       };
       knob.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(800) }));
-      svg.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(300) }));
+      svg.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(350) }));
       harness.detectChanges();
-      expect(trades()).toEqual(['↓ Sell 5 AAPL ≈ $750']);
-      svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(300) }));
+      // 35% of 2,500 is 5.8 shares: sell 4 of the 10, at the 149.90 bid.
+      expect(trades()).toEqual(['↓ Sell 4 AAPL ≈ $600']);
+      svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(350) }));
     });
 
     it("shows each slice's trade as a badge beside its label", async () => {
@@ -634,6 +637,40 @@ describe('Trading Tools', () => {
       expect(plan().orders().map(o => [o.source, o.side, o.symbol, o.quantity])).toEqual([['rebalance', 'BUY', 'NVDA', 1]]);
     });
 
+    it('closes the search with Escape, the button again, or a click elsewhere', async () => {
+      await search('NV');
+      const panel = () => q('[data-testid="add-stock-panel"]');
+      panel()!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      harness.detectChanges();
+      expect(panel()).toBeNull();
+      expect(document.activeElement).toBe(q('[data-testid="add-stock"]'));
+
+      await search('NV');
+      q<HTMLButtonElement>('[data-testid="add-stock"]')!.click();
+      harness.detectChanges();
+      expect(panel()).toBeNull();
+
+      await search('NV');
+      panel()!.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      harness.detectChanges();
+      expect(panel()).not.toBeNull();
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+      harness.detectChanges();
+      expect(panel()).toBeNull();
+    });
+
+    it("won't add a stock it can't, or put nothing in the plan", async () => {
+      const tool = harness.fixture.debugElement.query(By.directive(RebalanceToolComponent)).componentInstance as RebalanceToolComponent;
+      tool.addStock('SPX', 'S&P 500');
+      tool.addStock('AAPL', null);
+      expect(tool.targets.keys()).toEqual(['AAPL', 'cash']);
+      tool.addToPlan();
+      expect(plan().orders()).toEqual([]);
+
+      tool.addStock('NVDA', null);
+      expect(tool.targets.added()).toEqual([{ symbol: 'NVDA', name: 'NVDA' }]);
+    });
+
     it('drops added stocks on another account', async () => {
       await add('NVDA');
       await harness.navigateByUrl('/tools/rebalance?account=a2');
@@ -641,6 +678,18 @@ describe('Trading Tools', () => {
       expect(target('NVDA')).toBeNull();
       expect(target('MSFT')).not.toBeNull();
     });
+  });
+
+  it("marks a held stock that isn't priced yet as Owned in the search", async () => {
+    holdingsApi.getHoldings.mockReturnValue(of({
+      accounts: [{ accountId: 'a1', accountNumber: 'ACC-0001', baseCurrency: 'USD', positions: [position('AAPL', 10), position('ZZZ', 1)] }]
+    }));
+    balanceApi.getBalance.mockReturnValue(of(balances(['a1'])));
+    await open('/tools/rebalance?account=a1');
+    const tool = harness.fixture.debugElement.query(By.directive(RebalanceToolComponent)).componentInstance as RebalanceToolComponent;
+    expect(tool.unavailable('ZZZ')).toBe('Owned');
+    expect(tool.unavailable('AAPL')).toBe('In donut');
+    expect(tool.unavailable('NVDA')).toBeNull();
   });
 
   it("opens Add stock from an empty account's prompt, funding the stock from cash", async () => {
