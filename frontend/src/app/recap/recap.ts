@@ -115,15 +115,22 @@ export class RecapComponent implements OnInit {
   }
 
   onStageKey(event: KeyboardEvent): void {
-    if (event.key === 'ArrowRight') {
-      event.preventDefault();
-      this.next();
-    } else if (event.key === 'ArrowLeft') {
-      event.preventDefault();
-      this.prev();
-    } else if (event.key === ' ') {
-      event.preventDefault();
-      this.togglePause();
+    switch (event.key) {
+      case 'ArrowRight':
+        event.preventDefault();
+        this.next();
+        break;
+      case 'ArrowLeft':
+        event.preventDefault();
+        this.prev();
+        break;
+      case ' ':
+        event.preventDefault();
+        this.togglePause();
+        break;
+      default:
+        // Any other key keeps its usual behaviour, such as Tab moving focus.
+        break;
     }
   }
 
