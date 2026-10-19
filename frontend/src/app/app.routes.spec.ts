@@ -102,6 +102,8 @@ describe('App routes', () => {
     // Trading Tools: in the header, and in the profile menu for phones.
     expect(urls.filter(url => url === '/tools')).toHaveLength(2);
     expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
+    // The header link and the profile menu's, which covers narrow screens.
+    expect(urls.filter(url => url === '/recap')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
     }

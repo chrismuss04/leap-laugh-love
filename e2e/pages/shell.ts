@@ -26,6 +26,11 @@ export class Shell {
     return this.nav.getByRole('link', { name, exact: true });
   }
 
+  /** The Recap link; its name is "Recap (new)" until this browser opens last month's recap. */
+  get recapLink(): Locator {
+    return this.nav.getByRole('link', { name: /^Recap/ });
+  }
+
   async expectSignedInAs(fullName: string): Promise<void> {
     await expect(this.profileButton).toContainText(fullName);
   }

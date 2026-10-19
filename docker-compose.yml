@@ -133,6 +133,8 @@ services:
       SPRING_DATASOURCE_USERNAME: paysprint
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      # Monthly recaps price positions from market data's daily candles.
+      MARKET_DATA_BASE_URL: http://market-data-app:8083
 
   # Angular dev server with hot reload. Runs straight off the node image rather than a
   # Dockerfile, so there is nothing to rebuild when frontend code changes.
@@ -308,6 +310,7 @@ services:
       - ./iam-app/src/main/resources/db/seed_sp500_trading.sql:/docker-entrypoint-initdb.d/06-seed-sp500-trading.sql:ro
       # 08 so it runs after every other seed, E2E's 07 included.
       - ./iam-app/src/main/resources/db/seed_reporting.sql:/docker-entrypoint-initdb.d/08-seed-reporting.sql:ro
+      - ./iam-app/src/main/resources/db/seed_reporting_sectors.sql:/docker-entrypoint-initdb.d/09-seed-reporting-sectors.sql:ro
 
 volumes:
   db_data:

@@ -70,6 +70,22 @@
   background: var(--muted);
 }
 
+/* A recap this browser hasn't opened yet. */
+.nav-link.is-new {
+  position: relative;
+}
+
+.nav-link.is-new::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
 .header-right {
   margin-left: auto;
   display: flex;
@@ -208,6 +224,18 @@
 
 .menu-item:hover {
   background: var(--surface-hover);
+}
+
+.menu-item .pill {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-radius: 99px;
+  padding: 2px 8px;
 }
 
 .menu-item.danger {

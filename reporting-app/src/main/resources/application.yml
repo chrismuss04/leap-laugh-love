@@ -8,7 +8,25 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:changeme}
     hikari:
       # Reports only ever read; a read-only connection makes an accidental write fail loudly.
+      # Recaps write through a separate small pool (see RecapDataSourceConfig).
       read-only: true
+
+# Recaps value positions at daily closes from the market data service.
+marketdata:
+  client:
+    base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}
+    connect-timeout-ms: 2000
+    read-timeout-ms: 5000
+
+reporting:
+  recap:
+    # Monthly recaps: built at 00:30 UTC on the 1st for the month that ended, and caught up
+    # every 5 minutes (first check a minute after startup) while last month has none.
+    enabled: true
+    cron: "0 30 0 1 * *"
+    catch-up-initial-delay-ms: 60000
+    catch-up-delay-ms: 300000
+    write-pool-size: 2
 
 app:
   jwt:

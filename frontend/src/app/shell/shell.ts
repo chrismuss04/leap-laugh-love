@@ -4,6 +4,7 @@ import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { AuthService } from '../services/auth.service';
 import { ClientProfile, ProfileService } from '../services/profile';
 import { PriceStreamService } from '../services/price-stream';
+import { RecapService } from '../services/recap';
 import { MarketStatusComponent } from './market-status/market-status';
 // Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
 import { SessionActivityService } from '../services/session-activity';
@@ -39,6 +40,8 @@ export class ShellComponent implements OnInit, OnDestroy {
   private expirySubscription?: Subscription;
   private readonly profileService = inject(ProfileService);
   readonly stream = inject(PriceStreamService);
+  // Flags last month's recap in the nav until this browser opens it.
+  readonly recapUnseen = inject(RecapService).unseen;
 
   readonly initials = computed(() => {
     const name = this.profile()?.fullName ?? this.profile()?.email ?? '';
