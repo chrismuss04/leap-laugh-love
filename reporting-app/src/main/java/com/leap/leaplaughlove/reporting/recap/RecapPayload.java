@@ -57,12 +57,12 @@ public record RecapPayload(
     /**
      * The value of the month's fills.
      * @param total the sum of quantity times price over every fill, buys and sells
-     * @param perMarketDay the total spread over the month's weekdays
-     * @param marketDays the month's weekdays
+     * @param bought the value of the buy fills
+     * @param sold the value of the sell fills
      * @param filledOrders how many orders filled
      * @param accounts how many of the client's accounts traded
      */
-    public record MoneyMoved(BigDecimal total, BigDecimal perMarketDay, int marketDays, int filledOrders,
+    public record MoneyMoved(BigDecimal total, BigDecimal bought, BigDecimal sold, int filledOrders,
                              int accounts) {}
 
     /**

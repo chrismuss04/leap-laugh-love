@@ -54,7 +54,9 @@ class RecapControllerTest {
                 .andExpect(jsonPath("$.ranked").value(true))
                 .andExpect(jsonPath("$.recap.month").value("2026-09"))
                 .andExpect(jsonPath("$.recap.quiet").value(true))
-                .andExpect(jsonPath("$.recap.moneyMoved.marketDays").value(22))
+                .andExpect(jsonPath("$.recap.moneyMoved.bought").exists())
+                .andExpect(jsonPath("$.recap.moneyMoved.sold").exists())
+                .andExpect(jsonPath("$.recap.moneyMoved.marketDays").doesNotExist())
                 .andExpect(jsonPath("$.recap.topPercent").value(4))
                 .andExpect(jsonPath("$.recap.tradingReturn.dailyPnl.length()").value(30));
     }

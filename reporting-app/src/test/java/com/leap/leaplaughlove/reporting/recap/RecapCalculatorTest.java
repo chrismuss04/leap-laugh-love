@@ -85,7 +85,7 @@ class RecapCalculatorTest {
     class MoneyMoved {
 
         @Test
-        @DisplayName("sums the month's fills, buys and sells, and spreads them over its weekdays")
+        @DisplayName("sums the month's fills, buys and sells, and splits them into bought and sold")
         void totalsTheMonth() {
             List<RecapFill> fills = List.of(
                     fill("AAPL", Side.BUY, 1, "90", "2026-08-31T23:59:59Z"),          // August: not counted
@@ -98,8 +98,8 @@ class RecapCalculatorTest {
 
             assertFalse(recap.quiet());
             assertEquals(dec("1300.00"), recap.moneyMoved().total());
-            assertEquals(dec("59.09"), recap.moneyMoved().perMarketDay());
-            assertEquals(22, recap.moneyMoved().marketDays());
+            assertEquals(dec("700.00"), recap.moneyMoved().bought());
+            assertEquals(dec("600.00"), recap.moneyMoved().sold());
             assertEquals(3, recap.moneyMoved().filledOrders());
             assertEquals(2, recap.moneyMoved().accounts());
             assertEquals(2, recap.instrumentsTraded());
@@ -435,7 +435,8 @@ class RecapCalculatorTest {
         assertTrue(recap.quiet());
         assertEquals(SEP, recap.month());
         assertEquals(dec("0.00"), recap.moneyMoved().total());
-        assertEquals(dec("0.00"), recap.moneyMoved().perMarketDay());
+        assertEquals(dec("0.00"), recap.moneyMoved().bought());
+        assertEquals(dec("0.00"), recap.moneyMoved().sold());
         assertTrue(recap.topTickers().isEmpty());
         assertNull(recap.topGainer());
         assertNull(recap.tradingReturn().returnPct());
@@ -510,12 +511,5 @@ class RecapCalculatorTest {
 
         assertEquals(4, ranked.topPercent());
         assertEquals(recap, ranked.withTopPercent(null));
-    }
-
-    @Test
-    @DisplayName("counts a month's weekdays as its market days")
-    void marketDays() {
-        assertEquals(22, RecapCalculator.marketDays(SEP));
-        assertEquals(20, RecapCalculator.marketDays(YearMonth.of(2026, 2)));
     }
 }

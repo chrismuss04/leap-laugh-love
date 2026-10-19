@@ -11,7 +11,6 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
@@ -54,7 +53,7 @@ import java.util.stream.Collectors;
 public class RecapCalculator {
 
     /** The version of {@link RecapPayload}'s JSON shape this calculator writes. */
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     /** How many symbols the top tickers, gainers and losers lists hold. */
     static final int TOP_COUNT = 5;
@@ -126,7 +125,7 @@ public class RecapCalculator {
         return new RecapPayload(
                 month,
                 inMonth.isEmpty(),
-                moneyMoved(month, inMonth),
+                moneyMoved(inMonth),
                 topTickers(month, inMonth, prices),
                 topGainer,
                 gainers,
@@ -195,11 +194,13 @@ public class RecapCalculator {
         return symbols;
     }
 
-    private static MoneyMoved moneyMoved(YearMonth month, List<RecapFill> inMonth) {
-        BigDecimal total = sum(inMonth, RecapFill::value);
-        int marketDays = marketDays(month);
-        return new MoneyMoved(money(total), total.divide(BigDecimal.valueOf(marketDays), 2, RoundingMode.HALF_UP),
-                marketDays, inMonth.size(), (int) inMonth.stream().map(RecapFill::accountId).distinct().count());
+    private static MoneyMoved moneyMoved(List<RecapFill> inMonth) {
+        BigDecimal bought = sum(inMonth.stream().filter(fill -> fill.side() == RecapFill.Side.BUY).toList(),
+                RecapFill::value);
+        BigDecimal sold = sum(inMonth.stream().filter(fill -> fill.side() == RecapFill.Side.SELL).toList(),
+                RecapFill::value);
+        return new MoneyMoved(money(bought.add(sold)), money(bought), money(sold), inMonth.size(),
+                (int) inMonth.stream().map(RecapFill::accountId).distinct().count());
     }
 
     private static List<TickerActivity> topTickers(YearMonth month, List<RecapFill> inMonth, PriceBook prices) {
@@ -376,18 +377,6 @@ public class RecapCalculator {
 
     private static LocalDate fillDay(RecapFill fill) {
         return fill.filledAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
-    }
-
-    /** The month's weekdays, which the "per market day" figure is spread over. */
-    static int marketDays(YearMonth month) {
-        int days = 0;
-        for (int day = 1; day <= month.lengthOfMonth(); day++) {
-            DayOfWeek weekday = month.atDay(day).getDayOfWeek();
-            if (weekday != DayOfWeek.SATURDAY && weekday != DayOfWeek.SUNDAY) {
-                days++;
-            }
-        }
-        return days;
     }
 
     private static <T> BigDecimal sum(List<T> items, Function<T, BigDecimal> amount) {
