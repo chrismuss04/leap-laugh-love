@@ -239,6 +239,32 @@ describe('RecapComponent', () => {
     expect(text()).toContain('No trading return to compare in September.');
   });
 
+  it('splits a month of only sells into nothing bought and what was sold', () => {
+    const recap = recapPayload({
+      moneyMoved: { total: 4228.07, bought: 0, sold: 4228.07, filledOrders: 1, accounts: 1 }
+    });
+    recaps.latest.mockReturnValue(of(response({ recap })));
+    const component = create();
+
+    component.index.set(1);
+    fixture.detectChanges();
+    expect(text()).toContain('$0 bought · $4,228 sold');
+    expect(text()).toContain('1 filled order across 1 account');
+  });
+
+  it('fills the last card with dashes and "none" where the month had nothing to list', () => {
+    const recap = recapPayload({ topGainers: [], biggestLosers: [], instrumentsTraded: 0, topSector: null });
+    recaps.latest.mockReturnValue(of(response({ recap })));
+    const component = create();
+
+    component.index.set(5);
+    fixture.detectChanges();
+    expect(query('.lists')?.textContent?.match(/None this month/g)).toHaveLength(2);
+    const stats = Array.from((fixture.nativeElement as HTMLElement).querySelectorAll('.stat .v'))
+      .map(stat => stat.textContent?.trim());
+    expect(stats).toEqual(['0', '—']);
+  });
+
   it('says when no position gained and when the index has no prices', () => {
     const recap = recapPayload({ topGainer: null, topGainers: [], benchmark: null });
     recaps.latest.mockReturnValue(of(response({ recap })));
