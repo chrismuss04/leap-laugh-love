@@ -6,6 +6,7 @@ import { AccountSwitcherComponent } from '../dashboard/account-switcher/account-
 import { ToolsContext } from './tools-context';
 import { ACCOUNT_PARAM } from './tools-catalog';
 import { TradePlanService } from './trade-plan';
+import { BasketService } from './basket/basket';
 import { TradePlanTrayComponent } from './trade-plan-tray';
 import { PlanReviewComponent } from './plan-review';
 import { PlanSubmission } from './plan-submission';
@@ -59,7 +60,7 @@ import { PlanSubmission } from './plan-submission';
     </div>
   `,
     styleUrl: './tools.css',
-    providers: [AccountValuationService, TradePlanService, ToolsContext, PlanSubmission]
+    providers: [AccountValuationService, TradePlanService, BasketService, ToolsContext, PlanSubmission]
 })
 export class ToolsComponent implements OnInit {
   @ViewChild('switchDialog') private switchDialog?: ElementRef<HTMLElement>;
