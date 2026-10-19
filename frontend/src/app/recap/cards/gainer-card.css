@@ -1,0 +1,28 @@
+.rings { position: absolute; left: 16.67%; top: -7.55%; width: 66.67%; height: 58.33%; overflow: visible; }
+.box {
+  left: 4.6%; right: 4.6%; top: 50.2%; height: 17.9%;
+  border: 0.56cqw solid var(--recap-paper); background: var(--recap-ink);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4cqw;
+}
+.box-title { font-size: 4.4cqw; }
+.box-name { font: 800 9cqw/1 var(--recap-font-card); letter-spacing: 0.01em; }
+.result { left: 0; right: 0; top: 73.5%; display: grid; justify-items: center; gap: 2.2cqw; text-align: center; }
+.up { font: 600 4.2cqw/1 var(--recap-font-card); }
+.pct { font-size: 12.4cqw; font-variant-numeric: tabular-nums; }
+.rank { font-size: 4.3cqw; margin-top: 1.4cqw; padding: 0 6cqw; }
+.rank b { font-weight: 800; }
+.empty-note { padding: 0 8cqw; }
+
+/* Desktop: rings on the left, box and result on the right. */
+@container viewer (min-width: 640px) {
+  .rings { left: 6cqw; top: 3%; height: 94%; width: auto; aspect-ratio: 720 / 1120; }
+  .box { left: 46cqw; right: 6cqw; top: 13%; height: 33%; border-width: 0.3cqw; gap: 1.8cqw; }
+  .box-title { font-size: 2.2cqw; }
+  .box-name { font-size: 4.6cqw; }
+  .result { left: 46cqw; right: 6cqw; top: 54%; gap: 1cqw; }
+  .up { font-size: 1.9cqw; }
+  .pct { font-size: 6.4cqw; }
+  .rank { font-size: 1.9cqw; margin-top: 0.6cqw; padding: 0; }
+  .empty-note { padding: 0; }
+  .foot { left: auto; right: 3cqw; }
+}

@@ -3,6 +3,7 @@ package com.leap.leaplaughlove.reporting.security;
 import com.leap.leaplaughlove.common.security.JwtService;
 import com.leap.leaplaughlove.common.security.Role;
 import com.leap.leaplaughlove.reporting.analyst.AnalystReportService;
+import com.leap.leaplaughlove.reporting.recap.RecapService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -23,7 +24,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
- * Staff roles: reports are for commercial analysts only. Every token here has a live session in
+ * Staff roles: reports are for commercial analysts only, and monthly recaps for clients only.
+ * Every token here has a live session in
  * its own session table, so the role is the only thing that differs between them.
  */
 @SpringBootTest
@@ -32,10 +34,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class RoleAccessTest {
 
     private static final String REPORT = "/api/reporting/analyst/scorecard";
+    private static final String RECAP = "/api/reporting/recaps/latest";
 
     @Autowired private MockMvc mockMvc;
     // The reports' SQL is Postgres-only; here only who may reach them matters.
     @MockBean private AnalystReportService reports;
+    @MockBean private RecapService recaps;
     @Autowired private JwtService jwtService;
     @Autowired private JdbcTemplate jdbc;
 
@@ -70,6 +74,27 @@ class RoleAccessTest {
     void othersAreForbidden(Role role) throws Exception {
         mockMvc.perform(get(REPORT).header("Authorization", "Bearer " + tokenFor(role)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("a client can read their monthly recap")
+    void clientReadsRecap() throws Exception {
+        mockMvc.perform(get(RECAP).header("Authorization", "Bearer " + tokenFor(Role.CLIENT)))
+                .andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = Role.class, names = {"COMMERCIAL_ANALYST", "TRADING_OPERATIONS"})
+    @DisplayName("staff can't read monthly recaps")
+    void staffCantReadRecaps(Role role) throws Exception {
+        mockMvc.perform(get(RECAP).header("Authorization", "Bearer " + tokenFor(role)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    @DisplayName("a recap needs a token")
+    void recapNeedsToken() throws Exception {
+        mockMvc.perform(get(RECAP)).andExpect(status().isUnauthorized());
     }
 
     @Test

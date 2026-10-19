@@ -8,6 +8,11 @@ spring:
     username: sa
     password: ""
 
+reporting:
+  recap:
+    # No scheduled recap builds in tests: there is no market data service to price them from.
+    enabled: false
+
 app:
   jwt:
     secret: verylongsecretkeyforjwttokengenerationspecifiedhere12345

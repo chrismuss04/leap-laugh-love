@@ -1,0 +1,34 @@
+/* The cylinders fill the bottom half; the copy stays in the top 44%. */
+:host { --recap-art: url('/assets/recap/bench-narrow.webp'); }
+
+.copy { left: 8%; right: 8%; top: 6%; display: grid; gap: 3.5cqw; }
+h2 { margin: 0; font-size: 6cqw; line-height: 1.1; }
+.bench { display: grid; gap: 1.3cqw; }
+.lbl { font: 600 3.4cqw/1 var(--recap-font-card); color: rgba(238, 239, 234, 0.75); }
+.val { font-size: 8cqw; font-variant-numeric: tabular-nums; }
+.bar { height: 2.8cqw; background: rgba(238, 239, 234, 0.12); }
+.bar i {
+  display: block; height: 100%; transform-origin: left;
+  animation: grow 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--i, 0) * 70ms + 260ms);
+}
+.me .val { color: var(--recap-lime); -webkit-text-stroke: 0.3cqw var(--recap-paper); paint-order: stroke fill; }
+.me .bar i { background: var(--recap-lime); }
+.index .bar i { background: var(--recap-paper); }
+.verdict { margin: 0; font-size: 4.1cqw; line-height: 1.35; }
+.verdict b { font-weight: 800; color: var(--recap-lime); }
+
+@keyframes grow { from { transform: scaleX(0); } }
+
+/* Desktop: the cylinders rotated to fill the left; copy on the empty right. */
+@container viewer (min-width: 640px) {
+  :host { --recap-art: url('/assets/recap/bench-wide.webp'); }
+  .copy { left: 59cqw; right: 5cqw; top: 50%; transform: translateY(-50%); gap: 2.2cqw; }
+  h2 { font-size: 3cqw; white-space: nowrap; }
+  .bench { gap: 0.8cqw; }
+  .lbl { font-size: 1.5cqw; }
+  .val { font-size: 4.6cqw; }
+  .bar { height: 1.3cqw; }
+  .me .val { -webkit-text-stroke: 0.18cqw var(--recap-paper); }
+  .verdict { font-size: 1.8cqw; }
+}

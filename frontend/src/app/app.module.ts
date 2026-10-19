@@ -95,6 +95,8 @@ export const routes: Routes = [
       { path: 'accounts/:accountId', loadComponent: () => import('./accounts/accounts').then(m => m.AccountsComponent) },
       { path: 'profile', loadComponent: () => import('./profile/profile').then(m => m.ProfileComponent) },
       { path: 'settings', loadComponent: () => import('./settings/settings').then(m => m.SettingsComponent) },
+      // Monthly recap of last month's trading, from reporting-app.
+      { path: 'recap', loadComponent: () => import('./recap/recap').then(m => m.RecapComponent) },
       // Trading Tools: the hub and each tool (/tools/:tool), on the account in ?account=.
       {
         path: 'tools',
