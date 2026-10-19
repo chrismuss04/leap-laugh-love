@@ -60,6 +60,13 @@
   gap: 2cqw;
 }
 
+/* What a card says in place of a figure the month has nothing for. */
+.empty-note {
+  margin: 0;
+  font: 600 4.2cqw/1.3 var(--recap-font-card);
+  color: rgba(238, 239, 234, 0.75);
+}
+
 /* Motion: transform and opacity only. --i staggers a card's pieces. */
 [data-a] {
   animation: rise 0.46s cubic-bezier(0.2, 0.7, 0.2, 1) both;
@@ -97,6 +104,8 @@
 @keyframes draw { from { stroke-dashoffset: 1; } }
 
 @container viewer (min-width: 640px) {
+  .empty-note { font-size: 2.1cqw; }
+
   .foot {
     left: 3cqw;
     right: auto;

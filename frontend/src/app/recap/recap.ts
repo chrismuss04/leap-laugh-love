@@ -2,7 +2,7 @@ import { Component, DOCUMENT, OnInit, computed, inject, signal } from '@angular/
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { RecapResponse, RecapService } from '../services/recap';
-import { CARD_LABELS, cardsFor, monthName } from './recap-format';
+import { CARD_LABELS, RECAP_CARDS, isEmptyMonth, monthName } from './recap-format';
 import { RecapIntroCardComponent } from './cards/intro-card';
 import { RecapMoneyCardComponent } from './cards/money-card';
 import { RecapTickersCardComponent } from './cards/tickers-card';
@@ -52,7 +52,7 @@ export class RecapComponent implements OnInit {
 
   readonly cards = computed(() => {
     const response = this.response();
-    return response ? cardsFor(response.recap) : [];
+    return response && !isEmptyMonth(response.recap) ? RECAP_CARDS : [];
   });
   readonly card = computed(() => this.cards()[this.index()]);
   readonly isLast = computed(() => this.index() === this.cards().length - 1);

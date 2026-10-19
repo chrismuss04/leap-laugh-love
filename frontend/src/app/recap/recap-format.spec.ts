@@ -1,31 +1,25 @@
 import { recapPayload } from '../../testing/recap-payload';
 import {
-  benchBars, cardsFor, formatPoints, formatSignedPercentTo, formatSignedWholeMoney, formatWholeMoney, linePath,
+  benchBars, formatPoints, formatSignedPercentTo, formatSignedWholeMoney, formatWholeMoney, isEmptyMonth, linePath,
   monthName, monthShort, monthYear, plural
 } from './recap-format';
 
-describe('cardsFor', () => {
-  it('gives a full recap every card', () => {
-    expect(cardsFor(recapPayload())).toEqual(['intro', 'money', 'tickers', 'gainer', 'bench', 'tops']);
+describe('isEmptyMonth', () => {
+  it('is false for a month with trades', () => {
+    expect(isEmptyMonth(recapPayload())).toBe(false);
   });
 
-  it('leaves out the cards a recap has nothing for', () => {
-    expect(cardsFor(recapPayload({ topGainer: null, benchmark: null }))).toEqual(['intro', 'money', 'tickers', 'tops']);
+  it('is false for a month with no trades but something held that could be priced', () => {
+    expect(isEmptyMonth(recapPayload({ quiet: true }))).toBe(false);
   });
 
-  it('skips the trading cards in a quiet month that still has a return', () => {
-    const quiet = recapPayload({ quiet: true, topTickers: [], instrumentsTraded: 0, topSector: null });
-    expect(cardsFor(quiet)).toEqual(['intro', 'gainer', 'bench', 'tops']);
+  it('is false for a month with trades that couldn’t be priced', () => {
+    expect(isEmptyMonth(recapPayload({ tradingReturn: { returnPct: null, pnl: 0, dailyPnl: [] } }))).toBe(false);
   });
 
-  it('skips the benchmark when the client has no return to compare', () => {
-    const unpriced = recapPayload({ topGainer: null, tradingReturn: { returnPct: null, pnl: 0, dailyPnl: [] } });
-    expect(cardsFor(unpriced)).toEqual(['intro', 'money', 'tickers', 'tops']);
-  });
-
-  it('has nothing for a quiet month with nothing priced', () => {
+  it('is true for a month with no trades and nothing priced', () => {
     const empty = recapPayload({ quiet: true, tradingReturn: { returnPct: null, pnl: 0, dailyPnl: [] } });
-    expect(cardsFor(empty)).toEqual([]);
+    expect(isEmptyMonth(empty)).toBe(true);
   });
 });
 

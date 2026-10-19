@@ -1,6 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import { RecapTopGainer } from '../../services/recap';
-import { linePath } from '../recap-format';
+import { linePath, monthName } from '../recap-format';
 import { CountUpDirective } from '../count-up';
 import { RecapFootComponent } from './recap-foot';
 
@@ -34,12 +34,16 @@ import { RecapFootComponent } from './recap-foot';
     </svg>
     <div class="abs box" data-a style="--i:5">
       <div class="display box-title">My Top Gainer</div>
-      <div class="box-name">{{ gainer().symbol }}</div>
+      <div class="box-name">{{ gainer()?.symbol ?? '—' }}</div>
     </div>
     <div class="abs result">
-      <div class="up" data-a style="--i:7">Up</div>
-      <div class="display pct" data-a="pop" style="--i:8"
-           [appCountUp]="gainer().returnPct" [countUpFormat]="twoPlaces" [countUpDelay]="680"></div>
+      @if (gainer(); as top) {
+        <div class="up" data-a style="--i:7">Up</div>
+        <div class="display pct" data-a="pop" style="--i:8"
+             [appCountUp]="top.returnPct" [countUpFormat]="twoPlaces" [countUpDelay]="680"></div>
+      } @else {
+        <p class="empty-note" data-a style="--i:7">{{ emptyNote() }}</p>
+      }
       @if (topPercent() !== null) {
         <div class="rank" data-a style="--i:9">My overall return: top <b>{{ topPercent() }}%</b> of Leapfolio traders</div>
       }
@@ -48,9 +52,17 @@ import { RecapFootComponent } from './recap-foot';
     styleUrls: ['./card.css', './gainer-card.css']
 })
 export class RecapGainerCardComponent {
-  readonly gainer = input.required<RecapTopGainer>();
+  /** yyyy-MM */
+  readonly month = input.required<string>();
+  /** Null when none of the client's positions gained. */
+  readonly gainer = input.required<RecapTopGainer | null>();
   readonly topPercent = input<number | null>(null);
+  /** Whether the client had any position a return could be worked out for. */
+  readonly hasReturn = input(true);
 
   readonly twoPlaces = (value: number) => value.toFixed(2) + '%';
-  readonly line = computed(() => linePath(this.gainer().closes, 185, 470, 710, 300));
+  readonly line = computed(() => linePath(this.gainer()?.closes ?? [], 185, 470, 710, 300));
+  readonly emptyNote = computed(() => this.hasReturn()
+    ? `None of your positions gained in ${monthName(this.month())}.`
+    : `Nothing to rank in ${monthName(this.month())}.`);
 }

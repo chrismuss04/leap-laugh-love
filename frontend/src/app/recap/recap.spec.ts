@@ -198,6 +198,61 @@ describe('RecapComponent', () => {
     expect(query('.stage')).toBeNull();
   });
 
+  it('plays every card in a month with no trades, saying where there’s nothing to show', () => {
+    const recap = recapPayload({
+      quiet: true,
+      moneyMoved: { total: 0, bought: 0, sold: 0, filledOrders: 0, accounts: 0 },
+      topTickers: [],
+      instrumentsTraded: 0,
+      topSector: null
+    });
+    recaps.latest.mockReturnValue(of(response({ recap })));
+    const component = create();
+    const show = (card: number) => { component.index.set(card); fixture.detectChanges(); };
+
+    expect(component.cards()).toEqual(['intro', 'money', 'tickers', 'gainer', 'bench', 'tops']);
+
+    show(1);
+    expect(text()).toContain('No trades this month');
+    expect(text()).not.toContain('filled order');
+
+    show(2);
+    expect(text()).toContain('No trades in September, so no top tickers.');
+  });
+
+  it('says when nothing the client traded could be priced', () => {
+    const recap = recapPayload({
+      topGainer: null, topGainers: [], biggestLosers: [], topPercent: null,
+      tradingReturn: { returnPct: null, pnl: 0, dailyPnl: [] }
+    });
+    recaps.latest.mockReturnValue(of(response({ recap })));
+    const component = create();
+    const show = (card: number) => { component.index.set(card); fixture.detectChanges(); };
+
+    expect(component.cards()).toHaveLength(6);
+
+    show(3);
+    expect(text()).toContain('Nothing to rank in September.');
+    expect(text()).not.toContain('Leapfolio traders');
+
+    show(4);
+    expect(text()).toContain('No trading return to compare in September.');
+  });
+
+  it('says when no position gained and when the index has no prices', () => {
+    const recap = recapPayload({ topGainer: null, topGainers: [], benchmark: null });
+    recaps.latest.mockReturnValue(of(response({ recap })));
+    const component = create();
+    const show = (card: number) => { component.index.set(card); fixture.detectChanges(); };
+
+    show(3);
+    expect(text()).toContain('None of your positions gained in September.');
+
+    show(4);
+    expect(text()).toContain('Me vs the S&P 500');
+    expect(text()).toContain('The S&P 500’s move isn’t available for September.');
+  });
+
   it('shows the server’s message when prices are down, and retries', () => {
     recaps.latest.mockReturnValue(throwError(() => ({
       status: 503, error: { error: 'RECAP_UNAVAILABLE', message: 'Prices are unavailable. Try again shortly.' }

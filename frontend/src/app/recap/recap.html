@@ -33,11 +33,14 @@
             @switch (card()) {
               @case ('intro') { <app-recap-intro-card [month]="r.month" [quiet]="r.recap.quiet" /> }
               @case ('money') { <app-recap-money-card [moneyMoved]="r.recap.moneyMoved" /> }
-              @case ('tickers') { <app-recap-tickers-card [tickers]="r.recap.topTickers" /> }
-              @case ('gainer') { <app-recap-gainer-card [gainer]="r.recap.topGainer!" [topPercent]="r.recap.topPercent" /> }
+              @case ('tickers') { <app-recap-tickers-card [month]="r.month" [tickers]="r.recap.topTickers" /> }
+              @case ('gainer') {
+                <app-recap-gainer-card [month]="r.month" [gainer]="r.recap.topGainer" [topPercent]="r.recap.topPercent"
+                                       [hasReturn]="r.recap.tradingReturn.returnPct !== null" />
+              }
               @case ('bench') {
-                <app-recap-bench-card [month]="r.month" [returnPct]="r.recap.tradingReturn.returnPct!"
-                                      [benchmark]="r.recap.benchmark!" />
+                <app-recap-bench-card [month]="r.month" [returnPct]="r.recap.tradingReturn.returnPct"
+                                      [benchmark]="r.recap.benchmark" />
               }
               @case ('tops') { <app-recap-tops-card [recap]="r.recap" /> }
             }

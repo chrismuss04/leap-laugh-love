@@ -12,8 +12,12 @@ import { CountUpDirective } from '../count-up';
       <h2 class="display" data-a style="--i:0">My Trading Volume</h2>
       <div class="display big" data-a="pop" style="--i:1"
            [appCountUp]="moneyMoved().total" [countUpFormat]="wholeMoney" [countUpDelay]="190"></div>
-      <p class="sub" data-a style="--i:3"><b>{{ bought() }}</b> bought · <b>{{ sold() }}</b> sold</p>
-      <p class="meta" data-a style="--i:4">{{ orders() }} across {{ accounts() }}</p>
+      @if (moneyMoved().filledOrders > 0) {
+        <p class="sub" data-a style="--i:3"><b>{{ bought() }}</b> bought · <b>{{ sold() }}</b> sold</p>
+        <p class="meta" data-a style="--i:4">{{ orders() }} across {{ accounts() }}</p>
+      } @else {
+        <p class="sub" data-a style="--i:3">No trades this month</p>
+      }
     </div>`,
     styleUrls: ['./card.css', './money-card.css']
 })

@@ -1,6 +1,6 @@
 import { Component, computed, input } from '@angular/core';
 import { RecapTicker } from '../../services/recap';
-import { formatWholeMoney, linePath } from '../recap-format';
+import { formatWholeMoney, linePath, monthName } from '../recap-format';
 import { RecapFootComponent } from './recap-foot';
 
 /** Card 3: the symbols the client traded most, by value, each with its month as a sparkline. */
@@ -22,13 +22,18 @@ import { RecapFootComponent } from './recap-foot';
         </div>
         <div class="tx"><span class="chip display">{{ row.symbol }}</span><small>{{ row.traded }} traded</small></div>
       </div>
+    } @empty {
+      <p class="abs empty-note none" data-a style="--i:1">No trades in {{ name() }}, so no top tickers.</p>
     }
     <app-recap-foot class="foot" data-a [style.--i]="rows().length + 2" />`,
     styleUrls: ['./card.css', './tickers-card.css']
 })
 export class RecapTickersCardComponent {
+  /** yyyy-MM */
+  readonly month = input.required<string>();
   readonly tickers = input.required<RecapTicker[]>();
 
+  readonly name = computed(() => monthName(this.month()));
   readonly rows = computed(() => this.tickers().map(ticker => ({
     symbol: ticker.symbol,
     traded: formatWholeMoney(ticker.tradedValue),

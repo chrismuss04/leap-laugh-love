@@ -9,6 +9,7 @@
 .tx { position: absolute; left: 38.4%; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: flex-start; gap: 1.2cqw; }
 .tx .chip { font-size: 4.7cqw; padding: 1.1cqw 1.1cqw 0.9cqw; }
 small { font: 600 2.9cqw/1 var(--recap-font-card); color: rgba(238, 239, 234, 0.7); white-space: nowrap; }
+.none { top: 24%; left: 16.2%; right: 8%; }
 
 /* Desktop: the arcs rotated; the ranked strip sits in the empty top-left quadrant. */
 @container viewer (min-width: 640px) {
@@ -20,5 +21,6 @@ small { font: 600 2.9cqw/1 var(--recap-font-card); color: rgba(238, 239, 234, 0.
   .tx { left: 20.5cqw; flex-direction: row; align-items: center; gap: 1.2cqw; }
   .tx .chip { font-size: 2.3cqw; padding: 0.5cqw 0.6cqw 0.4cqw; }
   small { font-size: max(12px, 1.35cqw); }
+  .none { top: 22%; left: 9cqw; right: auto; width: 40cqw; }
   .foot { left: 49cqw; right: auto; }
 }

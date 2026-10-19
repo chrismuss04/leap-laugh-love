@@ -1,7 +1,19 @@
 import { RecapPayload } from '../services/recap';
 
-/** The story's cards, in order. Which ones a recap gets depends on what it has to show. */
+/** The story's cards. */
 export type RecapCard = 'intro' | 'money' | 'tickers' | 'gainer' | 'bench' | 'tops';
+
+/**
+ * The recap's cards, in order. Every one plays, whatever the month had: a card with nothing to
+ * show says so rather than being skipped. Only a month with nothing in it at all gets none (see
+ * {@link isEmptyMonth}).
+ */
+export const RECAP_CARDS: readonly RecapCard[] = ['intro', 'money', 'tickers', 'gainer', 'bench', 'tops'];
+
+/** No fills in the month and nothing held through it that could be priced. */
+export function isEmptyMonth(recap: RecapPayload): boolean {
+  return recap.quiet && recap.tradingReturn.returnPct === null;
+}
 
 export const CARD_LABELS: Record<RecapCard, string> = {
   intro: 'Intro',
@@ -11,24 +23,6 @@ export const CARD_LABELS: Record<RecapCard, string> = {
   bench: 'Versus the S&P 500',
   tops: 'The tops'
 };
-
-/**
- * The cards a recap has something for. Empty when there is nothing to recap at all: no fills in
- * the month and nothing held through it that could be priced.
- */
-export function cardsFor(recap: RecapPayload): RecapCard[] {
-  const hasReturn = recap.tradingReturn.returnPct !== null;
-  if (recap.quiet && !hasReturn) {
-    return [];
-  }
-  const cards: RecapCard[] = ['intro'];
-  if (!recap.quiet) { cards.push('money'); }
-  if (recap.topTickers.length > 0) { cards.push('tickers'); }
-  if (recap.topGainer) { cards.push('gainer'); }
-  if (recap.benchmark && hasReturn) { cards.push('bench'); }
-  cards.push('tops');
-  return cards;
-}
 
 function monthDate(month: string): Date {
   const [year, mon] = month.split('-').map(Number);
