@@ -74,6 +74,12 @@
   to { background-position: -200% 0; }
 }
 
+/* Trading Tools: a tile grows into its tool (see ToolsHubComponent.open), which skips it under reduced motion. */
+::view-transition-group(tool-expand) {
+  animation-duration: 0.32s;
+  animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skeleton { animation: none; }
   .fade-in { animation: none; }

@@ -35,6 +35,24 @@ export interface LoginResponse {
  * 
  * Handles all authentication-related HTTP calls and state management
  */
+/**
+ * Session storage keys under this prefix hold one signed-in session's page data (e.g. the Trading
+ * Tools plan), so they are cleared whenever the session ends.
+ */
+export const SESSION_DATA_PREFIX = 'session:';
+
+function clearSessionData(): void {
+  try {
+    for (const key of Object.keys(sessionStorage)) {
+      if (key.startsWith(SESSION_DATA_PREFIX)) {
+        sessionStorage.removeItem(key);
+      }
+    }
+  } catch {
+    // Storage is blocked (e.g. a privacy mode), so nothing was stored.
+  }
+}
+
 @Injectable({
   providedIn: 'root'
 })
@@ -47,6 +65,7 @@ export class AuthService implements OnDestroy {
     if (!this.getToken()) {
       this.sessionGeneration++;
       this.sessionMessage.set('You have been signed out in another tab. Please sign in again.');
+      clearSessionData();
       this.isAuthenticatedSubject.next(false);
       this.currentUserSubject.next(null);
     } else {
@@ -139,6 +158,7 @@ export class AuthService implements OnDestroy {
     localStorage.removeItem('current_user');
     localStorage.removeItem('rememberMe');
     localStorage.removeItem('session_activity');
+    clearSessionData();
     // Update authentication state
     this.isAuthenticatedSubject.next(false);
     this.currentUserSubject.next(null);

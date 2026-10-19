@@ -48,7 +48,8 @@ describe('App routes', () => {
     ['orders', 'OrderHistoryComponent', () => import('./order-history/order-history').then(m => m.OrderHistoryComponent)],
     ['holdings', 'HoldingsComponent', () => import('./holdings/holdings').then(m => m.HoldingsComponent)],
     ['profile', 'ProfileComponent', () => import('./profile/profile').then(m => m.ProfileComponent)],
-    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)]
+    ['settings', 'SettingsComponent', () => import('./settings/settings').then(m => m.SettingsComponent)],
+    ['tools', 'ToolsComponent', () => import('./tools/tools').then(m => m.ToolsComponent)]
   ];
   for (const [path, name, expected] of lazyPages) {
     it(`/${path} loads ${name} on demand`, async () => {
@@ -98,6 +99,8 @@ describe('App routes', () => {
       .map(tree => router.serializeUrl(tree!));
 
     expect(urls).toContain('/accounts');
+    // Trading Tools: in the header, and in the profile menu for phones.
+    expect(urls.filter(url => url === '/tools')).toHaveLength(2);
     expect(urls.filter(url => url === '/instruments')).toHaveLength(2);
     for (const url of urls) {
       expect(reachesPage(url), `${url} has no route`).toBe(true);
@@ -137,7 +140,8 @@ describe('Role-based routing', () => {
         expect(router.url).toBe('/reporting');
       });
 
-      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings', '/', '/nowhere']) {
+      for (const url of ['/dashboard', '/instruments', '/orders', '/holdings', '/accounts', '/profile', '/settings',
+        '/tools', '/tools/rebalance', '/tools/draw?account=a1', '/', '/nowhere']) {
         it(`is sent from ${url} to reporting`, async () => {
           await router.navigateByUrl(url);
           expect(router.url).toBe('/reporting');
@@ -202,6 +206,19 @@ describe('Role-based routing', () => {
     it('still opens trading pages', async () => {
       await router.navigateByUrl('/orders');
       expect(router.url).toBe('/orders');
+    });
+
+    // Trading Tools
+    for (const url of ['/tools', '/tools/rebalance', '/tools/raise-cash', '/tools/basket', '/tools/draw']) {
+      it(`opens ${url}`, async () => {
+        await router.navigateByUrl(url);
+        expect(router.url).toBe(url);
+      });
+    }
+
+    it('is sent from an unknown tool to the hub', async () => {
+      await router.navigateByUrl('/tools/nope');
+      expect(router.url).toBe('/tools');
     });
 
     it('lands on the dashboard from an unknown URL', async () => {
