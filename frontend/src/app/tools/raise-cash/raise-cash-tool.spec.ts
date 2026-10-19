@@ -3,8 +3,10 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Observable, of, throwError } from 'rxjs';
 import { AccountView, HoldingView } from '../../dashboard/models';
 import { OpenOrder, OrderService } from '../../services/order';
+import { AuthService } from '../../services/auth.service';
 import { PlanQuoteOffset } from '../../shared/order-plan';
 import { ToolsContext } from '../tools-context';
+import { TradePlanService } from '../trade-plan';
 import { RaiseCashToolComponent, parseAmount } from './raise-cash-tool';
 
 describe('Raise Cash tool', () => {
@@ -28,8 +30,11 @@ describe('Raise Cash tool', () => {
     error: ReturnType<typeof signal<string | null>>;
     requestQuotes: ReturnType<typeof vi.fn>;
     load: ReturnType<typeof vi.fn>;
+    plan?: TradePlanService;
   };
   let openOrders: Observable<OpenOrder[]>;
+  /** Puts orders in the tray before the tool opens, as another visit or tool would have. */
+  let seedPlan: (plan: TradePlanService) => void;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const q = <T extends Element = HTMLElement>(selector: string) => el().querySelector<T>(selector);
@@ -44,9 +49,13 @@ describe('Raise Cash tool', () => {
     TestBed.configureTestingModule({
       providers: [
         { provide: ToolsContext, useValue: context },
-        { provide: OrderService, useValue: { getOpenOrders: () => openOrders } }
+        { provide: OrderService, useValue: { getOpenOrders: () => openOrders } },
+        { provide: AuthService, useValue: { getEmail: () => 'ada@example.com' } },
+        TradePlanService
       ]
     });
+    context.plan = TestBed.inject(TradePlanService);
+    seedPlan(context.plan);
     fixture = TestBed.createComponent(RaiseCashToolComponent);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -90,7 +99,11 @@ describe('Raise Cash tool', () => {
       load: vi.fn()
     };
     openOrders = of([]);
+    seedPlan = () => undefined;
+    sessionStorage.clear();
   });
+
+  afterEach(() => sessionStorage.clear());
 
   describe('setting the amount', () => {
     it('starts at current cash with nothing to sell', async () => {
@@ -325,6 +338,81 @@ describe('Raise Cash tool', () => {
       context.account.set({ accountId: 'a1', cash: 1000 } as AccountView);
       await update();
       expect(input().value).toBe('3000.00');
+    });
+  });
+
+  describe('preview and add to plan', () => {
+    const addButton = () => testId<HTMLButtonElement>('add-to-plan')!;
+    const tray = () => context.plan!.sorted().map(o => `${o.side} ${o.quantity} ${o.symbol} (${o.source})`);
+
+    it('lists the sells with the cash raised and the new cash balance', async () => {
+      await render();
+      await strategy('losers');
+      await type('2000');
+      const preview = testId('sell-preview')!;
+      const cells = Array.from(preview.querySelector('[data-sell="MSFT"]')!.children).map(c => c.textContent!.replace(/\s+/g, ' ').trim());
+      expect(cells).toEqual(['Sell MSFT', '3', '$1,200.00', '−$300.00']);
+      expect(testId('cash-raised')!.textContent!.trim()).toBe('$1,200.00');
+      expect(testId('new-cash')!.textContent!.trim()).toBe('$2,200.00');
+    });
+
+    it('keeps the preview in step with the bar', async () => {
+      await render();
+      await strategy('winners');
+      await type('2000');
+      await press('PageUp');
+      expect(testId('cash-raised')!.textContent!.trim()).toBe('$1,200.00');
+      expect(testId('new-cash')!.textContent!.trim()).toBe('$2,200.00');
+    });
+
+    it('sends the sells to the tray tagged Raise Cash', async () => {
+      await render();
+      await strategy('winners');
+      await type('3000');
+      await click(addButton());
+      expect(context.plan!.accountId()).toBe('a1');
+      expect(tray()).toEqual(['SELL 10 AAPL (raise-cash)', 'SELL 10 NVDA (raise-cash)']);
+      expect(addButton().textContent!.trim()).toBe('In your plan');
+      expect(addButton().disabled).toBe(true);
+    });
+
+    it('replaces earlier Raise Cash trades, leaving other tools’ trades alone', async () => {
+      seedPlan = plan => {
+        plan.addPlan('rebalance', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 1 }]);
+        plan.addPlan('raise-cash', 'a1', [{ symbol: 'TSLA', side: 'SELL', quantity: 4 }]);
+      };
+      await render();
+      await strategy('winners');
+      await type('2000');
+      expect(addButton().textContent!.trim()).toBe('Update plan');
+      expect(testId('replaces')).not.toBeNull();
+
+      await click(addButton());
+      expect(tray()).toEqual(['SELL 7 AAPL (raise-cash)', 'BUY 1 MSFT (rebalance)']);
+    });
+
+    it('offers to update the plan once the amount changes', async () => {
+      await render();
+      await strategy('winners');
+      await type('2000');
+      await click(addButton());
+      await type('2500');
+      expect(addButton().textContent!.trim()).toBe('Update plan');
+      expect(addButton().disabled).toBe(false);
+    });
+
+    it('does not count another account’s Raise Cash trades as in the plan', async () => {
+      seedPlan = plan => plan.addPlan('raise-cash', 'a2', [{ symbol: 'AAPL', side: 'SELL', quantity: 7 }]);
+      await render();
+      await strategy('winners');
+      await type('2000');
+      expect(addButton().textContent!.trim()).toBe('Add to plan');
+    });
+
+    it('has nothing to add until the amount is above available cash', async () => {
+      await render();
+      expect(testId('no-sells')).not.toBeNull();
+      expect(addButton().disabled).toBe(true);
     });
   });
 

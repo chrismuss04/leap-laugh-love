@@ -6,6 +6,7 @@ import { formatMoney, formatSignedPercent } from '../../shared/format';
 import { AccountHolds, holdsByAccount } from '../../shared/order-types';
 import { ToolsContext } from '../tools-context';
 import { CashBarComponent } from './cash-bar';
+import { RaiseCashPreviewComponent } from './raise-cash-preview';
 import { SellPlan, SellStrategy, SellableHolding, planSells } from './sell-plan';
 
 export const STRATEGIES: readonly { id: SellStrategy; label: string; hint: string }[] = [
@@ -49,11 +50,12 @@ export function parseAmount(text: string): number | null {
  * Raise Cash's workspace: the client sets the cash they need, by dragging the bar, typing or the
  * quick amounts, and the sells that raise it are worked out live. Cash starts from buying power
  * (cash less what open buy orders hold), only shares not already on open sell orders are sold, and
- * sells are priced at the bid. Holdings can be locked so they're never sold.
+ * sells are priced at the bid. Holdings can be locked so they're never sold. The sells are listed
+ * under the bar and go into the trade plan tagged Raise Cash.
  */
 @Component({
   selector: 'app-raise-cash-tool',
-  imports: [CommonModule, CashBarComponent],
+  imports: [CommonModule, CashBarComponent, RaiseCashPreviewComponent],
   template: `
     <p *ngIf="state() === 'loading'" class="status" data-testid="raise-cash-loading">Loading your account…</p>
 
@@ -142,6 +144,9 @@ export function parseAmount(text: string): number | null {
           {{ listOf(p.unpriced) }} {{ p.unpriced.length === 1 ? 'has' : 'have' }} no price yet, so {{ p.unpriced.length === 1 ? 'it’s' : 'they’re' }} left out.
         </p>
       </div>
+
+      <app-raise-cash-preview *ngIf="hasHoldings()" [plan]="p" [hasPlanned]="planned().length > 0" [inPlan]="inPlan()"
+                              (add)="addToPlan()"></app-raise-cash-preview>
     </div>
   `,
   styles: [`
@@ -211,6 +216,7 @@ export function parseAmount(text: string): number | null {
     .summary strong { font-size: 16px; color: var(--foreground); font-variant-numeric: tabular-nums; }
     .limit { padding: 10px 12px; border-radius: var(--radius-md); background: var(--warning-muted); color: var(--warning); font-size: 13px; }
     .note, .empty-note { font-size: 13px; color: var(--muted-foreground); }
+    app-raise-cash-preview { grid-column: 1 / -1; }
     .empty-note { padding: 14px; border-radius: var(--radius-md); border: 1px dashed var(--border); }
     @media (prefers-reduced-motion: reduce) { .meter span { transition: none; } }
     @media (max-width: 900px) {
@@ -312,6 +318,20 @@ export class RaiseCashToolComponent implements OnInit {
     return `You can reach at most ${formatMoney(plan.maxCash)} in cash: ${why}`;
   });
 
+  /** The Raise Cash trades already in the tray, for this account. */
+  readonly planned = computed(() => {
+    const plan = this.context.plan;
+    return plan.accountId() === this.accountId() ? plan.orders().filter(o => o.source === 'raise-cash') : [];
+  });
+
+  /** Whether the tray already holds exactly these sells. */
+  readonly inPlan = computed(() => {
+    const sells = this.plan().sells;
+    const planned = this.planned();
+    const inTray = new Set(planned.map(o => `${o.side} ${o.symbol} ${o.quantity}`));
+    return sells.length > 0 && sells.length === planned.length && sells.every(s => inTray.has(`SELL ${s.symbol} ${s.quantity}`));
+  });
+
   money = formatMoney;
   listOf = listOf;
 
@@ -356,6 +376,17 @@ export class RaiseCashToolComponent implements OnInit {
 
   add(amount: number): void {
     this.requested.set(this.plan().target + amount);
+  }
+
+  /** Puts the sells in the tray tagged Raise Cash, replacing any Raise Cash trades already there. */
+  addToPlan(): void {
+    const accountId = this.accountId();
+    const sells = this.plan().sells;
+    if (!accountId || !sells.length) {
+      return;
+    }
+    this.context.plan.addPlan('raise-cash', accountId,
+      sells.map(s => ({ symbol: s.symbol, side: 'SELL' as const, quantity: s.quantity })));
   }
 
   toggleLock(symbol: string): void {
