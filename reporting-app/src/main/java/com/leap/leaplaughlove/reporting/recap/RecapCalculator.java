@@ -261,38 +261,42 @@ public class RecapCalculator {
         Map<String, List<RecapFill>> bySymbol = new LinkedHashMap<>();
         history.forEach(fill -> bySymbol.computeIfAbsent(fill.symbol(), symbol -> new ArrayList<>()).add(fill));
 
-        LocalDate dayBefore = month.atDay(1).minusDays(1);
         List<Position> positions = new ArrayList<>();
-        bySymbol.forEach((symbol, fills) -> {
-            long units = 0;
-            long startUnits = 0;
-            List<RecapFill> inMonth = new ArrayList<>();
-            for (RecapFill fill : fills) {
-                units += fill.signedQuantity();
-                if (units < 0) {
-                    return;     // sold more than it bought: the history is incomplete
-                }
-                if (fill.filledAt().isBefore(start)) {
-                    startUnits = units;
-                } else {
-                    inMonth.add(fill);
-                }
-            }
-            if (startUnits == 0 && inMonth.isEmpty()) {
-                return;         // closed out before the month began
-            }
-            Optional<BigDecimal> startPrice = prices.closeOn(symbol, dayBefore);
-            Optional<BigDecimal> endPrice = prices.closeOn(symbol, month.atEndOfMonth());
-            if ((startUnits > 0 && startPrice.isEmpty()) || (units > 0 && endPrice.isEmpty())) {
-                return;         // can't be valued
-            }
-            Position position = new Position(symbol, startUnits, startPrice.orElse(BigDecimal.ZERO), inMonth, prices,
-                    month.atEndOfMonth());
-            if (position.putIn().signum() > 0) {
-                positions.add(position);
-            }
-        });
+        bySymbol.forEach((symbol, fills) -> position(month, symbol, fills, start, prices).ifPresent(positions::add));
         return positions;
+    }
+
+    /**
+     * One symbol's position, from all its fills in order; empty when no return can honestly be
+     * given for it.
+     */
+    private static Optional<Position> position(YearMonth month, String symbol, List<RecapFill> fills,
+                                               OffsetDateTime start, PriceBook prices) {
+        long units = 0;
+        long startUnits = 0;
+        List<RecapFill> inMonth = new ArrayList<>();
+        for (RecapFill fill : fills) {
+            units += fill.signedQuantity();
+            if (units < 0) {
+                return Optional.empty();    // sold more than it bought: the history is incomplete
+            }
+            if (fill.filledAt().isBefore(start)) {
+                startUnits = units;
+            } else {
+                inMonth.add(fill);
+            }
+        }
+        if (startUnits == 0 && inMonth.isEmpty()) {
+            return Optional.empty();        // closed out before the month began
+        }
+        Optional<BigDecimal> startPrice = prices.closeOn(symbol, month.atDay(1).minusDays(1));
+        Optional<BigDecimal> endPrice = prices.closeOn(symbol, month.atEndOfMonth());
+        if ((startUnits > 0 && startPrice.isEmpty()) || (units > 0 && endPrice.isEmpty())) {
+            return Optional.empty();        // can't be valued
+        }
+        Position position = new Position(symbol, startUnits, startPrice.orElse(BigDecimal.ZERO), inMonth, prices,
+                month.atEndOfMonth());
+        return position.putIn().signum() > 0 ? Optional.of(position) : Optional.empty();
     }
 
     /** One symbol's position through the month. */
