@@ -109,7 +109,7 @@ describe('BasketToolComponent', () => {
     it('marks stocks it can\'t add, and won\'t pick them', () => {
       basket.add('AAPL', 'Apple');
       fixture.detectChanges();
-      expect(search('AAPL')[0].textContent).toContain('In basket');
+      expect(search('AAPL')[0].textContent).toContain('Already in basket');
       const index = search('SPX')[0];
       expect(index.textContent).toContain('Not tradable');
       index.click();
@@ -159,6 +159,7 @@ describe('BasketToolComponent', () => {
       fixture.detectChanges();
       expect(mover('AAPL').getAttribute('draggable')).toBe('false');
       expect(mover('AAPL').querySelector<HTMLButtonElement>('button.add')!.disabled).toBe(true);
+      expect(mover('AAPL').querySelector('.label-short')!.textContent!.trim()).toBe('Full');
       expect(search('AAPL')[0].textContent).toContain('Basket full');
 
       // A drag that was already under way when the basket filled up.
@@ -178,7 +179,11 @@ describe('BasketToolComponent', () => {
       fixture.detectChanges();
       expect(notice()).toBe('AAPL is already in your basket.');
       expect(basketSymbols()).toEqual(['AAPL']);
-      expect(mover('AAPL').querySelector('button.add')!.textContent!.trim()).toBe('In basket');
+      const button = mover('AAPL').querySelector('button.add')!;
+      expect(button.querySelector('.label-long')!.textContent!.trim()).toBe('Already in basket');
+      // Narrow screens show a short label; the button's name stays whole for screen readers.
+      expect(button.querySelector('.label-short')!.textContent!.trim()).toBe('✓ Added');
+      expect(button.getAttribute('aria-label')).toBe('AAPL: Already in basket');
     });
 
     it('asks for a second stock before the basket is ready', () => {

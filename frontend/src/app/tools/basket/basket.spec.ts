@@ -53,7 +53,7 @@ describe('BasketService', () => {
 
     it('refuses a stock that is already in the basket', () => {
       basket.add('AAPL', 'Apple');
-      expect(basket.reason('aapl')).toBe('In basket');
+      expect(basket.reason('aapl')).toBe('Already in basket');
       expect(basket.add('aapl', 'Apple')).toBe('AAPL is already in your basket.');
       expect(basket.count()).toBe(1);
     });

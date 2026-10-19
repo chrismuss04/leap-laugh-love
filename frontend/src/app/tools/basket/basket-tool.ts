@@ -83,12 +83,13 @@ export const BASKET_DRAG_TYPE = 'application/x-leap-basket-symbol';
                 <span class="symbol">{{ row.symbol }}</span>
                 <span class="name">{{ row.name }}</span>
               </span>
-              <span class="num">{{ money(row.price) }}</span>
-              <span class="num" [class.text-gain]="trend(row.changePercent) === 'gain'"
+              <span class="num m-price">{{ money(row.price) }}</span>
+              <span class="num m-change" [class.text-gain]="trend(row.changePercent) === 'gain'"
                     [class.text-loss]="trend(row.changePercent) === 'loss'">{{ percent(row.changePercent) }}</span>
               <button type="button" class="add" [disabled]="!!basket.reason(row.symbol)" (click)="add(row.symbol, row.name)"
                       [attr.aria-label]="basket.reason(row.symbol) ? row.symbol + ': ' + basket.reason(row.symbol) : 'Add ' + row.symbol + ' to basket'">
-                {{ basket.reason(row.symbol) ?? 'Add' }}
+                <span class="label-long">{{ basket.reason(row.symbol) ?? 'Add' }}</span>
+                <span class="label-short" aria-hidden="true">{{ shortLabel(basket.reason(row.symbol)) }}</span>
               </button>
             </li>
           </ol>
@@ -112,6 +113,7 @@ export const BASKET_DRAG_TYPE = 'application/x-leap-basket-symbol';
     .drop { min-height: 120px; padding: 8px; border-radius: var(--radius-md); border: 1px dashed var(--border); transition: border-color 0.15s ease, background 0.15s ease; }
     .drop.over { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 8%, transparent); }
     .empty { padding: 32px 12px; text-align: center; }
+    .rows, .mover-list { margin: 0; padding: 0; list-style: none; }
     .rows { display: flex; flex-direction: column; gap: 8px; }
     .footer { display: flex; justify-content: flex-end; }
     .link { background: none; padding: 0; font-size: 13px; font-weight: 600; color: var(--primary); }
@@ -122,7 +124,7 @@ export const BASKET_DRAG_TYPE = 'application/x-leap-basket-symbol';
     .mover-list { display: flex; flex-direction: column; gap: 4px; }
     .mover {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto 64px 92px;
+      grid-template-columns: minmax(0, 1fr) auto 64px 136px;
       align-items: center;
       gap: 10px;
       padding: 8px 10px;
@@ -135,8 +137,21 @@ export const BASKET_DRAG_TYPE = 'application/x-leap-basket-symbol';
     .symbol { font-weight: 600; color: var(--foreground); }
     .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--muted-foreground); }
     .add { padding: 5px 10px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 10%, transparent); color: var(--foreground); font-size: 12px; font-weight: 600; }
+    .add { white-space: nowrap; }
+    .label-short { display: none; }
     .add:disabled { border-color: var(--border); background: transparent; color: var(--muted-foreground); }
     @media (max-width: 900px) { .workspace { grid-template-columns: 1fr; } }
+    /* Narrow: price over change, so the name and the button keep their room. */
+    @media (max-width: 640px) {
+      .mover { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: 'stock price add' 'stock change add'; row-gap: 2px; }
+      .mover .stock { grid-area: stock; }
+      .mover .m-price { grid-area: price; }
+      .mover .m-change { grid-area: change; }
+      /* One width for every state, so the price and change line up down the list. */
+      .mover .add { grid-area: add; min-width: 76px; }
+      .label-long { display: none; }
+      .label-short { display: inline; }
+    }
     @media (prefers-reduced-motion: reduce) { .drop { transition: none; } }
   `]
 })
@@ -278,6 +293,14 @@ export class BasketToolComponent {
   cancelClear(): void {
     this.confirmingClear.set(false);
     setTimeout(() => this.clearButton()?.nativeElement.focus());
+  }
+
+  /** The mover button's label on narrow screens, where the full reason doesn't fit; the aria-label keeps it whole. */
+  shortLabel(reason: string | null): string {
+    if (reason === null) {
+      return 'Add';
+    }
+    return reason === 'Basket full' ? 'Full' : '✓ Added';
   }
 
   trackBySymbol(_index: number, row: { symbol: string }): string {

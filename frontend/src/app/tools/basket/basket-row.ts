@@ -42,6 +42,18 @@ import { BasketItem } from './basket';
     .remove { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--muted-foreground); }
     .remove:hover, .remove:focus-visible { background: var(--surface-hover); color: var(--foreground); }
     .remove svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+    /* Narrow: price over change, so the name keeps its room. */
+    @media (max-width: 640px) {
+      :host {
+        grid-template-columns: minmax(0, 1fr) auto 28px;
+        grid-template-areas: 'stock price remove' 'stock change remove';
+        row-gap: 2px;
+      }
+      .stock { grid-area: stock; }
+      .price { grid-area: price; text-align: right; }
+      .change { grid-area: change; }
+      .remove { grid-area: remove; }
+    }
   `]
 })
 export class BasketRowComponent {
