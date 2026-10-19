@@ -1,6 +1,7 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { AuthService, SESSION_DATA_PREFIX } from '../../services/auth.service';
 import { isTradable } from '../../shared/tradable';
+import { evenSplit, rescale } from './basket-split';
 
 /** One instrument in the basket. */
 export interface BasketItem {
@@ -12,6 +13,13 @@ export interface BasketItem {
 interface StoredBasket {
   owner: string;
   items: BasketItem[];
+  split?: StoredSplit;
+}
+
+/** The amount to invest and each stock's part of it, in cents, in basket order. */
+interface StoredSplit {
+  totalCents: number | null;
+  amounts: number[];
 }
 
 export const BASKET_KEY = `${SESSION_DATA_PREFIX}basket`;
@@ -41,6 +49,10 @@ export class BasketService {
   private readonly owner = inject(AuthService).getEmail() ?? '';
 
   readonly items = signal<BasketItem[]>([]);
+  /** The amount the client chose to invest, in cents; null until they enter one. */
+  readonly totalCents = signal<number | null>(null);
+  /** Each stock's part of the total, in cents, in basket order; always sums to the total. */
+  readonly amounts = signal<number[]>([]);
   /** The latest change, for a screen reader's live region. */
   readonly announcement = signal('');
 
@@ -53,7 +65,9 @@ export class BasketService {
 
   constructor() {
     this.restore();
-    effect(() => this.save({ owner: this.owner, items: this.items() }));
+    effect(() => this.save({
+      owner: this.owner, items: this.items(), split: { totalCents: this.totalCents(), amounts: this.amounts() }
+    }));
   }
 
   /** Why a symbol can't be added, in a word or two for a search result, or null when it can. */
@@ -80,6 +94,7 @@ export class BasketService {
         return `A basket holds up to ${MAX_BASKET} stocks. Remove one to add another.`;
     }
     this.items.update(items => [...items, { symbol: upper, name: name || upper }]);
+    this.resplit();
     this.announcement.set(`Added ${upper}. Your basket has ${plural(this.count())}.`);
     return null;
   }
@@ -87,6 +102,7 @@ export class BasketService {
   remove(symbol: string): void {
     if (this.symbols().includes(symbol)) {
       this.items.update(items => items.filter(item => item.symbol !== symbol));
+      this.resplit();
       this.announcement.set(`Removed ${symbol}. Your basket has ${plural(this.count())}.`);
     }
   }
@@ -96,6 +112,24 @@ export class BasketService {
       this.announcement.set('Your basket was cleared.');
     }
     this.items.set([]);
+    this.totalCents.set(null);
+    this.amounts.set([]);
+  }
+
+  /** Changes the amount to invest, keeping each stock's share of it. */
+  setTotal(cents: number | null): void {
+    this.totalCents.set(cents);
+    this.amounts.set(rescale(this.amounts(), cents ?? 0));
+  }
+
+  /** A new split of the same total, from the split bar or a typed amount. */
+  setAmounts(amounts: number[]): void {
+    this.amounts.set(amounts);
+  }
+
+  /** A stock came or went: the total is split evenly again. */
+  private resplit(): void {
+    this.amounts.set(evenSplit(this.totalCents() ?? 0, this.count()));
   }
 
   /** Picks up this client's basket from earlier in the session; anything else stored is ignored. */
@@ -114,6 +148,19 @@ export class BasketService {
       .map(item => ({ symbol: item.symbol.toUpperCase(), name: item.name }))
       .filter(item => isTradable(item.symbol) && !seen.has(item.symbol) && seen.add(item.symbol));
     this.items.set(items.slice(0, MAX_BASKET));
+    this.restoreSplit(stored.split);
+  }
+
+  /** Keeps a stored split only if it still fits the basket exactly; otherwise splits evenly. */
+  private restoreSplit(split: StoredSplit | undefined): void {
+    const total = split?.totalCents;
+    const validTotal = Number.isInteger(total) && total! >= 0 ? total! : null;
+    this.totalCents.set(validTotal);
+    const amounts = split?.amounts;
+    const fits = Array.isArray(amounts) && amounts.length === this.count()
+      && amounts.every(a => Number.isInteger(a) && a >= 0)
+      && amounts.reduce((sum, a) => sum + a, 0) === (validTotal ?? 0);
+    this.amounts.set(fits ? amounts : evenSplit(validTotal ?? 0, this.count()));
   }
 
   private save(basket: StoredBasket): void {

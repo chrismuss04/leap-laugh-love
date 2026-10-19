@@ -39,7 +39,8 @@ import { BasketItem } from './basket';
     .price { color: var(--foreground); }
     .change { text-align: right; font-size: 13px; }
     .text-flat { color: var(--muted-foreground); }
-    .remove { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--muted-foreground); }
+    /* Stays on the first line when a later story adds a line under the row. */
+    .remove { grid-row: 1; grid-column: -2; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: transparent; color: var(--muted-foreground); }
     .remove:hover, .remove:focus-visible { background: var(--surface-hover); color: var(--foreground); }
     .remove svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
     /* Narrow: price over change, so the name keeps its room. */

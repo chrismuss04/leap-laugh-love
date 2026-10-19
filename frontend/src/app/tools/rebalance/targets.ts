@@ -105,15 +105,16 @@ export function dragBoundary(targets: number[], locked: boolean[], boundary: num
 
 /**
  * Sets one slice's target (tenths, clamped to what the locked slices leave), and spreads the
- * difference over the other unlocked slices in proportion to their targets.
+ * difference over the other unlocked slices in proportion to their targets. `total` is what the
+ * targets sum to: 100% by default, or e.g. a basket's amount in cents.
  */
-export function setTarget(targets: number[], locked: boolean[], index: number, value: number): number[] {
+export function setTarget(targets: number[], locked: boolean[], index: number, value: number, total = WHOLE): number[] {
   const others = targets.map((_, i) => i).filter(i => i !== index && !locked[i]);
   if (locked[index] || others.length === 0) {
     return targets;
   }
   const lockedSum = targets.reduce((sum, t, i) => (i !== index && locked[i] ? sum + t : sum), 0);
-  const available = WHOLE - lockedSum;
+  const available = total - lockedSum;
   const own = Math.min(Math.max(Math.round(value), 0), available);
   if (own === targets[index]) {
     return targets;
