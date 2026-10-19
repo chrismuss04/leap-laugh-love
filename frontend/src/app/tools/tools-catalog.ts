@@ -21,5 +21,14 @@ export function findTool(id: string | null | undefined): ToolInfo | null {
   return TOOLS.find(tool => tool.id === id) ?? null;
 }
 
+/**
+ * Whether a click on a link is the browser's to handle (another button, or a modifier for a new tab
+ * or window) rather than one to route in place.
+ */
+export function isModifiedClick(event: MouseEvent): boolean {
+  const modified = [event.ctrlKey, event.metaKey, event.shiftKey, event.altKey].some(Boolean);
+  return modified || event.button !== 0;
+}
+
 /** The query parameter naming the account every tool acts on. */
 export const ACCOUNT_PARAM = 'account';

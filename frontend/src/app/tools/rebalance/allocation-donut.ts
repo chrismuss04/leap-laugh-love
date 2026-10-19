@@ -567,6 +567,14 @@ export class AllocationDonutComponent {
     this.targets()?.nudge(boundary, delta);
   }
 
+  /** "↑ Buy 6", "↓ Sell 4", or "None" for a slice with no trade. */
+  tradeText(trade: SliceTrade | null | undefined): string {
+    if (!trade) {
+      return 'None';
+    }
+    return `${trade.side === 'BUY' ? '↑ Buy' : '↓ Sell'} ${trade.quantity}`;
+  }
+
   isLocked(key: string): boolean {
     return this.targets()?.isLocked(key) ?? false;
   }

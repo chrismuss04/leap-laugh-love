@@ -1,6 +1,6 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { AuthService, SESSION_DATA_PREFIX } from '../services/auth.service';
-import { OrderLine } from '../shared/order-plan';
+import { OrderLine, placementOrder } from '../shared/order-plan';
 import { ToolId, findTool } from './tools-catalog';
 
 /** Which tool an order came from, or 'netted' for one the tray combined from opposite orders. */
@@ -32,6 +32,14 @@ function validQuantity(value: number): boolean {
   return Number.isInteger(value) && value >= 1;
 }
 
+/** Whether something read back from session storage is a well-formed tray order. */
+function isStoredOrder(o: Partial<TrayOrder> | null | undefined): o is TrayOrder {
+  if (typeof o?.id !== 'string' || typeof o.symbol !== 'string') {
+    return false;
+  }
+  return (o.side === 'BUY' || o.side === 'SELL') && validQuantity(o.quantity ?? NaN) && SOURCES.includes(o.source ?? '');
+}
+
 function plural(count: number): string {
   return `${count} order${count === 1 ? '' : 's'}`;
 }
@@ -57,8 +65,7 @@ export class TradePlanService {
   readonly isEmpty = computed(() => this.orders().length === 0);
 
   /** Sells, then buys, each by symbol - the order they would be placed in. */
-  readonly sorted = computed(() => [...this.orders()].sort((a, b) =>
-    a.side !== b.side ? (a.side === 'SELL' ? -1 : 1) : a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0));
+  readonly sorted = computed(() => [...this.orders()].sort(placementOrder));
 
   /** Symbols the plan both buys and sells, which could be netted into one order. */
   readonly conflicts = computed(() => {
@@ -179,9 +186,7 @@ export class TradePlanService {
     if (!stored || stored.owner !== this.owner || !Array.isArray(stored.orders)) {
       return;
     }
-    const orders = stored.orders.filter(o =>
-      typeof o?.id === 'string' && typeof o.symbol === 'string' && (o.side === 'BUY' || o.side === 'SELL')
-      && validQuantity(o.quantity) && SOURCES.includes(o.source));
+    const orders = stored.orders.filter(isStoredOrder);
     this.accountId.set(typeof stored.accountId === 'string' ? stored.accountId : null);
     this.orders.set(orders);
     this.sequence = Math.max(0, ...orders.map(o => Number(o.id.slice(1)) || 0));

@@ -6,7 +6,7 @@ import { map } from 'rxjs';
 import { ToolPreviewComponent } from './previews/tool-preview';
 import { RebalanceToolComponent } from './rebalance/rebalance-tool';
 import { ToolsContext } from './tools-context';
-import { findTool } from './tools-catalog';
+import { findTool, isModifiedClick } from './tools-catalog';
 
 /**
  * Trading Tools: one tool at /tools/:tool, on the account the hub had selected. The route only
@@ -58,7 +58,7 @@ export class ToolPageComponent {
 
   /** Back to the hub through the router, so the page doesn't reload. */
   back(event: MouseEvent): void {
-    if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+    if (isModifiedClick(event)) {
       return;
     }
     event.preventDefault();

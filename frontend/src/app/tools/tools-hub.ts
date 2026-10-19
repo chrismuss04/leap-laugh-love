@@ -3,7 +3,7 @@ import { CommonModule, DOCUMENT } from '@angular/common';
 import { Router } from '@angular/router';
 import { ToolPreviewComponent } from './previews/tool-preview';
 import { ToolsContext } from './tools-context';
-import { TOOLS, ToolInfo } from './tools-catalog';
+import { TOOLS, ToolInfo, isModifiedClick } from './tools-catalog';
 
 /** Shared by the opened tile and the tool page, so the browser morphs one into the other. */
 export const EXPAND_TRANSITION = 'tool-expand';
@@ -80,7 +80,7 @@ export class ToolsHubComponent {
    * new window) is left to the browser, which follows the tile's link.
    */
   open(event: Event, tool: ToolInfo, tile: HTMLElement): void {
-    if (event instanceof MouseEvent && (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey)) {
+    if (event instanceof MouseEvent && isModifiedClick(event)) {
       return;
     }
     event.preventDefault();

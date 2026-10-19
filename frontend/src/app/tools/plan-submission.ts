@@ -2,7 +2,7 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { OrderService, OrderSide, OrderSubmissionResponse } from '../services/order';
-import { DEFAULT_CASH_BUFFER } from '../shared/order-plan';
+import { DEFAULT_CASH_BUFFER, placementOrder } from '../shared/order-plan';
 
 /**
  * Where one order of a batch stands. 'accepted' executed and is still being confirmed; 'unknown'
@@ -95,32 +95,13 @@ export class PlanSubmission {
     this.phase.set('submitting');
     window.addEventListener('beforeunload', this.beforeUnload);
 
-    const sorted = [...orders].sort((a, b) =>
-      a.side !== b.side ? (a.side === 'SELL' ? -1 : 1) : a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0);
+    const sorted = [...orders].sort(placementOrder);
     this.rows.set(sorted.map(order => ({ ...order, status: 'waiting', message: null })));
 
     let available = buyingPower;
     try {
       for (const order of sorted) {
-        const cost = order.quantity * order.quotedPrice;
-        if (order.side === 'BUY' && cost * (1 + cashBuffer) > available + 1e-9) {
-          this.update(order.id, 'skipped', SKIPPED_MESSAGE);
-          continue;
-        }
-        this.update(order.id, 'submitting', null);
-        try {
-          const response = await firstValueFrom(this.orders.submitOrder({
-            accountId, symbol: order.symbol, side: order.side, quantity: order.quantity,
-            quotedPrice: order.quotedPrice, orderType: 'MARKET'
-          }));
-          available = this.recordResponse(order, response, available);
-        } catch (error) {
-          this.recordError(order, error);
-          // An unknown buy may have spent its cash; count it as spent so later buys don't overdraw.
-          if (order.side === 'BUY' && this.rows().find(r => r.id === order.id)?.status === 'unknown') {
-            available -= cost;
-          }
-        }
+        available = await this.submitOne(accountId, order, available, cashBuffer);
       }
     } finally {
       window.removeEventListener('beforeunload', this.beforeUnload);
@@ -133,6 +114,28 @@ export class PlanSubmission {
     if (this.phase() !== 'submitting') {
       this.phase.set('idle');
       this.rows.set([]);
+    }
+  }
+
+  /** Sends one order, or skips a buy the cash can't cover. Returns the cash available after it. */
+  private async submitOne(accountId: string, order: ConfirmedOrder, available: number, cashBuffer: number): Promise<number> {
+    const cost = order.quantity * order.quotedPrice;
+    if (order.side === 'BUY' && cost * (1 + cashBuffer) > available + 1e-9) {
+      this.update(order.id, 'skipped', SKIPPED_MESSAGE);
+      return available;
+    }
+    this.update(order.id, 'submitting', null);
+    try {
+      const response = await firstValueFrom(this.orders.submitOrder({
+        accountId, symbol: order.symbol, side: order.side, quantity: order.quantity,
+        quotedPrice: order.quotedPrice, orderType: 'MARKET'
+      }));
+      return this.recordResponse(order, response, available);
+    } catch (error) {
+      this.recordError(order, error);
+      // An unknown buy may have spent its cash; count it as spent so later buys don't overdraw.
+      const unknown = this.rows().find(r => r.id === order.id)?.status === 'unknown';
+      return order.side === 'BUY' && unknown ? available - cost : available;
     }
   }
 

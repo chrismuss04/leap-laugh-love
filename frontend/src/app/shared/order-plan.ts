@@ -107,6 +107,14 @@ const cents = (value: number) => Math.round(value * 100) / 100;
 const wholeShares = (value: number) => Math.floor(value + EPSILON);
 const bySymbol = <T extends { symbol: string }>(a: T, b: T) => (a.symbol < b.symbol ? -1 : a.symbol > b.symbol ? 1 : 0);
 
+/** Sells before buys, then by symbol: the order a plan's orders are placed in, so sells fund buys. */
+export function placementOrder(a: { side: PlanSide; symbol: string }, b: { side: PlanSide; symbol: string }): number {
+  if (a.side !== b.side) {
+    return a.side === 'SELL' ? -1 : 1;
+  }
+  return bySymbol(a, b);
+}
+
 interface Draft {
   symbol: string;
   quantity: number;

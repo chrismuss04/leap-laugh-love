@@ -127,15 +127,16 @@
               <div><dt>Value</dt><dd class="num" data-testid="tip-value">{{ money(tip.slice.value) }}</dd></div>
               <div *ngIf="tip.slice.shares !== null"><dt>Shares</dt><dd class="num" data-testid="tip-shares">{{ formatShares(tip.slice.shares) }}</dd></div>
               <div><dt>Allocation</dt><dd class="num" data-testid="tip-share">{{ share(tip.slice.share) }}</dd></div>
-              <ng-container *ngIf="tip.target !== null">
-                <div class="tip-target"><dt>Target</dt><dd class="num" data-testid="tip-target">{{ tip.target }}</dd></div>
-                <div *ngIf="tip.trade === undefined"><dt>{{ tip.change! >= 0 ? 'To buy' : 'To sell' }}</dt>
-                  <dd class="num" data-testid="tip-change">{{ money(abs(tip.change!)) }}</dd></div>
-                <div *ngIf="tip.trade !== undefined"><dt>Trade</dt>
-                  <dd class="num" data-testid="tip-trade">{{ tip.trade
-                    ? (tip.trade.side === 'BUY' ? '↑ Buy ' : '↓ Sell ') + tip.trade.quantity
-                    : 'None' }}</dd></div>
-              </ng-container>
+              <div *ngIf="tip.target !== null" class="tip-target">
+                <dt>Target</dt><dd class="num" data-testid="tip-target">{{ tip.target }}</dd>
+              </div>
+              <div *ngIf="tip.target !== null && tip.trade === undefined">
+                <dt>{{ tip.change! >= 0 ? 'To buy' : 'To sell' }}</dt>
+                <dd class="num" data-testid="tip-change">{{ money(abs(tip.change!)) }}</dd>
+              </div>
+              <div *ngIf="tip.target !== null && tip.trade !== undefined">
+                <dt>Trade</dt><dd class="num" data-testid="tip-trade">{{ tradeText(tip.trade) }}</dd>
+              </div>
             </dl>
           </div>
         </div>
