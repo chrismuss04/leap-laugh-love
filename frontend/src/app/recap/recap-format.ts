@@ -5,7 +5,7 @@ export type RecapCard = 'intro' | 'money' | 'tickers' | 'gainer' | 'bench' | 'to
 
 export const CARD_LABELS: Record<RecapCard, string> = {
   intro: 'Intro',
-  money: 'Money moved',
+  money: 'Trading volume',
   tickers: 'Top tickers',
   gainer: 'Top gainer',
   bench: 'Versus the S&P 500',

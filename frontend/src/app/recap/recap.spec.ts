@@ -69,8 +69,9 @@ describe('RecapComponent', () => {
     const step = () => { component.next(); fixture.detectChanges(); vi.advanceTimersByTime(2000); };
 
     step();
+    expect(text()).toContain('My Trading Volume');
     expect(text()).toContain('$71,169');
-    expect(text()).toContain('$3,234.96');
+    expect(text()).toContain('$45,200 bought · $25,969 sold');
     expect(text()).toContain('41 filled orders across 3 accounts');
 
     step();

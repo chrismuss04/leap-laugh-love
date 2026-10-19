@@ -5,9 +5,10 @@ import { Observable } from 'rxjs';
 /** The value of the month's fills, buys and sells. */
 export interface RecapMoneyMoved {
   total: number;
-  /** total spread over the month's weekdays. */
-  perMarketDay: number;
-  marketDays: number;
+  /** The value of the buy fills. */
+  bought: number;
+  /** The value of the sell fills. */
+  sold: number;
   filledOrders: number;
   /** How many of the client's accounts traded. */
   accounts: number;
