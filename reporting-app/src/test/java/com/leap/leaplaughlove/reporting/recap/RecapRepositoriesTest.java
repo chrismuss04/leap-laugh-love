@@ -175,6 +175,19 @@ class RecapRepositoriesTest {
     }
 
     @Test
+    @DisplayName("a fill loaded within a minute before the build counts as possibly missed; one loaded earlier doesn't")
+    void slackBeforeTheBuild() {
+        RecapPayload quiet = new RecapCalculator().calculate(SEP, List.of(), PriceBook.empty(), Map.of());
+        loadedOrder("FILLED", "2026-09-10T14:00:00Z", GENERATED.minusMinutes(2));
+        snapshots.saveMonth(SEP, Map.of(alice, quiet), GENERATED);
+        assertTrue(snapshots.isUpToDate(SEP), "loaded well before the build, so the build read it");
+
+        // Its transaction may have stamped loaded_at before the build read the fills but committed after.
+        loadedOrder("FILLED", "2026-09-11T14:00:00Z", GENERATED.minusSeconds(30));
+        assertFalse(snapshots.isUpToDate(SEP));
+    }
+
+    @Test
     @DisplayName("a month built in an older JSON shape is out of date, so the catch-up run rebuilds it")
     void olderShapeIsOutOfDate() {
         RecapPayload quiet = new RecapCalculator().calculate(SEP, List.of(), PriceBook.empty(), Map.of());

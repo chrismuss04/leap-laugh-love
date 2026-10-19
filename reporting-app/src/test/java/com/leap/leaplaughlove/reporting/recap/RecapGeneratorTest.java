@@ -12,6 +12,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.YearMonth;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -89,6 +90,53 @@ class RecapGeneratorTest {
         assertTrue(recaps.get(HOLDER).quiet(), "A holder who didn't trade still gets a recap");
         // TSLA was closed out in July, so it isn't priced.
         verify(prices).load(SEP, Set.of("AAPL", "MSFT"));
+    }
+
+    @Test
+    @DisplayName("stamps the recaps with when it began, before reading the fills, so a fill loaded during the build "
+            + "shows as loaded after it")
+    void stampsBeforeReadingFills() {
+        Instant later = NOW.plusSeconds(20);
+        MovingClock clock = new MovingClock(NOW);
+        RecapGenerator timed = new RecapGenerator(fills, snapshots, prices, new RecapCalculator(), clock);
+        // Reading the fills and pricing them takes time; the ETL may load more meanwhile.
+        when(fills.fillsThrough(SEP)).thenAnswer(read -> {
+            clock.moveTo(later);
+            return Map.of(WINNER, List.of(fill("AAPL", Side.BUY, 1, "100", "2026-09-02T14:00:00Z")));
+        });
+        when(prices.load(eq(SEP), any())).thenReturn(PriceBook.empty());
+
+        timed.generate(SEP);
+
+        verify(snapshots).saveMonth(eq(SEP), anyMap(), eq(NOW.atOffset(ZoneOffset.UTC)));
+    }
+
+    /** A UTC clock a test moves on by hand. */
+    private static final class MovingClock extends Clock {
+        private Instant now;
+
+        MovingClock(Instant now) {
+            this.now = now;
+        }
+
+        void moveTo(Instant instant) {
+            now = instant;
+        }
+
+        @Override
+        public ZoneId getZone() {
+            return ZoneOffset.UTC;
+        }
+
+        @Override
+        public Clock withZone(ZoneId zone) {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public Instant instant() {
+            return now;
+        }
     }
 
     @Test
