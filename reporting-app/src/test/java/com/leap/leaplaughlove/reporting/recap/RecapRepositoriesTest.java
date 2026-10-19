@@ -119,10 +119,14 @@ class RecapRepositoriesTest {
     }
 
     @Test
-    @DisplayName("reads the sector table the seed loads")
+    @DisplayName("reads the sector table")
     void sectors() {
-        assertEquals("Information Technology", fills.sectors().get("AAPL"));
-        assertEquals("Crypto", fills.sectors().get("BTC/USD"));
+        // Its own rows: CI's test database loads the schema without the seeds that fill this table.
+        jdbc.update("DELETE FROM reporting.instrument_sectors");
+        jdbc.update("INSERT INTO reporting.instrument_sectors (symbol, sector) VALUES (?, ?), (?, ?)",
+                "AAPL", "Information Technology", "BTC/USD", "Crypto");
+
+        assertEquals(Map.of("AAPL", "Information Technology", "BTC/USD", "Crypto"), fills.sectors());
     }
 
     @Test
