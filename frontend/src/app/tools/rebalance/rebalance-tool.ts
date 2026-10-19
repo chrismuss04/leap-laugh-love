@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject } from '@angular/core';
+import { Component, computed, effect, inject, untracked } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { ToolsContext } from '../tools-context';
@@ -6,15 +6,18 @@ import { Allocation, buildAllocation } from './allocation';
 import { AllocationDonutComponent } from './allocation-donut';
 import { TargetAllocation } from './target-allocation';
 import { TargetTableComponent } from './target-table';
+import { TradePreview, previewTrades } from './trade-preview';
+import { TradePreviewPanelComponent } from './trade-preview-panel';
 
 /**
  * Rebalance Donut's workspace: the selected account's current allocation, priced live, with a
  * target allocation the client shapes by dragging the donut's outer ring or typing into the table
- * under it. Turning targets into trades comes in a later story.
+ * under it. Beside the donut, the trades those targets take are listed live, priced at the ask and
+ * bid, and go into the trade plan tagged Rebalance.
  */
 @Component({
   selector: 'app-rebalance-tool',
-  imports: [CommonModule, AllocationDonutComponent, TargetTableComponent],
+  imports: [CommonModule, AllocationDonutComponent, TargetTableComponent, TradePreviewPanelComponent],
   template: `
     <div *ngIf="editable()" class="hint" data-testid="rebalance-hint">
       <span class="key"><span class="ring now" aria-hidden="true"></span>Inner ring: now</span>
@@ -23,10 +26,16 @@ import { TargetTableComponent } from './target-table';
     </div>
 
     <app-allocation-donut [allocation]="allocation()" [state]="state()" [errorMessage]="context.error()"
-                          [targets]="editable() ? targets : null"
-                          (retry)="context.load()" (addHolding)="addHolding()"></app-allocation-donut>
+                          [targets]="editable() ? targets : null" [trades]="preview()?.bySymbol ?? null"
+                          [showLegend]="!editable()"
+                          (retry)="context.load()" (addHolding)="addHolding()">
+      <app-trade-preview-panel donutAside *ngIf="preview() as trades" [preview]="trades"
+                               [hasPlanned]="planned().length > 0" [inPlan]="inPlan()" (add)="addToPlan()">
+      </app-trade-preview-panel>
+    </app-allocation-donut>
 
-    <app-target-table *ngIf="editable() && allocation() as current" [allocation]="current" [targets]="targets">
+    <app-target-table *ngIf="editable() && allocation() as current" [allocation]="current" [targets]="targets"
+                      [preview]="preview()">
     </app-target-table>
 
     <div class="sr-only" aria-live="polite" role="status" data-testid="target-announcer">{{ targets.announcement() }}</div>
@@ -90,8 +99,61 @@ export class RebalanceToolComponent {
   /** Targets need something to reshape: at least one holding. */
   readonly editable = computed(() => this.state() === 'ready' && (this.current()?.slices.some(s => s.kind === 'holding') ?? false));
 
+  /**
+   * The trades the targets take, from the order-plan engine. Recomputed straight away on every
+   * change, drag steps included, and as prices tick.
+   */
+  readonly preview = computed<TradePreview | null>(() => {
+    const account = this.context.account();
+    const allocation = this.allocation();
+    if (!this.editable() || !account || !allocation) {
+      return null;
+    }
+    const keys = this.targets.keys();
+    const values = this.targets.targets();
+    return previewTrades({
+      slices: allocation.slices,
+      targets: Object.fromEntries(keys.map((key, i) => [key, values[i]])),
+      positions: this.context.holdings().map(h => ({ symbol: h.symbol, quantity: h.quantity })),
+      prices: this.context.prices(),
+      quoteOffsets: this.context.quoteOffsets(),
+      cash: account.cash
+    });
+  });
+
+  /** The Rebalance trades already in the tray, for this account. */
+  readonly planned = computed(() => {
+    const plan = this.context.plan;
+    return plan.accountId() === this.context.account()?.accountId ? plan.orders().filter(o => o.source === 'rebalance') : [];
+  });
+
+  /** Whether the tray already holds exactly these trades. */
+  readonly inPlan = computed(() => {
+    const orders = this.preview()?.orders ?? [];
+    const planned = this.planned();
+    const key = (o: { side: string; symbol: string; quantity: number }) => `${o.side} ${o.symbol} ${o.quantity}`;
+    const inTray = new Set(planned.map(key));
+    return orders.length > 0 && orders.length === planned.length && orders.every(o => inTray.has(key(o)));
+  });
+
   constructor() {
     effect(() => this.targets.sync(this.current(), this.context.account()?.accountId ?? null));
+    // Market orders fill at the ask or bid, so the preview prices every holding at those.
+    effect(() => {
+      const symbols = this.context.holdings().map(h => h.symbol);
+      untracked(() => this.context.requestQuotes(symbols));
+    });
+  }
+
+  /** Puts the trades in the tray tagged Rebalance, replacing any Rebalance trades already there. */
+  addToPlan(): void {
+    const account = this.context.account();
+    const orders = this.preview()?.orders ?? [];
+    if (!account || !orders.length) {
+      return;
+    }
+    this.context.plan.addPlan('rebalance', account.accountId,
+      orders.map(o => ({ symbol: o.symbol, side: o.side, quantity: o.quantity })));
   }
 
   /** Until the donut can add a holding itself (TT-8), browse instruments to buy one. */

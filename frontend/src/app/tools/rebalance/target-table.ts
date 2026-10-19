@@ -4,6 +4,7 @@ import { formatMoney } from '../../shared/format';
 import { Allocation, DonutSlice } from './allocation';
 import { TargetAllocation } from './target-allocation';
 import { WHOLE, formatTarget, onTarget, parseTarget, targetChange } from './targets';
+import { SliceTrade, TradePreview } from './trade-preview';
 
 interface TargetRow {
   slice: DonutSlice;
@@ -12,6 +13,8 @@ interface TargetRow {
   text: string;
   /** Dollars to buy (positive) or sell (negative) to reach the target. */
   change: number;
+  /** The whole-share trade the preview plans for this holding, when trades are shown. */
+  trade: SliceTrade | null;
   locked: boolean;
 }
 
@@ -90,7 +93,7 @@ const NO_CHANGE = 0.005;
             <td class="num change" [attr.data-change]="row.slice.key">
               <ng-container *ngIf="abs(row.change) >= noChange; else none">
                 <span class="amount" [class.buy]="row.change > 0" [class.sell]="row.change < 0">
-                  {{ row.change > 0 ? '+' : '−' }}{{ money(abs(row.change)) }}
+                  {{ preview() ? '≈ ' : '' }}{{ row.change > 0 ? '+' : '−' }}{{ money(abs(row.change)) }}
                 </span>
                 <span class="verb">{{ verb(row) }}</span>
               </ng-container>
@@ -239,18 +242,31 @@ const NO_CHANGE = 0.005;
 export class TargetTableComponent {
   readonly allocation = input.required<Allocation>();
   readonly targets = input.required<TargetAllocation>();
+  /**
+   * The planned trades. Given, the Change column shows each holding's whole-share trade and its
+   * estimated value, so it always agrees with the trades list; without, the exact dollar gap.
+   */
+  readonly preview = input<TradePreview | null>(null);
 
   readonly rows = computed<TargetRow[]>(() => {
     const plan = this.targets();
-    const total = this.allocation().total;
+    const preview = this.preview();
+    const { total, slices } = this.allocation();
+    const cash = slices.find(s => s.kind === 'cash')?.value ?? 0;
     plan.targets();
-    return this.allocation().slices.map(slice => {
+    return slices.map(slice => {
       const target = plan.targetOf(slice.key) ?? 0;
+      const trade = preview?.bySymbol[slice.key] ?? null;
+      let change = targetChange(target, slice.share, total);
+      if (preview) {
+        change = slice.kind === 'cash' ? preview.cashAfter - cash : trade ? (trade.side === 'BUY' ? trade.value : -trade.value) : 0;
+      }
       return {
         slice,
         target,
         text: target % 10 === 0 ? String(target / 10) : (target / 10).toFixed(1),
-        change: targetChange(target, slice.share, total),
+        change,
+        trade,
         locked: plan.isLocked(slice.key)
       };
     });
@@ -264,6 +280,12 @@ export class TargetTableComponent {
 
   /** ["Buy $1,200.00", "Sell $900.00"]: what reaching the targets trades, cash aside. */
   readonly summary = computed(() => {
+    const preview = this.preview();
+    if (preview) {
+      const parts = [preview.buyTotal ? `Buy ≈ ${formatMoney(preview.buyTotal)}` : '',
+        preview.sellTotal ? `Sell ≈ ${formatMoney(preview.sellTotal)}` : ''].filter(Boolean);
+      return parts.length ? parts : [preview.balanced ? 'Already balanced' : 'No trades'];
+    }
     const holdings = this.rows().filter(row => row.slice.kind === 'holding');
     const buys = holdings.filter(row => row.change >= NO_CHANGE).reduce((sum, row) => sum + row.change, 0);
     const sells = holdings.filter(row => row.change <= -NO_CHANGE).reduce((sum, row) => sum - row.change, 0);
@@ -286,6 +308,10 @@ export class TargetTableComponent {
   verb(row: TargetRow): string {
     if (row.slice.kind === 'cash') {
       return row.change > 0 ? 'More cash' : 'Less cash';
+    }
+    if (row.trade) {
+      const all = row.trade.side === 'SELL' && row.trade.quantity === row.slice.shares ? ' all' : '';
+      return `${row.trade.side === 'BUY' ? '↑ Buy' : '↓ Sell' + all} ${row.trade.quantity}`;
     }
     if (row.target === 0) {
       return 'Sell all';

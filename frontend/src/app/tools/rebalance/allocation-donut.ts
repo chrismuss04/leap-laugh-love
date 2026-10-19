@@ -9,6 +9,7 @@ import {
   Allocation, DonutSlice, OTHER_THRESHOLD, SliceArc, donutLabels, formatShare, sliceArcs, spreadLabels
 } from './allocation';
 import { TargetAllocation } from './target-allocation';
+import { SliceTrade } from './trade-preview';
 import { FINE_STEP, STEP, WHOLE, boundaryPosition, boundarySides, formatTarget, onTarget, targetChange } from './targets';
 
 /** A label beside the ring, placed in pixels, with the leader line back to its arc. */
@@ -19,6 +20,8 @@ interface PlacedLabel {
   percent: string;
   /** The keys' combined target, when it differs from what they hold now. */
   target: string | null;
+  /** The trade a lone slice needs: "↑6" or "↓4". */
+  badge: { side: 'BUY' | 'SELL'; text: string } | null;
   x: number;
   y: number;
   anchor: 'start' | 'end';
@@ -119,6 +122,10 @@ export class AllocationDonutComponent {
   readonly errorMessage = input<string | null>(null);
   /** The target allocation to draw and edit; without one the donut only shows the current split. */
   readonly targets = input<TargetAllocation | null>(null);
+  /** The trades the targets take, by symbol, for each slice's badge; null to show none. */
+  readonly trades = input<Record<string, SliceTrade> | null>(null);
+  /** False to put the page's own content (marked donutAside) beside the ring instead of the legend. */
+  readonly showLegend = input(true);
 
   readonly retry = output<void>();
   readonly addHolding = output<void>();
@@ -288,6 +295,7 @@ export class AllocationDonutComponent {
           percent: formatShare(label.share),
           // Phones keep labels short; the targets table has every target.
           target: plan && w >= NARROW ? this.changedTarget(plan, label.keys, label.share) : null,
+          badge: w >= NARROW ? this.badgeFor(label.keys) : null,
           x,
           y,
           anchor: side === 'right' ? 'start' : 'end',
@@ -316,12 +324,15 @@ export class AllocationDonutComponent {
     const left = right ? px + 8 : px - 8 - TOOLTIP_WIDTH;
     const plan = this.targets();
     const target = plan?.targetOf(slice.key) ?? null;
+    const trades = this.trades();
     const height = TOOLTIP_HEIGHT + (target !== null ? 44 : 0);
     return {
       slice,
       target: target !== null ? formatTarget(target) : null,
       /** Dollars to buy (positive) or sell to reach the target. */
       change: target !== null ? targetChange(target, slice.share, this.total()) : null,
+      /** The planned trade (null for none), or undefined when trades aren't shown. Cash isn't traded. */
+      trade: trades && slice.kind === 'holding' ? trades[slice.key] ?? null : undefined,
       left: clamp(left, 4, w - TOOLTIP_WIDTH - 4),
       top: clamp(py - height / 2, 4, h - height - 4)
     };
@@ -570,6 +581,12 @@ export class AllocationDonutComponent {
       parts.push(`target ${formatTarget(target)}`);
     }
     return parts.join(', ');
+  }
+
+  /** A lone slice's trade as a badge; the 'Other' label leaves its trades to the table. */
+  private badgeFor(keys: string[]): PlacedLabel['badge'] {
+    const trade = keys.length === 1 ? this.trades()?.[keys[0]] : undefined;
+    return trade ? { side: trade.side, text: `${trade.side === 'BUY' ? '↑' : '↓'}${trade.quantity}` } : null;
   }
 
   /** The keys' combined target, or null when it reads the same as what they hold now. */

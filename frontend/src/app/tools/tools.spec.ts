@@ -331,7 +331,7 @@ describe('Trading Tools', () => {
       harness.detectChanges();
       await drawn();
       expect(total()).toContain('$4,000.00');
-      const percents = Array.from(donut().querySelectorAll('.legend-row .percent')).map(p => p.textContent!.trim());
+      const percents = Array.from(el().querySelectorAll('app-target-table tbody td.current-col')).map(p => p.textContent!.trim());
       expect(percents).toEqual(['75%', '25%']);
     });
 
@@ -366,7 +366,9 @@ describe('Trading Tools', () => {
       harness.detectChanges();
       expect(el().querySelector<HTMLInputElement>('input[data-target-input="cash"]')!.value).toBe('20');
       expect(donut().querySelector('.handle')!.getAttribute('aria-valuenow')).toBe('80');
-      expect(el().querySelector('[data-change="AAPL"]')!.textContent).toContain('$500.00');
+      // $2,000 of AAPL is 13.3 shares: 3 more, at the 150.10 ask.
+      expect(el().querySelector('[data-change="AAPL"]')!.textContent).toContain('$450.30');
+      expect(el().querySelector('[data-change="AAPL"]')!.textContent).toContain('Buy 3');
     });
 
     it('starts targets afresh on another account', async () => {
@@ -394,6 +396,121 @@ describe('Trading Tools', () => {
       // Nothing to reshape yet, so no target ring or table.
       expect(donut().querySelector('.handle')).toBeNull();
       expect(el().querySelector('app-target-table')).toBeNull();
+    });
+  });
+
+  describe('rebalance trades', () => {
+    const plan = (): TradePlanService =>
+      harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
+    const panel = () => el().querySelector('[data-testid="trade-preview"]')!;
+    const trades = () => Array.from(panel().querySelectorAll<HTMLElement>('.trades li')).map(li => li.innerText.replace(/\s+/g, ' ').trim());
+    const addButton = () => panel().querySelector<HTMLButtonElement>('[data-testid="add-to-plan"]')!;
+    const typeTarget = (key: string, value: string) => {
+      const input = el().querySelector<HTMLInputElement>(`input[data-target-input="${key}"]`)!;
+      input.value = value;
+      input.dispatchEvent(new Event('change'));
+      harness.detectChanges();
+    };
+    async function drawn(): Promise<void> {
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        harness.detectChanges();
+      }
+      await harness.fixture.whenStable();
+    }
+
+    beforeEach(async () => {
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+    });
+
+    it("starts 'Already balanced' with nothing to add", () => {
+      expect(panel().querySelector('[data-testid="already-balanced"]')!.textContent).toContain('Already balanced');
+      expect(panel().querySelector('[data-testid="drift"]')!.textContent).toContain('0%');
+      expect(addButton().disabled).toBe(true);
+    });
+
+    it('prices trades at the ask and bid, asking for every held quote', () => {
+      expect(marketApi.getQuote).toHaveBeenCalledWith('AAPL');
+      // a1: 10 AAPL at 150 and 1,000 cash. 30% of 2,500 is 5 shares; they sell at the 149.90 bid.
+      typeTarget('AAPL', '30');
+      expect(trades()).toEqual(['↓ Sell 5 AAPL ≈ $750']);
+      expect(panel().querySelector('[data-testid="cash-after"]')!.textContent).toContain('$1,750');
+    });
+
+    it('updates the list as targets change, straight after each drag step', async () => {
+      typeTarget('AAPL', '80');
+      expect(trades()).toEqual(['↑ Buy 3 AAPL ≈ $450']);
+
+      // One drag step to 30%, with no time allowed to pass before checking.
+      const donut = el().querySelector('app-allocation-donut')!;
+      const svg = donut.querySelector('svg')!;
+      const knob = donut.querySelector('.handle')!;
+      const box = svg.getBoundingClientRect();
+      const width = box.width;
+      const height = box.height;
+      const at = (tenths: number) => {
+        const angle = (tenths / 1000) * Math.PI * 2;
+        return { clientX: box.left + width / 2 + Math.sin(angle) * 100, clientY: box.top + height / 2 - Math.cos(angle) * 100 };
+      };
+      knob.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(800) }));
+      svg.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(300) }));
+      harness.detectChanges();
+      expect(trades()).toEqual(['↓ Sell 5 AAPL ≈ $750']);
+      svg.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1, pointerType: 'mouse', ...at(300) }));
+    });
+
+    it("shows each slice's trade as a badge beside its label", async () => {
+      // Phones leave badges to the table, so give the donut a desktop's width.
+      (harness.fixture.nativeElement as HTMLElement).style.width = '1100px';
+      typeTarget('AAPL', '30');
+      await drawn();
+      const badge = el().querySelector('[data-badge="AAPL"]')!;
+      expect(badge.textContent!.trim()).toBe('↓5');
+      expect(badge.classList).toContain('sell');
+    });
+
+    it('goes back to Already balanced when targets come within 1%', () => {
+      typeTarget('AAPL', '30');
+      typeTarget('AAPL', '59.5');
+      expect(panel().querySelector('[data-testid="already-balanced"]')).not.toBeNull();
+      expect(addButton().disabled).toBe(true);
+    });
+
+    it("shows the engine's warnings inline", async () => {
+      // a2: 2 MSFT at 400 and 2,000 cash. All in MSFT is 5 more shares at the 400.10 ask: $2,000.50,
+      // more than the cash, so the buy is scaled down.
+      await harness.navigateByUrl('/tools/rebalance?account=a2');
+      await drawn();
+      typeTarget('MSFT', '100');
+      const warning = panel().querySelector('[data-warning="not-enough-cash"]')!;
+      expect(warning.textContent).toContain('scaled down');
+      expect(warning.textContent).toContain('at least 0.5% cash');
+    });
+
+    it('adds the trades to the tray tagged Rebalance', () => {
+      typeTarget('AAPL', '30');
+      expect(addButton().textContent).toContain('Add to plan');
+      addButton().click();
+      harness.detectChanges();
+      expect(plan().orders().map(o => [o.source, o.side, o.symbol, o.quantity])).toEqual([['rebalance', 'SELL', 'AAPL', 5]]);
+      expect(addButton().textContent).toContain('In your plan');
+      expect(addButton().disabled).toBe(true);
+    });
+
+    it("replaces earlier Rebalance trades, and leaves other tools' orders alone", () => {
+      plan().addPlan('basket', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 1 }]);
+      typeTarget('AAPL', '30');
+      addButton().click();
+      typeTarget('AAPL', '80');
+      harness.detectChanges();
+      expect(addButton().textContent).toContain('Update plan');
+      expect(panel().textContent).toContain('Replaces the Rebalance trades');
+      addButton().click();
+      harness.detectChanges();
+      expect(plan().orders().map(o => [o.source, o.side, o.symbol, o.quantity])).toEqual([
+        ['basket', 'BUY', 'MSFT', 1], ['rebalance', 'BUY', 'AAPL', 3]
+      ]);
     });
   });
 

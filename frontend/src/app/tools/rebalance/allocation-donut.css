@@ -149,6 +149,14 @@ text { pointer-events: none; }
   font-size: 12px;
 }
 
+.label-badge {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.label-badge.buy { fill: var(--gain); }
+.label-badge.sell { fill: var(--loss); }
+
 .label-target {
   fill: var(--primary);
   font-size: 12px;
@@ -268,6 +276,7 @@ dd { color: var(--foreground); font-weight: 500; }
 /* Legend */
 
 .legend-panel { min-width: 0; }
+.legend-panel.aside { align-self: stretch; display: flex; flex-direction: column; justify-content: center; }
 
 .legend {
   display: flex;

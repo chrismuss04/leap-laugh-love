@@ -190,6 +190,16 @@ export class ToolsContext {
     this.valuation.load();
   }
 
+  /** Asks for the ask and bid of more symbols, e.g. every holding a tool may trade. Each is asked for once. */
+  requestQuotes(symbols: string[]): void {
+    for (const symbol of symbols) {
+      if (!this.requestedQuotes.has(symbol)) {
+        this.requestedQuotes.add(symbol);
+        this.loadQuote(symbol);
+      }
+    }
+  }
+
   /** Switches every tool to another account, staying on the current page. */
   selectAccount(accountId: string, replaceUrl = false): void {
     const tree = this.router.parseUrl(this.url());
