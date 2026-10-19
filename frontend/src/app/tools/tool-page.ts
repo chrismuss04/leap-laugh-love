@@ -6,17 +6,18 @@ import { map } from 'rxjs';
 import { ToolPreviewComponent } from './previews/tool-preview';
 import { RaiseCashToolComponent } from './raise-cash/raise-cash-tool';
 import { RebalanceToolComponent } from './rebalance/rebalance-tool';
+import { BasketToolComponent } from './basket/basket-tool';
 import { ToolsContext } from './tools-context';
 import { findTool, isModifiedClick } from './tools-catalog';
 
 /**
  * Trading Tools: one tool at /tools/:tool, on the account the hub had selected. The route only
  * matches known tools (see TOOL_ROUTES). Each tool's workspace arrives in its own story; until
- * then the page shows its live preview at full size. Rebalance Donut and Raise Cash have their workspaces.
+ * then the page shows its live preview at full size. Rebalance Donut, Raise Cash and Basket Builder have their workspaces.
  */
 @Component({
     selector: 'app-tool-page',
-    imports: [CommonModule, ToolPreviewComponent, RebalanceToolComponent, RaiseCashToolComponent],
+    imports: [CommonModule, ToolPreviewComponent, RebalanceToolComponent, RaiseCashToolComponent, BasketToolComponent],
     template: `
     <section *ngIf="tool() as tool" class="tool-page" [attr.data-tool]="tool.id" aria-labelledby="tool-title">
       <a class="back" [attr.href]="context.urlFor(null)" (click)="back($event)">
@@ -27,6 +28,7 @@ import { findTool, isModifiedClick } from './tools-catalog';
       <ng-container [ngSwitch]="tool.id">
         <app-rebalance-tool *ngSwitchCase="'rebalance'"></app-rebalance-tool>
         <app-raise-cash-tool *ngSwitchCase="'raise-cash'"></app-raise-cash-tool>
+        <app-basket-tool *ngSwitchCase="'basket'"></app-basket-tool>
         <ng-container *ngSwitchDefault [ngTemplateOutlet]="soon"></ng-container>
       </ng-container>
       <ng-template #soon>
@@ -49,7 +51,7 @@ import { findTool, isModifiedClick } from './tools-catalog';
     .back:hover, .back:focus-visible { color: var(--foreground); }
     h1 { margin-top: 12px; font-size: 26px; font-weight: 600; color: var(--foreground); }
     .blurb { margin-top: 6px; font-size: 14px; color: var(--muted-foreground); }
-    app-tool-preview, app-rebalance-tool, app-raise-cash-tool { margin-top: 20px; }
+    app-tool-preview, app-rebalance-tool, app-raise-cash-tool, app-basket-tool { margin-top: 20px; }
     .soon { margin-top: 12px; text-align: center; font-size: 13px; color: var(--muted-foreground); }
     @media (max-width: 640px) { .tool-page { padding: 16px; } }
   `]

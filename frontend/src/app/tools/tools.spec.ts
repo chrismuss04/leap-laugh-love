@@ -21,6 +21,7 @@ import { MarketStatusService } from '../services/market-status';
 import { ToolsComponent as ToolsPage } from './tools';
 import { SKIPPED_MESSAGE, UNKNOWN_MESSAGE } from './plan-submission';
 import { RebalanceToolComponent } from './rebalance/rebalance-tool';
+import { InstrumentsService } from '../services/instruments';
 
 describe('Trading Tools', () => {
   const position = (symbol: string, quantity: number) =>
@@ -103,7 +104,8 @@ describe('Trading Tools', () => {
         { provide: MarketDataService, useValue: marketApi },
         { provide: PriceStreamService, useValue: stream },
         { provide: OrderService, useValue: orderApi },
-        { provide: MarketStatusService, useValue: { session } }
+        { provide: MarketStatusService, useValue: { session } },
+        { provide: InstrumentsService, useValue: { getOverview: () => of({ period: 'today', periodStart: '', asOf: '', instruments: [] }) } }
       ]
     });
   });
