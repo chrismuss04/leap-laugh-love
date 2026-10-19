@@ -12,6 +12,9 @@ test.use({ persona: 'trader' });
 const expectedLines = (buys: RowBuy[]) =>
   buys.filter(b => b.shares > 0).map(b => `BUY ${b.shares} ${b.symbol} (Basket)`).sort();
 
+/** The tray's lines, sorted, for expect.poll: the tray renders a moment after it opens. */
+const sortedTray = (basket: BasketPage) => async () => (await basket.trayLines()).sort();
+
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
 test.describe('Basket Builder', () => {
@@ -39,7 +42,7 @@ test.describe('Basket Builder', () => {
     const cashBefore = await trader.api.buyingPower(trader.accountId);
 
     await basket.addToPlanAnswering(false);
-    expect((await basket.trayLines()).sort()).toEqual(expectedLines(buys));
+    await expect.poll(sortedTray(basket)).toEqual(expectedLines(buys));
 
     await basket.reviewAndSubmit();
     await expect(basket.results).toHaveCount(bought.length);
@@ -83,7 +86,7 @@ test.describe('Basket Builder', () => {
     const buys = await basket.rowBuys();
     const before = await Promise.all(buys.map(b => trader.api.sharesHeld(trader.accountId, b.symbol)));
     await basket.addToPlanAnswering(false);
-    expect((await basket.trayLines()).sort()).toEqual(expectedLines(buys));
+    await expect.poll(sortedTray(basket)).toEqual(expectedLines(buys));
     await basket.reviewAndSubmit();
 
     const after = await Promise.all(buys.map(b => trader.api.sharesHeld(trader.accountId, b.symbol)));
@@ -128,7 +131,7 @@ test.describe('Basket Builder', () => {
 
     await basket.addToPlanAnswering(false);
     await expect(basket.addedNote).toContainText('Left out, not enough for 1 share: MSFT.');
-    expect(await basket.trayLines()).toEqual([`BUY ${aapl.shares} AAPL (Basket)`]);
+    await expect.poll(sortedTray(basket)).toEqual([`BUY ${aapl.shares} AAPL (Basket)`]);
     await basket.reviewAndSubmit();
 
     expect(await trader.api.sharesHeld(trader.accountId, 'AAPL')).toBe(before.aapl + aapl.shares);
@@ -158,9 +161,8 @@ test.describe('Basket Builder', () => {
     expect(invested).toBeLessThanOrEqual(total);
 
     // More shares than the plain rounding, in the tray as the client's Basket buys.
-    const lines = await basket.trayLines();
-    const quantity = (symbol: string) => Number(lines.find(l => l.includes(` ${symbol} `))?.split(' ')[1] ?? 0);
-    expect(quantity('AAPL') + quantity('MSFT')).toBeGreaterThan(sum(plain.map(b => b.shares)));
+    const traySharesTotal = async () => sum((await basket.trayLines()).map(line => Number(line.split(' ')[1])));
+    await expect.poll(traySharesTotal).toBeGreaterThan(sum(plain.map(b => b.shares)));
 
     await basket.reviewAndSubmit();
     const spent = cashBefore - (await trader.api.buyingPower(trader.accountId));
@@ -178,7 +180,7 @@ test.describe('Basket Builder', () => {
     const buys = await basket.rowBuys();
     await basket.addToPlanAnswering(false);
 
-    expect((await basket.trayLines()).sort()).toEqual(expectedLines(buys));
+    await expect.poll(sortedTray(basket)).toEqual(expectedLines(buys));
   });
 
   test('the basket, its amount and its split survive a refresh', async ({ page }) => {

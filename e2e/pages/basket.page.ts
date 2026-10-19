@@ -169,9 +169,13 @@ export class BasketPage {
     }
   }
 
-  /** The tray's orders as "BUY 3 AAPL (Basket)". */
+  /**
+   * The tray's orders as "BUY 3 AAPL (Basket)". A snapshot: the panel renders a moment after the
+   * toggle, so assert on it with expect.poll.
+   */
   async trayLines(): Promise<string[]> {
     await this.openTray();
+    await expect(this.page.getByTestId('tray-panel')).toBeVisible();
     return Promise.all((await this.trayOrders.all()).map(async order => {
       const side = (await order.locator('.side').textContent())!.trim().toUpperCase();
       const symbol = (await order.locator('.symbol').textContent())!.trim();
