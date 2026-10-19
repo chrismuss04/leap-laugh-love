@@ -111,6 +111,61 @@ describe('BasketService', () => {
     });
   });
 
+  describe('the amount and its split', () => {
+    beforeEach(() => {
+      basket.add('AAPL', 'Apple');
+      basket.add('MSFT', 'Microsoft');
+    });
+
+    it('starts with no amount', () => {
+      expect(basket.totalCents()).toBeNull();
+      expect(basket.amounts()).toEqual([0, 0]);
+    });
+
+    it('splits a new amount evenly, then keeps each stock\'s share when it changes', () => {
+      basket.setTotal(100000);
+      expect(basket.amounts()).toEqual([50000, 50000]);
+      basket.setAmounts([75000, 25000]);
+      basket.setTotal(200000);
+      expect(basket.amounts()).toEqual([150000, 50000]);
+    });
+
+    it('splits evenly again when a stock comes or goes', () => {
+      basket.setTotal(90000);
+      basket.setAmounts([60000, 30000]);
+      basket.add('NVDA', 'Nvidia');
+      expect(basket.amounts()).toEqual([30000, 30000, 30000]);
+      basket.remove('AAPL');
+      expect(basket.amounts()).toEqual([45000, 45000]);
+    });
+
+    it('forgets the amount when the basket is cleared', () => {
+      basket.setTotal(90000);
+      basket.clear();
+      expect(basket.totalCents()).toBeNull();
+      expect(basket.amounts()).toEqual([]);
+    });
+
+    it('survives a refresh', () => {
+      basket.setTotal(100000);
+      basket.setAmounts([70000, 30000]);
+      TestBed.tick();
+      create();
+      expect(basket.totalCents()).toBe(100000);
+      expect(basket.amounts()).toEqual([70000, 30000]);
+    });
+
+    it('splits evenly a stored split that no longer adds up', () => {
+      sessionStorage.setItem(BASKET_KEY, JSON.stringify({
+        owner: 'ada@example.com',
+        items: [{ symbol: 'AAPL', name: 'Apple' }, { symbol: 'MSFT', name: 'Microsoft' }],
+        split: { totalCents: 100000, amounts: [70000, 20000] }
+      }));
+      create();
+      expect(basket.amounts()).toEqual([50000, 50000]);
+    });
+  });
+
   describe('saving', () => {
     it('survives a refresh within the session', () => {
       basket.add('AAPL', 'Apple');

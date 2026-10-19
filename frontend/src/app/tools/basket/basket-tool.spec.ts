@@ -1,4 +1,4 @@
-import { signal } from '@angular/core';
+import { inject, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
@@ -8,6 +8,7 @@ import { SymbolSearchComponent } from '../../dashboard/symbol-search/symbol-sear
 import { InstrumentOverviewRow, InstrumentsService } from '../../services/instruments';
 import { MarketDataService } from '../../services/market-data';
 import { ToolsContext } from '../tools-context';
+import { TradePlanService } from '../trade-plan';
 import { BasketService, MAX_BASKET } from './basket';
 import { BASKET_DRAG_TYPE, BasketToolComponent } from './basket-tool';
 
@@ -30,6 +31,9 @@ describe('BasketToolComponent', () => {
   let prices: ReturnType<typeof signal<Record<string, number>>>;
   let toolSymbols: ReturnType<typeof signal<string[]>>;
   let getOverview: ReturnType<typeof vi.fn>;
+  let quoteOffsets: ReturnType<typeof signal<Record<string, { ask: number; bid: number }>>>;
+  let account: ReturnType<typeof signal<{ accountId: string; cash: number } | null>>;
+  let requestQuotes: ReturnType<typeof vi.fn>;
 
   const el = (): HTMLElement => fixture.nativeElement;
   const q = <T extends HTMLElement = HTMLElement>(selector: string) => el().querySelector<T>(selector);
@@ -44,9 +48,15 @@ describe('BasketToolComponent', () => {
       imports: [BasketToolComponent],
       providers: [
         BasketService,
+        TradePlanService,
         provideHttpClient(),
         provideHttpClientTesting(),
-        { provide: ToolsContext, useValue: { prices, toolSymbols } },
+        {
+          provide: ToolsContext,
+          useFactory: () => ({
+            prices, toolSymbols, quoteOffsets, account, requestQuotes, holdings: () => [], plan: inject(TradePlanService)
+          })
+        },
         { provide: InstrumentsService, useValue: { getOverview } },
         {
           provide: MarketDataService,
@@ -86,6 +96,9 @@ describe('BasketToolComponent', () => {
     sessionStorage.clear();
     prices = signal<Record<string, number>>({});
     toolSymbols = signal<string[]>([]);
+    quoteOffsets = signal<Record<string, { ask: number; bid: number }>>({});
+    account = signal<{ accountId: string; cash: number } | null>({ accountId: 'a1', cash: 10000 });
+    requestQuotes = vi.fn();
     getOverview = vi.fn(() => of({ period: 'today', periodStart: '', asOf: '', instruments: overview }));
     configure();
     render();
@@ -277,5 +290,178 @@ describe('BasketToolComponent', () => {
     configure();
     render();
     expect(basketSymbols()).toEqual(['AAPL', 'MSFT']);
+  });
+  describe('splitting an amount', () => {
+    const plan = () => TestBed.inject(TradePlanService);
+    const rowOf = (symbol: string) => q(`.rows li[data-symbol="${symbol}"]`)!;
+    const rowAmount = (symbol: string) => rowOf(symbol).querySelector<HTMLInputElement>('[data-testid="row-amount"]')!;
+    const rowShares = (symbol: string) => rowOf(symbol).querySelector('[data-testid="row-shares"]')!.textContent!.trim();
+    const amountInput = () => q<HTMLInputElement>('[data-testid="basket-amount"]')!;
+    const addButton = () => q<HTMLButtonElement>('[data-testid="basket-add"]');
+    const planLines = () => plan().sorted().map(o => `${o.side} ${o.quantity} ${o.symbol} (${o.source})`);
+
+    function type(input: HTMLInputElement, value: string): void {
+      input.value = value;
+      input.dispatchEvent(new Event('change'));
+      fixture.detectChanges();
+    }
+
+    beforeEach(() => {
+      // AAPL 105, NVDA 103, MSFT 98 from today's snapshot.
+      drag('AAPL');
+      drag('NVDA');
+      drag('MSFT');
+    });
+
+    it('needs two stocks before there is anything to split', () => {
+      basket.remove('NVDA');
+      basket.remove('MSFT');
+      fixture.detectChanges();
+      expect(q('[data-testid="basket-split"]')).toBeNull();
+    });
+
+    it('starts with no amount, so nothing can go into the plan yet', () => {
+      expect(amountInput().value).toBe('');
+      expect(addButton()!.disabled).toBe(true);
+      expect(q('[data-testid="basket-max"]')!.textContent).toContain('$9,950.24');
+    });
+
+    it('splits a typed amount evenly', () => {
+      type(amountInput(), '1,000');
+      expect(basket.totalCents()).toBe(100000);
+      expect(['AAPL', 'NVDA', 'MSFT'].map(s => rowAmount(s).value)).toEqual(['333.34', '333.33', '333.33']);
+    });
+
+    it('sets the amount from the slider', () => {
+      const slider = q<HTMLInputElement>('[data-testid="basket-slider"]')!;
+      slider.value = '250000';
+      slider.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
+      expect(amountInput().value).toBe('2500.00');
+    });
+
+    it('brings an amount over the cash available down to it, and says so', () => {
+      type(amountInput(), '50000');
+      expect(basket.totalCents()).toBe(995024);
+      expect(q('[data-testid="amount-note"]')!.textContent).toContain('You can invest up to $9,950.24.');
+    });
+
+    it('lowers the amount when the cash available falls below it', () => {
+      type(amountInput(), '9000');
+      account.set({ accountId: 'a1', cash: 5000 });
+      TestBed.tick();
+      fixture.detectChanges();
+      expect(basket.totalCents()).toBe(497512);
+      expect(q('[data-testid="amount-note"]')!.textContent).toContain('lowered to $4,975.12');
+    });
+
+    it('leaves room for buys other tools put in the plan', () => {
+      prices.set({ F: 12 });
+      plan().addPlan('rebalance', 'a1', [{ symbol: 'F', side: 'BUY', quantity: 100 }]);
+      fixture.detectChanges();
+      // (10,000 / 1.005) - 100 x 12 = 8,750.24
+      expect(q('[data-testid="basket-max"]')!.textContent).toContain('$8,750.24');
+    });
+
+    it('moves 1% between neighbours with the arrow keys', () => {
+      type(amountInput(), '1000');
+      const divider = q('[data-divider="0"]')!;
+      divider.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+      fixture.detectChanges();
+      expect(basket.amounts()).toEqual([34334, 32333, 33333]);
+      expect(divider.getAttribute('aria-valuetext')).toBe('AAPL 34%, NVDA 32%');
+    });
+
+    it('keeps the total when one stock\'s amount is typed', () => {
+      type(amountInput(), '1000');
+      type(rowAmount('AAPL'), '500');
+      expect(basket.amounts()).toEqual([50000, 25000, 25000]);
+      expect(basket.amounts().reduce((a, b) => a + b)).toBe(100000);
+    });
+
+    it('rounds each amount down to whole shares and shows what is left', () => {
+      type(amountInput(), '1000');
+      // 333.34 / 105 = 3 shares (315.00), 18.34 left.
+      expect(rowShares('AAPL')).toBe('3 shares at $105.00 · $18.34 left');
+      // Invested 315 + 309 + 294.
+      expect(q('[data-testid="basket-totals"]')!.textContent).toContain('$918.00');
+      expect(q('[data-testid="basket-totals"]')!.textContent).toContain('$82.00');
+    });
+
+    it('prices buys at the ask once the quote is in', () => {
+      quoteOffsets.set({ AAPL: { ask: 6.2, bid: -0.1 } });
+      type(amountInput(), '1000');
+      // 333.34 / 111.20 = 2 shares.
+      expect(rowShares('AAPL')).toBe('2 shares at $111.20 · $110.94 left');
+    });
+
+    it('flags a stock whose amount doesn\'t reach one share', () => {
+      type(amountInput(), '1000');
+      type(rowAmount('MSFT'), '50');
+      expect(rowOf('MSFT').querySelector('[data-testid="row-not-enough"]')!.textContent).toBe('Not enough for 1 share');
+      expect(q('[data-testid="left-out"]')!.textContent).toContain('MSFT');
+    });
+
+    describe('adding to the plan', () => {
+      it('sends one buy per stock with shares, tagged Basket, leaving out any without', () => {
+        type(amountInput(), '300');
+        type(rowAmount('MSFT'), '0');
+        // AAPL 150 / 105 = 1 (45 left), NVDA 150 / 103 = 1 (47 left): 92 left, too little for another share.
+        addButton()!.click();
+        fixture.detectChanges();
+        expect(q('[data-testid="leftover-prompt"]')).toBeNull();
+        expect(planLines()).toEqual(['BUY 1 AAPL (basket)', 'BUY 1 NVDA (basket)']);
+        expect(q('[data-testid="added-note"]')!.textContent!.trim())
+          .toBe('2 buys added to your plan: $208.00 invested, $92.00 left over. Left out, not enough for 1 share: MSFT.');
+      });
+
+      it('replaces the Basket buys it added before', () => {
+        // $1,000 leaves $82.00 and $400 leaves $94.00: neither buys another share, so no prompt.
+        type(amountInput(), '1000');
+        addButton()!.click();
+        fixture.detectChanges();
+        expect(planLines()).toEqual(['BUY 3 AAPL (basket)', 'BUY 3 MSFT (basket)', 'BUY 3 NVDA (basket)']);
+        type(amountInput(), '400');
+        addButton()!.click();
+        fixture.detectChanges();
+        expect(planLines()).toEqual(['BUY 1 AAPL (basket)', 'BUY 1 MSFT (basket)', 'BUY 1 NVDA (basket)']);
+      });
+
+      it('asks before spending the leftover, and never more than the amount chosen', () => {
+        type(amountInput(), '5000');
+        // 1666.67 / 105 = 15 (91.67 left), 1666.67 / 103 = 16 (18.67), 1666.66 / 98 = 17 (0.66): 111.00 left.
+        addButton()!.click();
+        fixture.detectChanges();
+        const prompt = q('[data-testid="leftover-prompt"]')!.textContent!.replace(/\s+/g, ' ');
+        expect(prompt).toContain('You have $111.00 left over. It could buy +1 MSFT ($98.00), leaving $13.00.');
+        expect(plan().isEmpty()).toBe(true);
+
+        q<HTMLButtonElement>('[data-testid="use-leftovers"]')!.click();
+        fixture.detectChanges();
+        expect(planLines()).toEqual(['BUY 15 AAPL (basket)', 'BUY 18 MSFT (basket)', 'BUY 16 NVDA (basket)']);
+        // 15 x 105 + 18 x 98 + 16 x 103 = 4,987: within the 5,000 chosen.
+        expect(q('[data-testid="added-note"]')!.textContent!.trim())
+          .toBe('3 buys added to your plan, using leftovers: $4,987.00 invested, $13.00 left over.');
+      });
+
+      it('adds without the extras when asked to', () => {
+        type(amountInput(), '5000');
+        addButton()!.click();
+        fixture.detectChanges();
+        q<HTMLButtonElement>('[data-testid="add-without"]')!.click();
+        fixture.detectChanges();
+        expect(planLines()).toEqual(['BUY 15 AAPL (basket)', 'BUY 17 MSFT (basket)', 'BUY 16 NVDA (basket)']);
+      });
+
+      it('adds nothing on Cancel', () => {
+        type(amountInput(), '5000');
+        addButton()!.click();
+        fixture.detectChanges();
+        q<HTMLButtonElement>('[data-testid="offer-cancel"]')!.click();
+        fixture.detectChanges();
+        expect(plan().isEmpty()).toBe(true);
+        expect(addButton()).not.toBeNull();
+      });
+    });
   });
 });
