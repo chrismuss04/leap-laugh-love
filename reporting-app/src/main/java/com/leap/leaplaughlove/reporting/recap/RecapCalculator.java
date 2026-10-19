@@ -365,6 +365,10 @@ public class RecapCalculator {
         private static List<RecapFill> side(List<RecapFill> fills, RecapFill.Side side) {
             return fills.stream().filter(fill -> fill.side() == side).toList();
         }
+
+        private static LocalDate fillDay(RecapFill fill) {
+            return fill.filledAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
+        }
     }
 
     /**
@@ -377,10 +381,6 @@ public class RecapCalculator {
             prices.closeOn(symbol, month.atDay(day)).ifPresent(close -> closes.add(money(close)));
         }
         return closes;
-    }
-
-    private static LocalDate fillDay(RecapFill fill) {
-        return fill.filledAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();
     }
 
     private static <T> BigDecimal sum(List<T> items, Function<T, BigDecimal> amount) {
