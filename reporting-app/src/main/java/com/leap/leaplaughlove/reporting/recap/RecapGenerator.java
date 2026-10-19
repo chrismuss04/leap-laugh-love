@@ -59,6 +59,9 @@ public class RecapGenerator {
      * @throws RecapPricesUnavailableException when market data fails; nothing is stored
      */
     public synchronized int generate(YearMonth month) {
+        // Stamped before the fills are read, not after pricing: a fill loaded in between isn't in
+        // these recaps, and has to show as loaded after them for the catch-up run to rebuild.
+        OffsetDateTime generatedAt = OffsetDateTime.now(clock);
         Map<UUID, List<RecapFill>> fillsByClient = fills.fillsThrough(month);
         if (fillsByClient.isEmpty()) {
             log.info("No client had traded by the end of {}: no recaps to build", month);
@@ -81,7 +84,7 @@ public class RecapGenerator {
         topPercents.forEach((clientId, topPercent) -> recaps.compute(clientId,
                 (id, recap) -> recap.withTopPercent(topPercent)));
 
-        snapshots.saveMonth(month, recaps, OffsetDateTime.now(clock));
+        snapshots.saveMonth(month, recaps, generatedAt);
         log.info("Stored {} recaps of {}, priced from {} symbols", recaps.size(), month, symbols.size());
         return recaps.size();
     }

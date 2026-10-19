@@ -89,6 +89,16 @@ class RecapRepositoriesTest {
                 OffsetDateTime.parse(completedAt));
     }
 
+    private void loadedOrder(String status, String completedAt, OffsetDateTime loadedAt) {
+        jdbc.update("""
+                INSERT INTO reporting.orders (order_id, account_id, client_id, instrument_id, symbol, side, quantity,
+                                              status, fill_price, submitted_at, completed_at, loaded_at)
+                VALUES (?, ?, ?, ?, 'AAPL', 'BUY', 1, ?, ?, ?, ?, ?)
+                """, UUID.randomUUID(), account, alice, UUID.randomUUID(), status,
+                "FILLED".equals(status) ? new BigDecimal("100") : null, OffsetDateTime.parse(completedAt),
+                OffsetDateTime.parse(completedAt), loadedAt);
+    }
+
     @Test
     @DisplayName("reads every client's fills up to the month's end, and only fills")
     void fillsThroughMonth() {
@@ -125,17 +135,38 @@ class RecapRepositoriesTest {
                 new PriceBook(Map.of("AAPL", Map.of(LocalDate.of(2026, 9, 30), new BigDecimal("110")))),
                 Map.of()).withTopPercent(1);
 
-        assertFalse(snapshots.hasMonth(SEP));
         snapshots.saveMonth(SEP, Map.of(alice, first, bob, first), GENERATED);
         snapshots.saveMonth(SEP, Map.of(alice, rerun), GENERATED.plusDays(1));
 
-        assertTrue(snapshots.hasMonth(SEP));
-        assertFalse(snapshots.hasMonth(SEP.plusMonths(1)));
         StoredRecap stored = snapshots.find(alice, SEP).orElseThrow();
         assertEquals(RecapCalculator.SCHEMA_VERSION, stored.schemaVersion());
         assertEquals(GENERATED.plusDays(1).toInstant(), stored.generatedAt().toInstant());
         assertEquals(rerun, snapshots.payload(stored));
         assertEquals(first, snapshots.payload(snapshots.find(bob, SEP).orElseThrow()));
         assertTrue(snapshots.find(alice, SEP.minusMonths(1)).isEmpty());
+    }
+
+    @Test
+    @DisplayName("a month is up to date once built, until a fill up to its end is loaded after the build")
+    void upToDate() {
+        RecapPayload quiet = new RecapCalculator().calculate(SEP, List.of(), PriceBook.empty(), Map.of());
+        loadedOrder("FILLED", "2026-09-10T14:00:00Z", GENERATED.minusHours(1));
+
+        assertFalse(snapshots.isUpToDate(SEP), "nothing built yet");
+        snapshots.saveMonth(SEP, Map.of(alice, quiet), GENERATED);
+        assertTrue(snapshots.isUpToDate(SEP));
+
+        // Loaded after the build, but none a September recap covers.
+        loadedOrder("FILLED", "2026-10-01T00:00:00Z", GENERATED.plusHours(1));
+        loadedOrder("REJECTED", "2026-09-12T14:00:00Z", GENERATED.plusHours(1));
+        assertTrue(snapshots.isUpToDate(SEP));
+
+        // The ETL catches up on a September fill: September needs rebuilding.
+        loadedOrder("FILLED", "2026-09-28T12:00:00Z", GENERATED.plusHours(1));
+        assertFalse(snapshots.isUpToDate(SEP));
+
+        snapshots.saveMonth(SEP, Map.of(alice, quiet), GENERATED.plusHours(2));
+        assertTrue(snapshots.isUpToDate(SEP));
+        assertFalse(snapshots.isUpToDate(SEP.plusMonths(1)));
     }
 }

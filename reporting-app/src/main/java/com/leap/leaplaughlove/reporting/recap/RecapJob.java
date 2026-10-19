@@ -15,9 +15,11 @@ import java.time.YearMonth;
  *   <li>Monthly, just after a UTC month ends: builds the month that ended, so recaps are ready the
  *       morning a new month starts.</li>
  *   <li>Catch-up, shortly after startup and every few minutes after: builds last month if it has no
- *       recaps yet. It covers a service that was down at the monthly run, a first deploy, and a run
- *       that failed because market data was unreachable or still starting. Once the month is built
- *       it costs one query.</li>
+ *       recaps yet, or rebuilds it if a fill from up to its end was loaded after it was built. It
+ *       covers a service that was down at the monthly run, a first deploy, a run that failed because
+ *       market data was unreachable or still starting, and a run that went ahead while the ETL was
+ *       down or still loading the month's orders. Once the month is built and current it costs one
+ *       query.</li>
  * </ul>
  * Off when reporting.recap.enabled is false, as in tests.
  */
@@ -49,12 +51,12 @@ public class RecapJob {
         build(lastMonth());
     }
 
-    /** Builds last month if it has no recaps yet. */
+    /** Builds last month if it has no recaps yet, or fills have arrived since it was built. */
     @Scheduled(initialDelayString = "${reporting.recap.catch-up-initial-delay-ms:60000}",
             fixedDelayString = "${reporting.recap.catch-up-delay-ms:300000}")
     public void catchUp() {
         YearMonth month = lastMonth();
-        if (!snapshots.hasMonth(month)) {
+        if (!snapshots.isUpToDate(month)) {
             build(month);
         }
     }
