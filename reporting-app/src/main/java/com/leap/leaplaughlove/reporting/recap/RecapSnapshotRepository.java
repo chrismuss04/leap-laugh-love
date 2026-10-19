@@ -43,16 +43,17 @@ public class RecapSnapshotRepository {
             WHERE client_id = :clientId AND month = :month
             """;
 
-    // A fill the ETL loaded after the month was built (it was down, or still catching up, when the
-    // job ran) leaves the month's recaps out of date. The slack covers an ETL transaction that
-    // stamped loaded_at just before the build read the fills but committed just after.
+    // A month's recaps are out of date when any is in an older JSON shape (RecapService won't serve
+    // those), or when the ETL loaded a fill after they were built (it was down, or still catching
+    // up, when the job ran). The slack covers an ETL transaction that stamped loaded_at just before
+    // the build read the fills but committed just after.
     private static final String IS_UP_TO_DATE_SQL = """
             WITH built AS (
-                SELECT MIN(generated_at) AS generated_at
+                SELECT MIN(generated_at) AS generated_at, BOOL_AND(schema_version = :schemaVersion) AS current
                 FROM reporting.client_recaps
                 WHERE month = :month
             )
-            SELECT built.generated_at IS NOT NULL AND NOT EXISTS (
+            SELECT built.generated_at IS NOT NULL AND built.current AND NOT EXISTS (
                 SELECT 1 FROM reporting.orders
                 WHERE status = 'FILLED' AND completed_at < :before
                   AND loaded_at > built.generated_at - INTERVAL '1 minute')
@@ -110,14 +111,16 @@ public class RecapSnapshotRepository {
     }
 
     /**
-     * Whether a month's recaps are stored and no fill they cover has been loaded since they were
-     * built.
+     * Whether a month's recaps are stored in the current JSON shape and no fill they cover has been
+     * loaded since they were built.
      * @param month the month
-     * @return false when the month has no recaps, or a fill up to its end arrived after them
+     * @return false when the month has no recaps, any is in an older shape, or a fill up to its end
+     *         arrived after them
      */
     public boolean isUpToDate(YearMonth month) {
         return Boolean.TRUE.equals(jdbc.queryForObject(IS_UP_TO_DATE_SQL,
                 new MapSqlParameterSource("month", month.atDay(1))
+                        .addValue("schemaVersion", RecapCalculator.SCHEMA_VERSION)
                         .addValue("before", month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC)),
                 Boolean.class));
     }

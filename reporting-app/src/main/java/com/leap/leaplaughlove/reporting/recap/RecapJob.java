@@ -15,7 +15,8 @@ import java.time.YearMonth;
  *   <li>Monthly, just after a UTC month ends: builds the month that ended, so recaps are ready the
  *       morning a new month starts.</li>
  *   <li>Catch-up, shortly after startup and every few minutes after: builds last month if it has no
- *       recaps yet, or rebuilds it if a fill from up to its end was loaded after it was built. It
+ *       recaps yet, or rebuilds it if they are in an older JSON shape (after a SCHEMA_VERSION
+ *       bump) or a fill from up to its end was loaded after they were built. It
  *       covers a service that was down at the monthly run, a first deploy, a run that failed because
  *       market data was unreachable or still starting, and a run that went ahead while the ETL was
  *       down or still loading the month's orders. Once the month is built and current it costs one

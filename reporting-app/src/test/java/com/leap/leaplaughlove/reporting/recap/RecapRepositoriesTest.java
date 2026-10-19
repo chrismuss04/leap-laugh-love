@@ -169,4 +169,16 @@ class RecapRepositoriesTest {
         assertTrue(snapshots.isUpToDate(SEP));
         assertFalse(snapshots.isUpToDate(SEP.plusMonths(1)));
     }
+
+    @Test
+    @DisplayName("a month built in an older JSON shape is out of date, so the catch-up run rebuilds it")
+    void olderShapeIsOutOfDate() {
+        RecapPayload quiet = new RecapCalculator().calculate(SEP, List.of(), PriceBook.empty(), Map.of());
+        snapshots.saveMonth(SEP, Map.of(alice, quiet, bob, quiet), GENERATED);
+        assertTrue(snapshots.isUpToDate(SEP));
+
+        jdbc.update("UPDATE reporting.client_recaps SET schema_version = ? WHERE client_id = ?",
+                RecapCalculator.SCHEMA_VERSION - 1, bob);
+        assertFalse(snapshots.isUpToDate(SEP));
+    }
 }
