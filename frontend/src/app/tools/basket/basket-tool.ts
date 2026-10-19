@@ -329,7 +329,10 @@ export class BasketToolComponent {
   readonly canAdd = computed(() => {
     const total = this.total();
     const max = this.maxCents();
-    return this.splitting() && !!total && max !== null && total <= max && this.rounding().buys.some(b => b.shares > 0);
+    if (!this.splitting() || !total || max === null || total > max) {
+      return false;
+    }
+    return this.rounding().buys.some(b => b.shares > 0);
   });
 
   readonly money = formatMoney;

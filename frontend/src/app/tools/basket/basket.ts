@@ -28,12 +28,30 @@ export const MIN_BASKET = 2;
 /** ...and holds at most ten. */
 export const MAX_BASKET = 10;
 
+/** Why a stock can't go in the basket. */
+export type Refusal = 'Not tradable' | 'Already in basket' | 'Basket full';
+
+/** What the client is told when a stock is refused. */
+const REFUSALS: Record<Refusal, (symbol: string) => string> = {
+  'Not tradable': symbol => `${symbol} can't be traded, so it can't go in a basket.`,
+  'Already in basket': symbol => `${symbol} is already in your basket.`,
+  'Basket full': () => `A basket holds up to ${MAX_BASKET} stocks. Remove one to add another.`,
+};
+
 function isStoredItem(item: Partial<BasketItem> | null | undefined): item is BasketItem {
   return typeof item?.symbol === 'string' && item.symbol.length > 0 && typeof item.name === 'string';
 }
 
 function plural(count: number): string {
   return `${count} stock${count === 1 ? '' : 's'}`;
+}
+
+/** Whether stored amounts are a valid split of the total across this many stocks. */
+function isSplitOf(amounts: number[] | undefined, count: number, totalCents: number): amounts is number[] {
+  if (!Array.isArray(amounts) || amounts.length !== count) {
+    return false;
+  }
+  return amounts.every(a => Number.isInteger(a) && a >= 0) && amounts.reduce((sum, a) => sum + a, 0) === totalCents;
 }
 
 /**
@@ -71,7 +89,7 @@ export class BasketService {
   }
 
   /** Why a symbol can't be added, in a word or two for a search result, or null when it can. */
-  reason(symbol: string): string | null {
+  reason(symbol: string): Refusal | null {
     const upper = symbol.toUpperCase();
     if (!isTradable(upper)) {
       return 'Not tradable';
@@ -85,13 +103,9 @@ export class BasketService {
   /** Adds a stock to the end of the basket. Returns why it was refused, or null once it's added. */
   add(symbol: string, name: string | null): string | null {
     const upper = symbol.toUpperCase();
-    switch (this.reason(upper)) {
-      case 'Not tradable':
-        return `${upper} can't be traded, so it can't go in a basket.`;
-      case 'Already in basket':
-        return `${upper} is already in your basket.`;
-      case 'Basket full':
-        return `A basket holds up to ${MAX_BASKET} stocks. Remove one to add another.`;
+    const refusal = this.reason(upper);
+    if (refusal) {
+      return REFUSALS[refusal](upper);
     }
     this.items.update(items => [...items, { symbol: upper, name: name || upper }]);
     this.resplit();
@@ -157,10 +171,7 @@ export class BasketService {
     const validTotal = Number.isInteger(total) && total! >= 0 ? total! : null;
     this.totalCents.set(validTotal);
     const amounts = split?.amounts;
-    const fits = Array.isArray(amounts) && amounts.length === this.count()
-      && amounts.every(a => Number.isInteger(a) && a >= 0)
-      && amounts.reduce((sum, a) => sum + a, 0) === (validTotal ?? 0);
-    this.amounts.set(fits ? amounts : evenSplit(validTotal ?? 0, this.count()));
+    this.amounts.set(isSplitOf(amounts, this.count(), validTotal ?? 0) ? amounts : evenSplit(validTotal ?? 0, this.count()));
   }
 
   private save(basket: StoredBasket): void {
