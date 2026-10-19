@@ -76,10 +76,16 @@ const NO_CHANGE = 0.005;
               <span class="who">
                 <span class="swatch" [style.background]="row.slice.color" aria-hidden="true"></span>
                 <span class="symbol">{{ row.slice.label }}</span>
-                <span class="now num">{{ current(row) }} now</span>
+                <span *ngIf="row.slice.added" class="new-tag">New</span>
+                <button *ngIf="row.slice.added" type="button" class="remove" (click)="targets().remove(row.slice.key)"
+                        [attr.aria-label]="'Remove ' + row.slice.label + ' from your donut'" title="Remove from your donut"
+                        [attr.data-remove]="row.slice.key">
+                  <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" /></svg>
+                </button>
+                <span class="now num">{{ row.slice.added ? 'Not owned yet' : current(row) + ' now' }}</span>
               </span>
             </th>
-            <td class="num current-col">{{ current(row) }}</td>
+            <td class="num current-col">{{ row.slice.added ? '—' : current(row) }}</td>
             <td class="num">
               <label class="field" [class.zero]="row.target === 0">
                 <span class="sr-only">{{ row.slice.label }} target percent</span>
@@ -184,6 +190,28 @@ const NO_CHANGE = 0.005;
     .swatch { width: 10px; height: 10px; flex: none; border-radius: 3px; }
     .symbol { font-weight: 600; color: var(--foreground); }
     .now { display: none; font-size: 12px; color: var(--subtle); }
+    .new-tag {
+      padding: 1px 7px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--primary) 16%, transparent);
+      color: var(--primary);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .remove {
+      display: inline-grid;
+      place-items: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--subtle);
+      transition: background 0.15s ease, color 0.15s ease;
+    }
+    .remove svg { fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+    .remove:hover { background: var(--loss-muted); color: var(--loss); }
     .current-col { color: var(--subtle); }
     .field {
       display: inline-flex;
@@ -223,8 +251,8 @@ const NO_CHANGE = 0.005;
     /* On a phone the current share moves under the symbol, so the target and change keep their room. */
     @container (max-width: 520px) {
       .current-col { display: none; }
-      .who { display: grid; grid-template-columns: 10px auto; column-gap: 8px; row-gap: 0; }
-      .now { display: block; grid-column: 2; justify-self: start; white-space: nowrap; }
+      .who { display: grid; grid-template-columns: 10px repeat(3, auto); justify-content: start; align-items: center; column-gap: 6px; row-gap: 0; }
+      .now { display: block; grid-column: 2 / -1; justify-self: start; white-space: nowrap; }
       th, td { padding: 8px 4px; }
       .lock-col { width: 32px; }
       .lock { width: 28px; height: 28px; }

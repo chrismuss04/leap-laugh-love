@@ -72,6 +72,13 @@ svg {
 
 .target.dim { opacity: 0.38; }
 
+/* A stock added to the donut: there's nothing of it yet, so its target is an outline to fill. */
+.target.added {
+  fill-opacity: 0.3;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
 .hatch { fill: rgb(13 13 15 / 0.55); }
 
 .target-lock { pointer-events: none; }
@@ -147,6 +154,13 @@ text { pointer-events: none; }
 .label-percent {
   fill: var(--subtle);
   font-size: 12px;
+}
+
+.label-new {
+  fill: var(--primary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .label-badge {

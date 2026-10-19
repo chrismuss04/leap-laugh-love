@@ -1,4 +1,5 @@
 import {
+  addSlice, removeSlice, takeEvenly,
   FINE_STEP, STEP, WHOLE, apportion, boundaryPosition, dragBoundary, equalWeight, formatTarget, moveBoundary,
   parseTarget, setTarget, targetsFromShares
 } from './targets';
@@ -156,6 +157,49 @@ describe('Rebalance targets', () => {
     it('works around locked holdings', () => {
       expect(equalWeight([500, 200, 200, 100], [true, false, false, false], holdings)).toEqual([500, 200, 200, 100]);
       expect(equalWeight([400, 100, 300, 200], [true, false, false, false], holdings)).toEqual([400, 200, 200, 200]);
+    });
+  });
+
+  describe('adding and removing a slice', () => {
+    it('adds a slice with 5% taken evenly from the others', () => {
+      // A new slice before cash: AAPL, MSFT and cash each give a third of 5% (1.7%, 1.7%, 1.6%).
+      const { targets, locked } = addSlice([500, 300, 200], none(3), 2);
+      expect(targets).toEqual([483, 283, 50, 184]);
+      expect(locked).toEqual([false, false, false, false]);
+      expect(sum(targets)).toBe(WHOLE);
+    });
+
+    it('takes from unlocked slices only', () => {
+      const { targets } = addSlice([500, 300, 200], [false, true, false], 2);
+      expect(targets).toEqual([475, 300, 50, 175]);
+    });
+
+    it('takes the rest from the others when a slice runs out', () => {
+      // MSFT only has 1% to give; AAPL and cash cover the other 4%.
+      const { targets } = addSlice([790, 10, 200], none(3), 2);
+      expect(targets).toEqual([769, 0, 50, 181]);
+    });
+
+    it('adds at 0% when everything else is locked', () => {
+      const { targets } = addSlice([600, 400], [true, true], 1);
+      expect(targets).toEqual([600, 0, 400]);
+    });
+
+    it('reports how much it could take', () => {
+      expect(takeEvenly([30, 10, 0], none(3), 2, 50)).toEqual({ targets: [0, 0, 0], taken: 40 });
+    });
+
+    it('gives a removed slice\'s target back evenly to the unlocked slices', () => {
+      // Adding then removing lands back where it started.
+      const added = addSlice([500, 300, 200], none(3), 2);
+      const { targets, locked } = removeSlice(added.targets, added.locked, 2);
+      expect(targets).toEqual([500, 300, 200]);
+      expect(locked).toEqual([false, false, false]);
+      expect(removeSlice([450, 300, 50, 200], [false, true, false, false], 2).targets).toEqual([475, 300, 225]);
+    });
+
+    it('gives it to every slice when all the rest are locked', () => {
+      expect(removeSlice([600, 50, 350], [true, false, true], 1).targets).toEqual([625, 375]);
     });
   });
 });

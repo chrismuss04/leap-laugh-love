@@ -20,6 +20,8 @@ interface PlacedLabel {
   percent: string;
   /** The keys' combined target, when it differs from what they hold now. */
   target: string | null;
+  /** Names a stock added to the donut, not owned yet. */
+  added: boolean;
   /** The trade a lone slice needs: "↑6" or "↓4". */
   badge: { side: 'BUY' | 'SELL'; text: string } | null;
   x: number;
@@ -45,6 +47,8 @@ interface TargetArc {
   key: string;
   color: string;
   path: string;
+  /** A stock added to the donut, not owned yet. */
+  added: boolean;
 }
 
 /** A draggable boundary between two targets, on the target ring. */
@@ -218,6 +222,7 @@ export class AllocationDonutComponent {
       return [];
     }
     const colors = new Map(this.slices().map(s => [s.key, s.color]));
+    const added = new Set(this.slices().filter(s => s.added).map(s => s.key));
     const targets = plan.targets();
     let start = 0;
     return plan.keys().flatMap((key, i) => {
@@ -229,6 +234,7 @@ export class AllocationDonutComponent {
       return [{
         key,
         color: colors.get(key) ?? 'var(--muted-foreground)',
+        added: added.has(key),
         path: annulus(cx, cy, outer + RING_GAP + RING_WIDTH, outer + RING_GAP, turn(from), turn(start))
       }];
     });
@@ -296,6 +302,7 @@ export class AllocationDonutComponent {
           // Phones keep labels short; the targets table has every target.
           target: plan && w >= NARROW ? this.changedTarget(plan, label.keys, label.share) : null,
           badge: w >= NARROW ? this.badgeFor(label.keys) : null,
+          added: label.keys.length === 1 && !!slices.find(s => s.key === label.keys[0])?.added,
           x,
           y,
           anchor: side === 'right' ? 'start' : 'end',

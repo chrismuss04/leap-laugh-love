@@ -59,7 +59,8 @@
             <!-- The target allocation, as a thinner ring around the current one. -->
             <g *ngIf="targets()" class="target-ring" aria-hidden="true">
               <ng-container *ngFor="let arc of targetArcs(); trackBy: trackTarget">
-                <path class="target" [attr.d]="arc.path" [attr.fill]="arc.color" fill-rule="evenodd"
+                <path class="target" [class.added]="arc.added" [attr.d]="arc.path" [attr.fill]="arc.color" fill-rule="evenodd"
+                      [style.stroke]="arc.added ? arc.color : null"
                       [attr.data-target]="arc.key" [class.dim]="isDimmed(arc.key)" />
                 <path *ngIf="isLocked(arc.key)" class="target-lock" [attr.d]="arc.path" fill="url(#donut-lock-hatch)"
                       fill-rule="evenodd" [attr.data-locked]="arc.key" />
@@ -80,6 +81,7 @@
                 <path class="leader" [attr.d]="label.leader" />
                 <text [attr.x]="label.x" [attr.y]="label.y" [attr.text-anchor]="label.anchor">
                   <tspan class="label-symbol">{{ label.text }}</tspan>
+                  <tspan *ngIf="label.added" class="label-new" [attr.data-new]="label.key"> NEW</tspan>
                   <tspan *ngIf="label.badge" class="label-badge" [class.buy]="label.badge.side === 'BUY'"
                          [class.sell]="label.badge.side === 'SELL'" [attr.data-badge]="label.key"> {{ label.badge.text }}</tspan>
                   <tspan class="label-percent num" [attr.x]="label.x" dy="15">{{ label.percent }}</tspan>

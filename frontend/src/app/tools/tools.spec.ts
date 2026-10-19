@@ -514,6 +514,160 @@ describe('Trading Tools', () => {
     });
   });
 
+  describe('rebalance: adding a stock', () => {
+    const plan = (): TradePlanService =>
+      harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);
+    const q = <T extends Element = HTMLElement>(selector: string) => el().querySelector<T>(selector);
+    const target = (key: string) => q<HTMLInputElement>(`input[data-target-input="${key}"]`)?.value ?? null;
+    const trades = () => Array.from(el().querySelectorAll<HTMLElement>('[data-testid="trade-preview"] .trades li'))
+      .map(li => li.innerText.replace(/\s+/g, ' ').trim());
+    async function drawn(): Promise<void> {
+      for (let i = 0; i < 3; i++) {
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        harness.detectChanges();
+      }
+      await harness.fixture.whenStable();
+    }
+    /** Opens Add stock and types into its search. */
+    async function search(text: string): Promise<void> {
+      if (!q('[data-testid="add-stock-panel"]')) {
+        q<HTMLButtonElement>('[data-testid="add-stock"]')!.click();
+        harness.detectChanges();
+        await new Promise(resolve => setTimeout(resolve));
+      }
+      const input = q<HTMLInputElement>('[data-testid="add-stock-panel"] input')!;
+      input.focus();
+      input.value = text;
+      input.dispatchEvent(new Event('input'));
+      harness.detectChanges();
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+    }
+    const result = (symbol: string) => q<HTMLLIElement>(`[data-testid="add-stock-panel"] li[data-symbol="${symbol}"]`)!;
+    async function add(symbol: string): Promise<void> {
+      await search(symbol);
+      result(symbol).click();
+      harness.detectChanges();
+      await drawn();
+    }
+
+    beforeEach(async () => {
+      marketApi.getAllLatestPrices.mockReturnValue(of([
+        { symbol: 'AAPL', name: 'Apple', price: 150, asOf: '' },
+        { symbol: 'MSFT', name: 'Microsoft', price: 400, asOf: '' },
+        { symbol: 'NVDA', name: 'NVIDIA', price: 100, asOf: '' },
+        { symbol: 'SPX', name: 'S&P 500', price: 5000, asOf: '' }
+      ]));
+      await open('/tools/rebalance?account=a1');
+      await drawn();
+    });
+
+    it('opens the symbol search, focused, from an Add stock button', async () => {
+      q<HTMLButtonElement>('[data-testid="add-stock"]')!.click();
+      harness.detectChanges();
+      await new Promise(resolve => setTimeout(resolve));
+      expect(q('[data-testid="add-stock-panel"]')).not.toBeNull();
+      expect(document.activeElement).toBe(q('[data-testid="add-stock-panel"] input'));
+      expect(q('[data-testid="add-stock"]')!.getAttribute('aria-expanded')).toBe('true');
+    });
+
+    it('adds a chosen stock as a new slice with a 5% target taken evenly from the others', async () => {
+      // a1: AAPL 60% and cash 40%; each gives 2.5%.
+      await add('NVDA');
+      expect([target('AAPL'), target('NVDA'), target('cash')]).toEqual(['57.5', '5', '37.5']);
+      expect(q('[data-new="NVDA"]')).not.toBeNull();
+      expect(q('[data-testid="add-stock-panel"]')).toBeNull();
+      expect(document.activeElement).toBe(q('[data-testid="add-stock"]'));
+    });
+
+    it('shows the BUY for the added stock in the preview, priced live at its ask', async () => {
+      await add('NVDA');
+      // 5% of $2,500 is 1.25 shares of NVDA: 1 whole share, at the 100.10 ask.
+      expect(trades()).toEqual(['↑ Buy 1 NVDA ≈ $100']);
+      expect(marketApi.getQuote).toHaveBeenCalledWith('NVDA');
+      expect(stream.watch).toHaveBeenLastCalledWith(expect.arrayContaining(['AAPL', 'NVDA']));
+    });
+
+    it('only lets tradable stocks be added', async () => {
+      await search('SP');
+      expect(result('SPX').textContent).toContain('Not tradable');
+      result('SPX').click();
+      harness.detectChanges();
+      expect(target('SPX')).toBeNull();
+    });
+
+    it("doesn't add a stock that's already in the donut", async () => {
+      await search('AAPL');
+      expect(result('AAPL').textContent).toContain('In donut');
+      result('AAPL').click();
+      harness.detectChanges();
+      expect(el().querySelectorAll('input[data-target-input="AAPL"]')).toHaveLength(1);
+
+      await add('NVDA');
+      await search('NVDA');
+      expect(result('NVDA').textContent).toContain('In donut');
+    });
+
+    it('takes the new target from unlocked slices only', async () => {
+      q<HTMLButtonElement>('tr[data-key="AAPL"] button.lock')!.click();
+      harness.detectChanges();
+      await add('NVDA');
+      expect([target('AAPL'), target('NVDA'), target('cash')]).toEqual(['60', '5', '35']);
+    });
+
+    it('removes an added stock again, giving its target back', async () => {
+      await add('NVDA');
+      q<HTMLButtonElement>('[data-remove="NVDA"]')!.click();
+      harness.detectChanges();
+      await drawn();
+      expect(target('NVDA')).toBeNull();
+      expect([target('AAPL'), target('cash')]).toEqual(['60', '40']);
+      expect(q('[data-testid="already-balanced"]')).not.toBeNull();
+      // Only added stocks can be removed.
+      expect(q('[data-remove="AAPL"]')).toBeNull();
+    });
+
+    it('puts the added stock\'s BUY in the plan', async () => {
+      await add('NVDA');
+      q<HTMLButtonElement>('[data-testid="add-to-plan"]')!.click();
+      harness.detectChanges();
+      expect(plan().orders().map(o => [o.source, o.side, o.symbol, o.quantity])).toEqual([['rebalance', 'BUY', 'NVDA', 1]]);
+    });
+
+    it('drops added stocks on another account', async () => {
+      await add('NVDA');
+      await harness.navigateByUrl('/tools/rebalance?account=a2');
+      await drawn();
+      expect(target('NVDA')).toBeNull();
+      expect(target('MSFT')).not.toBeNull();
+    });
+  });
+
+  it("opens Add stock from an empty account's prompt, funding the stock from cash", async () => {
+    holdingsApi.getHoldings.mockReturnValue(of({
+      accounts: [{ accountId: 'a1', accountNumber: 'ACC-0001', baseCurrency: 'USD', positions: [] }]
+    }));
+    balanceApi.getBalance.mockReturnValue(of(balances(['a1'])));
+    await open('/tools/rebalance?account=a1');
+    for (let i = 0; i < 3; i++) {
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      harness.detectChanges();
+    }
+    el().querySelector<HTMLButtonElement>('[data-testid="add-holding"]')!.click();
+    harness.detectChanges();
+    await new Promise(resolve => setTimeout(resolve));
+    const input = el().querySelector<HTMLInputElement>('[data-testid="add-stock-panel"] input')!;
+    expect(document.activeElement).toBe(input);
+    input.focus();
+    input.value = 'MSFT';
+    input.dispatchEvent(new Event('input'));
+    harness.detectChanges();
+    el().querySelector<HTMLLIElement>('[data-testid="add-stock-panel"] li[data-symbol="MSFT"]')!.click();
+    harness.detectChanges();
+    expect(el().querySelector<HTMLInputElement>('input[data-target-input="MSFT"]')!.value).toBe('5');
+    expect(el().querySelector<HTMLInputElement>('input[data-target-input="cash"]')!.value).toBe('95');
+  });
+
   describe('trade plan tray', () => {
     const plan = (): TradePlanService =>
       harness.fixture.debugElement.query(By.directive(ToolsComponent)).injector.get(TradePlanService);

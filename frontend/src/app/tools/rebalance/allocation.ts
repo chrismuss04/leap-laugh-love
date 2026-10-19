@@ -29,6 +29,8 @@ export interface DonutSlice {
   color: string;
   /** Too small to label on its own, so it shares the 'Other' label (but is still its own slice). */
   grouped: boolean;
+  /** A stock the client added to the donut but doesn't own yet. */
+  added?: boolean;
 }
 
 export interface Allocation {

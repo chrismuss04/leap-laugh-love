@@ -1,8 +1,15 @@
 import { Injectable, computed, signal } from '@angular/core';
 import { Allocation, CASH_COLOR, DonutSlice, SLICE_PALETTE } from './allocation';
 import {
-  WHOLE, boundarySides, dragBoundary, equalWeight, formatTarget, moveBoundary, setTarget, targetsFromShares
+  WHOLE, addSlice, boundarySides, dragBoundary, equalWeight, formatTarget, moveBoundary, removeSlice, setTarget,
+  targetsFromShares
 } from './targets';
+
+/** A stock added to the donut that the account doesn't own yet. */
+export interface AddedStock {
+  symbol: string;
+  name: string;
+}
 
 /**
  * Rebalance Donut: the client's target allocation for one account, in tenths of a percent, in a
@@ -10,6 +17,11 @@ import {
  * prices tick; once they do, targets hold still. Provided by the Rebalance tool, so the donut and
  * the targets table edit one set of targets. Every change made by keyboard, typing, a finished
  * drag or a shortcut is put into `announcement` for a polite live region.
+ *
+ * The client can also add stocks they don't own yet. Each comes in just before cash with a 5%
+ * target taken evenly from the unlocked slices, and can be removed again, giving its target back.
+ * The Rebalance tool draws them as zero-value slices; one that gets bought becomes an ordinary
+ * holding.
  */
 @Injectable()
 export class TargetAllocation {
@@ -21,6 +33,8 @@ export class TargetAllocation {
   /** Whether the client has changed a target since the last reset. */
   readonly edited = signal(false);
   readonly announcement = signal('');
+  /** Stocks added to the donut that the account doesn't own, in the order they were added. */
+  readonly added = signal<AddedStock[]>([]);
 
   readonly lockedFlags = computed(() => {
     const locked = this.locked();
@@ -45,6 +59,15 @@ export class TargetAllocation {
     const keys = slices.map(s => s.key);
     const current = this.keys();
     const sameSet = scope === this.scope && keys.length === current.length && keys.every(key => current.includes(key));
+    if (scope !== this.scope && this.added().length) {
+      // Added stocks belong to the account they were added on.
+      this.added.set([]);
+    }
+    // An added stock that's now held is an ordinary holding.
+    const stillNew = this.added().filter(a => slices.some(s => s.key === a.symbol && s.added) || !keys.includes(a.symbol));
+    if (stillNew.length !== this.added().length) {
+      this.added.set(stillNew);
+    }
     this.scope = scope;
     if (!sameSet) {
       this.keys.set(keys);
@@ -81,6 +104,54 @@ export class TargetAllocation {
 
   isLocked(key: string): boolean {
     return this.locked().has(key);
+  }
+
+  isAdded(key: string): boolean {
+    return this.added().some(a => a.symbol === key);
+  }
+
+  /**
+   * Adds a stock the account doesn't own, just before cash, with a 5% target taken evenly from the
+   * unlocked slices. Returns false, and says why, if it's already in the donut.
+   */
+  add(symbol: string, name: string): boolean {
+    const key = symbol.toUpperCase();
+    const keys = this.keys();
+    if (keys.includes(key)) {
+      this.announce(`${key} is already in your donut`);
+      return false;
+    }
+    const cashAt = keys.indexOf('cash');
+    const index = cashAt < 0 ? keys.length : cashAt;
+    const { targets } = addSlice(this.targets(), this.lockedFlags(), index);
+    this.keys.set([...keys.slice(0, index), key, ...keys.slice(index)]);
+    this.targets.set(targets);
+    this.labels.update(labels => ({ ...labels, [key]: key }));
+    this.kinds.update(kinds => ({ ...kinds, [key]: 'holding' }));
+    this.shares.update(shares => ({ ...shares, [key]: 0 }));
+    this.added.update(added => [...added, { symbol: key, name: name || key }]);
+    this.edited.set(true);
+    this.announce(targets[index] > 0
+      ? `${key} added with a ${formatTarget(targets[index])} target`
+      : `${key} added at 0%: every other slice is locked`);
+    return true;
+  }
+
+  /** Takes an added stock back out, giving its target back evenly to the unlocked slices. */
+  remove(key: string): void {
+    const index = this.keys().indexOf(key);
+    if (index < 0 || !this.isAdded(key)) {
+      return;
+    }
+    const { targets } = removeSlice(this.targets(), this.lockedFlags(), index);
+    this.keys.update(keys => keys.filter(k => k !== key));
+    this.targets.set(targets);
+    this.added.update(added => added.filter(a => a.symbol !== key));
+    if (this.locked().has(key)) {
+      this.locked.update(locked => new Set([...locked].filter(k => k !== key)));
+    }
+    this.edited.set(true);
+    this.announce(`${key} removed from your donut`);
   }
 
   /** A pointer drag's step: moves boundary `boundary` towards `position` tenths. Announced when the drag ends. */
@@ -123,7 +194,7 @@ export class TargetAllocation {
     this.announce(nowLocked ? `${this.label(key)} locked at ${target}` : `${this.label(key)} unlocked`);
   }
 
-  /** Back to the current allocation. Locks stay, so a client can reset around them. */
+  /** Back to the current allocation. Locks and added stocks stay; added stocks go back to 0%. */
   reset(): void {
     this.targets.set(this.currentTargets());
     this.edited.set(false);

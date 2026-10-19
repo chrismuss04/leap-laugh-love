@@ -82,7 +82,7 @@ describe('SymbolSearchComponent', () => {
     type('aapl');
     expect(search.results[0].price).toBe(175);
     type('xap');
-    expect(search.results[0]).toEqual({ symbol: 'XAP', name: null, price: 1 });
+    expect(search.results[0]).toEqual({ symbol: 'XAP', name: null, price: 1, reason: null });
   });
 
   it('limits results to eight', () => {
@@ -166,5 +166,42 @@ describe('SymbolSearchComponent', () => {
     search.filter();
     fixture.detectChanges();
     expect(fixture.nativeElement.textContent).toContain('No symbols match');
+  });
+
+  describe('unavailable results', () => {
+    beforeEach(() => {
+      fixture.componentRef.setInput('unavailable', (symbol: string) => (symbol === 'AAPL' ? 'In donut' : null));
+      search.onFocus();
+    });
+
+    it('lists them with their reason instead of a price', () => {
+      type('AP');
+      fixture.detectChanges();
+      const row = (fixture.nativeElement as HTMLElement).querySelector('li[data-symbol="AAPL"]')!;
+      expect(row.textContent).toContain('In donut');
+      expect(row.getAttribute('aria-disabled')).toBe('true');
+      expect(row.querySelector('.price')).toBeNull();
+    });
+
+    it("can't be picked by click or Enter", () => {
+      const named: { symbol: string; name: string | null }[] = [];
+      search.picked.subscribe(pick => named.push(pick));
+      type('AAPL');
+      key('Enter');
+      search.choose(search.results[0]);
+      expect(picks).toEqual([]);
+
+      type('APLE');
+      key('Enter');
+      expect(picks).toEqual(['APLE']);
+      expect(named).toEqual([{ symbol: 'APLE', name: 'Apple Hospitality' }]);
+    });
+  });
+
+  it('falls back to the catalog name when the page passes none', () => {
+    fixture.componentRef.setInput('names', {});
+    search.onFocus();
+    type('MSFT');
+    expect(search.results[0].name).toBe('Microsoft');
   });
 });

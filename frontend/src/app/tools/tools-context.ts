@@ -111,6 +111,9 @@ export class ToolsContext {
       : [];
   });
 
+  /** Symbols an open tool works with beyond the held and planned ones (e.g. stocks added to the donut). */
+  readonly toolSymbols = signal<string[]>([]);
+
   /** Ask and bid offsets from the last trade, for the symbols in the trade plan. */
   readonly quoteOffsets = signal<Record<string, PlanQuoteOffset>>({});
   private readonly requestedQuotes = new Set<string>();
@@ -147,7 +150,7 @@ export class ToolsContext {
     // Previews and the plan are live, so keep every held and planned symbol on the price stream.
     effect(() => {
       if (!this.loading()) {
-        this.stream.watch([...this.valuation.heldSymbols(), ...this.plan.symbols()]);
+        this.stream.watch([...new Set([...this.valuation.heldSymbols(), ...this.plan.symbols(), ...this.toolSymbols()])]);
       }
     });
 

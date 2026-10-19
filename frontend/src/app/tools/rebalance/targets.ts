@@ -141,6 +141,56 @@ export function equalWeight(targets: number[], locked: boolean[], isHolding: boo
   return next;
 }
 
+/** The target a newly added stock starts with: 5%. */
+export const NEW_SLICE_TARGET = 50;
+
+/**
+ * Takes `amount` tenths evenly from the unlocked slices other than `except`: each gives the same,
+ * a slice that runs out gives what it has and the others make up the rest. Returns the new targets
+ * and how much was taken, which is less than asked only when the unlocked slices run dry.
+ */
+export function takeEvenly(targets: number[], locked: boolean[], except: number, amount: number): { targets: number[]; taken: number } {
+  const next = [...targets];
+  let left = amount;
+  let donors = next.map((_, i) => i).filter(i => i !== except && !locked[i] && next[i] > 0);
+  while (left > 0 && donors.length > 0) {
+    const asks = apportion(donors.map(() => 1), left);
+    donors.forEach((i, k) => {
+      const given = Math.min(asks[k], next[i]);
+      next[i] -= given;
+      left -= given;
+    });
+    donors = donors.filter(i => next[i] > 0);
+  }
+  return { targets: next, taken: amount - left };
+}
+
+/**
+ * Adds a slice at `index` (shifting the rest along), with `target` tenths taken evenly from the
+ * unlocked slices. Returns the targets and the new slice's place in them.
+ */
+export function addSlice(targets: number[], locked: boolean[], index: number, target = NEW_SLICE_TARGET): { targets: number[]; locked: boolean[] } {
+  const withSlice = [...targets.slice(0, index), 0, ...targets.slice(index)];
+  const withLock = [...locked.slice(0, index), false, ...locked.slice(index)];
+  const { targets: next, taken } = takeEvenly(withSlice, withLock, index, target);
+  next[index] = taken;
+  return { targets: next, locked: withLock };
+}
+
+/**
+ * Removes the slice at `index`, giving its target back evenly to the unlocked slices; to every
+ * slice when all of them are locked, so the targets still sum to 100%.
+ */
+export function removeSlice(targets: number[], locked: boolean[], index: number): { targets: number[]; locked: boolean[] } {
+  const rest = targets.filter((_, i) => i !== index);
+  const restLocked = locked.filter((_, i) => i !== index);
+  const open = rest.map((_, i) => i).filter(i => !restLocked[i]);
+  const takers = open.length ? open : rest.map((_, i) => i);
+  const gifts = apportion(takers.map(() => 1), targets[index]);
+  takers.forEach((i, k) => { rest[i] += gifts[k]; });
+  return { targets: rest, locked: restLocked };
+}
+
 /**
  * Whether a target is just the current share rounded to a tenth, so reaching it trades nothing.
  * Within a whole tenth, since apportioning can round a share either way to make 100%.
