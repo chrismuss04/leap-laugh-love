@@ -18,7 +18,7 @@ describe('Raise Cash sell plan', () => {
   describe('winners first', () => {
     it('sells the largest gain first, only as many shares as the target needs', () => {
       const result = plan({ target: 2000 });
-      expect(result.sells).toEqual([{ symbol: 'AAPL', quantity: 7, price: 150, proceeds: 1050 }]);
+      expect(result.sells).toEqual([{ symbol: 'AAPL', quantity: 7, price: 150, proceeds: 1050, realised: 350 }]);
       expect([result.raised, result.cashAfter]).toEqual([1050, 2050]);
     });
 
@@ -35,7 +35,7 @@ describe('Raise Cash sell plan', () => {
   describe('losers first', () => {
     it('sells the largest loss first, raising a little over the target in whole shares', () => {
       const result = plan({ strategy: 'losers', target: 2000 });
-      expect(result.sells).toEqual([{ symbol: 'MSFT', quantity: 3, price: 400, proceeds: 1200 }]);
+      expect(result.sells).toEqual([{ symbol: 'MSFT', quantity: 3, price: 400, proceeds: 1200, realised: -300 }]);
       expect([result.target, result.raised, result.cashAfter]).toEqual([2000, 1200, 2200]);
     });
 
@@ -125,7 +125,7 @@ describe('Raise Cash sell plan', () => {
 
     it('starts from buying power, which can be less than cash', () => {
       const result = plan({ cash: 250.5, target: 400 });
-      expect(result.sells).toEqual([{ symbol: 'AAPL', quantity: 1, price: 150, proceeds: 150 }]);
+      expect(result.sells).toEqual([{ symbol: 'AAPL', quantity: 1, price: 150, proceeds: 150, realised: 50 }]);
       expect(result.cashAfter).toBe(400.5);
     });
 
@@ -152,6 +152,35 @@ describe('Raise Cash sell plan', () => {
     });
   });
 
+  describe('realised gain and loss', () => {
+    it('totals what the sells realise against average cost', () => {
+      // 10 AAPL at +$50 and 10 NVDA at +$10 a share.
+      const result = plan({ target: 3000 });
+      expect(result.sells.map(s => s.realised)).toEqual([500, 100]);
+      expect(result.realised).toBe(600);
+    });
+
+    it('nets gains against losses', () => {
+      // 5 MSFT at -$100, 4 TSLA at -$50 and 14 NVDA at +$10 a share.
+      expect(plan({ strategy: 'losers', target: 4500 }).realised).toBe(-560);
+    });
+
+    it('leaves out a sell with no average cost, and is null when none has one', () => {
+      const unknown: SellableHolding[] = [
+        { symbol: 'A', quantity: 10, price: 10, averageCost: null },
+        { symbol: 'B', quantity: 10, price: 10, averageCost: 8 }
+      ];
+      const both = plan({ holdings: unknown, cash: 0, target: 200, strategy: 'even' });
+      expect(both.sells.map(s => [s.symbol, s.realised])).toEqual([['A', null], ['B', 20]]);
+      expect(both.realised).toBe(20);
+      expect(plan({ holdings: unknown.slice(0, 1), cash: 0, target: 50 }).realised).toBeNull();
+    });
+
+    it('is null with nothing to sell', () => {
+      expect(plan({ target: 1000 }).realised).toBeNull();
+    });
+  });
+
   describe('prices and rounding', () => {
     it('leaves out holdings with no price yet, and names them', () => {
       const withUnpriced = [...holdings, { symbol: 'GOOG', quantity: 3, price: null, averageCost: 120 }];
@@ -165,7 +194,7 @@ describe('Raise Cash sell plan', () => {
       // $100 at $33.33 a share takes 4 shares: 3 only raise $99.99.
       const odd: SellableHolding[] = [{ symbol: 'ODD', quantity: 10, price: 33.333, averageCost: 30 }];
       const result = plan({ holdings: odd, cash: 0, target: 100 });
-      expect(result.sells).toEqual([{ symbol: 'ODD', quantity: 4, price: 33.33, proceeds: 133.32 }]);
+      expect(result.sells).toEqual([{ symbol: 'ODD', quantity: 4, price: 33.33, proceeds: 133.32, realised: 13.32 }]);
       expect(result.raised).toBe(133.32);
     });
 

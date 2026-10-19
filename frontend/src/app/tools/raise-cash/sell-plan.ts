@@ -30,6 +30,8 @@ export interface PlannedSell {
   price: number;
   /** quantity x price, in dollars rounded to cents. */
   proceeds: number;
+  /** The unrealised gain (or, negative, loss) the sell realises against average cost; null when that's unknown. */
+  realised: number | null;
 }
 
 export interface SellPlan {
@@ -43,6 +45,8 @@ export interface SellPlan {
   raised: number;
   /** Cash once every sell fills at its price. */
   cashAfter: number;
+  /** The gain or loss the sells realise between them, from those with a known average cost; null when none has one. */
+  realised: number | null;
   /** The most cash reachable: cash plus every unlocked holding's free shares. */
   maxCash: number;
   /** The most cash reachable with nothing locked, for the top of the bar. */
@@ -61,6 +65,8 @@ interface Candidate {
   symbol: string;
   free: number;
   priceCents: number;
+  /** Average cost per share in cents, or null when unknown. */
+  costCents: number | null;
   /** Unrealised gain as a fraction of average cost, or null without a usable average cost. */
   gain: number | null;
 }
@@ -101,8 +107,9 @@ export function planSells(input: SellInput): SellPlan {
       locked.push(h.symbol);
       continue;
     }
-    const gain = h.averageCost !== null && h.averageCost > 0 ? (h.price - h.averageCost) / h.averageCost : null;
-    candidates.push({ symbol: h.symbol, free, priceCents, gain });
+    const known = h.averageCost !== null && h.averageCost > 0;
+    const gain = known ? (h.price - h.averageCost!) / h.averageCost! : null;
+    candidates.push({ symbol: h.symbol, free, priceCents, costCents: known ? toCents(h.averageCost!) : null, gain });
   }
 
   const maxCents = cashCents + candidates.reduce((sum, c) => sum + c.free * c.priceCents, 0);
@@ -119,9 +126,14 @@ export function planSells(input: SellInput): SellPlan {
     .filter(c => (quantities.get(c.symbol) ?? 0) > 0)
     .map(c => {
       const quantity = quantities.get(c.symbol)!;
-      return { symbol: c.symbol, quantity, price: toDollars(c.priceCents), proceeds: toDollars(quantity * c.priceCents) };
+      return {
+        symbol: c.symbol, quantity, price: toDollars(c.priceCents), proceeds: toDollars(quantity * c.priceCents),
+        realised: c.costCents === null ? null : toDollars(quantity * (c.priceCents - c.costCents))
+      };
     });
   const raisedCents = sells.reduce((sum, s) => sum + toCents(s.proceeds), 0);
+  const known = sells.filter(s => s.realised !== null);
+  const realised = known.length ? toDollars(known.reduce((sum, s) => sum + toCents(s.realised!), 0)) : null;
 
   return {
     sells,
@@ -129,6 +141,7 @@ export function planSells(input: SellInput): SellPlan {
     capped: askedCents > maxCents,
     raised: toDollars(raisedCents),
     cashAfter: toDollars(cashCents + raisedCents),
+    realised,
     maxCash: toDollars(maxCents),
     fullCash: toDollars(fullCents),
     locked: locked.sort(),
