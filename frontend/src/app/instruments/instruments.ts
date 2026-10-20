@@ -1,12 +1,15 @@
-import { Component, computed, effect, inject, linkedSignal, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, linkedSignal, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, catchError, EMPTY, interval, switchMap, tap } from 'rxjs';
-import { InstrumentOverview, InstrumentPeriod, InstrumentsService } from '../services/instruments';
+import { InstrumentOverview, InstrumentOverviewRow, InstrumentPeriod, InstrumentsService } from '../services/instruments';
 import { direction, formatNumber, formatSignedPercent } from '../shared/format';
 import { instrumentList, InstrumentSort, SortDirection, UNCLASSIFIED } from './instrument-list';
 import { PriceStreamService } from '../services/price-stream';
 import { liveInstruments, marketMovers, needsDailyRefresh } from './market-movers';
+import { HoldingsService } from '../services/holdings';
+import { MarketDataService, Candle } from '../services/market-data';
 
 @Component({
   selector: 'app-instruments',
@@ -16,6 +19,15 @@ import { liveInstruments, marketMovers, needsDailyRefresh } from './market-mover
 })
 export class InstrumentsComponent {
   readonly period = signal<InstrumentPeriod>('today');
+  readonly watchlist = signal<string[]>(this.loadWatchlist());
+  readonly selectedSymbol = signal<string | null>(null);
+  readonly selectedInstrument = computed(() => this.instruments().find(row => row.symbol === this.selectedSymbol()) ?? null);
+  readonly detailCandles = signal<Candle[]>([]);
+  readonly detailLoading = signal(false);
+  readonly detailError = signal(false);
+  readonly heldSymbols = signal<Record<string, number>>({});
+  readonly compareSymbols = signal<string[]>([]);
+  readonly clock = signal(Date.now());
   readonly overview = signal<InstrumentOverview | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
@@ -33,7 +45,8 @@ export class InstrumentsComponent {
     (this.overview()?.instruments ?? []).map(row => row.assetClass ?? UNCLASSIFIED)
   )].sort());
   readonly visibleInstruments = computed(() => instrumentList(this.instruments(),
-    this.query(), this.asset(), this.sort(), this.sortDirection()));
+    this.query() === '@watchlist' ? '' : this.query(), this.asset(), this.sort(), this.sortDirection())
+    .filter(row => this.query() !== '@watchlist' || this.isWatched(row.symbol)));
   readonly pageSize = 10;
   private readonly requestedPage = linkedSignal({
     source: () => [this.query(), this.asset(), this.sort(), this.sortDirection(), this.period()],
@@ -49,6 +62,10 @@ export class InstrumentsComponent {
   readonly number = formatNumber;
   readonly percent = formatSignedPercent;
   private readonly service = inject(InstrumentsService);
+  private readonly holdings = inject(HoldingsService);
+  private readonly marketData = inject(MarketDataService);
+  private readonly router = inject(Router);
+  private readonly destroyRef = inject(DestroyRef);
   private readonly requests = new BehaviorSubject<InstrumentPeriod>('today');
 
   constructor() {
@@ -88,8 +105,19 @@ export class InstrumentsComponent {
       this.stream.watch(response.instruments.map(row => row.symbol));
       this.loading.set(false);
     });
+    this.holdings.getHoldings().pipe(takeUntilDestroyed()).subscribe({
+      next: response => {
+        const quantities: Record<string, number> = {};
+        for (const position of response.accounts.flatMap(account => account.positions)) {
+          quantities[position.symbol] = (quantities[position.symbol] ?? 0) + position.quantity;
+        }
+        this.heldSymbols.set(quantities);
+      },
+      error: () => this.heldSymbols.set({})
+    });
     // RxJS tears down this timer with the component; the shared stream stays with the shell.
     interval(30_000).pipe(takeUntilDestroyed()).subscribe(() => {
+      this.clock.set(Date.now());
       const snapshot = this.overview();
       if (!this.loading() && snapshot && needsDailyRefresh(snapshot.asOf, new Date())) {
         this.requests.next(this.period());
@@ -98,11 +126,68 @@ export class InstrumentsComponent {
   }
 
   selectPeriod(value: string): void {
-    if (value !== 'today' && value !== 'week' && value !== 'month') {
+    const periods: InstrumentPeriod[] = ['today', 'week', 'month', 'quarter', 'year'];
+    if (!periods.includes(value as InstrumentPeriod)) {
       return;
     }
-    this.period.set(value);
-    this.requests.next(value);
+    this.period.set(value as InstrumentPeriod);
+    this.requests.next(value as InstrumentPeriod);
+  }
+
+  isWatched(symbol: string): boolean { return this.watchlist().includes(symbol); }
+
+  toggleCompare(symbol: string): void {
+    const current = this.compareSymbols();
+    if (current.includes(symbol)) {
+      this.compareSymbols.set(current.filter(item => item !== symbol));
+    } else if (current.length < 3) {
+      this.compareSymbols.set([...current, symbol]);
+    }
+  }
+
+  comparedInstruments(): InstrumentOverviewRow[] {
+    return this.compareSymbols().map(symbol => this.instruments().find(row => row.symbol === symbol))
+      .filter((row): row is InstrumentOverviewRow => row !== undefined);
+  }
+
+  toggleWatch(symbol: string): void {
+    const next = this.isWatched(symbol) ? this.watchlist().filter(item => item !== symbol) : [...this.watchlist(), symbol];
+    this.watchlist.set(next);
+    try { localStorage.setItem('instrument-watchlist', JSON.stringify(next)); } catch { /* Storage may be disabled. */ }
+  }
+
+  openDetails(symbol: string): void {
+    if (this.selectedSymbol() === symbol) { this.selectedSymbol.set(null); return; }
+    this.selectedSymbol.set(symbol);
+    this.detailLoading.set(true);
+    this.detailError.set(false);
+    const to = new Date();
+    const from = new Date(to.getTime() - 30 * 86_400_000);
+    this.marketData.getHistory(symbol, from, to, 3600, 1000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+      next: candles => { this.detailCandles.set(candles); this.detailLoading.set(false); },
+      error: () => { this.detailCandles.set([]); this.detailLoading.set(false); this.detailError.set(true); }
+    });
+  }
+
+  trade(symbol: string): void { void this.router.navigate(['/dashboard'], { queryParams: { trade: symbol } }); }
+
+  quoteAge(asOf: string): string {
+    if (this.stream.status() === 'live') { return 'Live'; }
+    const seconds = Math.max(0, Math.floor((this.clock() - new Date(asOf).getTime()) / 1000));
+    return seconds < 60 ? `${seconds}s ago` : `${Math.floor(seconds / 60)}m ago`;
+  }
+
+  detailHeight(close: number): number {
+    const values = this.detailCandles().map(candle => candle.close);
+    const low = Math.min(...values), high = Math.max(...values);
+    return high === low ? 50 : 12 + (close - low) / (high - low) * 88;
+  }
+
+  private loadWatchlist(): string[] {
+    try {
+      const saved: unknown = JSON.parse(localStorage.getItem('instrument-watchlist') ?? '[]');
+      return Array.isArray(saved) ? saved.filter((value): value is string => typeof value === 'string') : [];
+    } catch { return []; }
   }
 
   retry(): void { this.requests.next(this.period()); }

@@ -7,6 +7,8 @@
         <option value="today">Today</option>
         <option value="week">1 week</option>
         <option value="month">1 month</option>
+        <option value="quarter">3 months</option>
+        <option value="year">1 year</option>
       </select>
     </label>
     <p class="period-context">Simulated market · UTC periods. Changes compare against the last completed daily close before the period.</p>
@@ -52,6 +54,7 @@
           <option *ngFor="let type of assetOptions()" [value]="type">{{ assetLabel(type) }}</option>
         </select>
       </label>
+      <button type="button" class="watch-filter" [attr.aria-pressed]="query() === '@watchlist'" (click)="query() === '@watchlist' ? query.set('') : query.set('@watchlist')">{{ query() === '@watchlist' ? 'All instruments' : 'Watchlist (' + watchlist().length + ')' }}</button>
       <button *ngIf="query() || asset()" type="button" class="clear-filters" (click)="clearFilters()">Clear filters</button>
     </div>
     <div *ngIf="error()" class="banner" role="alert">
@@ -67,6 +70,7 @@
     <p class="result-count" role="status">Showing {{ pageStart() }}–{{ pageEnd() }} of {{ visibleInstruments().length }} matching instruments ({{ data.instruments.length }} total)</p>
     <p class="pending">{{ data.instruments.length }} instruments · Snapshot fetched {{ data.asOf | date:'MMM d, HH:mm:ss':'UTC' }} UTC</p>
     <p class="period-context">Period starts {{ data.periodStart | date:'MMM d, yyyy':'UTC' }} UTC. Unavailable history is shown as —.</p>
+    <section class="compare-panel" *ngIf="comparedInstruments().length" aria-label="Instrument comparison"><strong>Compare: {{ period() }}</strong><span *ngFor="let item of comparedInstruments()">{{ item.symbol }}: {{ percent(item.changePercent) }} <button type="button" (click)="toggleCompare(item.symbol)" [attr.aria-label]="'Remove ' + item.symbol + ' from comparison'">Remove</button></span></section>
     <div class="table-scroll" role="region" aria-label="Instrument prices" tabindex="0">
       <table>
         <caption class="sr-only">Instrument prices and performance for the selected UTC period.</caption>
@@ -77,18 +81,21 @@
             <th scope="col" class="numeric" [attr.aria-sort]="sortState('price')"><button class="sort-button" type="button" (click)="sortBy('price')">Latest price <span aria-hidden="true">{{ sortIndicator('price') }}</span></button></th>
             <th scope="col" class="numeric">Change</th>
             <th scope="col" class="numeric" [attr.aria-sort]="sortState('changePercent')"><button class="sort-button" type="button" (click)="sortBy('changePercent')">Change % <span aria-hidden="true">{{ sortIndicator('changePercent') }}</span></button></th>
+            <th scope="col">Actions</th>
           </tr>
         </thead>
         <tbody>
           <tr *ngFor="let instrument of pagedInstruments()">
-            <th scope="row"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></th>
+            <th scope="row"><button type="button" class="instrument-link" (click)="openDetails(instrument.symbol)"><span class="instrument-name">{{ instrument.name }}</span><span class="symbol">{{ instrument.symbol }}</span></button></th>
             <td>{{ assetLabel(instrument.assetClass) }}</td>
-            <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span></td>
+            <td class="numeric num">{{ number(instrument.price) }}<span class="currency" *ngIf="instrument.currency"> {{ instrument.currency }}</span><span class="freshness">{{ quoteAge(instrument.asOf) }}</span></td>
             <td class="numeric num" [ngClass]="'text-' + direction(instrument.change)">{{ signed(instrument.change) }}</td>
             <td class="numeric num" [ngClass]="'text-' + direction(instrument.changePercent)">{{ percent(instrument.changePercent) }}</td>
+            <td class="row-actions"><button type="button" (click)="toggleWatch(instrument.symbol)" [attr.aria-label]="(isWatched(instrument.symbol) ? 'Remove ' : 'Add ') + instrument.symbol + ' ' + (isWatched(instrument.symbol) ? 'from' : 'to') + ' watchlist'">{{ isWatched(instrument.symbol) ? 'Remove' : 'Watch' }}</button><button type="button" (click)="toggleCompare(instrument.symbol)" [disabled]="compareSymbols().length === 3 && !compareSymbols().includes(instrument.symbol)" [attr.aria-pressed]="compareSymbols().includes(instrument.symbol)">{{ compareSymbols().includes(instrument.symbol) ? 'Compared' : 'Compare' }}</button><span *ngIf="heldSymbols()[instrument.symbol]" class="held">Held: {{ heldSymbols()[instrument.symbol] }} shares</span><button type="button" (click)="trade(instrument.symbol)">Trade</button></td>
           </tr>
-          <tr *ngIf="!data.instruments.length"><td colspan="5" class="placeholder">No instruments are currently available.</td></tr>
-          <tr *ngIf="data.instruments.length && !visibleInstruments().length"><td colspan="5" class="placeholder">No instruments match your search and filters.</td></tr>
+          <tr *ngIf="!data.instruments.length"><td colspan="6" class="placeholder">No instruments are currently available.</td></tr>
+          <tr *ngIf="data.instruments.length && !visibleInstruments().length"><td colspan="6" class="placeholder">No instruments match your search and filters.</td></tr>
+          <tr *ngIf="selectedSymbol() as symbol"><td colspan="6" class="detail-cell"><section class="detail-card" aria-label="Instrument details"><h3>{{ selectedInstrument()?.name ?? symbol }} ({{ symbol }})</h3><p>{{ assetLabel(selectedInstrument()?.assetClass ?? null) }}<span *ngIf="selectedInstrument()?.currency"> · {{ selectedInstrument()?.currency }}</span> · {{ number(selectedInstrument()?.price ?? null) }}<span *ngIf="selectedInstrument()?.currency"> {{ selectedInstrument()?.currency }}</span></p><p>Change for {{ period() }}: {{ signed(selectedInstrument()?.change ?? null) }} ({{ percent(selectedInstrument()?.changePercent ?? null) }})</p><p *ngIf="heldSymbols()[symbol]">You hold {{ heldSymbols()[symbol] }} shares across your accounts.</p><p *ngIf="!heldSymbols()[symbol]">You do not currently hold {{ symbol }}.</p><p *ngIf="detailLoading()" role="status">Loading 30-day price history...</p><p *ngIf="detailError()" role="alert">Price history is unavailable right now.</p><div class="sparkline" *ngIf="detailCandles().length" aria-label="30-day hourly closing prices"><span *ngFor="let candle of detailCandles()" [style.height.%]="detailHeight(candle.close)"></span></div><button type="button" (click)="trade(symbol)">Open trade ticket</button><button type="button" (click)="selectedSymbol.set(null)">Close details</button></section></td></tr>
         </tbody>
       </table>
     </div>
