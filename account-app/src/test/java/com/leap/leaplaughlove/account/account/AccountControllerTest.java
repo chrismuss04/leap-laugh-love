@@ -138,6 +138,7 @@ class AccountControllerTest {
         UUID accountId = UUID.randomUUID();
         Account created = new Account(accountId, authenticatedClientId, "ACC-AB12CD34", "ACTIVE", "USD", true,
                 OffsetDateTime.now());
+        created.setAccountSeq(2);
         when(accountService.createAccount(new CreateAccountRequest("USD"))).thenReturn(created);
 
         mockMvc.perform(post("/api/account/accounts")
@@ -149,7 +150,8 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.accountNumber", is("ACC-AB12CD34")))
                 .andExpect(jsonPath("$.status", is("ACTIVE")))
                 .andExpect(jsonPath("$.baseCurrency", is("USD")))
-                .andExpect(jsonPath("$.tradingEnabled", is(true)));
+                .andExpect(jsonPath("$.tradingEnabled", is(true)))
+                .andExpect(jsonPath("$.accountSeq", is(2)));
     }
 
     @Test

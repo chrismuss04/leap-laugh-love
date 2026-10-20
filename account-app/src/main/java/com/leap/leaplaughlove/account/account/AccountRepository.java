@@ -48,6 +48,15 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     boolean existsByAccountNumber(String accountNumber);
 
     /**
+     * Finds the highest account number in the client's 1, 2, ... sequence, across every status, so a
+     * closed or blocked account's number is never handed out again.
+     * @param clientId the unique identifier of the client
+     * @return the highest sequence number, or 0 if the client has no numbered accounts
+     */
+    @Query("SELECT COALESCE(MAX(a.accountSeq), 0) FROM Account a WHERE a.clientId = :clientId")
+    int findMaxAccountSeq(@Param("clientId") UUID clientId);
+
+    /**
      * Locks an account owned by the specified client until the calling transaction ends.
      * Call within a write transaction before reading cash or holdings for validation.
      * Competing trades and withdrawals must acquire this same lock before validation.
