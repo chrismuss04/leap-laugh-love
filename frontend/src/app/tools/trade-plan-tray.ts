@@ -4,7 +4,7 @@ import { PlanWarning, PlannedOrder } from '../shared/order-plan';
 import { formatMoney, formatSignedMoney } from '../shared/format';
 import { MiniDonutComponent } from './previews/mini-donut';
 import { ToolsContext, allocationSlices } from './tools-context';
-import { TradePlanService, TrayOrder, sourceLabel } from './trade-plan';
+import { TradePlanService, TrayOrder, conditionsLabel, sourceLabel } from './trade-plan';
 
 interface TrayRow {
   order: TrayOrder;
@@ -48,6 +48,7 @@ interface TrayRow {
             <span class="source">{{ label(row.order.source) }}</span>
             <button type="button" class="remove" (click)="plan.remove(row.order.id)"
                     [attr.aria-label]="'Remove ' + row.order.side.toLowerCase() + ' ' + row.order.symbol">×</button>
+            <span *ngIf="terms(row.order) as term" class="terms" data-testid="tray-terms">{{ term }}</span>
             <span *ngIf="errors()[row.order.id] as error" class="error" role="alert" [id]="'qty-error-' + row.order.id">{{ error }}</span>
           </li>
         </ul>
@@ -168,6 +169,7 @@ interface TrayRow {
     .remove { background: none; color: var(--muted-foreground); font-size: 18px; line-height: 1; border-radius: var(--radius-md); }
     .remove:hover, .remove:focus-visible { color: var(--foreground); background: var(--surface-hover); }
     .error { grid-column: 1 / -1; color: var(--loss); font-size: 12px; }
+    .terms { grid-column: 2 / -1; margin-top: -2px; color: var(--muted-foreground); font-size: 12px; }
     .warning {
       display: flex;
       justify-content: space-between;
@@ -248,6 +250,7 @@ export class TradePlanTrayComponent {
 
   money = formatMoney;
   label = sourceLabel;
+  terms = conditionsLabel;
 
   percent(share: number): string {
     return `${Math.round(share * 100)}%`;
