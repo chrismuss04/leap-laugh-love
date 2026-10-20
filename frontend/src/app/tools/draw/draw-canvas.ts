@@ -144,10 +144,10 @@ function capture(event: PointerEvent, hold: boolean): void {
 
           @if (settled()) {
             @for (key of settleKey(); track key) {
-              <g class="settled">
+              <g class="settled" [class.drawing-in]="drawIn()">
                 <path class="fill gain" [attr.d]="settledFill()" [attr.clip-path]="'url(#' + ids.above + ')'" />
                 <path class="fill loss" [attr.d]="settledFill()" [attr.clip-path]="'url(#' + ids.below + ')'" />
-                <path class="drawn" [attr.d]="settledPath()" [attr.stroke]="'url(#' + ids.ink + ')'" [attr.filter]="'url(#' + ids.glow + ')'" />
+                <path class="drawn" pathLength="1" [attr.d]="settledPath()" [attr.stroke]="'url(#' + ids.ink + ')'" [attr.filter]="'url(#' + ids.glow + ')'" />
                 <path class="shimmer" [attr.d]="settledPath()" pathLength="1" />
               </g>
             }
@@ -261,6 +261,11 @@ function capture(event: PointerEvent, hold: boolean): void {
     .ink-loss { stop-color: var(--tone-loss); }
     .settled { animation: fade 0.35s ease both; }
     .drawn { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    /* A placed line draws itself in, as if by an invisible pen, and its shading follows. */
+    .drawing-in { animation: none; }
+    .drawing-in .drawn { stroke-dasharray: 1; animation: draw-in 0.85s cubic-bezier(0.45, 0, 0.2, 1) both; }
+    .drawing-in .fill { animation: appear 0.5s ease 0.6s both; }
+    .drawing-in .shimmer { animation-delay: 0.85s; }
     .fill { stroke: none; opacity: 0.14; }
     .fill.gain { fill: var(--tone-gain); }
     .fill.loss { fill: var(--tone-loss); }
@@ -305,6 +310,8 @@ function capture(event: PointerEvent, hold: boolean): void {
     .crosshair { stroke: var(--muted-foreground); stroke-width: 1; stroke-dasharray: 2 3; opacity: 0.5; pointer-events: none; }
 
     .now-dot { fill: var(--primary); stroke: var(--background); stroke-width: 2; }
+    /* The live dot glides to each new price rather than jumping. */
+    .now-dot, .now-halo { transition: cx 0.45s ease, cy 0.45s ease; }
     .now-halo { fill: var(--primary); opacity: 0.18; animation: halo 2.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
     .drawing .now-halo { animation: none; opacity: 0.28; }
 
@@ -369,6 +376,8 @@ function capture(event: PointerEvent, hold: boolean): void {
 
     @keyframes draw-in { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
     @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    /* Fades in to whatever opacity the element has at rest. */
+    @keyframes appear { from { opacity: 0; } }
     @keyframes open { from { opacity: 0; transform: scale(0.02, 0.2); } to { opacity: 1; transform: none; } }
     @keyframes ghost {
       0% { stroke-dashoffset: 0.35; opacity: 0; }
@@ -390,6 +399,7 @@ function capture(event: PointerEvent, hold: boolean): void {
       .history-line, .history-area, .settled, .level, .hint, .level-tag, .cone { animation: none; }
       .ghost { animation: none; stroke-dasharray: none; opacity: 0.3; }
       .shimmer, .marker-ring { display: none; }
+      .now-dot, .now-halo { transition: none; }
       .now-halo, .hint .arrow { animation: none; }
     }
   `]
@@ -444,6 +454,8 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   readonly settled = signal<DataPoint[] | null>(null);
   /** Changes each time a line settles, so its entrance plays again. */
   readonly settleKey = signal([0]);
+  /** True while a placed line draws itself in; a hand-drawn one was seen being drawn. */
+  readonly drawIn = signal(false);
   /** The pointer over the future, with its price and time. */
   readonly hover = signal<{ x: number; y: number; price: string; time: string } | null>(null);
   /** The range is held still while drawing, so the line doesn't slide under the pen. */
@@ -640,7 +652,8 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   });
 
   readonly ariaLabel = computed(() =>
-    `Chart of ${this.symbol()}. Drag from the live price to the right to draw where you think it goes; Escape clears the drawing.`);
+    `Chart of ${this.symbol()}. Drag from the live price to the right to draw where you think it goes, or pick a shape ` +
+    'below the chart; Escape clears the drawing.');
 
   money = formatMoney;
 
@@ -709,6 +722,7 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
       return;
     }
     this.drawStart.emit();
+    this.drawIn.set(!this.reduceMotion);
     this.settled.set(line.map(p => ({ ...p })));
     this.settleKey.update(([n]) => [n + 1]);
     this.drawn.emit(this.emitted(line));
@@ -774,12 +788,31 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
     }
     const line = smooth(thin(pixels, 5), 3).map(p => toData(frame, p));
     line[0] = { step: 0, price: stroke[0].price };
+    this.drawIn.set(false);
     this.settled.set(line);
     this.settleKey.update(([n]) => [n + 1]);
     this.stroke.set([]);
     this.frozenRange.set(null);
     this.animate();
+    // A tap of feedback on a phone as the line settles.
+    if (event.pointerType === 'touch') {
+      navigator.vibrate?.(8);
+    }
     this.drawn.emit(this.emitted(line));
+  }
+
+  /** The settled line as a path in a `width` by `height` box, for a thumbnail of it. */
+  thumbnail(width: number, height: number): string {
+    const line = this.settled();
+    if (!line || line.length < 2) {
+      return '';
+    }
+    const prices = line.map(p => p.price);
+    const low = Math.min(...prices);
+    const span = Math.max(...prices) - low || 1;
+    const last = line[line.length - 1].step || 1;
+    return splinePath(line.filter((_, i) => i % 3 === 0 || i === line.length - 1)
+      .map(p => ({ x: 2 + (p.step / last) * (width - 4), y: 2 + (1 - (p.price - low) / span) * (height - 4) })), 0.5);
   }
 
   grab(event: PointerEvent, level: LevelView): void {

@@ -1,4 +1,4 @@
-import { Component, ElementRef, EventEmitter, Output, ViewChild, computed, inject, signal } from '@angular/core';
+import { Component, DestroyRef, ElementRef, EventEmitter, Output, ViewChild, computed, effect, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { PlanWarning, PlannedOrder } from '../shared/order-plan';
 import { formatMoney, formatSignedMoney } from '../shared/format';
@@ -77,7 +77,7 @@ interface TrayRow {
 
       <button #toggle type="button" class="bar" (click)="toggleOpen()" [attr.aria-expanded]="expanded()"
               aria-controls="trade-plan-panel" data-testid="tray-toggle">
-        <span class="badge" aria-hidden="true">{{ plan.count() }}</span>
+        <span class="badge" [class.bump]="bump()" aria-hidden="true">{{ plan.count() }}</span>
         <span class="summary" data-testid="tray-summary">{{ summary() }}</span>
         <span class="chevron" aria-hidden="true">{{ expanded() ? '▾' : '▴' }}</span>
       </button>
@@ -127,6 +127,13 @@ interface TrayRow {
       font-size: 12px;
       text-align: center;
     }
+    .badge.bump { animation: bump 0.55s cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+    @keyframes bump {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.45); box-shadow: 0 0 0 6px color-mix(in srgb, var(--primary) 30%, transparent); }
+      100% { transform: scale(1); box-shadow: 0 0 0 0 transparent; }
+    }
+    @media (prefers-reduced-motion: reduce) { .badge.bump { animation: none; } }
     .summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .chevron { color: var(--muted-foreground); }
     .panel {
@@ -216,6 +223,9 @@ export class TradePlanTrayComponent {
   readonly context = inject(ToolsContext);
 
   readonly expanded = signal(false);
+  /** Set for a moment when orders arrive, so the badge pops - timed to land as Draw's chip does. */
+  readonly bump = signal(false);
+  private bumpTimer?: ReturnType<typeof setTimeout>;
   /** A refused quantity's message, per order. */
   readonly errors = signal<Record<string, string>>({});
 
@@ -247,6 +257,22 @@ export class TradePlanTrayComponent {
     const orders = `${count} order${count === 1 ? '' : 's'}`;
     return impact == null ? orders : `${orders} · ${formatSignedMoney(impact)} cash`;
   });
+
+  constructor() {
+    // Only arrivals after the tray appears; it doesn't pop for orders already there.
+    const seen = this.plan.arrivals();
+    effect(() => {
+      if (this.plan.arrivals() > seen) {
+        clearTimeout(this.bumpTimer);
+        this.bump.set(false);
+        this.bumpTimer = setTimeout(() => {
+          this.bump.set(true);
+          this.bumpTimer = setTimeout(() => this.bump.set(false), 600);
+        }, 650);
+      }
+    });
+    inject(DestroyRef).onDestroy(() => clearTimeout(this.bumpTimer));
+  }
 
   money = formatMoney;
   label = sourceLabel;

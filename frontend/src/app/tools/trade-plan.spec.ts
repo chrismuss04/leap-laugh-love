@@ -35,6 +35,15 @@ describe('TradePlanService', () => {
   });
 
   describe('adding', () => {
+    it('counts each arrival of orders, but not an add with none', () => {
+      expect(plan.arrivals()).toBe(0);
+      plan.addPlan('rebalance', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 2 }]);
+      plan.addPlan('rebalance', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 2 }]);
+      plan.addPlan('basket', 'a1', []);
+      plan.setQuantity(plan.orders()[0].id, 3);
+      expect(plan.arrivals()).toBe(2);
+    });
+
     it('adds a tool\'s orders tagged with the tool, sells first', () => {
       plan.addPlan('rebalance', 'a1', [{ symbol: 'MSFT', side: 'BUY', quantity: 2 }, { symbol: 'AAPL', side: 'SELL', quantity: 5 }]);
       expect(lines()).toEqual(['SELL 5 AAPL (Rebalance)', 'BUY 2 MSFT (Rebalance)']);

@@ -80,6 +80,7 @@ describe('DrawCanvasComponent', () => {
     expect(line[line.length - 1].step).toBeGreaterThan(10);
     expect(line[line.length - 1].price).toBeGreaterThan(100);
     expect(q('.drawn')!.getAttribute('d')).toMatch(/^M/);
+    expect(q('.settled')!.classList).not.toContain('drawing-in');
     expect(q('[data-testid="draw-hint"]')).toBeNull();
   });
 
@@ -95,11 +96,13 @@ describe('DrawCanvasComponent', () => {
     expect(q('.drawn')).toBeNull();
   });
 
-  it('places a line as if drawn, and clears it with Escape', () => {
+  it('places a line as if drawn, drawing it in, and clears it with Escape', () => {
     canvas.place([{ step: 0, price: 100 }, { step: 30, price: 104 }]);
     fixture.detectChanges();
     expect(drawn.length).toBe(1);
     expect(q('.drawn')).not.toBeNull();
+    expect(q('.settled')!.classList).toContain('drawing-in');
+    expect(canvas.thumbnail(36, 18)).toMatch(/^M2,16 C/);
 
     q('[data-testid="draw-surface"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     fixture.detectChanges();

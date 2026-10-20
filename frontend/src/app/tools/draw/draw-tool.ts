@@ -13,6 +13,7 @@ import { DrawCanvasComponent, LevelChange } from './draw-canvas';
 import { CONE_QUANTILES, boldness, cone, hitsFirstProbability, touchProbability, volatility } from './forecast';
 import { DrawHorizon, HORIZONS, stepLabel } from './horizons';
 import { OddsRingComponent } from './odds-ring';
+import { PRESETS, Preset, presetIcon, presetLine } from './presets';
 import { TradeIdea, adjustIdea, interpret, payoff, toOrderLine } from './interpret';
 import { DataPoint } from './stroke';
 import { SHAPE_NAMES, defaultShares, maxShares, riskRewardSplit, sentenceText, tradeSentence } from './trade-summary';
@@ -94,6 +95,18 @@ const orderKey = (o: OrderLine) =>
                            (levelChange)="adjust($event)"></app-draw-canvas>
         }
       </div>
+
+      @if (historyState() === 'ready') {
+        <div class="presets" role="group" aria-label="Or start from a shape">
+          <span class="presets-label">Or try a shape</span>
+          @for (p of presets; track p.id) {
+            <button type="button" class="preset" [attr.data-preset]="p.id" [title]="p.hint" (click)="usePreset(p)">
+              <svg width="28" height="14" viewBox="0 0 28 14" aria-hidden="true"><path [attr.d]="icons[p.id]" /></svg>
+              {{ p.label }}
+            </button>
+          }
+        </div>
+      }
 
       <div class="sr-only" aria-live="polite">{{ spoken() }}</div>
 
@@ -177,8 +190,8 @@ const orderKey = (o: OrderLine) =>
             @if (notice(); as n) { <p class="notice" data-testid="draw-notice">{{ n }}</p> }
 
             <footer>
-              <button type="button" class="primary" data-testid="draw-add" [disabled]="!line() || inPlan()"
-                      (click)="addToPlan()">
+              <button #add type="button" class="primary" data-testid="draw-add" [disabled]="!line() || inPlan()"
+                      (click)="addToPlan(add)">
                 {{ inPlan() ? 'In your plan ✓' : hasDrawOrder() ? 'Update plan' : 'Add to plan' }}
               </button>
             </footer>
@@ -220,6 +233,28 @@ const orderKey = (o: OrderLine) =>
     .stage { position: relative; margin-top: 8px; min-height: 400px; }
     .chart-skeleton { display: block; height: 400px; border-radius: var(--radius-lg); }
     @media (max-width: 640px) { .stage, .chart-skeleton { min-height: 320px; height: 320px; } }
+    .presets { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+    .presets-label { margin-right: 4px; font-size: 12px; color: var(--muted-foreground); }
+    .preset {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px 5px 8px;
+      border-radius: 999px;
+      border: 1px dashed color-mix(in srgb, var(--primary) 35%, var(--border));
+      background: transparent;
+      color: var(--muted-foreground);
+      font-size: 12px;
+      font-weight: 600;
+      transition: color 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+    }
+    .preset:hover, .preset:focus-visible {
+      color: var(--foreground);
+      border-style: solid;
+      border-color: color-mix(in srgb, var(--primary) 60%, transparent);
+      background: color-mix(in srgb, var(--primary) 8%, transparent);
+    }
+    .preset path { fill: none; stroke: var(--primary); stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
     .prompt { margin-top: 12px; font-size: 14px; color: var(--muted-foreground); text-align: center; }
     .link { background: none; color: var(--foreground); font-size: 13px; font-weight: 600; text-decoration: underline; white-space: nowrap; }
     .link.quiet { margin-left: auto; color: var(--muted-foreground); }
@@ -376,6 +411,8 @@ export class DrawToolComponent {
 
   readonly horizons = HORIZONS;
   readonly sizeSteps = SIZE_STEPS;
+  readonly presets = PRESETS;
+  readonly icons = Object.fromEntries(PRESETS.map(p => [p.id, presetIcon(p)])) as Record<string, string>;
   readonly horizon = signal<DrawHorizon>(HORIZONS[0]);
   /** The symbol picked; null follows the account's largest holding. */
   private readonly picked = signal<string | null>(null);
@@ -611,13 +648,77 @@ export class DrawToolComponent {
     return Math.max(1, Math.floor(this.max() * share));
   }
 
-  /** Puts the trade in the tray tagged Draw, replacing an earlier drawing's order. */
-  addToPlan(): void {
+  /** Puts a ready-made shape on the chart, sized to this stock's moves, as if drawn. */
+  usePreset(preset: Preset): void {
+    const price = this.price();
+    if (price) {
+      this.canvas()?.place(presetLine(preset, price, this.horizon().futureSteps, this.sigma()));
+    }
+  }
+
+  /**
+   * Puts the trade in the tray tagged Draw, replacing an earlier drawing's order, and flies a chip
+   * of it from the button down into the tray.
+   */
+  addToPlan(from?: HTMLElement): void {
     const account = this.context.account();
     const line = this.line();
     if (account && line) {
       this.context.plan.addPlan('draw', account.accountId, [line]);
+      if (from) {
+        this.fly(from, `${line.side === 'BUY' ? 'Buy' : 'Sell'} ${line.quantity} ${line.symbol}`, line.side);
+      }
     }
+  }
+
+  /**
+   * A chip with the line's thumbnail arcs from `from` into the tray's badge and fades. It's built
+   * on the page's body, above everything, so its styles are inline. Skipped under reduced motion.
+   */
+  private fly(from: HTMLElement, label: string, side: 'BUY' | 'SELL'): void {
+    const target = document.querySelector('[data-testid="tray-toggle"] .badge') ?? document.querySelector('[data-testid="tray-toggle"]');
+    if (!target || typeof from.animate !== 'function' || matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      return;
+    }
+    const tone = side === 'BUY' ? 'var(--gain)' : 'var(--loss)';
+    const chip = document.createElement('div');
+    chip.setAttribute('aria-hidden', 'true');
+    chip.dataset['testid'] = 'draw-fly';
+    Object.assign(chip.style, {
+      position: 'fixed', left: '0', top: '0', zIndex: '60', display: 'flex', alignItems: 'center', gap: '8px',
+      padding: '6px 12px 6px 8px', borderRadius: '999px', background: 'var(--card)', color: 'var(--foreground)',
+      border: `1px solid ${tone}`, boxShadow: `0 8px 28px color-mix(in srgb, ${tone} 35%, transparent)`,
+      fontSize: '13px', fontWeight: '600', lineHeight: '1', whiteSpace: 'nowrap', pointerEvents: 'none'
+    });
+    const ns = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(ns, 'svg');
+    svg.setAttribute('width', '36');
+    svg.setAttribute('height', '18');
+    const path = document.createElementNS(ns, 'path');
+    path.setAttribute('d', this.canvas()?.thumbnail(36, 18) ?? '');
+    Object.assign(path.style, { fill: 'none', stroke: tone, strokeWidth: '2', strokeLinecap: 'round' });
+    svg.append(path);
+    const text = document.createElement('span');
+    text.textContent = label;
+    chip.append(svg, text);
+    document.body.append(chip);
+
+    const start = from.getBoundingClientRect();
+    const end = target.getBoundingClientRect();
+    const size = chip.getBoundingClientRect();
+    const x0 = start.left + start.width / 2 - size.width / 2;
+    const y0 = start.top + start.height / 2 - size.height / 2;
+    const x1 = end.left + end.width / 2 - size.width / 2;
+    const y1 = end.top + end.height / 2 - size.height / 2;
+    // Up and over: the midpoint lifts above both ends, so the chip arcs rather than slides.
+    const lift = Math.min(y0, y1) - 80;
+    chip.animate([
+      { transform: `translate(${x0}px, ${y0}px) scale(1)`, opacity: 0 },
+      { transform: `translate(${x0}px, ${y0 - 12}px) scale(1.05)`, opacity: 1, offset: 0.12 },
+      { transform: `translate(${(x0 + x1) / 2}px, ${lift}px) scale(0.85)`, opacity: 1, offset: 0.55 },
+      { transform: `translate(${x1}px, ${y1}px) scale(0.3)`, opacity: 0.2 }
+    ], { duration: 820, easing: 'cubic-bezier(0.45, 0, 0.25, 1)', fill: 'forwards' })
+      .finished.then(() => chip.remove(), () => chip.remove());
   }
 
   private load(symbol: string, horizon: DrawHorizon): void {

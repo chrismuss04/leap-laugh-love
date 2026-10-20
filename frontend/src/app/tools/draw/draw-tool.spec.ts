@@ -151,6 +151,36 @@ describe('DrawToolComponent', () => {
     });
   });
 
+  it('starts from a shape, sized to the stock', () => {
+    const presets = Array.from(el().querySelectorAll('[data-preset]')).map(b => b.textContent!.trim());
+    expect(presets).toEqual(['Rally', 'Dip & rip', 'Breakout', 'Fade']);
+    el().querySelector<HTMLButtonElement>('[data-preset="dip"]')!.click();
+    fixture.detectChanges();
+    expect(tool.idea()).toEqual(expect.objectContaining({ shape: 'dip-then-rally', entryType: 'LIMIT' }));
+    expect(text('draw-sentence')).toMatch(/^Buy \d+ MSFT if it dips to/);
+  });
+
+  it('flies a chip of the trade into the tray when it\'s added', async () => {
+    const tray = document.createElement('button');
+    tray.dataset['testid'] = 'tray-toggle';
+    tray.innerHTML = '<span class="badge">0</span>';
+    document.body.append(tray);
+    try {
+      el().querySelector<HTMLButtonElement>('[data-preset="rally"]')!.click();
+      fixture.detectChanges();
+      addButton()!.click();
+      const chip = document.querySelector<HTMLElement>('[data-testid="draw-fly"]')!;
+      expect(chip.textContent).toBe(`Buy ${tool.shares()} MSFT`);
+      expect(chip.getAttribute('aria-hidden')).toBe('true');
+      expect(chip.querySelector('path')!.getAttribute('d')).toMatch(/^M/);
+      await Promise.all(chip.getAnimations().map(a => a.finished));
+      await Promise.resolve();
+      expect(document.querySelector('[data-testid="draw-fly"]')).toBeNull();
+    } finally {
+      tray.remove();
+    }
+  });
+
   it('keeps a dip buy as a limit order for the horizon', () => {
     el().querySelector<HTMLButtonElement>('[data-horizon="1M"]')!.click();
     fixture.detectChanges();

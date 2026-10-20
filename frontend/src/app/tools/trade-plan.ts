@@ -88,6 +88,8 @@ export class TradePlanService {
   readonly orders = signal<TrayOrder[]>([]);
   /** The latest change, for a screen reader's live region. */
   readonly announcement = signal('');
+  /** Counts the times a tool has put orders in, so the tray can mark their arrival. */
+  readonly arrivals = signal(0);
 
   readonly count = computed(() => this.orders().length);
   readonly isEmpty = computed(() => this.orders().length === 0);
@@ -136,6 +138,9 @@ export class TradePlanService {
     this.orders.update(orders => [...orders.filter(o => o.source !== source), ...added]);
 
     const label = sourceLabel(source);
+    if (added.length) {
+      this.arrivals.update(n => n + 1);
+    }
     if (!added.length) {
       this.announcement.set(replaced ? `${label}'s orders were removed from your plan.` : `${label} had no orders to add.`);
     } else {
