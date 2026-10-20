@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TRADE_PLAN_KEY, TradePlanService, conditionsLabel } from './trade-plan';
 import { PlanSubmission } from './plan-submission';
+import { tickInZone } from '../../testing/tick-in-zone';
 
 describe('conditional orders in the trade plan', () => {
   const signIn = (email: string) => localStorage.setItem('auth_token',
@@ -25,7 +26,7 @@ describe('conditional orders in the trade plan', () => {
     plan = TestBed.inject(TradePlanService);
     submission = TestBed.inject(PlanSubmission);
     http = TestBed.inject(HttpTestingController);
-    TestBed.tick();
+    tickInZone();
   }
 
   beforeEach(() => {
@@ -58,7 +59,7 @@ describe('conditional orders in the trade plan', () => {
 
   it('survives a refresh, and drops a stored order whose conditions were tampered with', () => {
     plan.addPlan('draw', 'a1', [bracketBuy]);
-    TestBed.tick();
+    tickInZone();
     const stored = JSON.parse(sessionStorage.getItem(TRADE_PLAN_KEY)!);
     stored.orders.push({ ...stored.orders[0], id: 'o9', bracket: { takeProfit: 1, stopLoss: 5 } });
     sessionStorage.setItem(TRADE_PLAN_KEY, JSON.stringify(stored));

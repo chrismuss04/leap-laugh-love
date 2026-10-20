@@ -6,6 +6,7 @@ import { MarketStatusService } from '../../services/market-status';
 import { OrderLine } from '../../shared/order-plan';
 import { ToolsContext } from '../tools-context';
 import { DrawToolComponent } from './draw-tool';
+import { tickInZone } from '../../../testing/tick-in-zone';
 
 describe('DrawToolComponent', () => {
   let fixture: ComponentFixture<DrawToolComponent>;
@@ -52,7 +53,7 @@ describe('DrawToolComponent', () => {
     fixture = TestBed.createComponent(DrawToolComponent);
     tool = fixture.componentInstance;
     fixture.detectChanges();
-    TestBed.tick();
+    tickInZone();
     fixture.detectChanges();
   });
 
@@ -70,7 +71,7 @@ describe('DrawToolComponent', () => {
       tool.pick('NVDA');
       el().querySelector<HTMLButtonElement>('[data-horizon="1W"]')!.click();
       fixture.detectChanges();
-      TestBed.tick();
+      tickInZone();
       const last = history.mock.calls.at(-1)!;
       expect([last[0], last[3], last[4]]).toEqual(['NVDA', 3600, 72]);
       expect(tool.symbols()).toEqual(['NVDA', 'MSFT', 'AAPL']);
@@ -79,7 +80,7 @@ describe('DrawToolComponent', () => {
     it('says so when the history doesn\'t load', () => {
       history.mockReturnValue(throwError(() => new Error('down')));
       tool.reload();
-      TestBed.tick();
+      tickInZone();
       fixture.detectChanges();
       expect(el().querySelector('[role="alert"]')!.textContent).toContain("Couldn't load MSFT");
     });
@@ -184,7 +185,7 @@ describe('DrawToolComponent', () => {
   it('keeps a dip buy as a limit order for the horizon', () => {
     el().querySelector<HTMLButtonElement>('[data-horizon="1M"]')!.click();
     fixture.detectChanges();
-    TestBed.tick();
+    tickInZone();
     draw(402, 380, 430);
     addButton()!.click();
     expect(context.plan.addPlan.mock.calls[0][2][0]).toEqual(expect.objectContaining({
@@ -218,7 +219,7 @@ describe('DrawToolComponent', () => {
   it('won\'t sell a stock the account doesn\'t hold', () => {
     tool.pick('NVDA');
     context.prices.set({ NVDA: 100 });
-    TestBed.tick();
+    tickInZone();
     fixture.detectChanges();
     draw(100, 90);
     expect(text('draw-sentence')).toContain("You'd need to own NVDA");

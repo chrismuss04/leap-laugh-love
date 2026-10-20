@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { BASKET_KEY, BasketService, MAX_BASKET } from './basket';
+import { tickInZone } from '../../../testing/tick-in-zone';
 
 describe('BasketService', () => {
   const signIn = (email: string) => localStorage.setItem('auth_token',
@@ -15,7 +16,7 @@ describe('BasketService', () => {
       providers: [BasketService, provideHttpClient(), provideHttpClientTesting()]
     });
     basket = TestBed.inject(BasketService);
-    TestBed.tick();
+    tickInZone();
     return basket;
   }
 
@@ -149,7 +150,7 @@ describe('BasketService', () => {
     it('survives a refresh', () => {
       basket.setTotal(100000);
       basket.setAmounts([70000, 30000]);
-      TestBed.tick();
+      tickInZone();
       create();
       expect(basket.totalCents()).toBe(100000);
       expect(basket.amounts()).toEqual([70000, 30000]);
@@ -170,14 +171,14 @@ describe('BasketService', () => {
     it('survives a refresh within the session', () => {
       basket.add('AAPL', 'Apple');
       basket.add('MSFT', 'Microsoft');
-      TestBed.tick();
+      tickInZone();
       create();
       expect(basket.items()).toEqual([{ symbol: 'AAPL', name: 'Apple' }, { symbol: 'MSFT', name: 'Microsoft' }]);
     });
 
     it('ignores another client\'s basket', () => {
       basket.add('AAPL', 'Apple');
-      TestBed.tick();
+      tickInZone();
       signIn('grace@example.com');
       create();
       expect(basket.isEmpty()).toBe(true);
