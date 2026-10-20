@@ -10,13 +10,29 @@ import { RollingNumberComponent } from '../../shared/rolling-number';
 import { ToolsContext } from '../tools-context';
 import { conditionsLabel } from '../trade-plan';
 import { DrawCanvasComponent, LevelChange } from './draw-canvas';
+import { CONE_QUANTILES, boldness, cone, hitsFirstProbability, touchProbability, volatility } from './forecast';
 import { DrawHorizon, HORIZONS, stepLabel } from './horizons';
+import { OddsRingComponent } from './odds-ring';
 import { TradeIdea, adjustIdea, interpret, payoff, toOrderLine } from './interpret';
 import { DataPoint } from './stroke';
 import { SHAPE_NAMES, defaultShares, maxShares, riskRewardSplit, sentenceText, tradeSentence } from './trade-summary';
 
 /** Symbols offered when the account holds nothing to draw. */
 const FALLBACK_SYMBOLS: readonly string[] = ['AAPL', 'MSFT', 'NVDA', 'TSLA'];
+
+/** One chance in the odds readout. */
+export interface Chance {
+  key: 'fills' | 'reaches' | 'first';
+  value: number;
+  label: string;
+  tone: 'gain' | 'loss' | 'entry' | 'info';
+}
+
+const BOLDNESS: Record<'typical' | 'bold' | 'moonshot', string> = {
+  typical: 'A typical move',
+  bold: 'A bold call',
+  moonshot: 'A moonshot'
+};
 
 /** Quick sizes, as fractions of the most shares the trade can be. */
 export const SIZE_STEPS: readonly { label: string; share: number }[] = [
@@ -35,7 +51,7 @@ const orderKey = (o: OrderLine) =>
  */
 @Component({
   selector: 'app-draw-tool',
-  imports: [DrawCanvasComponent, SymbolSearchComponent, RollingNumberComponent],
+  imports: [DrawCanvasComponent, SymbolSearchComponent, RollingNumberComponent, OddsRingComponent],
   template: `
     @if (context.loading()) {
       <p class="status" data-testid="draw-loading">Loading your account…</p>
@@ -73,7 +89,7 @@ const orderKey = (o: OrderLine) =>
           <span class="skeleton chart-skeleton" aria-hidden="true"></span>
         } @else {
           <app-draw-canvas [symbol]="symbol()" [history]="history()" [price]="price()"
-                           [futureSteps]="horizon().futureSteps" [stepLabel]="label()" [idea]="liveIdea()"
+                           [futureSteps]="horizon().futureSteps" [stepLabel]="label()" [idea]="liveIdea()" [cone]="forecast()"
                            (drawStart)="idea.set(null)" (drawn)="read($event)" (cleared)="idea.set(null)"
                            (levelChange)="adjust($event)"></app-draw-canvas>
         }
@@ -95,6 +111,28 @@ const orderKey = (o: OrderLine) =>
               <span [attr.data-tone]="part.tone ?? null">{{ part.text }}</span>
             }
           </p>
+
+          @if (odds(); as o) {
+            <div class="odds" data-testid="draw-odds">
+              <div class="rings">
+                @for (c of o.chances; track c.key) {
+                  <app-odds-ring [value]="c.value" [label]="c.label" [tone]="c.tone" [attr.data-chance]="c.key"></app-odds-ring>
+                }
+              </div>
+              <div class="odds-side">
+                <span class="bold-pill" [attr.data-boldness]="o.boldness" data-testid="draw-boldness">
+                  {{ o.boldnessLabel }} <span class="num">· {{ o.sigmas }}σ</span>
+                </span>
+                <span class="legend">
+                  <span class="swatch inner" aria-hidden="true"></span>50%
+                  <span class="swatch outer" aria-hidden="true"></span>90% of paths
+                </span>
+                <span class="footnote">
+                  Odds of a random walk at {{ symbol() }}'s recent volatility, not a prediction.
+                </span>
+              </div>
+            </div>
+          }
 
           @if (tradeable()) {
             <div class="size">
@@ -218,6 +256,38 @@ const orderKey = (o: OrderLine) =>
     .sentence [data-tone] { font-weight: 650; font-variant-numeric: tabular-nums; }
     .sentence [data-tone='gain'] { color: var(--gain); }
     .sentence [data-tone='loss'] { color: var(--loss); }
+
+    .odds {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px 28px;
+      padding: 14px 16px;
+      border-radius: var(--radius-md);
+      background: color-mix(in srgb, var(--info) 6%, var(--surface));
+      border: 1px solid color-mix(in srgb, var(--info) 18%, var(--border));
+    }
+    .rings { display: flex; gap: 20px; flex-wrap: wrap; }
+    .odds-side { display: flex; flex-direction: column; gap: 8px; flex: 1 1 200px; min-width: 0; }
+    .bold-pill {
+      align-self: flex-start;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 650;
+      background: var(--muted);
+      color: var(--foreground);
+    }
+    .bold-pill[data-boldness='bold'] { background: var(--warning-muted); color: var(--warning); }
+    .bold-pill[data-boldness='moonshot'] {
+      background: linear-gradient(90deg, color-mix(in srgb, #a78bfa 30%, transparent), color-mix(in srgb, #f472b6 30%, transparent));
+      color: #f5d0fe;
+    }
+    .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+    .swatch { width: 14px; height: 8px; border-radius: 3px; background: var(--info); }
+    .swatch.inner { opacity: 0.45; }
+    .swatch.outer { opacity: 0.2; margin-left: 6px; }
+    .footnote { font-size: 12px; color: var(--muted-foreground); }
 
     .size { display: flex; flex-direction: column; gap: 10px; }
     .size-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-size: 13px; color: var(--muted-foreground); }
@@ -425,6 +495,56 @@ export class DrawToolComponent {
     return this.liveIdea()?.entryType === 'MARKET'
       ? 'The market isn\'t open right now, so this order waits for the next open and fills at that price.'
       : 'The market isn\'t open right now, so this order starts working at the next open.';
+  });
+
+  /** Volatility per candle, from the history shown. */
+  readonly sigma = computed(() => volatility(this.history()));
+
+  /** Where a random walk could take the price over the horizon, once there's a line to compare. */
+  readonly forecast = computed(() => {
+    const price = this.price();
+    const steps = this.horizon().futureSteps;
+    if (!this.idea() || !price) {
+      return null;
+    }
+    return cone(price, this.sigma(), steps, CONE_QUANTILES, Math.max(steps / 48, 0.5));
+  });
+
+  /**
+   * The line's chances on that walk: that a limit fills, that the price reaches where the line ends
+   * up by the time it gets there, and which of a bracket's exits fills first - with how bold a call
+   * the move is.
+   */
+  readonly odds = computed(() => {
+    const idea = this.liveIdea();
+    const price = this.price();
+    if (!idea || !price || idea.shape === 'flat' || idea.needsShares) {
+      return null;
+    }
+    const sigma = this.sigma();
+    const when = this.label();
+    const chances: Chance[] = [];
+    if (idea.entryType === 'LIMIT') {
+      chances.push({
+        key: 'fills', tone: 'entry',
+        value: touchProbability(price, idea.entry, sigma, Math.max(idea.entryStep, 1)),
+        label: `${idea.side === 'BUY' ? 'Dips' : 'Rises'} to ${formatMoney(idea.entry)} by ${when(idea.entryStep)}`
+      });
+    }
+    chances.push({
+      key: 'reaches', tone: idea.side === 'BUY' ? 'gain' : 'loss',
+      value: touchProbability(price, idea.target, sigma, Math.max(idea.targetStep, 1)),
+      label: `${idea.target >= price ? 'Reaches' : 'Falls to'} ${formatMoney(idea.target)} by ${when(idea.targetStep)}`
+    });
+    if (idea.side === 'BUY' && idea.stop !== null) {
+      chances.push({
+        key: 'first', tone: 'info',
+        value: hitsFirstProbability(idea.entry, idea.target, idea.stop),
+        label: 'Take profit fills before stop loss'
+      });
+    }
+    const bold = boldness(price, idea.target, sigma, Math.max(idea.targetStep, 1));
+    return { chances, boldness: bold.label, boldnessLabel: BOLDNESS[bold.label], sigmas: bold.sigmas.toFixed(1) };
   });
 
   /** The trade, read out when it changes. */

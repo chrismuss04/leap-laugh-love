@@ -65,3 +65,13 @@ describe('forecast', () => {
     expect(boldness(100, 90, 0.01, 4)).toEqual({ sigmas: expect.closeTo(5.27, 2), label: 'moonshot' });
   });
 });
+
+describe('two exits', () => {
+  it('gives the chance the upper exit fills first', async () => {
+    const { hitsFirstProbability } = await import('./forecast');
+    expect(hitsFirstProbability(100, 110, 95)).toBeCloseTo(1 / 3);
+    expect(hitsFirstProbability(100, 101, 90)).toBeCloseTo(10 / 11);
+    expect(hitsFirstProbability(120, 110, 95)).toBe(1);
+    expect(hitsFirstProbability(100, 95, 95)).toBe(0);
+  });
+});

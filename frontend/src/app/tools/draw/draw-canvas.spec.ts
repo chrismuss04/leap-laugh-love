@@ -107,6 +107,19 @@ describe('DrawCanvasComponent', () => {
     expect(cleared).toBe(1);
   });
 
+  it('opens the cone behind a settled line', () => {
+    const cone = [0, 30, 60].map(step => ({ step, prices: [100 - step / 10, 100 - step / 20, 100, 100 + step / 20, 100 + step / 10] }));
+    fixture.componentRef.setInput('cone', cone);
+    fixture.detectChanges();
+    expect(q('[data-testid="draw-cone"]')).toBeNull();
+
+    canvas.place([{ step: 0, price: 100 }, { step: 30, price: 104 }]);
+    fixture.detectChanges();
+    expect(q('.band.outer')!.getAttribute('d')).toMatch(/^M.* L.* Z$/);
+    expect(q('.band.inner')).not.toBeNull();
+    expect(q('.median')!.getAttribute('d')).toMatch(/^M/);
+  });
+
   describe('levels', () => {
     const tag = (level: string) => q(`.level-tag[data-level="${level}"]`)!;
 

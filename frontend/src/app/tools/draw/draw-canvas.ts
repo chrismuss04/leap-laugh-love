@@ -2,6 +2,7 @@ import {
   AfterViewInit, Component, ElementRef, NgZone, OnDestroy, computed, effect, inject, input, output, signal, untracked, viewChild
 } from '@angular/core';
 import { formatMoney } from '../../shared/format';
+import { ConeStep } from './forecast';
 import { TradeIdea } from './interpret';
 import {
   ChartFrame, DataPoint, PixelPoint, extendStroke, niceTicks, priceRange, resample, smooth, splinePath, thin, toData, toPixel
@@ -98,6 +99,7 @@ function capture(event: PointerEvent, hold: boolean): void {
             </linearGradient>
             <clipPath [attr.id]="ids.above"><rect x="0" [attr.y]="f.top - 40" [attr.width]="size().width" [attr.height]="now().y - f.top + 40" /></clipPath>
             <clipPath [attr.id]="ids.below"><rect x="0" [attr.y]="now().y" [attr.width]="size().width" [attr.height]="f.bottom - now().y + 40" /></clipPath>
+            <clipPath [attr.id]="ids.plot"><rect [attr.x]="now().x" [attr.y]="f.top" [attr.width]="f.right - now().x" [attr.height]="f.bottom - f.top" /></clipPath>
             <filter [attr.id]="ids.glow" x="-20%" y="-50%" width="140%" height="200%">
               <feGaussianBlur stdDeviation="5" result="blur" />
               <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
@@ -126,6 +128,18 @@ function capture(event: PointerEvent, hold: boolean): void {
 
           @if (!settled() && !drawing()) {
             <path class="ghost" [attr.d]="ghostPath()" pathLength="1" />
+          }
+
+          @if (settled() && conePaths(); as c) {
+            <g [attr.clip-path]="'url(#' + ids.plot + ')'" data-testid="draw-cone">
+              @for (key of settleKey(); track key) {
+                <g class="cone" [style.transform-origin]="now().x + 'px ' + now().y + 'px'">
+                  <path class="band outer" [attr.d]="c.outer" />
+                  <path class="band inner" [attr.d]="c.inner" />
+                  <path class="median" [attr.d]="c.median" />
+                </g>
+              }
+            </g>
           }
 
           @if (settled()) {
@@ -261,6 +275,15 @@ function capture(event: PointerEvent, hold: boolean): void {
       animation: shimmer 0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.15s both;
     }
 
+    .cone {
+      transform-box: view-box;
+      animation: open 0.9s cubic-bezier(0.2, 0, 0, 1) 0.1s both;
+    }
+    .band { stroke: none; }
+    .band.outer { fill: var(--info); opacity: 0.1; }
+    .band.inner { fill: var(--info); opacity: 0.18; }
+    .median { fill: none; stroke: var(--info); stroke-width: 1.25; stroke-dasharray: 1 5; stroke-linecap: round; opacity: 0.7; }
+
     .level { stroke-width: 1.5; stroke-dasharray: 6 5; animation: fade 0.4s ease both; }
     .level[data-tone='gain'] { stroke: var(--gain); }
     .level[data-tone='loss'] { stroke: var(--loss); }
@@ -346,6 +369,7 @@ function capture(event: PointerEvent, hold: boolean): void {
 
     @keyframes draw-in { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
     @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes open { from { opacity: 0; transform: scale(0.02, 0.2); } to { opacity: 1; transform: none; } }
     @keyframes ghost {
       0% { stroke-dashoffset: 0.35; opacity: 0; }
       15% { opacity: 0.5; }
@@ -363,7 +387,7 @@ function capture(event: PointerEvent, hold: boolean): void {
     @keyframes pop { from { opacity: 0; transform: translateY(-50%) scale(0.85); } to { opacity: 1; transform: translateY(-50%) scale(1); } }
 
     @media (prefers-reduced-motion: reduce) {
-      .history-line, .history-area, .settled, .level, .hint, .level-tag { animation: none; }
+      .history-line, .history-area, .settled, .level, .hint, .level-tag, .cone { animation: none; }
       .ghost { animation: none; stroke-dasharray: none; opacity: 0.3; }
       .shimmer, .marker-ring { display: none; }
       .now-halo, .hint .arrow { animation: none; }
@@ -383,6 +407,11 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   readonly stepLabel = input<(step: number) => string>(step => `+${Math.round(step)}`);
   /** The trade read off the line, whose levels are drawn over it. */
   readonly idea = input<TradeIdea | null>(null);
+  /**
+   * Where a random walk could take the price, by step from now: the 5th, 25th, 50th, 75th and 95th
+   * percentiles. Drawn behind a settled line, opening out from the live dot.
+   */
+  readonly cone = input<readonly ConeStep[] | null>(null);
   readonly disabled = input(false);
 
   /** A new stroke has begun; the old one and its idea are gone. */
@@ -403,7 +432,7 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
     const n = ++nextId;
     return {
       history: `draw-history-${n}`, future: `draw-future-${n}`, ink: `draw-ink-${n}`,
-      above: `draw-above-${n}`, below: `draw-below-${n}`, glow: `draw-glow-${n}`
+      above: `draw-above-${n}`, below: `draw-below-${n}`, glow: `draw-glow-${n}`, plot: `draw-plot-${n}`
     };
   })();
 
@@ -532,6 +561,19 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
     }
     const y = this.now().y;
     return `${splinePath(points, 0.5)} L${points[points.length - 1].x},${y} L${points[0].x},${y} Z`;
+  });
+
+  /** The cone's outer (5-95%) and inner (25-75%) bands as closed paths, and its median. */
+  readonly conePaths = computed(() => {
+    const frame = this.frame();
+    const cone = this.cone();
+    if (!frame || !cone || cone.length < 2 || cone[0].prices.length < 5) {
+      return null;
+    }
+    const at = (q: number) => cone.map(step => toPixel(frame, { step: step.step, price: step.prices[q] }));
+    const band = (low: number, high: number) =>
+      `${splinePath(at(high))} ${splinePath([...at(low)].reverse()).replace(/^M/, 'L')} Z`;
+    return { outer: band(0, 4), inner: band(1, 3), median: splinePath(at(2)) };
   });
 
   readonly priceTicks = computed(() => {

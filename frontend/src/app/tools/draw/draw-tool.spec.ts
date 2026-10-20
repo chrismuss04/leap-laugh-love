@@ -127,6 +127,16 @@ describe('DrawToolComponent', () => {
       expect(addButton()!.disabled).toBe(false);
     });
 
+    it('gives the odds on a random walk, and opens the cone', () => {
+      const rings = Array.from(el().querySelectorAll('app-odds-ring'));
+      expect(rings.map(r => r.getAttribute('data-chance'))).toEqual(['reaches', 'first']);
+      expect(rings[0].textContent).toContain('Reaches $430.00 by +50m');
+      // The bracket's exits sit $14 below and $28 above the entry: a third of the way up.
+      expect(rings[1].querySelector('[aria-label]')!.getAttribute('aria-label')).toBe('Take profit fills before stop loss: 33%');
+      expect(text('draw-boldness')).toMatch(/^A (typical move|bold call|moonshot) · \d+\.\d+σ$/);
+      expect(tool.forecast()!.length).toBeGreaterThan(40);
+    });
+
     it('says when the market is closed', () => {
       session.set('CLOSED');
       fixture.detectChanges();
@@ -150,6 +160,22 @@ describe('DrawToolComponent', () => {
     expect(context.plan.addPlan.mock.calls[0][2][0]).toEqual(expect.objectContaining({
       orderType: 'LIMIT', limitPrice: 380, timeInForce: 'GTC'
     }));
+  });
+
+  it('gives a limit\'s chance of filling first', () => {
+    draw(402, 380, 430);
+    const chances = Array.from(el().querySelectorAll('app-odds-ring')).map(r => r.getAttribute('data-chance'));
+    expect(chances).toEqual(['fills', 'reaches', 'first']);
+    expect(el().querySelector('[data-chance="fills"]')!.textContent).toContain('Dips to $380.00 by +50m');
+  });
+
+  it('gives a sell the chance of the fall, and a flat line no odds', () => {
+    draw(402, 380);
+    expect(Array.from(el().querySelectorAll('app-odds-ring')).map(r => r.textContent)).toEqual([
+      expect.stringContaining('Falls to $380.00 by +50m')
+    ]);
+    draw(402, 402.1);
+    expect(el().querySelector('[data-testid="draw-odds"]')).toBeNull();
   });
 
   it('sells every share held by default', () => {

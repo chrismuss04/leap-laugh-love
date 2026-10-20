@@ -128,6 +128,18 @@ export function endAboveProbability(price: number, target: number, sigma: number
   return 1 - normalCdf((Math.log(target / price) + 0.5 * spread * spread) / spread);
 }
 
+/**
+ * The chance the price reaches `upper` before it falls to `lower`, however long that takes - which
+ * of a bracket's two exits fills. With no drift the price is a martingale, so the answer is simply
+ * how far the start sits between the two: (start - lower) / (upper - lower).
+ */
+export function hitsFirstProbability(start: number, upper: number, lower: number): number {
+  if (!(upper > lower)) {
+    return 0;
+  }
+  return Math.min(Math.max((start - lower) / (upper - lower), 0), 1);
+}
+
 export type Boldness = 'typical' | 'bold' | 'moonshot';
 
 /**
