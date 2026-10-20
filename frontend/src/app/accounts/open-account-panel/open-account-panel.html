@@ -17,7 +17,7 @@
          [class.pending]="deposit() === 'failed' || deposit() === 'unknown'" aria-hidden="true">
       {{ deposit() === 'none' || deposit() === 'done' ? '✓' : '!' }}
     </div>
-    <p class="result-title">{{ accountName(account.accountNumber) }} is open</p>
+    <p class="result-title">{{ accountName(account.accountNumber, account.accountSeq) }} is open</p>
 
     <!-- The account exists either way; only the starting cash can have gone wrong. -->
     <p *ngIf="deposit() === 'failed'" class="result-text">

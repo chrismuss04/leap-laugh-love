@@ -990,7 +990,7 @@ describe('Trading Tools', () => {
 
     it('shows the account\'s saved price protection, which the server applies to every order', async () => {
       holdingsApi.getAccounts.mockReturnValue(of([{ accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE',
-        baseCurrency: 'USD', tradingEnabled: true, maxSlippagePercent: 1, createdAt: '', inactiveSince: null }]));
+        baseCurrency: 'USD', tradingEnabled: true, maxSlippagePercent: 1, createdAt: '', inactiveSince: null, accountSeq: 1 }]));
       await open('/tools');
       await review(sellAndBuy);
       expect(cells('[data-testid="review-protection"] strong')).toEqual(['1%']);

@@ -30,7 +30,7 @@ describe('AccountValuationService', () => {
   };
   const summaries = [
     { accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
-      maxSlippagePercent: null, createdAt: '2024-01-01T00:00:00Z', inactiveSince: null }
+      maxSlippagePercent: null, createdAt: '2024-01-01T00:00:00Z', inactiveSince: null, accountSeq: 1 }
   ];
 
   let service: AccountValuationService;
@@ -82,7 +82,7 @@ describe('AccountValuationService', () => {
     expect(service.marketNames()).toEqual({ AAPL: 'Apple Inc.' });
 
     const [first, second] = service.accounts();
-    expect(first.name).toBe('Brokerage ··0001');
+    expect(first.name).toBe('Brokerage 1');
     expect(first.status).toBe('ACTIVE');
     expect(first.cash).toBe(1000);
     expect(first.marketValue).toBe(1500);
@@ -93,7 +93,8 @@ describe('AccountValuationService', () => {
     expect(first.intraday).toEqual([1000 + 1450, 1000 + 1500]);
     expect(first.previousCloseValue).toBe(1000 + 1400);
 
-    // An account with no saved summary has no status, and shares sum to one.
+    // An account with no saved summary has no status or number, and shares sum to one.
+    expect(second.name).toBe('Brokerage ··0002');
     expect(second.status).toBeNull();
     expect(second.tradingEnabled).toBeNull();
     expect(first.share + second.share).toBeCloseTo(1);

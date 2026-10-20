@@ -32,6 +32,8 @@ export interface AccountSummary {
   maxSlippagePercent: number | null;
   createdAt: string;
   inactiveSince: string | null;
+  /** The account's place among the client's accounts (1, 2, ...); null if it was never numbered. */
+  accountSeq: number | null;
 }
 
 @Injectable({

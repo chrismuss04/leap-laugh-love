@@ -31,7 +31,7 @@ describe('DashboardComponent', () => {
   };
   const summaries = [
     { accountId: 'a1', accountNumber: 'ACC-0001', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
-      maxSlippagePercent: 2, createdAt: '', inactiveSince: null }
+      maxSlippagePercent: 2, createdAt: '', inactiveSince: null, accountSeq: 1 }
   ];
   const day = 86_400_000;
   const history: PortfolioHistory = {

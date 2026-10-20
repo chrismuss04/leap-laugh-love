@@ -54,7 +54,7 @@ export const MARKET_INDICES: { symbol: string; label: string }[] = [
 export interface AccountView {
   accountId: string;
   accountNumber: string;
-  /** "Brokerage ··4821" - the API has no account nicknames yet. */
+  /** "Brokerage 2" - see accountName(). */
   name: string;
   /** Last four of the account number, for compact labels. */
   mask: string;
@@ -90,6 +90,10 @@ export function accountMask(accountNumber: string): string {
   return accountNumber.slice(-4);
 }
 
-export function accountName(accountNumber: string): string {
-  return `Brokerage ··${accountMask(accountNumber)}`;
+/**
+ * "Brokerage 2" for the client's second account. An account the API hasn't numbered falls back to
+ * the end of its account number, "Brokerage ··4821".
+ */
+export function accountName(accountNumber: string, accountSeq?: number | null): string {
+  return accountSeq ? `Brokerage ${accountSeq}` : `Brokerage ··${accountMask(accountNumber)}`;
 }
