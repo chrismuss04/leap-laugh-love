@@ -133,9 +133,7 @@ const orderKey = (o: OrderLine) =>
                 }
               </div>
               <div class="odds-side">
-                <span class="bold-pill" [attr.data-boldness]="o.boldness" data-testid="draw-boldness">
-                  {{ o.boldnessLabel }} <span class="num">· {{ o.sigmas }}σ</span>
-                </span>
+                <span class="bold-pill" [attr.data-boldness]="o.boldness" data-testid="draw-boldness">{{ o.boldnessLabel }} <span class="num">· {{ o.sigmas }}σ</span></span>
                 <span class="legend">
                   <span class="swatch inner" aria-hidden="true"></span>50%
                   <span class="swatch outer" aria-hidden="true"></span>90% of paths

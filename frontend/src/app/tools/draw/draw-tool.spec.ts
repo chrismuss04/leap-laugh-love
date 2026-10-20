@@ -133,7 +133,7 @@ describe('DrawToolComponent', () => {
       expect(rings[0].textContent).toContain('Reaches $430.00 by +50m');
       // The bracket's exits sit $14 below and $28 above the entry: a third of the way up.
       expect(rings[1].querySelector('[aria-label]')!.getAttribute('aria-label')).toBe('Take profit fills before stop loss: 33%');
-      expect(text('draw-boldness')).toMatch(/^A (typical move|bold call|moonshot) · \d+\.\d+σ$/);
+      expect(el().querySelector('[data-testid="draw-boldness"]')!.textContent).toMatch(/^A (typical move|bold call|moonshot) · \d+\.\d+σ$/);
       expect(tool.forecast()!.length).toBeGreaterThan(40);
     });
 

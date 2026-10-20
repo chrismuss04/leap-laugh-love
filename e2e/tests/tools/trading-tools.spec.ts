@@ -3,8 +3,8 @@ import { personas } from '../../data/users';
 
 const TOOLS = [
   { id: 'rebalance', name: 'Rebalance Donut', surface: 'app-rebalance-tool' },
-  { id: 'raise-cash', name: 'Raise Cash', surface: 'p.soon' },
-  { id: 'basket', name: 'Basket Builder', surface: 'p.soon' },
+  { id: 'raise-cash', name: 'Raise Cash', surface: 'app-raise-cash-tool' },
+  { id: 'basket', name: 'Basket Builder', surface: 'app-basket-tool' },
   { id: 'draw', name: 'Draw Your Trade', surface: 'app-draw-tool' }
 ] as const;
 
