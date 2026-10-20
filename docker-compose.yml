@@ -308,6 +308,8 @@ services:
       - ./iam-app/src/main/resources/db/seed_marketdata.sql:/docker-entrypoint-initdb.d/04-seed-marketdata.sql:ro
       - ./iam-app/src/main/resources/db/seed_sp500_marketdata.sql:/docker-entrypoint-initdb.d/05-seed-sp500-marketdata.sql:ro
       - ./iam-app/src/main/resources/db/seed_sp500_trading.sql:/docker-entrypoint-initdb.d/06-seed-sp500-trading.sql:ro
+      # 07 like E2E's seed: it trades S&P 500 instruments, so it has to follow 06.
+      - ./iam-app/src/main/resources/db/seed_client_history.sql:/docker-entrypoint-initdb.d/07-seed-client-history.sql:ro
       # 08 so it runs after every other seed, E2E's 07 included.
       - ./iam-app/src/main/resources/db/seed_reporting.sql:/docker-entrypoint-initdb.d/08-seed-reporting.sql:ro
       - ./iam-app/src/main/resources/db/seed_reporting_sectors.sql:/docker-entrypoint-initdb.d/09-seed-reporting-sectors.sql:ro
