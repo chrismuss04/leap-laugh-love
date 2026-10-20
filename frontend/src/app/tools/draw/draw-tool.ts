@@ -451,7 +451,11 @@ export class DrawToolComponent {
   readonly liveIdea = computed(() => {
     const idea = this.idea();
     const price = this.price();
-    return idea && idea.entryType === 'MARKET' && price && idea.shape !== 'flat' ? adjustIdea(idea, { entry: price }) : idea;
+    if (!idea || !price) {
+      return idea;
+    }
+    const repriceable = idea.entryType === 'MARKET' && idea.shape !== 'flat';
+    return repriceable ? adjustIdea(idea, { entry: price }) : idea;
   });
 
   readonly max = computed(() => {
