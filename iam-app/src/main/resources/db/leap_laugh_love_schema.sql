@@ -172,7 +172,11 @@ CREATE TABLE IF NOT EXISTS trading.accounts (
     inactive_since TIMESTAMPTZ,
     -- When the client was emailed about the current inactive period; NULL until that email is
     -- sent, so a failed send is retried by the next nightly run. Cleared with inactive_since.
-    inactive_notified_at TIMESTAMPTZ
+    inactive_notified_at TIMESTAMPTZ,
+    -- The account's place among its client's accounts (1, 2, ...), shown as "Brokerage 1". Set by
+    -- account-app when it opens the account; NULL only for rows inserted without one.
+    account_seq INTEGER CHECK (account_seq IS NULL OR account_seq > 0),
+    UNIQUE (client_id, account_seq)
 );
 
 -- Backs the account lookup by client_id used by the order history query.

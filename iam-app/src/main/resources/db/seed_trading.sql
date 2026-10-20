@@ -32,22 +32,23 @@ ON CONFLICT (symbol, market) DO UPDATE SET
 WITH client_map AS (
     SELECT client_id, email FROM iam.clients
 )
-INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at) VALUES
-    ((SELECT client_id FROM client_map WHERE email = 'alice.johnson@leap.com'), 'ACC-001-01', 'ACTIVE', 'USD', TRUE, date_trunc('day', NOW()) - INTERVAL '200 days' + TIME '09:00'),
-    ((SELECT client_id FROM client_map WHERE email = 'bob.smith@leap.com'), 'ACC-002-01', 'ACTIVE', 'USD', TRUE, '2025-04-07 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'carol.williams@leap.com'), 'ACC-003-01', 'ACTIVE', 'USD', TRUE, '2025-04-14 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'david.brown@leap.com'), 'ACC-004-01', 'ACTIVE', 'USD', TRUE, '2025-05-05 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'emma.davis@leap.com'), 'ACC-005-01', 'ACTIVE', 'USD', TRUE, '2025-05-12 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'frank.miller@leap.com'), 'ACC-006-01', 'ACTIVE', 'USD', TRUE, '2025-05-19 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'grace.wilson@leap.com'), 'ACC-007-01', 'BLOCKED', 'USD', FALSE, '2025-06-02 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'henry.taylor@leap.com'), 'ACC-008-01', 'ACTIVE', 'USD', TRUE, '2025-06-09 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'iris.anderson@leap.com'), 'ACC-009-01', 'ACTIVE', 'USD', TRUE, '2025-06-16 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'iris.anderson@leap.com'), 'ACC-009-02', 'ACTIVE', 'USD', TRUE, '2025-09-01 09:00:00+00'),
-    ((SELECT client_id FROM client_map WHERE email = 'jack.thomas@leap.com'), 'ACC-010-01', 'ACTIVE', 'USD', TRUE, '2025-07-07 09:00:00+00')
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, account_seq) VALUES
+    ((SELECT client_id FROM client_map WHERE email = 'alice.johnson@leap.com'), 'ACC-001-01', 'ACTIVE', 'USD', TRUE, date_trunc('day', NOW()) - INTERVAL '200 days' + TIME '09:00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'bob.smith@leap.com'), 'ACC-002-01', 'ACTIVE', 'USD', TRUE, '2025-04-07 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'carol.williams@leap.com'), 'ACC-003-01', 'ACTIVE', 'USD', TRUE, '2025-04-14 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'david.brown@leap.com'), 'ACC-004-01', 'ACTIVE', 'USD', TRUE, '2025-05-05 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'emma.davis@leap.com'), 'ACC-005-01', 'ACTIVE', 'USD', TRUE, '2025-05-12 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'frank.miller@leap.com'), 'ACC-006-01', 'ACTIVE', 'USD', TRUE, '2025-05-19 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'grace.wilson@leap.com'), 'ACC-007-01', 'BLOCKED', 'USD', FALSE, '2025-06-02 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'henry.taylor@leap.com'), 'ACC-008-01', 'ACTIVE', 'USD', TRUE, '2025-06-09 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'iris.anderson@leap.com'), 'ACC-009-01', 'ACTIVE', 'USD', TRUE, '2025-06-16 09:00:00+00', 1),
+    ((SELECT client_id FROM client_map WHERE email = 'iris.anderson@leap.com'), 'ACC-009-02', 'ACTIVE', 'USD', TRUE, '2025-09-01 09:00:00+00', 2),
+    ((SELECT client_id FROM client_map WHERE email = 'jack.thomas@leap.com'), 'ACC-010-01', 'ACTIVE', 'USD', TRUE, '2025-07-07 09:00:00+00', 1)
 ON CONFLICT (account_number) DO UPDATE SET
     status = EXCLUDED.status,
     trading_enabled = EXCLUDED.trading_enabled,
-    created_at = EXCLUDED.created_at;
+    created_at = EXCLUDED.created_at,
+    account_seq = EXCLUDED.account_seq;
 
 -- Insert initial cash deposits for each account, funded the moment it opens.
 -- The cash ledger is append-only (no UPDATE), so re-runs leave existing rows alone.
@@ -73,8 +74,8 @@ WHERE a.account_number LIKE 'ACC-0%' AND a.account_number <> 'ACC-008-02'
 ON CONFLICT (cash_ledger_id) DO NOTHING;
 
 -- Henry's second account has never been funded, so it starts flagged inactive as the nightly job would flag it.
-INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, inactive_since)
-SELECT client_id, 'ACC-008-02', 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '60 days', NOW() - INTERVAL '60 days'
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, inactive_since, account_seq)
+SELECT client_id, 'ACC-008-02', 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '60 days', NOW() - INTERVAL '60 days', 2
 FROM iam.clients WHERE email = 'henry.taylor@leap.com'
 ON CONFLICT (account_number) DO NOTHING;
 
@@ -246,9 +247,9 @@ ON CONFLICT (execution_id) DO NOTHING;
 -- every fifth client place 8 orders; fills are booked by SeededFillService, as above. Each sell is
 -- half an earlier buy, so no account sells more than it holds.
 
-INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at)
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, account_seq)
 SELECT c.client_id, format('ACC-%s-01', 100 + (right(c.phone, 4)::int - 200)), 'ACTIVE', 'USD', TRUE,
-       c.created_at + INTERVAL '1 day'
+       c.created_at + INTERVAL '1 day', 1
 FROM iam.clients c
 WHERE c.phone LIKE '(646) 555-02__'
 ON CONFLICT (account_number) DO NOTHING;

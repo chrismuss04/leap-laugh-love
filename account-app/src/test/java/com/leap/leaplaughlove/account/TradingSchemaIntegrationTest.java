@@ -66,6 +66,9 @@ class TradingSchemaIntegrationTest {
             "accounts should record when they were flagged inactive");
         assertTrue(accountsSection.contains("inactive_notified_at TIMESTAMPTZ"),
             "accounts should record when the client was emailed about being inactive");
+        assertTrue(accountsSection.contains("account_seq INTEGER")
+                   && accountsSection.contains("UNIQUE (client_id, account_seq)"),
+            "accounts should be numbered 1, 2, ... per client");
     }
 
     @Test

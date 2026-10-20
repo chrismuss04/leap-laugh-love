@@ -25,6 +25,8 @@ CREATE TABLE trading.accounts (
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
     inactive_since TIMESTAMP WITH TIME ZONE,
     inactive_notified_at TIMESTAMP WITH TIME ZONE,
+    account_seq INTEGER,
+    UNIQUE (client_id, account_seq),
     FOREIGN KEY (client_id) REFERENCES iam.clients (client_id)
 );
 
