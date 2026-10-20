@@ -5,6 +5,9 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { InstrumentsComponent } from './instruments';
 import { InstrumentOverview, InstrumentOverviewRow } from '../services/instruments';
 import { PriceStreamService } from '../services/price-stream';
+import { HoldingsService } from '../services/holdings';
+import { of } from 'rxjs';
+import { provideRouter } from '@angular/router';
 
 const row = (symbol: string, change: number, assetClass = 'EQUITY'): InstrumentOverviewRow => ({
  symbol, name: symbol === 'AAPL' ? 'Apple Inc.' : symbol, assetClass, currency: 'USD',
@@ -24,7 +27,8 @@ describe('Instruments page integration', () => {
  beforeEach(() => {
   stream = { prices: signal<Record<string, number>>({}), status: signal('live'), watch: vi.fn() };
   TestBed.configureTestingModule({ imports: [InstrumentsComponent], providers: [provideHttpClient(),
-   provideHttpClientTesting(), { provide: PriceStreamService, useValue: stream }] });
+   provideHttpClientTesting(), provideRouter([]), { provide: PriceStreamService, useValue: stream },
+   { provide: HoldingsService, useValue: { getHoldings: () => of({ accounts: [] }) } }] });
   http = TestBed.inject(HttpTestingController);
   fixture = TestBed.createComponent(InstrumentsComponent);
   render();
