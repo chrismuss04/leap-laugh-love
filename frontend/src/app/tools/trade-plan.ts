@@ -21,7 +21,7 @@ interface StoredPlan {
 
 export const TRADE_PLAN_KEY = `${SESSION_DATA_PREFIX}trade-plan`;
 
-const SOURCES: readonly string[] = ['rebalance', 'raise-cash', 'basket', 'draw', 'netted'];
+const SOURCES: ReadonlySet<string> = new Set(['rebalance', 'raise-cash', 'basket', 'draw', 'netted']);
 
 /** "Rebalance", or "Netted" for an order the tray combined. */
 export function sourceLabel(source: PlanSource): string {
@@ -44,6 +44,8 @@ export function conditionsLabel(line: OrderConditions): string {
     case 'STOP_LIMIT':
       parts.push(`Stop ${formatMoney(line.stopPrice)} → limit ${formatMoney(line.limitPrice)}`);
       break;
+    case 'MARKET':
+      break;
   }
   if (line.timeInForce === 'GTC') {
     parts.push('GTC');
@@ -64,7 +66,10 @@ function isStoredOrder(o: Partial<TrayOrder> | null | undefined): o is TrayOrder
   if (typeof o?.id !== 'string' || typeof o.symbol !== 'string') {
     return false;
   }
-  return (o.side === 'BUY' || o.side === 'SELL') && validQuantity(o.quantity ?? NaN) && SOURCES.includes(o.source ?? '')
+  if (o.side !== 'BUY' && o.side !== 'SELL') {
+    return false;
+  }
+  return validQuantity(o.quantity ?? Number.NaN) && SOURCES.has(o.source ?? '')
     && conditionsProblem({ ...o, side: o.side }) === null;
 }
 
@@ -106,11 +111,11 @@ export class TradePlanService {
     for (const order of this.orders().filter(isPlainMarket)) {
       sides.set(order.symbol, (sides.get(order.symbol) ?? new Set()).add(order.side));
     }
-    return [...sides].filter(([, set]) => set.size > 1).map(([symbol]) => symbol).sort();
+    return [...sides].filter(([, set]) => set.size > 1).map(([symbol]) => symbol).sort((a, b) => a.localeCompare(b));
   });
 
   /** Every symbol in the plan. */
-  readonly symbols = computed(() => [...new Set(this.orders().map(o => o.symbol))].sort());
+  readonly symbols = computed(() => [...new Set(this.orders().map(o => o.symbol))].sort((a, b) => a.localeCompare(b)));
 
   private sequence = 0;
 
@@ -222,7 +227,7 @@ export class TradePlanService {
     } catch {
       return;
     }
-    if (!stored || stored.owner !== this.owner || !Array.isArray(stored.orders)) {
+    if (stored?.owner !== this.owner || !Array.isArray(stored.orders)) {
       return;
     }
     const orders = stored.orders.filter(isStoredOrder);
