@@ -22,6 +22,7 @@ import { ToolsComponent as ToolsPage } from './tools';
 import { SKIPPED_MESSAGE, UNKNOWN_MESSAGE } from './plan-submission';
 import { RebalanceToolComponent } from './rebalance/rebalance-tool';
 import { InstrumentsService } from '../services/instruments';
+import { tickInZone } from '../../testing/tick-in-zone';
 
 describe('Trading Tools', () => {
   const position = (symbol: string, quantity: number) =>
@@ -758,7 +759,7 @@ describe('Trading Tools', () => {
       vi.useFakeTimers();
       try {
         sellAndBuy();
-        TestBed.tick();
+        tickInZone();
         expect(q('.badge').classList).not.toContain('bump');
         vi.advanceTimersByTime(700);
         harness.detectChanges();

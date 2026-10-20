@@ -11,6 +11,7 @@ import { ToolsContext } from '../tools-context';
 import { TradePlanService } from '../trade-plan';
 import { BasketService, MAX_BASKET } from './basket';
 import { BASKET_DRAG_TYPE, BasketToolComponent } from './basket-tool';
+import { tickInZone } from '../../../testing/tick-in-zone';
 
 describe('BasketToolComponent', () => {
   const row = (symbol: string, name: string, price: number, baselinePrice: number | null): InstrumentOverviewRow => ({
@@ -285,7 +286,7 @@ describe('BasketToolComponent', () => {
   it('keeps the basket across a refresh', () => {
     drag('AAPL');
     drag('MSFT');
-    TestBed.tick();
+    tickInZone();
     fixture.destroy();
     configure();
     render();
@@ -349,7 +350,7 @@ describe('BasketToolComponent', () => {
     it('lowers the amount when the cash available falls below it', () => {
       type(amountInput(), '9000');
       account.set({ accountId: 'a1', cash: 5000 });
-      TestBed.tick();
+      tickInZone();
       fixture.detectChanges();
       expect(basket.totalCents()).toBe(497512);
       expect(q('[data-testid="amount-note"]')!.textContent).toContain('lowered to $4,975.12');

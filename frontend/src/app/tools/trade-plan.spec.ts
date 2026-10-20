@@ -3,6 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { AuthService } from '../services/auth.service';
 import { TRADE_PLAN_KEY, TradePlanService, sourceLabel } from './trade-plan';
+import { tickInZone } from '../../testing/tick-in-zone';
 
 describe('TradePlanService', () => {
   const signIn = (email: string) => localStorage.setItem('auth_token',
@@ -16,7 +17,7 @@ describe('TradePlanService', () => {
       providers: [TradePlanService, provideHttpClient(), provideHttpClientTesting()]
     });
     plan = TestBed.inject(TradePlanService);
-    TestBed.tick();
+    tickInZone();
     return plan;
   }
 
@@ -174,7 +175,7 @@ describe('TradePlanService', () => {
   describe('persistence', () => {
     it('survives a reload within the session', () => {
       plan.addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }]);
-      TestBed.tick();
+      tickInZone();
       create();
       expect(plan.accountId()).toBe('a1');
       expect(lines()).toEqual(['BUY 2 AAPL (Basket)']);
@@ -185,7 +186,7 @@ describe('TradePlanService', () => {
 
     it('ignores another client\'s plan from the same tab', () => {
       plan.addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }]);
-      TestBed.tick();
+      tickInZone();
       signIn('grace@example.com');
       create();
       expect(plan.isEmpty()).toBe(true);
@@ -214,7 +215,7 @@ describe('TradePlanService', () => {
 
     it('is cleared on sign-out', () => {
       plan.addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }]);
-      TestBed.tick();
+      tickInZone();
       expect(sessionStorage.getItem(TRADE_PLAN_KEY)).not.toBeNull();
       sessionStorage.setItem('unrelated', 'kept');
 
@@ -226,7 +227,7 @@ describe('TradePlanService', () => {
 
     it('is cleared when another tab signs out', () => {
       plan.addPlan('basket', 'a1', [{ symbol: 'AAPL', side: 'BUY', quantity: 2 }]);
-      TestBed.tick();
+      tickInZone();
       TestBed.inject(AuthService);
       localStorage.removeItem('auth_token');
       window.dispatchEvent(new StorageEvent('storage', { key: 'auth_token' }));
