@@ -40,8 +40,14 @@ export interface OpenOrderResponse {
   quantity: number;
   orderType: string;
   status: string;
+  limitPrice?: number | null;
+  stopPrice?: number | null;
+  timeInForce?: 'DAY' | 'GTC';
   parentOrderId?: string | null;
   ocoGroupId?: string | null;
+  /** A buy's bracket, opened as a take-profit limit and a stop-loss stop once it fills. */
+  bracketTakeProfitPrice?: number | null;
+  bracketStopLossPrice?: number | null;
   /** Whether a limit order may also fill in pre-market and after-hours. */
   extendedHours?: boolean;
   /** Whether this is a market order queued for the open. */

@@ -1,8 +1,8 @@
 import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
-import { OrderService, OrderSide, OrderSubmissionResponse } from '../services/order';
-import { DEFAULT_CASH_BUFFER, placementOrder } from '../shared/order-plan';
+import { OrderService, OrderSide, OrderSubmissionRequest, OrderSubmissionResponse } from '../services/order';
+import { DEFAULT_CASH_BUFFER, OrderConditions, placementOrder } from '../shared/order-plan';
 
 /**
  * Where one order of a batch stands. 'accepted' executed and is still being confirmed; 'unknown'
@@ -11,8 +11,11 @@ import { DEFAULT_CASH_BUFFER, placementOrder } from '../shared/order-plan';
 export type SubmissionStatus =
   'waiting' | 'submitting' | 'filled' | 'accepted' | 'open' | 'rejected' | 'skipped' | 'unknown';
 
-/** An order as the client confirmed it: its tray id, and the price they saw when they submitted. */
-export interface ConfirmedOrder {
+/**
+ * An order as the client confirmed it: its tray id, its conditions, and the price they saw when they
+ * submitted - for a conditional order, its limit or stop price.
+ */
+export interface ConfirmedOrder extends OrderConditions {
   id: string;
   symbol: string;
   side: OrderSide;
@@ -126,10 +129,7 @@ export class PlanSubmission {
     }
     this.update(order.id, 'submitting', null);
     try {
-      const response = await firstValueFrom(this.orders.submitOrder({
-        accountId, symbol: order.symbol, side: order.side, quantity: order.quantity,
-        quotedPrice: order.quotedPrice, orderType: 'MARKET'
-      }));
+      const response = await firstValueFrom(this.orders.submitOrder(request(accountId, order)));
       return this.recordResponse(order, response, available);
     } catch (error) {
       this.recordError(order, error);
@@ -177,4 +177,22 @@ export class PlanSubmission {
   private update(id: string, status: SubmissionStatus, message: string | null): void {
     this.rows.update(rows => rows.map(row => (row.id === id ? { ...row, status, message } : row)));
   }
+}
+
+/**
+ * The order-app request for one confirmed order. Only a market order carries the quoted price,
+ * which price protection checks its fill against; the others wait for their own price.
+ */
+function request(accountId: string, order: ConfirmedOrder): OrderSubmissionRequest {
+  const type = order.orderType ?? 'MARKET';
+  return {
+    accountId, symbol: order.symbol, side: order.side, quantity: order.quantity, orderType: type,
+    ...(type === 'MARKET' ? { quotedPrice: order.quotedPrice } : {}),
+    ...(order.limitPrice !== undefined ? { limitPrice: order.limitPrice } : {}),
+    ...(order.stopPrice !== undefined ? { stopPrice: order.stopPrice } : {}),
+    ...(order.timeInForce ? { timeInForce: order.timeInForce } : {}),
+    ...(order.bracket
+      ? { bracketTakeProfitPrice: order.bracket.takeProfit, bracketStopLossPrice: order.bracket.stopLoss }
+      : {})
+  };
 }

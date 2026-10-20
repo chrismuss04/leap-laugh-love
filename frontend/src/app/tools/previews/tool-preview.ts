@@ -1,19 +1,19 @@
 import { Component, Input, computed, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { SparklineComponent } from '../../dashboard/sparkline/sparkline';
 import { formatMoney } from '../../shared/format';
 import { ToolsContext } from '../tools-context';
 import { ToolId } from '../tools-catalog';
+import { DrawPreviewComponent } from './draw-preview';
 import { MiniDonutComponent } from './mini-donut';
 
 /**
  * What a tool would work with, drawn small from the selected account's live data: its allocation,
- * its cash, an empty basket, or its value today. Shows a skeleton while the account loads and the
+ * its cash, an empty basket, or its value today with a pen drawing where it goes next. Shows a skeleton while the account loads and the
  * tool's plain icon if it couldn't.
  */
 @Component({
     selector: 'app-tool-preview',
-    imports: [CommonModule, MiniDonutComponent, SparklineComponent],
+    imports: [CommonModule, MiniDonutComponent, DrawPreviewComponent],
     template: `
     <div class="preview" [attr.data-state]="state()" [class.large]="large">
       <ng-container *ngIf="tool !== 'basket'; else basket" [ngSwitch]="state()">
@@ -34,9 +34,8 @@ import { MiniDonutComponent } from './mini-donut';
             <span class="cash-bar" aria-hidden="true"><span [style.width.%]="cashShare() * 100"></span></span>
           </div>
 
-          <app-sparkline *ngSwitchCase="'draw'" class="fade-in" [values]="series()"
-                         [baseline]="context.account()?.previousCloseValue ?? null"
-                         [width]="large ? 320 : 150" [height]="large ? 96 : 56"></app-sparkline>
+          <app-draw-preview *ngSwitchCase="'draw'" class="fade-in" [values]="series()"
+                            [width]="large ? 320 : 150" [height]="large ? 96 : 56"></app-draw-preview>
         </ng-container>
       </ng-container>
 

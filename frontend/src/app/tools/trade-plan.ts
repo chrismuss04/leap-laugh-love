@@ -1,6 +1,7 @@
 import { Injectable, computed, effect, inject, signal } from '@angular/core';
 import { AuthService, SESSION_DATA_PREFIX } from '../services/auth.service';
-import { OrderLine, placementOrder } from '../shared/order-plan';
+import { OrderConditions, OrderLine, conditionsProblem, isPlainMarket, pickConditions, placementOrder } from '../shared/order-plan';
+import { formatMoney } from '../shared/format';
 import { ToolId, findTool } from './tools-catalog';
 
 /** Which tool an order came from, or 'netted' for one the tray combined from opposite orders. */
@@ -20,11 +21,39 @@ interface StoredPlan {
 
 export const TRADE_PLAN_KEY = `${SESSION_DATA_PREFIX}trade-plan`;
 
-const SOURCES: readonly string[] = ['rebalance', 'raise-cash', 'basket', 'draw', 'netted'];
+const SOURCES: ReadonlySet<string> = new Set(['rebalance', 'raise-cash', 'basket', 'draw', 'netted']);
 
 /** "Rebalance", or "Netted" for an order the tray combined. */
 export function sourceLabel(source: PlanSource): string {
   return source === 'netted' ? 'Netted' : findTool(source)?.planLabel ?? source;
+}
+
+/**
+ * A conditional order's terms in a few words - "Limit $182.00 · GTC · Bracket $214.00 / $184.00" -
+ * or '' for a plain market order for the day.
+ */
+export function conditionsLabel(line: OrderConditions): string {
+  const parts: string[] = [];
+  switch (line.orderType ?? 'MARKET') {
+    case 'LIMIT':
+      parts.push(`Limit ${formatMoney(line.limitPrice)}`);
+      break;
+    case 'STOP':
+      parts.push(`Stop ${formatMoney(line.stopPrice)}`);
+      break;
+    case 'STOP_LIMIT':
+      parts.push(`Stop ${formatMoney(line.stopPrice)} → limit ${formatMoney(line.limitPrice)}`);
+      break;
+    case 'MARKET':
+      break;
+  }
+  if (line.timeInForce === 'GTC') {
+    parts.push('GTC');
+  }
+  if (line.bracket) {
+    parts.push(`Take profit ${formatMoney(line.bracket.takeProfit)} / stop loss ${formatMoney(line.bracket.stopLoss)}`);
+  }
+  return parts.join(' · ');
 }
 
 /** Whole shares, at least one. */
@@ -37,7 +66,11 @@ function isStoredOrder(o: Partial<TrayOrder> | null | undefined): o is TrayOrder
   if (typeof o?.id !== 'string' || typeof o.symbol !== 'string') {
     return false;
   }
-  return (o.side === 'BUY' || o.side === 'SELL') && validQuantity(o.quantity ?? NaN) && SOURCES.includes(o.source ?? '');
+  if (o.side !== 'BUY' && o.side !== 'SELL') {
+    return false;
+  }
+  return validQuantity(o.quantity ?? Number.NaN) && SOURCES.has(o.source ?? '')
+    && conditionsProblem({ ...o, side: o.side }) === null;
 }
 
 function plural(count: number): string {
@@ -60,6 +93,8 @@ export class TradePlanService {
   readonly orders = signal<TrayOrder[]>([]);
   /** The latest change, for a screen reader's live region. */
   readonly announcement = signal('');
+  /** Counts the times a tool has put orders in, so the tray can mark their arrival. */
+  readonly arrivals = signal(0);
 
   readonly count = computed(() => this.orders().length);
   readonly isEmpty = computed(() => this.orders().length === 0);
@@ -67,17 +102,20 @@ export class TradePlanService {
   /** Sells, then buys, each by symbol - the order they would be placed in. */
   readonly sorted = computed(() => [...this.orders()].sort(placementOrder));
 
-  /** Symbols the plan both buys and sells, which could be netted into one order. */
+  /**
+   * Symbols the plan both buys and sells at market, which could be netted into one order. Limit,
+   * stop and bracket orders trade at their own prices, so they're never netted.
+   */
   readonly conflicts = computed(() => {
     const sides = new Map<string, Set<string>>();
-    for (const order of this.orders()) {
+    for (const order of this.orders().filter(isPlainMarket)) {
       sides.set(order.symbol, (sides.get(order.symbol) ?? new Set()).add(order.side));
     }
-    return [...sides].filter(([, set]) => set.size > 1).map(([symbol]) => symbol).sort();
+    return [...sides].filter(([, set]) => set.size > 1).map(([symbol]) => symbol).sort((a, b) => a.localeCompare(b));
   });
 
   /** Every symbol in the plan. */
-  readonly symbols = computed(() => [...new Set(this.orders().map(o => o.symbol))].sort());
+  readonly symbols = computed(() => [...new Set(this.orders().map(o => o.symbol))].sort((a, b) => a.localeCompare(b)));
 
   private sequence = 0;
 
@@ -87,8 +125,8 @@ export class TradePlanService {
   }
 
   /**
-   * Adds a tool's orders, replacing any it added before. Orders of fewer than one whole share are
-   * left out. A plan for another account starts the tray over; the tools page asks the client
+   * Adds a tool's orders, replacing any it added before. Orders of fewer than one whole share, or
+   * with conditions order-app would refuse, are left out. A plan for another account starts the tray over; the tools page asks the client
    * before it ever gets that far.
    */
   addPlan(source: ToolId, accountId: string, lines: OrderLine[]): void {
@@ -97,12 +135,17 @@ export class TradePlanService {
       this.accountId.set(accountId);
     }
     const added = lines
-      .filter(line => validQuantity(line.quantity))
-      .map(line => ({ id: this.nextId(), source, symbol: line.symbol, side: line.side, quantity: line.quantity }));
+      .filter(line => validQuantity(line.quantity) && conditionsProblem(line) === null)
+      .map(line => ({
+        id: this.nextId(), source, symbol: line.symbol, side: line.side, quantity: line.quantity, ...pickConditions(line)
+      }));
     const replaced = this.orders().some(o => o.source === source);
     this.orders.update(orders => [...orders.filter(o => o.source !== source), ...added]);
 
     const label = sourceLabel(source);
+    if (added.length) {
+      this.arrivals.update(n => n + 1);
+    }
     if (!added.length) {
       this.announcement.set(replaced ? `${label}'s orders were removed from your plan.` : `${label} had no orders to add.`);
     } else {
@@ -150,16 +193,17 @@ export class TradePlanService {
   }
 
   /**
-   * Combines every order on a symbol into the one order that has the same effect, tagged 'netted'.
-   * Orders that cancel out leave nothing behind.
+   * Combines every market order on a symbol into the one order that has the same effect, tagged
+   * 'netted'. Orders that cancel out leave nothing behind; conditional orders are kept as they are.
    */
   net(symbol: string): void {
-    const onSymbol = this.orders().filter(o => o.symbol === symbol);
+    const netted = (o: TrayOrder) => o.symbol === symbol && isPlainMarket(o);
+    const onSymbol = this.orders().filter(netted);
     if (!onSymbol.length) {
       return;
     }
     const balance = onSymbol.reduce((sum, o) => sum + (o.side === 'BUY' ? o.quantity : -o.quantity), 0);
-    const remaining = this.orders().filter(o => o.symbol !== symbol);
+    const remaining = this.orders().filter(o => !netted(o));
     if (balance === 0) {
       this.orders.set(remaining);
       this.announcement.set(`The ${symbol} orders cancel out, so they were removed from your plan.`);
@@ -183,7 +227,7 @@ export class TradePlanService {
     } catch {
       return;
     }
-    if (!stored || stored.owner !== this.owner || !Array.isArray(stored.orders)) {
+    if (stored?.owner !== this.owner || !Array.isArray(stored.orders)) {
       return;
     }
     const orders = stored.orders.filter(isStoredOrder);

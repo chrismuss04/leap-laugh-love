@@ -75,7 +75,8 @@ describe('Trading Tools', () => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
     marketApi = createSpyObj('MarketDataService',
-      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
+      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote', 'getHistory']);
+    marketApi.getHistory.mockReturnValue(of([]));
     // Every quote sits 10 cents either side of its last trade.
     marketApi.getQuote.mockImplementation((symbol: string) =>
       of({ symbol, lastPrice: 100, askPrice: 100.1, bidPrice: 99.9, quoteTimestamp: '' }));
@@ -124,7 +125,8 @@ describe('Trading Tools', () => {
       expect(donut.getAttribute('aria-label')).toBe('Allocation: AAPL 60%, Cash 40%');
       expect(tile('raise-cash').querySelector('[data-testid="preview-cash"]')!.textContent).toContain('1,000.00');
       expect(tile('basket').querySelector('[data-testid="preview-basket"]')).not.toBeNull();
-      expect(tile('draw').querySelector('app-sparkline svg path')).not.toBeNull();
+      expect(tile('draw').querySelector('app-draw-preview path.history')!.getAttribute('d')).toMatch(/^M/);
+      expect(tile('draw').querySelector('app-draw-preview path.drawn')!.getAttribute('d')).toMatch(/^M/);
     });
 
     it('keeps the held symbols on the live price stream', async () => {
@@ -749,6 +751,24 @@ describe('Trading Tools', () => {
       expect(text('[data-testid="tray-summary"]')).toBe('2 orders · −$100.30 cash');
       expect(text('.badge')).toBe('2');
       expect(text('[data-testid="tray-announcer"]')).toBe('2 orders from Rebalance added to your plan.');
+    });
+
+    it('pops the badge as orders arrive, once a flown chip would have landed', async () => {
+      await open('/tools');
+      vi.useFakeTimers();
+      try {
+        sellAndBuy();
+        TestBed.tick();
+        expect(q('.badge').classList).not.toContain('bump');
+        vi.advanceTimersByTime(700);
+        harness.detectChanges();
+        expect(q('.badge').classList).toContain('bump');
+        vi.advanceTimersByTime(700);
+        harness.detectChanges();
+        expect(q('.badge').classList).not.toContain('bump');
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('lists each order and projects cash and allocation after them all', async () => {

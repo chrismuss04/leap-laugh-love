@@ -5,9 +5,10 @@ import { OrderService } from '../services/order';
 import { MarketStatusService } from '../services/market-status';
 import { CONCENTRATION_WARNING, concentrationWarning } from '../shared/order-impact';
 import { holdsByAccount } from '../shared/order-types';
+import { pickConditions } from '../shared/order-plan';
 import { formatMoney, formatSignedMoney } from '../shared/format';
 import { ToolsContext } from './tools-context';
-import { TradePlanService } from './trade-plan';
+import { TradePlanService, conditionsLabel } from './trade-plan';
 import { ConfirmedOrder, PlanSubmission, SubmissionStatus } from './plan-submission';
 
 const STATUS_LABELS: Record<SubmissionStatus, string> = {
@@ -47,9 +48,9 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
         <table class="orders">
           <thead><tr><th>Side</th><th>Symbol</th><th class="n">Shares</th><th class="n">Est. price</th><th class="n">Value</th></tr></thead>
           <tbody>
-            <tr *ngFor="let order of projection()?.orders ?? []" [attr.data-symbol]="order.symbol">
+            <tr *ngFor="let order of projection()?.orders ?? []; let i = index" [attr.data-symbol]="order.symbol">
               <td [attr.data-side]="order.side">{{ order.side === 'BUY' ? 'Buy' : 'Sell' }}</td>
-              <td class="symbol">{{ order.symbol }}</td>
+              <td class="symbol">{{ order.symbol }}<span *ngIf="terms()[i] as term" class="terms" data-testid="review-terms">{{ term }}</span></td>
               <td class="n num">{{ order.quantity }}</td>
               <td class="n num">{{ money(order.quotedPrice) }}</td>
               <td class="n num">{{ money(order.estimatedValue) }}</td>
@@ -67,7 +68,7 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
         <p class="protection" data-testid="review-protection">
           Price protection:
           <strong>{{ maxSlippage() === null ? 'Off' : maxSlippage() + '%' }}</strong>
-          <span *ngIf="maxSlippage() !== null"> on every order - one that would fill further than this from its
+          <span *ngIf="maxSlippage() !== null"> on every market order - one that would fill further than this from its
             price here is rejected.</span>
           <span *ngIf="maxSlippage() === null"> - turn it on in Accounts to reject fills that move too far.</span>
         </p>
@@ -80,7 +81,7 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
       <ng-template #progress>
         <ol class="results" aria-live="polite">
           <li *ngFor="let row of submission.rows()" [attr.data-status]="row.status" [attr.data-symbol]="row.symbol">
-            <span class="what">{{ row.side === 'BUY' ? 'Buy' : 'Sell' }} {{ row.quantity }} {{ row.symbol }}</span>
+            <span class="what">{{ row.side === 'BUY' ? 'Buy' : 'Sell' }} {{ row.quantity }} {{ row.symbol }}<span *ngIf="label(row)" class="terms">{{ label(row) }}</span></span>
             <span class="status">{{ statusLabel(row.status) }}</span>
             <span *ngIf="row.message" class="reason">{{ row.message }}</span>
           </li>
@@ -139,6 +140,7 @@ const STATUS_LABELS: Record<SubmissionStatus, string> = {
     td[data-side='BUY'] { color: var(--gain); font-weight: 600; }
     td[data-side='SELL'] { color: var(--loss); font-weight: 600; }
     .symbol { font-weight: 600; }
+    .terms { display: block; margin-top: 2px; font-size: 12px; font-weight: 500; color: var(--muted-foreground); }
     .totals { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 20px; font-size: 13px; }
     .totals div { display: flex; justify-content: space-between; gap: 8px; }
     dt { color: var(--muted-foreground); }
@@ -233,8 +235,12 @@ export class PlanReviewComponent implements OnInit, AfterViewInit {
     return (said.join(' · ') || 'Nothing was sent') + settling + '.';
   });
 
+  /** Each planned order's terms, by row, or '' for a plain market order. */
+  readonly terms = computed(() => this.plan.sorted().map(conditionsLabel));
+
   money = formatMoney;
   signed = formatSignedMoney;
+  label = conditionsLabel;
 
   ngOnInit(): void {
     this.submission.reset();
@@ -270,6 +276,7 @@ export class PlanReviewComponent implements OnInit, AfterViewInit {
     }
     const sorted = this.plan.sorted();
     const confirmed: ConfirmedOrder[] = projection.orders.map((order, i) => ({
+      ...pickConditions(sorted[i]),
       id: sorted[i].id, symbol: order.symbol, side: order.side, quantity: order.quantity, quotedPrice: order.quotedPrice
     }));
     await this.submission.submit(account.accountId, confirmed, account.cash - (this.heldCash() ?? 0));

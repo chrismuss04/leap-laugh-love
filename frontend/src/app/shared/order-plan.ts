@@ -229,11 +229,126 @@ export function planOrders(input: PlanInput): OrderPlan {
   return { orders, cashAfter, allocationAfter, cashShareAfter, warnings };
 }
 
+/**
+ * How a planned order executes. MARKET fills at once; LIMIT waits for its limit price or better,
+ * STOP becomes a market order at its stop price, and STOP_LIMIT becomes a limit order there.
+ */
+export type PlanOrderType = 'MARKET' | 'LIMIT' | 'STOP' | 'STOP_LIMIT';
+
+/**
+ * A buy's bracket: once it fills, a take-profit sell limit and a stop-loss sell stop open, and
+ * whichever executes first cancels the other.
+ */
+export interface PlanBracket {
+  takeProfit: number;
+  stopLoss: number;
+}
+
+/** The conditions on an order beyond side and size. Without any it's a market order for today. */
+export interface OrderConditions {
+  /** MARKET when left out. */
+  orderType?: PlanOrderType;
+  /** For LIMIT and STOP_LIMIT. */
+  limitPrice?: number;
+  /** For STOP and STOP_LIMIT. */
+  stopPrice?: number;
+  /** How long an order that doesn't fill keeps working; DAY when left out. */
+  timeInForce?: 'DAY' | 'GTC';
+  /** For a BUY only. */
+  bracket?: PlanBracket;
+}
+
 /** One order as a person (or a tool) asked for it, before it is priced. */
-export interface OrderLine {
+export interface OrderLine extends OrderConditions {
   symbol: string;
   side: PlanSide;
   quantity: number;
+}
+
+const positivePrice = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0;
+
+/**
+ * Why an order's conditions can't be sent, or null when they can. Mirrors order-app's rules: each
+ * price is given exactly when its type takes it, and a bracket goes on a buy, profit above loss.
+ */
+export function conditionsProblem(line: OrderConditions & { side: PlanSide }): string | null {
+  const type = line.orderType ?? 'MARKET';
+  if (!['MARKET', 'LIMIT', 'STOP', 'STOP_LIMIT'].includes(type)) {
+    return `${type} orders can't be planned.`;
+  }
+  const wantsLimit = type === 'LIMIT' || type === 'STOP_LIMIT';
+  const wantsStop = type === 'STOP' || type === 'STOP_LIMIT';
+  if (wantsLimit !== positivePrice(line.limitPrice) || (!wantsLimit && line.limitPrice !== undefined)) {
+    return wantsLimit ? 'A limit order needs a limit price above zero.' : 'Only limit orders take a limit price.';
+  }
+  if (wantsStop !== positivePrice(line.stopPrice) || (!wantsStop && line.stopPrice !== undefined)) {
+    return wantsStop ? 'A stop order needs a stop price above zero.' : 'Only stop orders take a stop price.';
+  }
+  if (line.timeInForce !== undefined && line.timeInForce !== 'DAY' && line.timeInForce !== 'GTC') {
+    return 'An order lasts for the day (DAY) or until cancelled (GTC).';
+  }
+  if (type === 'MARKET' && line.timeInForce === 'GTC') {
+    return 'A market order fills now, so it can\'t be good until cancelled.';
+  }
+  const bracket = line.bracket;
+  if (bracket !== undefined) {
+    if (line.side !== 'BUY') {
+      return 'Only a buy can have a bracket.';
+    }
+    if (!positivePrice(bracket?.takeProfit) || !positivePrice(bracket.stopLoss)) {
+      return 'A bracket needs a take-profit and a stop-loss price above zero.';
+    }
+    if (bracket.takeProfit <= bracket.stopLoss) {
+      return 'A bracket\'s take-profit must be above its stop-loss.';
+    }
+  }
+  return null;
+}
+
+/**
+ * Just the conditions an order sets, prices in cents, so a plain market order stays plain. Fields
+ * that don't apply are dropped; check conditionsProblem first.
+ */
+export function pickConditions(line: OrderConditions): OrderConditions {
+  const picked: OrderConditions = {};
+  const type = line.orderType ?? 'MARKET';
+  if (type !== 'MARKET') {
+    picked.orderType = type;
+  }
+  if (type === 'LIMIT' || type === 'STOP_LIMIT') {
+    picked.limitPrice = cents(line.limitPrice ?? 0);
+  }
+  if (type === 'STOP' || type === 'STOP_LIMIT') {
+    picked.stopPrice = cents(line.stopPrice ?? 0);
+  }
+  if (line.timeInForce === 'GTC') {
+    picked.timeInForce = 'GTC';
+  }
+  if (line.bracket) {
+    picked.bracket = { takeProfit: cents(line.bracket.takeProfit), stopLoss: cents(line.bracket.stopLoss) };
+  }
+  return picked;
+}
+
+/** A market order with nothing attached: the only kind that can be netted against another. */
+export function isPlainMarket(line: OrderConditions): boolean {
+  return (line.orderType ?? 'MARKET') === 'MARKET' && !line.bracket;
+}
+
+/**
+ * The price a conditional order is planned at: a limit order at its limit (the most a buy can cost
+ * and the least a sell raises), a stop at its stop. Null for a market order, which takes the quote.
+ */
+export function conditionalPrice(line: OrderConditions): number | null {
+  switch (line.orderType ?? 'MARKET') {
+    case 'LIMIT':
+    case 'STOP_LIMIT':
+      return line.limitPrice ?? null;
+    case 'STOP':
+      return line.stopPrice ?? null;
+    default:
+      return null;
+  }
 }
 
 export interface ProjectionInput {
@@ -248,7 +363,7 @@ export interface ProjectionInput {
 }
 
 export interface OrderProjection {
-  /** Each order priced at its ask or bid, in the order given. */
+  /** Each order priced at its ask or bid - or a conditional one at its own price - in the order given. */
   orders: PlannedOrder[];
   /** Sale proceeds less buy costs: what the orders do to cash. */
   cashImpact: number;
@@ -271,6 +386,11 @@ export function projectOrders(input: ProjectionInput): OrderProjection {
 
   const noPrice = new Set<string>();
   const orders = input.orders.map(line => {
+    // A conditional order is valued at its own price; it needs no quote to be planned.
+    const fixed = conditionalPrice(line);
+    if (fixed !== null) {
+      return toOrder({ symbol: line.symbol, quantity: line.quantity, price: fixed }, line.side);
+    }
     const price = lastPrice(line.symbol);
     if (price === null) {
       noPrice.add(line.symbol);
