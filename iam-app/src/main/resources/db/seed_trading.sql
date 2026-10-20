@@ -27,13 +27,14 @@ ON CONFLICT (symbol, market) DO UPDATE SET
 
 -- Get client IDs and create accounts
 -- Using a temp table approach or direct insert with subqueries
--- Each account opens before its first order. Alice's history starts 195 days before seeding, so
--- hers opens 200 days before; the rest open in 2025 and have no fills until the last day.
+-- Each account opens before its first order. Alice's history starts 330 days before seeding, so
+-- hers opens 335 days before; the rest open in 2025. Their year of trading is in
+-- seed_client_history.sql, which needs the S&P 500 instruments seeded after this file.
 WITH client_map AS (
     SELECT client_id, email FROM iam.clients
 )
 INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at) VALUES
-    ((SELECT client_id FROM client_map WHERE email = 'alice.johnson@leap.com'), 'ACC-001-01', 'ACTIVE', 'USD', TRUE, date_trunc('day', NOW()) - INTERVAL '200 days' + TIME '09:00'),
+    ((SELECT client_id FROM client_map WHERE email = 'alice.johnson@leap.com'), 'ACC-001-01', 'ACTIVE', 'USD', TRUE, date_trunc('day', NOW()) - INTERVAL '335 days' + TIME '09:00'),
     ((SELECT client_id FROM client_map WHERE email = 'bob.smith@leap.com'), 'ACC-002-01', 'ACTIVE', 'USD', TRUE, '2025-04-07 09:00:00+00'),
     ((SELECT client_id FROM client_map WHERE email = 'carol.williams@leap.com'), 'ACC-003-01', 'ACTIVE', 'USD', TRUE, '2025-04-14 09:00:00+00'),
     ((SELECT client_id FROM client_map WHERE email = 'david.brown@leap.com'), 'ACC-004-01', 'ACTIVE', 'USD', TRUE, '2025-05-05 09:00:00+00'),
