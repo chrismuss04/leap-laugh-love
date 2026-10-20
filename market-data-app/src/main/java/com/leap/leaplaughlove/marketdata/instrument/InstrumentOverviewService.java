@@ -30,17 +30,19 @@ public class InstrumentOverviewService {
     /**
      * Builds the overview for a period. An instrument with no usable baseline is still listed,
      * with its change left null.
-     * @param period {@code today}, {@code week} or {@code month}; the period starts at UTC midnight
+     * @param period {@code today}, {@code week}, {@code month}, {@code quarter} or {@code year}; starts at UTC midnight
      * @return the latest prices with their changes since the period start
-     * @throws ResponseStatusException 400 if the period isn't one of the three
+     * @throws ResponseStatusException 400 if the period isn't supported
      */
     public InstrumentOverviewResponse getOverview(String period) {
         int days = switch (period) {
             case "today" -> 0;
             case "week" -> 7;
             case "month" -> 30;
+            case "quarter" -> 90;
+            case "year" -> 365;
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
-                    "period must be today, week, or month");
+                    "period must be today, week, month, quarter, or year");
         };
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
         OffsetDateTime start = now.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days);

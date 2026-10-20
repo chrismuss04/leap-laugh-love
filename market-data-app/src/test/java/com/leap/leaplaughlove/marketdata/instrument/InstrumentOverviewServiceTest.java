@@ -20,7 +20,7 @@ class InstrumentOverviewServiceTest {
     private final InstrumentOverviewService service = new InstrumentOverviewService(repository, simulation);
 
     @ParameterizedTest
-    @CsvSource({"today,0", "week,7", "month,30"})
+    @CsvSource({"today,0", "week,7", "month,30", "quarter,90", "year,365"})
     void periodsUseUtcMidnight(String period, int days) {
         when(simulation.latestAll()).thenReturn(List.of());
         when(repository.findAll(any())).thenReturn(List.of());
@@ -68,7 +68,7 @@ class InstrumentOverviewServiceTest {
 
     @Test
     void rejectsUnsupportedPeriodBeforeReadingData() {
-        assertThatThrownBy(() -> service.getOverview("year"))
+        assertThatThrownBy(() -> service.getOverview("decade"))
                 .isInstanceOfSatisfying(ResponseStatusException.class,
                         ex -> assertThat(ex.getStatusCode().value()).isEqualTo(400));
         verifyNoInteractions(repository, simulation);

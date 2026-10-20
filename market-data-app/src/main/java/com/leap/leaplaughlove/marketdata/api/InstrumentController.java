@@ -18,7 +18,7 @@ public class InstrumentController {
 
     /**
      * Lists every active instrument with its latest price and its change over a period.
-     * @param period {@code today}, {@code week} or {@code month}
+     * @param period {@code today}, {@code week}, {@code month}, {@code quarter} or {@code year}
      * @return the overview, with the change computed against the period's baseline
      */
     @GetMapping

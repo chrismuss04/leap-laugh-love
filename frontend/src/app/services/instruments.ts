@@ -2,7 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
-export type InstrumentPeriod = 'today' | 'week' | 'month';
+export type InstrumentPeriod = 'today' | 'week' | 'month' | 'quarter' | 'year';
 
 export interface InstrumentOverviewRow {
   symbol: string;
