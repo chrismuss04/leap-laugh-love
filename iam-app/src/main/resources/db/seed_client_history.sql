@@ -3,8 +3,8 @@
 -- A year of everyday trading for the ten named clients in seed_iam.sql, so the portfolio, order
 -- history, recap and trading tools all have something to show. Alice is the demo client: the
 -- most money, the broadest portfolio and a dozen-plus trades a month. The others vary on purpose -
--- a couple hold one or two stocks, some hold mostly cash, some have not traded this month, and
--- Grace stopped trading when her account was blocked.
+-- a couple hold one or two stocks, some hold mostly cash and some have not traded this month.
+-- Grace has no history: her account is blocked, and account-app won't settle fills on it.
 --
 -- Mounted as 07 (after seed_sp500_trading.sql, before seed_reporting.sql): most of these symbols
 -- are S&P 500 instruments, which don't exist yet when seed_trading.sql runs. Like seed_trading.sql
@@ -68,8 +68,6 @@ INSERT INTO trade_profile VALUES
     -- Frank: active trader in energy and banks, high turnover.
     ('ACC-006-01', 6, ARRAY['XOM', 'CVX', 'COP', 'SLB', 'JPM', 'GS', 'BAC', 'MS', 'TSLA', 'NVDA'],
      320, 1, 12, 5000, 15000, 0.45, 13, FALSE, 0.40),
-    -- Grace: traded until her account was blocked, five months ago.
-    ('ACC-007-01', 7, ARRAY['AAPL', 'DIS', 'SBUX'], 320, 150, 3, 1000, 3000, 0.25, 0, FALSE, 0.50),
     -- Henry: two stocks, sporadic.
     ('ACC-008-01', 8, ARRAY['TSLA', 'NFLX'], 250, 1, 1.5, 2000, 5000, 0.25, 0, FALSE, 0.35),
     -- Iris: large growth-tech book in her main account...
@@ -107,7 +105,9 @@ DECLARE
     v_tries INT;
 BEGIN
     FOR p IN SELECT * FROM trade_profile ORDER BY salt LOOP
-        SELECT account_id INTO v_account FROM trading.accounts WHERE account_number = p.account_number;
+        -- Only active accounts: account-app refuses to settle fills on any other.
+        SELECT account_id INTO v_account FROM trading.accounts
+        WHERE account_number = p.account_number AND status = 'ACTIVE';
         -- Generated once: a re-run on another day would lay the same order ids on other dates.
         CONTINUE WHEN v_account IS NULL OR EXISTS (
             SELECT 1 FROM trading.orders
