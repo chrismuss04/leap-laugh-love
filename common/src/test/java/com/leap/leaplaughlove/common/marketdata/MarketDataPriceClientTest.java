@@ -152,6 +152,23 @@ class MarketDataPriceClientTest {
     }
 
     @Test
+    @DisplayName("asks for a slashed trading symbol by its market data name")
+    void stripsSlashFromSymbol() {
+        OffsetDateTime now = OffsetDateTime.now();
+        mockServer.expect(requestTo(startsWith(BASE_URL + "/api/marketdata/prices/BTCUSD/history")))
+                .andRespond(withSuccess("""
+                        {"content":[{"bucketStart":"2026-01-01T00:00:00Z","close":65000}],"last":true}""",
+                        MediaType.APPLICATION_JSON));
+        mockServer.expect(requestTo(BASE_URL + "/api/marketdata/prices/BTCUSD"))
+                .andRespond(withSuccess("""
+                        {"symbol":"BTCUSD","price":65000}""", MediaType.APPLICATION_JSON));
+
+        assertEquals(1, client.fetchCloses("BTC/USD", now.minusDays(1), now, 300, "job-token").size());
+        assertEquals(Optional.of(new BigDecimal("65000")), client.fetchLatestPrice("BTC/USD"));
+        mockServer.verify();
+    }
+
+    @Test
     @DisplayName("stops paging on an empty body, an empty page, or a missing content list")
     void stopsOnEmptyPages() {
         OffsetDateTime now = OffsetDateTime.now();

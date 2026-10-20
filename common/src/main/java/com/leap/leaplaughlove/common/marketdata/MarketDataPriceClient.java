@@ -97,7 +97,7 @@ public abstract class MarketDataPriceClient {
                                 .queryParam("interval", intervalSeconds)
                                 .queryParam("page", pageNumber)
                                 .queryParam("size", PAGE_SIZE)
-                                .build(symbol))
+                                .build(marketDataSymbol(symbol)))
                         .headers(authentication)
                         .retrieve()
                         .body(CandlePage.class);
@@ -127,7 +127,7 @@ public abstract class MarketDataPriceClient {
     public Optional<BigDecimal> fetchLatestPrice(String symbol) {
         try {
             LatestPrice latest = restClient.get()
-                    .uri("/api/marketdata/prices/{symbol}", symbol)
+                    .uri("/api/marketdata/prices/{symbol}", marketDataSymbol(symbol))
                     .headers(this::forwardCallerToken)
                     .retrieve()
                     .body(LatestPrice.class);
@@ -137,6 +137,16 @@ public abstract class MarketDataPriceClient {
         } catch (RestClientException ex) {
             throw quoteUnavailable("Failed to fetch latest price for symbol " + symbol, ex);
         }
+    }
+
+    /**
+     * The market data service's name for a trading symbol: the same, less any "/", which can't
+     * appear in a URL path segment (BTC/USD trades as BTCUSD there).
+     * @param tradingSymbol the symbol trading.instruments holds
+     * @return the market data symbol
+     */
+    private static String marketDataSymbol(String tradingSymbol) {
+        return tradingSymbol.replace("/", "");
     }
 
     /**
