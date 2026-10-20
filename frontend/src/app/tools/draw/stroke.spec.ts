@@ -62,3 +62,19 @@ describe('draw stroke', () => {
     expect(strokeLength([{ x: 0, y: 0 }, { x: 3, y: 4 }, { x: 3, y: 10 }])).toBe(11);
   });
 });
+
+describe('stroke helpers', () => {
+  it('thins dense samples, keeping both ends', async () => {
+    const { thin } = await import('./stroke');
+    const dense = Array.from({ length: 11 }, (_, i) => ({ x: i, y: 0 }));
+    expect(thin(dense, 4)).toEqual([{ x: 0, y: 0 }, { x: 4, y: 0 }, { x: 8, y: 0 }, { x: 10, y: 0 }]);
+    expect(thin(dense.slice(0, 2), 4)).toEqual(dense.slice(0, 2));
+  });
+
+  it('picks round axis ticks', async () => {
+    const { niceTicks } = await import('./stroke');
+    expect(niceTicks(98.3, 111.7, 5)).toEqual([100, 102, 104, 106, 108, 110]);
+    expect(niceTicks(0.4, 1.3, 4)).toEqual([0.4, 0.6, 0.8, 1, 1.2]);
+    expect(niceTicks(5, 5)).toEqual([]);
+  });
+});

@@ -78,6 +78,25 @@ export function extendStroke(stroke: readonly PixelPoint[], sample: PixelPoint, 
 }
 
 /**
+ * The stroke with points closer than `minGap` pixels to the last kept one dropped, keeping its
+ * ends: pointer samples arrive far denser than a smooth line needs.
+ */
+export function thin<T extends PixelPoint>(points: readonly T[], minGap = 4): T[] {
+  if (points.length < 3) {
+    return [...points];
+  }
+  const kept: T[] = [points[0]];
+  for (let i = 1; i < points.length - 1; i++) {
+    const last = kept[kept.length - 1];
+    if (Math.hypot(points[i].x - last.x, points[i].y - last.y) >= minGap) {
+      kept.push(points[i]);
+    }
+  }
+  kept.push(points[points.length - 1]);
+  return kept;
+}
+
+/**
  * Chaikin corner cutting: each pass replaces every corner with two points a quarter of the way
  * along its sides. The ends stay put, and a line that only moves forward in x still does.
  */
@@ -152,4 +171,25 @@ export function strokeLength(points: readonly PixelPoint[]): number {
     length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
   }
   return length;
+}
+
+/**
+ * Round price levels for an axis across a range: about `count` of them, spaced 1, 2 or 5 times a
+ * power of ten apart.
+ */
+export function niceTicks(min: number, max: number, count = 5): number[] {
+  const span = max - min;
+  if (!(span > 0) || !Number.isFinite(span)) {
+    return [];
+  }
+  const power = 10 ** Math.floor(Math.log10(span / count));
+  // The step whose number of ticks comes nearest the count asked for.
+  const step = [1, 2, 5, 10]
+    .map(m => m * power)
+    .reduce((best, s) => (Math.abs(span / s - count) < Math.abs(span / best - count) ? s : best));
+  const ticks: number[] = [];
+  for (let n = Math.ceil(min / step - 1e-9); n * step <= max + 1e-9; n++) {
+    ticks.push(Number((n * step).toFixed(10)));
+  }
+  return ticks;
 }

@@ -75,7 +75,8 @@ describe('Trading Tools', () => {
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
     marketApi = createSpyObj('MarketDataService',
-      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
+      ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote', 'getHistory']);
+    marketApi.getHistory.mockReturnValue(of([]));
     // Every quote sits 10 cents either side of its last trade.
     marketApi.getQuote.mockImplementation((symbol: string) =>
       of({ symbol, lastPrice: 100, askPrice: 100.1, bidPrice: 99.9, quoteTimestamp: '' }));

@@ -5,7 +5,7 @@ const TOOLS = [
   { id: 'rebalance', name: 'Rebalance Donut', surface: 'app-rebalance-tool' },
   { id: 'raise-cash', name: 'Raise Cash', surface: 'p.soon' },
   { id: 'basket', name: 'Basket Builder', surface: 'p.soon' },
-  { id: 'draw', name: 'Draw Your Trade', surface: 'p.soon' }
+  { id: 'draw', name: 'Draw Your Trade', surface: 'app-draw-tool' }
 ] as const;
 
 test.describe('Trading Tools hub', () => {
