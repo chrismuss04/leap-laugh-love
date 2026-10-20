@@ -1,5 +1,5 @@
 import {
-  AfterViewInit, Component, ElementRef, NgZone, OnDestroy, computed, effect, inject, input, output, signal, viewChild
+  AfterViewInit, Component, ElementRef, NgZone, OnDestroy, computed, effect, inject, input, output, signal, untracked, viewChild
 } from '@angular/core';
 import { formatMoney } from '../../shared/format';
 import { TradeIdea } from './interpret';
@@ -559,7 +559,7 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   readonly levels = computed<LevelView[]>(() => {
     const frame = this.frame();
     const idea = this.idea();
-    if (!frame || !idea || idea.shape === 'flat') {
+    if (!frame || !idea || idea.shape === 'flat' || idea.needsShares) {
       return [];
     }
     const y = (price: number) => Math.min(Math.max(toPixel(frame, { step: 0, price }).y, frame.top), frame.bottom);
@@ -585,7 +585,7 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   readonly markers = computed(() => {
     const frame = this.frame();
     const idea = this.idea();
-    if (!frame || !idea || idea.shape === 'flat') {
+    if (!frame || !idea || idea.shape === 'flat' || idea.needsShares) {
       return [];
     }
     const at = (step: number, price: number) => toPixel(frame, { step, price });
@@ -603,6 +603,18 @@ export class DrawCanvasComponent implements AfterViewInit, OnDestroy {
   money = formatMoney;
 
   constructor() {
+    // A line drawn on one stock or horizon means nothing on another: new history starts it over.
+    effect(() => {
+      this.historyKey();
+      untracked(() => {
+        this.settled.set(null);
+        this.stroke.set([]);
+        this.drawing.set(false);
+        this.frozenRange.set(null);
+        this.inkAlpha = 0;
+      });
+    });
+
     // The ink canvas matches the chart's size in device pixels, so the glow stays sharp.
     effect(() => {
       const { width, height } = this.size();
