@@ -41,6 +41,7 @@ describe('DashboardComponent', () => {
   };
 
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let queryParams: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let fixture: ComponentFixture<DashboardComponent>;
   let dashboard: DashboardComponent;
   let holdingsApi: MockedObject<HoldingsService>;
@@ -60,6 +61,7 @@ describe('DashboardComponent', () => {
 
   beforeEach(() => {
     params = new BehaviorSubject(convertToParamMap({}));
+    queryParams = new BehaviorSubject(convertToParamMap({}));
     holdingsApi = createSpyObj('HoldingsService', ['getHoldings', 'getAccounts']);
     balanceApi = createSpyObj('BalanceService', ['getBalance']);
     marketApi = createSpyObj('MarketDataService',
@@ -86,7 +88,7 @@ describe('DashboardComponent', () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: ActivatedRoute, useValue: { paramMap: params.asObservable() } },
+        { provide: ActivatedRoute, useValue: { paramMap: params.asObservable(), queryParamMap: queryParams.asObservable() } },
         { provide: HoldingsService, useValue: holdingsApi },
         { provide: BalanceService, useValue: balanceApi },
         { provide: MarketDataService, useValue: marketApi },

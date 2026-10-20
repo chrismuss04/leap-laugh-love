@@ -66,6 +66,7 @@ export class DashboardComponent implements OnInit {
   private readonly stream = inject(PriceStreamService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
+  private readonly route = inject(ActivatedRoute);
 
   /** The account the dashboard is scoped to (/dashboard/:accountId), or null for all accounts. */
   readonly accountId = toSignal(inject(ActivatedRoute).paramMap.pipe(map(params => params.get('accountId'))),
@@ -400,6 +401,14 @@ export class DashboardComponent implements OnInit {
     this.loadOrders();
     this.loadOpenOrders();
     this.valuation.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
+
+    this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+      const symbol = params.get('trade');
+      if (symbol && /^[A-Z0-9.-]{1,12}$/.test(symbol)) {
+        this.trade(symbol);
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { trade: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      }
+    });
 
     // Open orders fill in the background; check on them while there are any.
     interval(OPEN_ORDERS_POLL_MS)
