@@ -149,7 +149,8 @@ public class PortfolioHistoryService {
         List<OffsetDateTime> timeline = timeline(window, now);
 
         if (accounts.isEmpty()) {
-            return toResponse(range, window, timeline, new BigDecimal[timeline.size()], BigDecimal.ZERO);
+            return toResponse(range, window, timeline, new BigDecimal[timeline.size()],
+                    new BigDecimal[timeline.size()]);
         }
 
         Map<UUID, String> baseCurrencies = new HashMap<>();
@@ -173,21 +174,29 @@ public class PortfolioHistoryService {
         entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());
 
         Map<UUID, BigDecimal[]> prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);
-        BigDecimal contributions = contributionsSince(timeline.get(0), entries);
+        BigDecimal[] contributions = contributionsAt(timeline, entries);
         BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);
         return toResponse(range, window, timeline, values, contributions);
     }
 
     /**
-     * Money deposited less money withdrawn after a point in time. Between accounts that are
-     * charted together a transfer's two sides cancel out; for one account it counts.
+     * Money deposited less money withdrawn between the first point and each point, so a point's
+     * gain or loss can leave it out. Between accounts that are charted together a transfer's two
+     * sides cancel out; for one account it counts.
      */
-    private static BigDecimal contributionsSince(OffsetDateTime start, List<CashLedgerEntry> entries) {
-        return entries.stream()
-                .filter(entry -> CONTRIBUTION_TYPES.contains(entry.getEntryType()))
-                .filter(entry -> entry.getCreatedAt().isAfter(start))
-                .map(CashLedgerEntry::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    private static BigDecimal[] contributionsAt(List<OffsetDateTime> timeline, List<CashLedgerEntry> entries) {
+        OffsetDateTime start = timeline.get(0);
+        BigDecimal[] totals = new BigDecimal[timeline.size()];
+        for (int k = 0; k < timeline.size(); k++) {
+            OffsetDateTime at = timeline.get(k);
+            totals[k] = entries.stream()
+                    .filter(entry -> CONTRIBUTION_TYPES.contains(entry.getEntryType()))
+                    .filter(entry -> entry.getCreatedAt().isAfter(start) && !entry.getCreatedAt().isAfter(at))
+                    .map(CashLedgerEntry::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    .setScale(2, RoundingMode.HALF_UP);
+        }
+        return totals;
     }
 
     /** Today's quantity and symbol of every instrument held across the accounts. */
@@ -344,19 +353,21 @@ public class PortfolioHistoryService {
      * @param window   The effective window used for the calculation.
      * @param timeline The timestamps for each point in the history.
      * @param values   The calculated portfolio values at each timestamp.
-     * @param contributions Deposits less withdrawals after the first point.
+     * @param contributions Deposits less withdrawals from the first point to each one.
      * @return The PortfolioHistoryResponse containing the history data.
      */
     private static PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
-            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal contributions) {
+            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
+        BigDecimal zero = BigDecimal.ZERO.setScale(2);
         for (int k = 0; k < timeline.size(); k++) {
-            BigDecimal value = values[k] != null ? values[k] : BigDecimal.ZERO.setScale(2);
-            points.add(new PortfolioHistoryResponse.Point(timeline.get(k), value));
+            points.add(new PortfolioHistoryResponse.Point(timeline.get(k),
+                    values[k] != null ? values[k] : zero,
+                    contributions[k] != null ? contributions[k] : zero));
         }
         BigDecimal start = points.get(0).value();
         BigDecimal end = points.get(points.size() - 1).value();
-        BigDecimal netContributions = contributions.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal netContributions = points.get(points.size() - 1).contributions();
         BigDecimal change = end.subtract(start).subtract(netContributions);
         // Measured against everything put in, so a range that starts empty and is funded part way
         // through still has a percentage.

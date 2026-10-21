@@ -9,6 +9,13 @@ export interface PositionItem {
   assetClass: string;
   quantity: number;
   averageCost: number;
+  /**
+   * Shares held when the trading day began (midnight UTC, when the previous close was struck).
+   * Without it, every share is taken to have been held since the open.
+   */
+  quantityAtOpen?: number;
+  /** Cash the position returned today: sale proceeds less purchase costs, so negative after a buy. */
+  todayCashFlow?: number;
 }
 
 export interface AccountHoldings {
@@ -16,6 +23,8 @@ export interface AccountHoldings {
   accountNumber: string;
   baseCurrency: string;
   positions: PositionItem[];
+  /** Positions sold down to nothing today, whose gain or loss still counts toward today's. */
+  closedToday?: PositionItem[];
 }
 
 export interface ClientHoldings {

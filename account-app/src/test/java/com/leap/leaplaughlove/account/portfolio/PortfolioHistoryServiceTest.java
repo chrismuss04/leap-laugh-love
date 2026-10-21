@@ -168,6 +168,11 @@ class PortfolioHistoryServiceTest {
         assertEquals(new BigDecimal("2000.00"), response.startValue());
         assertEquals(new BigDecimal("2700.00"), response.endValue());
         assertEquals(new BigDecimal("500.00"), response.netContributions());
+        // Each point carries what had been put in by then, for a hovered point's own change.
+        assertEquals(new BigDecimal("0.00"), response.points().get(0).contributions());
+        assertEquals(new BigDecimal("700.00"),
+                response.points().stream().filter(p -> p.timestamp().isEqual(OffsetDateTime.parse("2026-01-10T06:30:00Z")))
+                        .findFirst().orElseThrow().contributions());
         assertEquals(new BigDecimal("200.00"), response.change());
         // Against the 2,500 put in by the end.
         assertEquals(new BigDecimal("8.00"), response.changePercent());

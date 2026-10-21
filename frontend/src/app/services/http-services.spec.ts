@@ -64,6 +64,15 @@ describe('HTTP services', () => {
       TestBed.inject(PortfolioService).getHistory('1M').subscribe();
       const request = http.expectOne(r => r.url === '/api/account/portfolio/history');
       expect(request.request.params.get('range')).toBe('1M');
+      expect(request.request.params.has('accountId')).toBe(false);
+      request.flush({});
+    });
+
+    it('requests one account\'s history when given one', () => {
+      TestBed.inject(PortfolioService).getHistory('1W', 'acc-1').subscribe();
+      const request = http.expectOne(r => r.url === '/api/account/portfolio/history');
+      expect(request.request.params.get('range')).toBe('1W');
+      expect(request.request.params.get('accountId')).toBe('acc-1');
       request.flush({});
     });
   });

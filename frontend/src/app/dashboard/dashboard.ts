@@ -22,11 +22,8 @@ import { AccountDetailsComponent } from './account-details/account-details';
 import { OpenOrdersComponent } from './open-orders/open-orders';
 import { MarketDataService } from '../services/market-data';
 import { RollingNumberComponent } from '../shared/rolling-number';
-import { direction, formatMoney, formatSignedMoney, formatSignedPercent, percentChange } from '../shared/format';
+import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../shared/format';
 import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
-
-/** Bucket size of market-data's intraday closes (see MarketDataService.getIntradayCloses). */
-const INTRADAY_INTERVAL_MS = 300_000;
 
 /**
  * How often open orders are checked for fills while there are any, and the bid and ask of the
@@ -127,16 +124,28 @@ export class DashboardComponent implements OnInit {
   /** The switcher and accounts card only earn their space once there's more than one account. */
   readonly multiAccount = this.valuation.multiAccount;
 
-  /** Holdings in scope - one account, or combined across accounts - largest position first. */
-  readonly holdings = computed<HoldingView[]>(() => {
+  /** Accounts in scope: the one this page is scoped to, or all of them. */
+  private readonly scopedHoldings = computed(() => {
     const response = this.holdingsResponse();
-    if (!response) {
-      return [];
-    }
     const accountId = this.accountId();
-    const scoped = accountId ? response.accounts.filter(a => a.accountId === accountId) : response.accounts;
-    return this.valuation.priceHoldings(scoped.flatMap(a => this.valuation.openPositions(a.positions)));
+    return (response?.accounts ?? []).filter(a => !accountId || a.accountId === accountId);
   });
+
+  private readonly scopedPositions = computed(() =>
+    this.scopedHoldings().flatMap(a => this.valuation.openPositions(a.positions)));
+
+  /**
+   * Holdings in scope - one account, or combined across accounts - largest position first, each
+   * priced tick by tick.
+   */
+  readonly holdings = computed<HoldingView[]>(() => this.valuation.priceHoldings(this.scopedPositions()));
+
+  /**
+   * The same holdings at settled prices, for totals: a sum over many holdings would otherwise
+   * change every time any one of them ticked.
+   */
+  private readonly settledHoldings = computed<HoldingView[]>(() =>
+    this.valuation.priceHoldings(this.scopedPositions(), this.valuation.settledPrices()));
 
   readonly cash = computed(() => {
     const accountId = this.accountId();
@@ -166,71 +175,51 @@ export class DashboardComponent implements OnInit {
   readonly accountNumbers = computed<Record<string, string>>(() =>
     Object.fromEntries((this.balance()?.accounts ?? []).map(a => [a.accountId, a.accountNumber])));
 
-  readonly marketValue = computed(() => this.holdings().reduce((sum, h) => sum + (h.marketValue ?? 0), 0));
+  readonly marketValue = computed(() => this.settledHoldings().reduce((sum, h) => sum + (h.marketValue ?? 0), 0));
 
   readonly portfolioValue = computed(() => {
     const cash = this.cash();
     return cash === null || this.holdingsResponse() === null ? null : cash + this.marketValue();
   });
 
-  readonly todaysReturn = computed(() => {
-    const changes = this.holdings().filter(h => h.dayChange !== null);
-    return changes.length ? changes.reduce((sum, h) => sum + h.dayChange!, 0) : null;
-  });
+  /**
+   * What the scope made today, counting shares bought today from what they cost and shares sold
+   * today up to their sale. On the 1D range this matches the headline change.
+   */
+  private readonly dayReturn = computed(() => this.valuation.dayReturn(this.scopedHoldings()));
 
-  readonly todaysReturnPercent = computed(() => {
-    const change = this.todaysReturn();
-    const value = this.marketValue();
-    return change === null || value - change === 0 ? null : (change / (value - change)) * 100;
-  });
+  readonly todaysReturn = computed(() => this.dayReturn().change);
+
+  readonly todaysReturnPercent = computed(() => this.dayReturn().percent);
 
   readonly totalReturn = computed(() => {
-    const withReturn = this.holdings().filter(h => h.totalReturn !== null);
+    const withReturn = this.settledHoldings().filter(h => h.totalReturn !== null);
     return withReturn.length ? withReturn.reduce((sum, h) => sum + h.totalReturn!, 0) : null;
   });
 
   /**
-   * History points, with the final "now" point kept current from the live value. Portfolio history
-   * is client-wide, so an account's chart is built from its holdings' intraday prices instead.
+   * History points for the scope - all accounts, or the one account - with the final "now" point
+   * kept current from the live value.
    */
-  readonly chartPoints = computed<ChartPoint[]>(() => {
-    let points: ChartPoint[];
-    if (this.isAccountView()) {
-      const series = this.selectedAccount()?.intraday ?? [];
-      const now = Date.now();
-      points = series.map((value, i) => ({ time: now - (series.length - 1 - i) * INTRADAY_INTERVAL_MS, value }));
-    } else {
-      const history = this.history();
-      points = history ? history.points.map(p => ({ time: Date.parse(p.timestamp), value: p.value })) : [];
-    }
+  readonly chartPoints = computed<(ChartPoint & { contributions: number })[]>(() => {
+    const history = this.history();
+    const points = history
+      ? history.points.map(p => ({ time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions }))
+      : [];
     const live = this.portfolioValue();
     if (live !== null && points.length) {
-      points[points.length - 1] = { time: Date.now(), value: live };
+      points[points.length - 1] = { ...points[points.length - 1], time: Date.now(), value: live };
     }
     return points;
   });
 
-  readonly baseline = computed(() => this.isAccountView()
-    ? this.selectedAccount()?.previousCloseValue ?? null
-    : this.history()?.startValue ?? null);
+  readonly baseline = computed(() => this.history()?.startValue ?? null);
 
-  /** Chart states for whichever source the current scope charts from. */
-  readonly chartLoading = computed(() => this.isAccountView()
-    ? this.accountsLoading() || (this.holdings().length > 0 && this.chartPoints().length === 0)
-    : this.historyLoading());
+  readonly chartLoading = this.historyLoading;
 
-  readonly chartError = computed(() => this.isAccountView() ? null : this.historyError());
+  readonly chartError = this.historyError;
 
-  /** An account with nothing invested has no intraday movement to chart. */
-  readonly chartEmpty = computed(() => this.isAccountView() && !this.accountsLoading() && this.holdings().length === 0);
-
-  /**
-   * Account charts cover today only, so they have no range to pick. Longer ranges need the history
-   * API to accept an account.
-   */
-  readonly visibleRanges = computed(() => this.isAccountView() ? [] : this.ranges);
-
-  readonly activeRange = computed<PortfolioRange>(() => this.isAccountView() ? '1D' : this.range());
+  readonly activeRange = this.range;
 
   readonly headlineValue = computed(() => {
     const index = this.scrubIndex();
@@ -238,19 +227,56 @@ export class DashboardComponent implements OnInit {
     return index !== null && points[index] ? points[index].value : this.portfolioValue();
   });
 
-  readonly headlineChange = computed(() => {
-    const value = this.headlineValue();
-    const baseline = this.baseline();
-    return value === null || baseline === null ? null : value - baseline;
+  /**
+   * Money deposited less withdrawn between the start of the range and the headline's point:
+   * part of the value, but not a gain.
+   */
+  private readonly headlineContributions = computed(() => {
+    const points = this.chartPoints();
+    const index = this.scrubIndex() ?? points.length - 1;
+    return points[index]?.contributions ?? 0;
   });
 
-  readonly headlineChangePercent = computed(() => percentChange(this.headlineValue(), this.baseline()));
+  /**
+   * Today's live change is today's return, so the two figures on screen always agree. The chart
+   * can't quite match it for an account opened today: its first point comes after the first buy,
+   * at that moment's price rather than what the shares cost.
+   */
+  private readonly liveDayReturn = computed(() =>
+    this.range() === '1D' && this.scrubIndex() === null && this.todaysReturn() !== null ? this.dayReturn() : null);
+
+  readonly headlineChange = computed(() => {
+    const day = this.liveDayReturn();
+    if (day) {
+      return day.change;
+    }
+    const value = this.headlineValue();
+    const baseline = this.baseline();
+    return value === null || baseline === null ? null : value - baseline - this.headlineContributions();
+  });
+
+  /** Against everything put in, so a range that starts empty and is funded part way still has one. */
+  readonly headlineChangePercent = computed(() => {
+    const day = this.liveDayReturn();
+    if (day) {
+      return day.percent;
+    }
+    const change = this.headlineChange();
+    const baseline = this.baseline();
+    const invested = baseline === null ? 0 : baseline + this.headlineContributions();
+    return change === null || invested <= 0 ? null : (change / invested) * 100;
+  });
 
   /** The chart's colour follows the whole range's performance, not the scrubbed point. */
   readonly tone = computed(() => {
+    const today = this.range() === '1D' ? this.todaysReturn() : null;
+    if (today !== null) {
+      return direction(today);
+    }
     const live = this.portfolioValue();
     const baseline = this.baseline();
-    return live === null || baseline === null ? 'flat' : direction(live - baseline);
+    const contributions = this.chartPoints().at(-1)?.contributions ?? 0;
+    return live === null || baseline === null ? 'flat' : direction(live - baseline - contributions);
   });
 
   readonly headlineLabel = computed(() => {
@@ -258,7 +284,7 @@ export class DashboardComponent implements OnInit {
     const points = this.chartPoints();
     if (index !== null && points[index]) {
       const date = new Date(points[index].time);
-      const withTime = this.isAccountView() || (this.history()?.intervalSeconds ?? 86400) < 86400;
+      const withTime = (this.history()?.intervalSeconds ?? 86400) < 86400;
       return date.toLocaleString('en-US', withTime
         ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
         : { month: 'short', day: 'numeric', year: 'numeric' });
@@ -372,11 +398,13 @@ export class DashboardComponent implements OnInit {
       });
     });
 
-    // Changing scope drops any scrub and points the trade panel at something held in the new scope.
+    // Changing scope drops any scrub, charts the new scope and points the trade panel at something
+    // held in it.
     effect(() => {
       this.accountId();
       untracked(() => {
-        this.scrubIndex.set(null);
+        this.history.set(null);
+        this.loadHistory();
         const held = this.holdings();
         if (held.length && !held.some(h => h.symbol === this.selectedSymbol())) {
           this.selectedSymbol.set(held[0].symbol);
@@ -396,7 +424,6 @@ export class DashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadAccounts();
-    this.loadHistory();
     this.loadOrders();
     this.loadOpenOrders();
     this.valuation.loadDailyContext(MARKET_INDICES.map(i => i.symbol), false);
@@ -561,22 +588,25 @@ export class DashboardComponent implements OnInit {
     });
   }
 
+  /** Loads the chart for the current range and scope; a reply for an earlier one is dropped. */
   loadHistory(): void {
     this.historyLoading.set(true);
     this.historyError.set(null);
     this.scrubIndex.set(null);
     const range = this.range();
-    this.portfolioService.getHistory(range)
+    const accountId = this.accountId();
+    const current = () => range === this.range() && accountId === this.accountId();
+    this.portfolioService.getHistory(range, accountId)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: history => {
-          if (range === this.range()) {
+          if (current()) {
             this.history.set(history);
             this.historyLoading.set(false);
           }
         },
         error: err => {
-          if (range === this.range()) {
+          if (current()) {
             this.historyError.set(err.status === 503
               ? 'Market data is unavailable right now.'
               : 'We couldn’t load your portfolio history.');
@@ -605,7 +635,7 @@ export class DashboardComponent implements OnInit {
   }
 
   setRange(range: PortfolioRange): void {
-    if (range !== this.range() && !this.isAccountView()) {
+    if (range !== this.range()) {
       this.range.set(range);
       this.loadHistory();
     }

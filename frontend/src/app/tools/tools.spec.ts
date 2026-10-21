@@ -4,12 +4,13 @@ import { Location } from '@angular/common';
 import { provideLocationMocks } from '@angular/common/testing';
 import { Router, provideRouter } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
-import { Subject, of, throwError } from 'rxjs';
+import { NEVER, Subject, of, throwError } from 'rxjs';
 import { HttpErrorResponse } from '@angular/common/http';
 import { BalanceService } from '../services/balance';
 import { ClientHoldings, HoldingsService } from '../services/holdings';
 import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
+import { PortfolioService } from '../services/portfolio';
 import { createSpyObj } from '../../testing/create-spy-obj';
 import { ToolsComponent } from './tools';
 import { TOOL_ROUTES } from './tools.routes';
@@ -40,7 +41,11 @@ describe('Trading Tools', () => {
 
   let holdingsApi: ReturnType<typeof createSpyObj<HoldingsService>>;
   let balanceApi: ReturnType<typeof createSpyObj<BalanceService>>;
-  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: ReturnType<typeof vi.fn> };
+  let stream: {
+    prices: ReturnType<typeof signal<Record<string, number>>>;
+    settledPrices: ReturnType<typeof signal<Record<string, number>>>;
+    watch: ReturnType<typeof vi.fn>;
+  };
   let harness: RouterTestingHarness;
   let orderApi: ReturnType<typeof createSpyObj<OrderService>>;
   let marketApi: ReturnType<typeof createSpyObj<MarketDataService>>;
@@ -86,7 +91,9 @@ describe('Trading Tools', () => {
     orderApi.submitOrder.mockImplementation((request: OrderSubmissionRequest) => of(filled(request)));
     orderApi.getOpenOrders.mockReturnValue(of([]));
     session = signal<string | null>('REGULAR');
-    stream = { prices: signal<Record<string, number>>({}), watch: vi.fn() };
+    // Every tick settles at once here; how often totals move is the stream's own spec's concern.
+    const prices = signal<Record<string, number>>({});
+    stream = { prices, settledPrices: prices, watch: vi.fn() };
     holdingsApi.getHoldings.mockReturnValue(of(twoAccounts));
     holdingsApi.getAccounts.mockReturnValue(of([]));
     balanceApi.getBalance.mockReturnValue(of(balances(['a1', 'a2'])));
@@ -105,6 +112,7 @@ describe('Trading Tools', () => {
         { provide: BalanceService, useValue: balanceApi },
         { provide: MarketDataService, useValue: marketApi },
         { provide: PriceStreamService, useValue: stream },
+        { provide: PortfolioService, useValue: { getHistory: () => NEVER } },
         { provide: OrderService, useValue: orderApi },
         { provide: MarketStatusService, useValue: { session } },
         { provide: InstrumentsService, useValue: { getOverview: () => of({ period: 'today', periodStart: '', asOf: '', instruments: [] }) } }

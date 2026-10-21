@@ -7,6 +7,7 @@ export interface HoldingView {
   price: number | null;
   previousClose: number | null;
   marketValue: number | null;
+  /** What the shares made today: since the previous close, or since bought today. */
   dayChange: number | null;
   dayChangePercent: number | null;
   totalReturn: number | null;
@@ -74,10 +75,10 @@ export interface AccountView {
   positionCount: number;
   /** Fraction (0-1) of the client's combined value held in this account. */
   share: number;
-  /** Today's account value at each intraday bucket, for sparklines and the account chart. */
+  /** The account's value at each 5-minute bucket since the day began, for sparklines. */
   intraday: number[];
-  /** Value at the previous close: yesterday's prices for today's shares, plus cash. */
-  previousCloseValue: number | null;
+  /** The account's value when the day began, the baseline its sparkline is drawn against. */
+  dayStartValue: number | null;
 }
 
 /**

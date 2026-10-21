@@ -33,8 +33,10 @@ public record PortfolioHistoryResponse(
      * One valued point in time.
      * @param timestamp when the portfolio held this value
      * @param value the portfolio value: cash plus every holding at that time's price
+     * @param contributions money deposited less money withdrawn since the first point, so the gain
+     *     or loss to this point is value minus the first point's value minus this
      */
-    public record Point(OffsetDateTime timestamp, BigDecimal value) {
+    public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions) {
     }
 }
 
