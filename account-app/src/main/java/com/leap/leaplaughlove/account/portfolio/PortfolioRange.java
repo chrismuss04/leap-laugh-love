@@ -1,12 +1,12 @@
 package com.leap.leaplaughlove.account.portfolio;
 
+import com.leap.leaplaughlove.account.common.TradingDay;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 
 /**
@@ -19,8 +19,8 @@ import java.util.Arrays;
  */
 public enum PortfolioRange {
     /**
-     * Since the start of today (UTC), when the previous daily close was struck, so the day's change
-     * is measured from the same close as each holding's day change.
+     * Since the start of the trading day (see {@link TradingDay}), so the day's change is measured
+     * from the same close as each holding's day change.
      */
     ONE_DAY("1D", null, 300),
     ONE_WEEK("1W", Duration.ofDays(7), 3600),
@@ -73,7 +73,7 @@ public enum PortfolioRange {
      */
     Window window(OffsetDateTime now, OffsetDateTime earliestAccountOpen) {
         OffsetDateTime from = switch (this) {
-            case ONE_DAY -> now.truncatedTo(ChronoUnit.DAYS);
+            case ONE_DAY -> TradingDay.startOf(now);
             case ALL -> now.minus(MAX_LOOKBACK);
             default -> now.minus(span);
         };

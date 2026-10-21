@@ -1265,7 +1265,7 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Account** | `POST /api/account/accounts` | Open an additional trading account | Bearer JWT (client) |
 | **Account** | `GET /api/account/accounts/{id}` | Get specific trading account | Bearer JWT (client) |
 | **Account** | `PUT /api/account/accounts/{id}/trade-settings` | Save the account's price tolerance (`max_slippage_pct`) | Bearer JWT (client) |
-| **Account** | `GET /api/account/accounts/{id}/positions` | Get holdings/positions for account | Bearer JWT (client) |
+| **Account** | `GET /api/account/accounts/{id}/positions` | Get holdings/positions for account. Each position has `quantityAtOpen` and `todayCashFlow` (since midnight UTC) for an exact day change; `closedToday` lists positions sold off today | Bearer JWT (client) |
 | **Account** | `GET /api/account/balance` | Get balances for authenticated client | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/accounts/{id}/deposit` | Deposit funds | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT (client) |
