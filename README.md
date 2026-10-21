@@ -123,6 +123,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-order-history-index.sql` | Index for order history sorting (optional) |
 | `migrate-inactive-accounts.sql` | `trading.accounts.inactive_since` |
 | `migrate-inactive-notification.sql` | `trading.accounts.inactive_notified_at` |
+| `migrate-account-seq.sql` | `trading.accounts.account_seq`, numbered for existing accounts |
 | `migrate-reporting-clients.sql` | `reporting.clients` |
 | `migrate-reporting-order-outcomes.sql` | `CANCELLED` and `EXPIRED` in `reporting.orders` |
 | `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders` (rerun any time to rebuild) |
@@ -1607,6 +1608,7 @@ erDiagram
         numeric max_slippage_pct "saved price tolerance"
         timestamptz inactive_since
         timestamptz inactive_notified_at
+        int account_seq "Brokerage 1, 2, ..."
     }
     INSTRUMENTS {
         uuid instrument_id PK

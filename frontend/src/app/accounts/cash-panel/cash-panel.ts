@@ -11,7 +11,7 @@ import { isCashAmount } from '../cash';
 /** What the cash panel needs to know about one account. */
 export interface CashAccount {
   accountId: string;
-  /** Display name, e.g. "Brokerage ··4821" - see accountName(). */
+  /** Display name, e.g. "Brokerage 2" - see accountName(). */
   name: string;
   cash: number;
 }

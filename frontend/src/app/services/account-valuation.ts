@@ -67,7 +67,7 @@ export class AccountValuationService {
       return {
         accountId: account.accountId,
         accountNumber: account.accountNumber,
-        name: accountName(account.accountNumber),
+        name: accountName(account.accountNumber, summary?.accountSeq),
         mask: accountMask(account.accountNumber),
         color: ACCOUNT_COLORS[index % ACCOUNT_COLORS.length],
         status: summary?.status ?? null,

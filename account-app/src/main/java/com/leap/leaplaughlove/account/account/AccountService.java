@@ -80,6 +80,9 @@ public class AccountService {
         // A null id lets Hibernate generate the UUID; a preset id would make save() merge.
         Account account = new Account(null, clientId, generateAccountNumber(), accountStatus, currency,
                 tradingEnabled, OffsetDateTime.now());
+        // Two accounts opened at once could pick the same number; UNIQUE (client_id, account_seq)
+        // rejects the second rather than letting both show as the same "Brokerage N".
+        account.setAccountSeq(accountRepository.findMaxAccountSeq(clientId) + 1);
         return accountRepository.save(account);
     }
 

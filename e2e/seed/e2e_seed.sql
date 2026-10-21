@@ -40,15 +40,15 @@ WHERE c.email LIKE 'e2e.%@leap.test'
 ON CONFLICT (client_id) DO NOTHING;
 
 -- ---- Accounts ------------------------------------------------------------------------------
-INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at)
-SELECT c.client_id, a.account_number, 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '30 days'
+INSERT INTO trading.accounts (client_id, account_number, status, base_currency, trading_enabled, created_at, account_seq)
+SELECT c.client_id, a.account_number, 'ACTIVE', 'USD', TRUE, NOW() - INTERVAL '30 days', a.account_seq
 FROM (
     SELECT format('e2e.trader.%s@leap.test', lpad(n::text, 2, '0')) AS email,
-           format('ACC-E2E-%s', lpad(n::text, 2, '0')) AS account_number
+           format('ACC-E2E-%s', lpad(n::text, 2, '0')) AS account_number, 1 AS account_seq
     FROM generate_series(0, 15) AS n
-    UNION ALL SELECT 'e2e.multi@leap.test', 'ACC-E2E-M1'
-    UNION ALL SELECT 'e2e.multi@leap.test', 'ACC-E2E-M2'
-    UNION ALL SELECT 'e2e.history@leap.test', 'ACC-E2E-H1'
+    UNION ALL SELECT 'e2e.multi@leap.test', 'ACC-E2E-M1', 1
+    UNION ALL SELECT 'e2e.multi@leap.test', 'ACC-E2E-M2', 2
+    UNION ALL SELECT 'e2e.history@leap.test', 'ACC-E2E-H1', 1
 ) a
 JOIN iam.clients c ON c.email = a.email
 ON CONFLICT (account_number) DO NOTHING;

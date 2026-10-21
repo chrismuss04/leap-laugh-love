@@ -25,6 +25,9 @@ public class Account extends BaseAccount {
     @Column(name = "inactive_notified_at")
     private OffsetDateTime inactiveNotifiedAt;
 
+    @Column(name = "account_seq")
+    private Integer accountSeq;
+
     /**
      * Protected no-argument constructor for JPA.
      */
@@ -70,4 +73,10 @@ public class Account extends BaseAccount {
 
     /** Records when the client was emailed about the inactive account, or clears it with null. */
     public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }
+
+    /** @return the account's place among its client's accounts (1, 2, ...), or null if it was never numbered */
+    public Integer getAccountSeq() { return accountSeq; }
+
+    /** Numbers the account among its client's accounts; shown to the client as "Brokerage N". */
+    public void setAccountSeq(Integer accountSeq) { this.accountSeq = accountSeq; }
 }

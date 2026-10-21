@@ -14,6 +14,7 @@ import java.util.UUID;
  * @param maxSlippagePercent the saved price tolerance in percent, or null when none is saved
  * @param createdAt the timestamp when the account was created
  * @param inactiveSince when the account became empty, if flagged inactive; otherwise null
+ * @param accountSeq the account's place among the client's accounts (1, 2, ...), or null if never numbered
  */
 public record AccountSummary(
         UUID accountId,
@@ -23,6 +24,7 @@ public record AccountSummary(
         boolean tradingEnabled,
         BigDecimal maxSlippagePercent,
         OffsetDateTime createdAt,
-        OffsetDateTime inactiveSince
+        OffsetDateTime inactiveSince,
+        Integer accountSeq
 ) {}
 

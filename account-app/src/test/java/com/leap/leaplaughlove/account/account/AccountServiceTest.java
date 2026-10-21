@@ -147,6 +147,30 @@ class AccountServiceTest {
     }
 
     @Test
+    @DisplayName("createAccount — numbers the first account 1")
+    void createAccount_firstAccountIsNumberedOne() {
+        givenClientStatus("ACTIVE");
+        givenSaveReturnsArgument();
+        when(accountRepository.findMaxAccountSeq(clientId)).thenReturn(0);
+
+        Account created = accountService.createAccount(new CreateAccountRequest("USD"));
+
+        assertEquals(1, created.getAccountSeq());
+    }
+
+    @Test
+    @DisplayName("createAccount — numbers a further account after the client's highest, so Brokerage 2 follows Brokerage 1")
+    void createAccount_nextAccountFollowsHighest() {
+        givenClientStatus("ACTIVE");
+        givenSaveReturnsArgument();
+        when(accountRepository.findMaxAccountSeq(clientId)).thenReturn(3);
+
+        Account created = accountService.createAccount(new CreateAccountRequest("USD"));
+
+        assertEquals(4, created.getAccountSeq());
+    }
+
+    @Test
     @DisplayName("createAccount — regenerates the account number when it collides with an existing one")
     void createAccount_retriesOnCollision() {
         givenClientStatus("ACTIVE");

@@ -11,7 +11,7 @@ import { createSpyObj } from '../../../testing/create-spy-obj';
 describe('OpenAccountPanelComponent', () => {
   const account: AccountSummary = {
     accountId: 'new', accountNumber: 'ACC-0009', status: 'ACTIVE', baseCurrency: 'USD', tradingEnabled: true,
-    maxSlippagePercent: null, createdAt: '', inactiveSince: null
+    maxSlippagePercent: null, createdAt: '', inactiveSince: null, accountSeq: 2
   };
 
   let fixture: ComponentFixture<OpenAccountPanelComponent>;
@@ -61,6 +61,7 @@ describe('OpenAccountPanelComponent', () => {
     expect(panel.deposit()).toBe('none');
     expect(balance.deposit).not.toHaveBeenCalled();
     fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('.result-title').textContent.trim()).toBe('Brokerage 2 is open');
   });
 
   it('ignores a second submit while not on the form', () => {
