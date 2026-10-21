@@ -285,7 +285,7 @@ public class PortfolioHistoryService {
      * start up to now, with "now" itself as the final point. Buckets are aligned to
      * the epoch the same way market data aligns candles, so point k lines up with
      * the candle starting one width earlier. A range that starts on a bucket
-     * boundary - 1D at midnight - gets a point there, valued at the close before it.
+     * boundary - 1D at the previous close - gets a point there, valued at the close before it.
      * 
      * @param window The price history window.
      * @param now    The current time.

@@ -50,8 +50,9 @@ class PositionServiceTest {
     @Mock
     private InstrumentRepository instrumentRepository;
 
+    /** A Saturday: "today" is still Friday's trading day, which began at Thursday's 16:00 ET close. */
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-01-10T15:00:00Z");
-    private static final OffsetDateTime START_OF_DAY = OffsetDateTime.parse("2026-01-10T00:00:00Z");
+    private static final OffsetDateTime START_OF_DAY = OffsetDateTime.parse("2026-01-08T21:00:00Z");
 
     private PositionService positionService;
 

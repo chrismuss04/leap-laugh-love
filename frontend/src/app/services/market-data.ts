@@ -81,18 +81,13 @@ export class MarketDataService {
   }
 
   /**
-   * The close of the last full UTC day - the baseline a "today" change is measured from. The
-   * simulated market trades around the clock, so a day is a UTC calendar day.
+   * The price at the previous trading day's regular close - the baseline a "today" change is
+   * measured from. Market data works out which close that is from the exchange calendar, the same
+   * one account-app counts today's trades and history from.
    */
   getPreviousClose(symbol: string): Observable<number | null> {
-    const startOfToday = new Date();
-    startOfToday.setUTCHours(0, 0, 0, 0);
-    const to = new Date(startOfToday.getTime() - 1000);
-    const from = new Date(startOfToday.getTime() - 7 * 86_400_000);
-    return this.http.get<CandlePage>(`${this.API_URL}/prices/${encodeURIComponent(symbol)}/history`, {
-      params: { from: from.toISOString(), to: to.toISOString(), interval: '86400', size: '1' }
-    }).pipe(
-      map(page => page.content[0]?.close ?? null),
+    return this.http.get<{ close: number }>(`${this.API_URL}/prices/${encodeURIComponent(symbol)}/previous-close`).pipe(
+      map(response => response?.close ?? null),
       catchError(() => of(null))
     );
   }

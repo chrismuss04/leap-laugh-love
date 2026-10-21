@@ -174,12 +174,13 @@ describe('HTTP services', () => {
     it('reads the previous close, or null when absent or failing', () => {
       const service = TestBed.inject(MarketDataService);
       const results: (number | null)[] = [];
+      const previousCloseUrl = '/api/marketdata/prices/AAPL/previous-close';
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({ content: [{ close: 9 }], last: true });
+      http.expectOne(previousCloseUrl).flush({ symbol: 'AAPL', close: 9, at: '2026-10-20T20:00:00Z' });
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({ content: [], last: true });
+      http.expectOne(previousCloseUrl).flush({ message: 'No history' }, { status: 404, statusText: 'Not Found' });
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({}, failure);
+      http.expectOne(previousCloseUrl).flush({}, failure);
       expect(results).toEqual([9, null, null]);
     });
 

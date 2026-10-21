@@ -132,6 +132,39 @@ class MarketCalendarTest {
     }
 
     @Test
+    @DisplayName("Today is measured from the previous trading day's regular close")
+    void previousCloseDuringTheDay() {
+        // Wednesday 14 October 2026: pre-market, regular and after-hours all count from Tuesday's close.
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-14T04:00:00"))).isEqualTo(eastern("2026-10-13T16:00:00"));
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-14T11:00:00"))).isEqualTo(eastern("2026-10-13T16:00:00"));
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-14T19:00:00"))).isEqualTo(eastern("2026-10-13T16:00:00"));
+    }
+
+    @Test
+    @DisplayName("The day rolls over at the next pre-market open, not at midnight")
+    void previousCloseRollsOverAtPreMarket() {
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-15T00:30:00"))).isEqualTo(eastern("2026-10-13T16:00:00"));
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-15T03:59:00"))).isEqualTo(eastern("2026-10-13T16:00:00"));
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-15T04:00:00"))).isEqualTo(eastern("2026-10-14T16:00:00"));
+    }
+
+    @Test
+    @DisplayName("A weekend still shows Friday's move, and Monday is measured from Friday's close")
+    void previousCloseAcrossAWeekend() {
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-17T12:00:00"))).isEqualTo(eastern("2026-10-15T16:00:00"));
+        assertThat(MarketCalendar.previousClose(eastern("2026-10-19T10:00:00"))).isEqualTo(eastern("2026-10-16T16:00:00"));
+    }
+
+    @Test
+    @DisplayName("A holiday is skipped, and an early close ends the day at 13:00")
+    void previousCloseAcrossHolidaysAndEarlyCloses() {
+        // Thanksgiving, Thursday 26 November 2026: Friday is measured from Wednesday's close.
+        assertThat(MarketCalendar.previousClose(eastern("2026-11-27T10:00:00"))).isEqualTo(eastern("2026-11-25T16:00:00"));
+        // Friday 27 November closes early, so Monday is measured from 13:00.
+        assertThat(MarketCalendar.previousClose(eastern("2026-11-30T10:00:00"))).isEqualTo(eastern("2026-11-27T13:00:00"));
+    }
+
+    @Test
     void nextTransitionWithinADay() {
         assertThat(MarketCalendar.nextTransition(eastern("2026-10-14T10:00:00")))
                 .isEqualTo(new MarketCalendar.Transition(eastern("2026-10-14T16:00:00"), MarketSession.AFTER_HOURS));

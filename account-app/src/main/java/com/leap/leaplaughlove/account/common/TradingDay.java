@@ -1,13 +1,15 @@
 package com.leap.leaplaughlove.account.common;
 
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
 
 /**
- * Where "today" begins for day-change figures. Market data strikes each daily close at midnight
- * UTC, and the frontend takes the previous close from that candle, so today's history and each
- * position's activity today are counted from the same moment.
+ * Where "today" begins for day-change figures: the previous trading day's regular close (see
+ * {@link MarketCalendar#previousClose}). Market data serves each symbol's price at that close, so
+ * today's history, each position's activity today and each holding's previous close all count
+ * from the same moment.
  */
 public final class TradingDay {
 
@@ -15,11 +17,11 @@ public final class TradingDay {
     }
 
     /**
-     * The start of the trading day that contains a point in time.
+     * The start of the trading day under way at a point in time.
      * @param now the point in time
-     * @return midnight UTC on that day
+     * @return the previous trading day's regular close, in UTC
      */
     public static OffsetDateTime startOf(OffsetDateTime now) {
-        return now.withOffsetSameInstant(ZoneOffset.UTC).truncatedTo(ChronoUnit.DAYS);
+        return MarketCalendar.previousClose(now.toInstant()).atOffset(ZoneOffset.UTC);
     }
 }

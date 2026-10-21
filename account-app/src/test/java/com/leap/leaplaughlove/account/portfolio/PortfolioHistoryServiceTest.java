@@ -50,7 +50,9 @@ class PortfolioHistoryServiceTest {
     private static final UUID CLIENT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID ACCOUNT_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID AAPL_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001");
+    /** A Saturday: 1D is still Friday's trading day, from Thursday's 16:00 ET (21:00 UTC) close. */
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-01-10T12:00:00Z");
+    private static final OffsetDateTime PREVIOUS_CLOSE = OffsetDateTime.parse("2026-01-08T21:00:00Z");
     private static final OffsetDateTime BUY_TIME = OffsetDateTime.parse("2026-01-10T03:00:00Z");
 
     @Mock private AccountRepository accountRepository;
@@ -127,9 +129,9 @@ class PortfolioHistoryServiceTest {
 
         assertEquals("1D", response.range());
         assertEquals(300, response.intervalSeconds());
-        // 5-minute bucket ends from midnight (the previous close), plus "now" as the final point.
-        assertEquals(145, response.points().size());
-        assertEquals(OffsetDateTime.parse("2026-01-10T00:00:00Z"), response.points().get(0).timestamp());
+        // 5-minute bucket ends from the previous close, plus "now" as the final point.
+        assertEquals(39 * 12 + 1, response.points().size());
+        assertEquals(PREVIOUS_CLOSE, response.points().get(0).timestamp());
         assertEquals(NOW, response.points().get(response.points().size() - 1).timestamp());
         // Before the buy: all cash, nothing held.
         assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T00:00:00Z"));
@@ -164,7 +166,7 @@ class PortfolioHistoryServiceTest {
 
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
-        // 1,000 cash + 10 @ 100 at midnight; 1,500 cash + 10 @ 120 now, 500 of it deposited.
+        // 1,000 cash + 10 @ 100 at the previous close; 1,500 cash + 10 @ 120 now, 500 of it deposited.
         assertEquals(new BigDecimal("2000.00"), response.startValue());
         assertEquals(new BigDecimal("2700.00"), response.endValue());
         assertEquals(new BigDecimal("500.00"), response.netContributions());
@@ -255,10 +257,10 @@ class PortfolioHistoryServiceTest {
     }
 
     @Test
-    @DisplayName("1D starts at midnight UTC, when the previous daily close was struck")
-    void oneDayStartsAtMidnight() {
+    @DisplayName("1D starts at the previous trading day's regular close")
+    void oneDayStartsAtPreviousClose() {
         PortfolioRange.Window day = PortfolioRange.ONE_DAY.window(NOW, NOW.minusYears(1));
-        assertEquals(OffsetDateTime.parse("2026-01-10T00:00:00Z"), day.from());
+        assertEquals(PREVIOUS_CLOSE, day.from());
         assertEquals(300, day.intervalSeconds());
     }
 

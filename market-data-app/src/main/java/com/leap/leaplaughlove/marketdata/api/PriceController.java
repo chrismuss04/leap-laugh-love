@@ -1,9 +1,11 @@
 package com.leap.leaplaughlove.marketdata.api;
 
+import com.leap.leaplaughlove.common.market.MarketCalendar;
 import com.leap.leaplaughlove.marketdata.history.PriceCandle;
 import com.leap.leaplaughlove.marketdata.history.PriceCandleRepository;
 import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
 import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
@@ -14,7 +16,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Set;
 
@@ -36,8 +41,18 @@ public class PriceController {
      */
     private static final Set<Integer> SUPPORTED_INTERVALS = Set.of(60, 300, 3600, 86400);
 
+    /**
+     * Candle widths the previous close is read from, finest first: 5-minute candles end exactly on
+     * the close, and the coarser ones stand in for a symbol whose 5-minute history has gone.
+     */
+    private static final List<Integer> CLOSE_INTERVALS = List.of(300, 3600, 86400);
+
+    /** How far before the previous close to look for a candle; covers a long holiday weekend. */
+    private static final Duration CLOSE_LOOKBACK = Duration.ofDays(10);
+
     private final MarketSimulationEngine simulationEngine;
     private final PriceCandleRepository candleRepository;
+    private final Clock clock;
 
     /**
      * Constructs a PriceController with the injected market simulation engine and
@@ -46,9 +61,22 @@ public class PriceController {
      * @param simulationEngine the market simulation engine
      * @param candleRepository the price candle repository
      */
+    @Autowired
     public PriceController(MarketSimulationEngine simulationEngine, PriceCandleRepository candleRepository) {
+        this(simulationEngine, candleRepository, Clock.systemUTC());
+    }
+
+    /**
+     * Constructs a PriceController on a given clock.
+     * 
+     * @param simulationEngine the market simulation engine
+     * @param candleRepository the price candle repository
+     * @param clock            the clock that says which close is the previous one
+     */
+    PriceController(MarketSimulationEngine simulationEngine, PriceCandleRepository candleRepository, Clock clock) {
         this.simulationEngine = simulationEngine;
         this.candleRepository = candleRepository;
+        this.clock = clock;
     }
 
     /**
@@ -125,6 +153,31 @@ public class PriceController {
                 .findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
                         symbol.toUpperCase(), interval, rangeFrom, rangeTo, PageRequest.of(page, size))
                 .map(this::toResponse);
+    }
+
+    /**
+     * Retrieves a symbol's price at the previous trading day's regular close (see
+     * {@link MarketCalendar#previousClose}): the close of the last candle that ended by then.
+     * 
+     * @param symbol the instrument symbol to look up
+     * @return the price at the previous close
+     * @throws ResponseStatusException with a 404 status if the symbol has no history before then
+     */
+    @GetMapping("/{symbol}/previous-close")
+    public PreviousCloseResponse getPreviousClose(@PathVariable String symbol) {
+        String upper = symbol.toUpperCase();
+        OffsetDateTime close = MarketCalendar.previousClose(clock.instant()).atOffset(ZoneOffset.UTC);
+        for (int interval : CLOSE_INTERVALS) {
+            List<PriceCandle> last = candleRepository
+                    .findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                            upper, interval, close.minus(CLOSE_LOOKBACK), close.minusSeconds(interval),
+                            PageRequest.of(0, 1))
+                    .getContent();
+            if (!last.isEmpty()) {
+                return new PreviousCloseResponse(upper, last.get(0).getClose(), close);
+            }
+        }
+        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No price history before the previous close for " + symbol);
     }
 
     /**

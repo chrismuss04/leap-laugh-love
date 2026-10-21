@@ -10,7 +10,7 @@ export interface PositionItem {
   quantity: number;
   averageCost: number;
   /**
-   * Shares held when the trading day began (midnight UTC, when the previous close was struck).
+   * Shares held when the trading day began, at the previous trading day's regular close.
    * Without it, every share is taken to have been held since the open.
    */
   quantityAtOpen?: number;

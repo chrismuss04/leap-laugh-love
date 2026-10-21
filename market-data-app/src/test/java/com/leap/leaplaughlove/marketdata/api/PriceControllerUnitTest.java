@@ -13,13 +13,16 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -83,5 +86,47 @@ class PriceControllerUnitTest {
         assertEquals(new BigDecimal("4"), response.high());
         assertEquals(new BigDecimal("0.5"), response.low());
         assertEquals(new BigDecimal("3"), response.close());
+    }
+
+    @Test
+    @DisplayName("reads the previous close from the 5-minute candle that ended on it")
+    void previousCloseFromFiveMinuteCandle() {
+        // Wednesday 14 October 2026, 11:00 ET: today runs from Tuesday's 16:00 ET (20:00 UTC) close.
+        PriceController atNoon = new PriceController(engine, candles,
+                Clock.fixed(OffsetDateTime.parse("2026-10-14T15:00:00Z").toInstant(), ZoneOffset.UTC));
+        OffsetDateTime close = OffsetDateTime.parse("2026-10-13T20:00:00Z");
+        when(candles.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(300), any(OffsetDateTime.class), eq(close.minusMinutes(5)), eq(PageRequest.of(0, 1))))
+                .thenReturn(new PageImpl<>(List.of(candle(close.minusMinutes(5), 300, "187.25"))));
+
+        PreviousCloseResponse response = atNoon.getPreviousClose("aapl");
+
+        assertEquals("AAPL", response.symbol());
+        assertEquals(new BigDecimal("187.25"), response.close());
+        assertEquals(close, response.at());
+    }
+
+    @Test
+    @DisplayName("falls back to coarser candles, and is 404 without any history before the close")
+    void previousCloseFallsBack() {
+        PriceController atNoon = new PriceController(engine, candles,
+                Clock.fixed(OffsetDateTime.parse("2026-10-14T15:00:00Z").toInstant(), ZoneOffset.UTC));
+        OffsetDateTime close = OffsetDateTime.parse("2026-10-13T20:00:00Z");
+        when(candles.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                any(), anyInt(), any(OffsetDateTime.class), any(OffsetDateTime.class), any()))
+                .thenReturn(Page.empty());
+        when(candles.findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(
+                eq("AAPL"), eq(3600), any(OffsetDateTime.class), eq(close.minusHours(1)), any()))
+                .thenReturn(new PageImpl<>(List.of(candle(close.minusHours(1), 3600, "186"))));
+
+        assertEquals(new BigDecimal("186"), atNoon.getPreviousClose("AAPL").close());
+        assertEquals(HttpStatus.NOT_FOUND, statusOf(() -> atNoon.getPreviousClose("NEW")));
+    }
+
+    private static PriceCandle candle(OffsetDateTime start, int seconds, String close) {
+        SimulatedInstrument instrument = new SimulatedInstrument(UUID.randomUUID(), "AAPL", "Apple Inc.",
+                new BigDecimal("100"), new BigDecimal("0.05"), new BigDecimal("0.2"), 1L, true);
+        BigDecimal price = new BigDecimal(close);
+        return new PriceCandle(instrument, start, seconds, price, price, price, price);
     }
 }
