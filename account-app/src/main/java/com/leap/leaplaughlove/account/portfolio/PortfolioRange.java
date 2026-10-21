@@ -5,6 +5,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Arrays;
 
 /**
@@ -16,7 +18,11 @@ import java.util.Arrays;
  * most.
  */
 public enum PortfolioRange {
-    ONE_DAY("1D", Duration.ofDays(1), 300),
+    /**
+     * Since the start of today (UTC), when the previous daily close was struck, so the day's change
+     * is measured from the same close as each holding's day change.
+     */
+    ONE_DAY("1D", null, 300),
     ONE_WEEK("1W", Duration.ofDays(7), 3600),
     ONE_MONTH("1M", Duration.ofDays(30), 3600),
     THREE_MONTHS("3M", Duration.ofDays(90), 86400),
@@ -57,29 +63,34 @@ public enum PortfolioRange {
     }
 
     /**
-     * Resolves the start and candle width of this range.
+     * Resolves the start and candle width of this range. A range never starts before the earliest
+     * account it covers opened: there was nothing to value then, and a chart rising from zero would
+     * read as a gain.
      * 
-     * @param now                 the end of the range
-     * @param earliestAccountOpen when the client's first account opened, which
-     *                            bounds ALL
+     * @param now                 the end of the range, in UTC
+     * @param earliestAccountOpen when the earliest charted account opened, or null if unknown
      * @return the resolved window
      */
     Window window(OffsetDateTime now, OffsetDateTime earliestAccountOpen) {
-        if (this != ALL) {
-            return new Window(now.minus(span), intervalSeconds);
+        OffsetDateTime from = switch (this) {
+            case ONE_DAY -> now.truncatedTo(ChronoUnit.DAYS);
+            case ALL -> now.minus(MAX_LOOKBACK);
+            default -> now.minus(span);
+        };
+        boolean clamped = earliestAccountOpen != null && earliestAccountOpen.isAfter(from);
+        if (clamped) {
+            from = earliestAccountOpen.withOffsetSameInstant(ZoneOffset.UTC);
         }
-        OffsetDateTime cap = now.minus(MAX_LOOKBACK);
-        OffsetDateTime from = earliestAccountOpen == null || earliestAccountOpen.isBefore(cap)
-                ? cap
-                : earliestAccountOpen;
-        // A young account would chart as one or two daily points; use the finest width
-        // that
+        if (!clamped && this != ALL) {
+            return new Window(from, intervalSeconds);
+        }
+        // A young account would chart as one or two daily points; use the finest width that
         // still covers its whole life instead.
         Duration life = Duration.between(from, now);
         int width = life.compareTo(Duration.ofDays(2)) <= 0 ? 300
                 : life.compareTo(Duration.ofDays(30)) <= 0 ? 3600
                         : 86400;
-        return new Window(from, width);
+        return new Window(from, Math.min(width, intervalSeconds));
     }
 
     /**

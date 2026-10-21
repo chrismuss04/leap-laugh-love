@@ -52,11 +52,19 @@ import java.util.UUID;
  * final point is "now", priced at the live price so the chart ends on the value
  * the rest of the
  * dashboard shows.
+ *
+ * <p>
+ * Deposits and withdrawals move the value without being a gain or loss, so the
+ * change over the range leaves them out.
  */
 @Service
 public class PortfolioHistoryService {
 
+    /** Cash ledger entries that move money in or out of an account, rather than earn it. */
+    private static final Set<String> CONTRIBUTION_TYPES = Set.of("DEPOSIT", "WITHDRAWAL");
+
     private final AccountRepository accountRepository;
+    private final AccountAuthorizationService accountAuthorizationService;
     private final PositionRepository positionRepository;
     private final PositionMovementRepository positionMovementRepository;
     private final CashLedgerRepository cashLedgerRepository;
@@ -69,12 +77,13 @@ public class PortfolioHistoryService {
      */
     @Autowired
     public PortfolioHistoryService(AccountRepository accountRepository,
+            AccountAuthorizationService accountAuthorizationService,
             PositionRepository positionRepository,
             PositionMovementRepository positionMovementRepository,
             CashLedgerRepository cashLedgerRepository,
             InstrumentRepository instrumentRepository,
             PriceHistoryClient priceHistoryClient) {
-        this(accountRepository, positionRepository, positionMovementRepository, cashLedgerRepository,
+        this(accountRepository, accountAuthorizationService, positionRepository, positionMovementRepository, cashLedgerRepository,
                 instrumentRepository, priceHistoryClient, Clock.systemUTC());
     }
 
@@ -82,6 +91,8 @@ public class PortfolioHistoryService {
      * Constructs a PortfolioHistoryService with a given clock
      * 
      * @param accountRepository          The repository for accessing account data.
+     * @param accountAuthorizationService Checks a single charted account belongs to
+     *                                   the client.
      * @param positionRepository         The repository for accessing position data.
      * @param positionMovementRepository The repository for accessing position
      *                                   movement data.
@@ -94,6 +105,7 @@ public class PortfolioHistoryService {
      * @param clock                      The clock to use for time-based operations.
      */
     PortfolioHistoryService(AccountRepository accountRepository,
+            AccountAuthorizationService accountAuthorizationService,
             PositionRepository positionRepository,
             PositionMovementRepository positionMovementRepository,
             CashLedgerRepository cashLedgerRepository,
@@ -101,6 +113,7 @@ public class PortfolioHistoryService {
             PriceHistoryClient priceHistoryClient,
             Clock clock) {
         this.accountRepository = accountRepository;
+        this.accountAuthorizationService = accountAuthorizationService;
         this.positionRepository = positionRepository;
         this.positionMovementRepository = positionMovementRepository;
         this.cashLedgerRepository = cashLedgerRepository;
@@ -110,18 +123,22 @@ public class PortfolioHistoryService {
     }
 
     /**
-     * Values every active account of the authenticated client, combined, across the
-     * range.
-     * Accounts are summed in their base currencies without conversion.
+     * Values one of the authenticated client's accounts across the range, or every
+     * active account combined when no account is given. Accounts are summed in their
+     * base currencies without conversion.
      * 
-     * @param range the range to chart
-     * @return the portfolio value at each point of the range
+     * @param range     the range to chart
+     * @param accountId the account to chart, or null for all of them
+     * @return the value at each point of the range
+     * @throws org.springframework.web.server.ResponseStatusException 404 if the
+     *         account isn't the client's, 400 if it isn't active
      * @throws QuoteUnavailableException if market data could not be reached
      */
-    public PortfolioHistoryResponse getHistory(PortfolioRange range) {
-        UUID clientId = SecurityUtils.getAuthenticatedClientId();
-        List<Account> accounts = accountRepository.findByClientIdAndStatus(
-                clientId, AccountAuthorizationService.ACTIVE_STATUS);
+    public PortfolioHistoryResponse getHistory(PortfolioRange range, UUID accountId) {
+        List<Account> accounts = accountId != null
+                ? List.of(accountAuthorizationService.getAuthorizedAccount(accountId))
+                : accountRepository.findByClientIdAndStatus(
+                        SecurityUtils.getAuthenticatedClientId(), AccountAuthorizationService.ACTIVE_STATUS);
         OffsetDateTime now = OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC);
         OffsetDateTime earliestOpen = accounts.stream()
                 .map(Account::getCreatedAt)
@@ -132,7 +149,7 @@ public class PortfolioHistoryService {
         List<OffsetDateTime> timeline = timeline(window, now);
 
         if (accounts.isEmpty()) {
-            return toResponse(range, window, timeline, new BigDecimal[timeline.size()]);
+            return toResponse(range, window, timeline, new BigDecimal[timeline.size()], BigDecimal.ZERO);
         }
 
         Map<UUID, String> baseCurrencies = new HashMap<>();
@@ -156,8 +173,21 @@ public class PortfolioHistoryService {
         entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());
 
         Map<UUID, BigDecimal[]> prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);
+        BigDecimal contributions = contributionsSince(timeline.get(0), entries);
         BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);
-        return toResponse(range, window, timeline, values);
+        return toResponse(range, window, timeline, values, contributions);
+    }
+
+    /**
+     * Money deposited less money withdrawn after a point in time. Between accounts that are
+     * charted together a transfer's two sides cancel out; for one account it counts.
+     */
+    private static BigDecimal contributionsSince(OffsetDateTime start, List<CashLedgerEntry> entries) {
+        return entries.stream()
+                .filter(entry -> CONTRIBUTION_TYPES.contains(entry.getEntryType()))
+                .filter(entry -> entry.getCreatedAt().isAfter(start))
+                .map(CashLedgerEntry::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     /** Today's quantity and symbol of every instrument held across the accounts. */
@@ -245,7 +275,8 @@ public class PortfolioHistoryService {
      * Builds the chart's timestamps: the end of each candle bucket from the range
      * start up to now, with "now" itself as the final point. Buckets are aligned to
      * the epoch the same way market data aligns candles, so point k lines up with
-     * the candle starting one width earlier.
+     * the candle starting one width earlier. A range that starts on a bucket
+     * boundary - 1D at midnight - gets a point there, valued at the close before it.
      * 
      * @param window The price history window.
      * @param now    The current time.
@@ -254,9 +285,9 @@ public class PortfolioHistoryService {
     static List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now) {
         long width = window.intervalSeconds();
         long nowSeconds = now.toEpochSecond();
-        long bucketStart = Math.floorDiv(window.from().toEpochSecond(), width) * width;
+        long firstEnd = -Math.floorDiv(-window.from().toEpochSecond(), width) * width;
         List<OffsetDateTime> points = new ArrayList<>();
-        for (long end = bucketStart + width; end < nowSeconds; end += width) {
+        for (long end = firstEnd; end < nowSeconds; end += width) {
             points.add(OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC));
         }
         points.add(now);
@@ -313,10 +344,11 @@ public class PortfolioHistoryService {
      * @param window   The effective window used for the calculation.
      * @param timeline The timestamps for each point in the history.
      * @param values   The calculated portfolio values at each timestamp.
+     * @param contributions Deposits less withdrawals after the first point.
      * @return The PortfolioHistoryResponse containing the history data.
      */
     private static PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
-            List<OffsetDateTime> timeline, BigDecimal[] values) {
+            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal contributions) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
         for (int k = 0; k < timeline.size(); k++) {
             BigDecimal value = values[k] != null ? values[k] : BigDecimal.ZERO.setScale(2);
@@ -324,10 +356,14 @@ public class PortfolioHistoryService {
         }
         BigDecimal start = points.get(0).value();
         BigDecimal end = points.get(points.size() - 1).value();
-        BigDecimal change = end.subtract(start);
-        BigDecimal changePercent = start.signum() == 0 ? null
-                : change.multiply(BigDecimal.valueOf(100)).divide(start.abs(), 2, RoundingMode.HALF_UP);
+        BigDecimal netContributions = contributions.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal change = end.subtract(start).subtract(netContributions);
+        // Measured against everything put in, so a range that starts empty and is funded part way
+        // through still has a percentage.
+        BigDecimal invested = start.add(netContributions);
+        BigDecimal changePercent = invested.signum() <= 0 ? null
+                : change.multiply(BigDecimal.valueOf(100)).divide(invested, 2, RoundingMode.HALF_UP);
         return new PortfolioHistoryResponse(range.code(), window.intervalSeconds(), points,
-                start, end, change, changePercent);
+                start, end, netContributions, change, changePercent);
     }
 }
