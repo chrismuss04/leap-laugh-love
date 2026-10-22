@@ -1,3 +1,5 @@
+import { MarketSession } from '../shared/market-session';
+
 /** One holding, combined across the client's accounts and priced live. */
 export interface HoldingView {
   symbol: string;
@@ -13,6 +15,10 @@ export interface HoldingView {
   totalReturn: number | null;
   totalReturnPercent: number | null;
   intraday: number[];
+  /** When each intraday close's candle began (epoch ms), to lay the day out by time. */
+  intradayTimes?: number[];
+  /** The session each intraday close traded in, or null until it's known. */
+  intradaySessions?: MarketSession[] | null;
 }
 
 /** What the trade panel needs to know about one account. */
@@ -77,6 +83,8 @@ export interface AccountView {
   share: number;
   /** The account's value at each 5-minute bucket since the day began, for sparklines. */
   intraday: number[];
+  /** The session of each intraday value, from account-app's history. */
+  intradaySessions?: MarketSession[] | null;
   /** The account's value when the day began, the baseline its sparkline is drawn against. */
   dayStartValue: number | null;
 }

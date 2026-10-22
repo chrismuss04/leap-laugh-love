@@ -22,7 +22,7 @@ import {
 } from '../../shared/order-types';
 import { MarketStatusService } from '../../services/market-status';
 import {
-  canExecuteIn, easternMoment, isExtendedSession, sessionLabel, sessionName, sessionTone
+  MarketSession, canExecuteIn, easternMoment, isExtendedSession, sessionLabel, sessionName, sessionTone
 } from '../../shared/market-session';
 import { ChartLine, OrderChartComponent } from '../order-chart/order-chart';
 // Order placement confirmation: use the authenticated client's experience level.
@@ -106,6 +106,8 @@ export class TradePanelComponent implements OnChanges, OnInit {
   readonly quoteOffset = input<QuoteOffset | null>(null);
   /** The symbol's recent closes, drawn behind the price lines of a limit or stop order. */
   readonly priceHistory = input<number[]>([]);
+  /** The session each of those closes traded in, so the chart can band pre-market and after-hours. */
+  readonly priceSessions = input<MarketSession[] | null>(null);
   readonly accounts = input<TradeAccount[]>([]);
   /** Account to trade in by default, e.g. the one the dashboard is scoped to. */
   readonly preferredAccountId = input<string | null>(null);

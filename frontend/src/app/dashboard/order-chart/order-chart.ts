@@ -1,6 +1,7 @@
 import { Component, ElementRef, ViewChild, computed, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { formatMoney } from '../../shared/format';
+import { MarketSession, highlightStart, highlightedSession } from '../../shared/market-session';
 
 /** A price line on the chart. Draggable ones are handles that set the order's price. */
 export interface ChartLine {
@@ -31,7 +32,8 @@ const MIN_RANGE = 0.004;
   template: `
     <div #area class="chart" role="group" [attr.aria-label]="label()" data-testid="order-chart">
       <svg class="series" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
-        <polyline *ngIf="path()" class="series-line" [attr.points]="path()" />
+        <polyline *ngFor="let segment of segments()" class="series-line" [class.dimmed]="segment.dimmed"
+                  [attr.points]="segment.points" />
       </svg>
       <p *ngIf="!path()" class="empty">Price history isn’t available right now.</p>
 
@@ -65,6 +67,7 @@ const MIN_RANGE = 0.004;
       fill: none; stroke: var(--muted-foreground); stroke-width: 1.6; vector-effect: non-scaling-stroke;
       stroke-linejoin: round; stroke-linecap: round; opacity: 0.8;
     }
+    .series-line.dimmed { opacity: 0.35; }
     .empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--muted-foreground); }
     .line { position: absolute; left: 0; right: 0; height: 0; --tone: var(--muted-foreground); }
     .line[data-tone='accent'] { --tone: var(--accent, var(--primary)); }
@@ -90,6 +93,13 @@ const MIN_RANGE = 0.004;
 export class OrderChartComponent {
   /** Recent closes, oldest first. */
   readonly points = input<number[]>([]);
+  /** The session each close traded in. */
+  readonly sessions = input<(MarketSession | null | undefined)[] | null>(null);
+  /**
+   * The session under way, drawn at full strength; closes in other sessions are fainter. While the
+   * market is closed, or until it's known, the last session traded in is.
+   */
+  readonly highlight = input<MarketSession | null>(null);
   /** The lines to draw. */
   readonly lines = input<ChartLine[]>([]);
   readonly label = input('Price chart with order price lines');
@@ -137,6 +147,30 @@ export class OrderChartComponent {
       return '';
     }
     return points.map((value, i) => `${(i / (points.length - 1) * 100).toFixed(2)},${this.yOf(value).toFixed(2)}`).join(' ');
+  });
+
+  /**
+   * The line in runs, each in the highlighted session or another (drawn fainter). A close ends the
+   * stretch from the close before it, so runs share their end points and the line stays whole.
+   */
+  readonly segments = computed(() => {
+    const coords = this.path().split(' ').filter(Boolean);
+    if (coords.length < 2) {
+      return [];
+    }
+    // Only the stretch at the end in the session under way is at full strength.
+    const sessions = this.sessions();
+    const brightFrom = sessions ? highlightStart(sessions, highlightedSession(this.highlight(), sessions)) : 0;
+    const dimmed = (i: number) => i < brightFrom;
+    const runs: { points: string; dimmed: boolean }[] = [];
+    let start = 0;
+    for (let i = 2; i <= coords.length; i++) {
+      if (i === coords.length || dimmed(i) !== dimmed(i - 1)) {
+        runs.push({ points: coords.slice(start, i).join(' '), dimmed: dimmed(i - 1) });
+        start = i - 1;
+      }
+    }
+    return runs;
   });
 
   readonly placed = computed(() => this.lines().map(line => ({ ...line, y: this.yOf(line.value) })));

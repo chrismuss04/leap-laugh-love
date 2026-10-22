@@ -58,7 +58,7 @@ describe('AccountsComponent', () => {
     balanceApi.getBalance.mockReturnValue(of(balance));
     marketApi.getAllLatestPrices.mockReturnValue(of([{ symbol: 'AAPL', name: 'Apple', price: 150, asOf: '' }]));
     marketApi.getPreviousClose.mockReturnValue(of(140));
-    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
+    marketApi.getIntradayCloses.mockReturnValue(of({ closes: [145, 150], starts: [] }));
 
     TestBed.configureTestingModule({
       providers: [

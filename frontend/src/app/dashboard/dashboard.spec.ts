@@ -9,6 +9,8 @@ import { OpenOrder, OrderHistoryPage, OrderService, OrderUpdate } from '../servi
 import { OrderStreamService } from '../services/order-stream';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
+import { MarketStatusService } from '../services/market-status';
+import { MarketSession, MarketStatus } from '../shared/market-session';
 import { DashboardComponent } from './dashboard';
 import type { Mock, MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
@@ -37,8 +39,8 @@ describe('DashboardComponent', () => {
   const history: PortfolioHistory = {
     range: '1D', intervalSeconds: 300, startValue: 2000, endValue: 2500, netContributions: 0, change: 500,
     changePercent: 25,
-    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000, contributions: 0 },
-      { timestamp: new Date().toISOString(), value: 2400, contributions: 0 }]
+    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000, contributions: 0, session: 'REGULAR' },
+      { timestamp: new Date().toISOString(), value: 2400, contributions: 0, session: 'REGULAR' }]
   };
 
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
@@ -55,6 +57,9 @@ describe('DashboardComponent', () => {
     watch: Mock;
   };
   let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
+  let marketSession: ReturnType<typeof signal<MarketSession | null>>;
+  let nextChange: ReturnType<typeof signal<string | null>>;
+  let marketStatus: ReturnType<typeof signal<MarketStatus | null>>;
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -77,6 +82,9 @@ describe('DashboardComponent', () => {
       watch: vi.fn().mockName('watch')
     };
     orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
+    marketSession = signal<MarketSession | null>(null);
+    nextChange = signal<string | null>(null);
+    marketStatus = signal<MarketStatus | null>(null);
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of(summaries));
@@ -86,7 +94,7 @@ describe('DashboardComponent', () => {
       { symbol: 'MSFT', name: 'Microsoft', price: 300, asOf: '' }
     ]));
     marketApi.getPreviousClose.mockImplementation(symbol => of(symbol === 'SPX' ? 5000 : 140));
-    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
+    marketApi.getIntradayCloses.mockReturnValue(of({ closes: [145, 150], starts: [] }));
     orderApi.getOrderHistory.mockReturnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
     orderApi.getOpenOrders.mockReturnValue(of([]));
     marketApi.getQuote.mockReturnValue(of({ symbol: 'AAPL', bidPrice: 149.9, askPrice: 150.1, lastPrice: 150 } as Quote));
@@ -102,7 +110,8 @@ describe('DashboardComponent', () => {
         { provide: OrderService, useValue: orderApi },
         { provide: PortfolioService, useValue: portfolioApi },
         { provide: PriceStreamService, useValue: stream },
-        { provide: OrderStreamService, useValue: orderStream }
+        { provide: OrderStreamService, useValue: orderStream },
+        { provide: MarketStatusService, useValue: { session: marketSession, nextChange, status: marketStatus, now: signal(Date.now()) } }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -196,6 +205,205 @@ describe('DashboardComponent', () => {
       expect(dashboard.headlineLabel()).toMatch(/\d/);
       dashboard.scrubIndex.set(99);
       expect(dashboard.headlineValue()).toBe(3750);
+    });
+
+    it('marks today outside regular hours, with the live point in the session now', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history,
+        points: [{ ...history.points[0], session: 'PRE_MARKET' }, history.points[1]]
+      }));
+      dashboard.loadHistory();
+      expect(dashboard.chartPoints().map(p => p.session)).toEqual(['PRE_MARKET', 'REGULAR']);
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).toMatch(/:\d{2}\s*[AP]M · Pre-market$/);
+
+      // The close passes: the live point turns after-hours without a reload.
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartPoints()[1].session).toBe('AFTER_HOURS');
+      dashboard.scrubIndex.set(1);
+      expect(dashboard.headlineLabel()).toMatch(/:\d{2}\s*[AP]M · After-hours$/);
+    });
+
+    it('says under today\'s chart what the market is doing outside regular hours', () => {
+      expect(dashboard.sessionCaption()).toBeNull();
+      marketSession.set('REGULAR');
+      nextChange.set('Closes in 2h 14m');
+      expect(dashboard.sessionCaption()).toBeNull();
+      marketSession.set('AFTER_HOURS');
+      nextChange.set('Ends in 1h 5m');
+      expect(dashboard.sessionCaption()).toBe('After-hours · Ends in 1h 5m');
+      marketSession.set('CLOSED');
+      nextChange.set('Opens Mon 9:30 AM ET');
+      expect(dashboard.sessionCaption()).toBe('Market closed · Opens Mon 9:30 AM ET');
+      // A pinned demo session has nothing coming next.
+      nextChange.set(null);
+      expect(dashboard.sessionCaption()).toBe('Market closed');
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W' }));
+      dashboard.setRange('1W');
+      expect(dashboard.sessionCaption()).toBeNull();
+    });
+
+    describe('after the regular close', () => {
+      // Yesterday's close, today's regular close at 3,700, then after-hours; live it's 3,750.
+      const afterClose: PortfolioHistory = {
+        ...history,
+        points: [
+          { ...history.points[0], session: 'REGULAR' },
+          { ...history.points[0], value: 3700, session: 'REGULAR' },
+          { ...history.points[1], value: 3720, session: 'AFTER_HOURS' },
+          { ...history.points[1], value: 3740, session: 'AFTER_HOURS' }
+        ]
+      };
+
+      beforeEach(() => {
+        marketSession.set('AFTER_HOURS');
+        portfolioApi.getHistory.mockReturnValue(of(afterClose));
+        dashboard.loadHistory();
+      });
+
+      it('splits the move since the close out of today\'s change', () => {
+        expect(dashboard.afterHours()!.change).toBe(50);
+        expect(dashboard.afterHours()!.percent).toBeCloseTo(50 / 3700 * 100);
+        // Today's return is 150: 100 of it in regular hours, 50 after.
+        expect(dashboard.todaysReturn()).toBe(150);
+        expect(dashboard.headlineChange()).toBe(100);
+        expect(dashboard.headlineChangePercent()).toBeCloseTo(dashboard.todaysReturnPercent()! * 100 / 150);
+      });
+
+      it('keeps it through the night, until the next day begins', () => {
+        marketSession.set('CLOSED');
+        expect(dashboard.afterHours()!.change).toBe(50);
+      });
+
+      it('leaves money put in since the close out of it', () => {
+        portfolioApi.getHistory.mockReturnValue(of({
+          ...afterClose,
+          points: [...afterClose.points.slice(0, 3), { ...afterClose.points[3], contributions: 30 }]
+        }));
+        dashboard.loadHistory();
+        expect(dashboard.afterHours()!.change).toBe(20);
+      });
+
+      it('shows nothing extra while scrubbing, in regular hours or before a regular session', () => {
+        dashboard.scrubIndex.set(1);
+        expect(dashboard.afterHours()).toBeNull();
+        dashboard.scrubIndex.set(null);
+        marketSession.set('REGULAR');
+        expect(dashboard.afterHours()).toBeNull();
+        expect(dashboard.headlineChange()).toBe(150);
+
+        marketSession.set('AFTER_HOURS');
+        portfolioApi.getHistory.mockReturnValue(of({
+          ...afterClose,
+          points: [afterClose.points[0], ...afterClose.points.slice(2)]
+        }));
+        dashboard.loadHistory();
+        expect(dashboard.afterHours()).toBeNull();
+        expect(dashboard.headlineChangePercent()).toBe(dashboard.todaysReturnPercent());
+      });
+    });
+
+    it('tells which session each of the traded symbol\'s closes traded in, and when the market is closed', () => {
+      marketApi.getIntradayCloses.mockReturnValue(of({
+        closes: [150, 151], starts: [Date.parse('2026-10-13T14:00:00Z'), Date.parse('2026-10-13T21:00:00Z')]
+      }));
+      dashboard.selectSymbol('MSFT');
+      fixture.detectChanges();
+      expect(dashboard.selectedHistory()).toEqual([150, 151]);
+      expect(dashboard.selectedSessions()).toBeNull();
+      marketStatus.set({
+        session: 'CLOSED', now: '2026-10-17T15:00:00Z', nextSession: 'PRE_MARKET', nextTransitionAt: null,
+        nextRegularOpen: null, mode: 'REAL', forced: false,
+        today: { date: '2026-10-17', open: false, holiday: null, earlyClose: false, preMarketOpen: null,
+          regularOpen: null, regularClose: null, afterHoursClose: null }
+      });
+      expect(dashboard.selectedSessions()).toEqual(['REGULAR', 'AFTER_HOURS']);
+
+      expect(dashboard.marketClosed()).toBe(false);
+      marketSession.set('CLOSED');
+      expect(dashboard.marketClosed()).toBe(true);
+    });
+
+    it('highlights the session under way, or the last one traded in while closed', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history,
+        points: [history.points[0], { ...history.points[0], session: 'REGULAR' },
+          { ...history.points[1], session: 'AFTER_HOURS' }, { ...history.points[1], session: 'CLOSED' }]
+      }));
+      dashboard.loadHistory();
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartHighlight()).toBe('AFTER_HOURS');
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartHighlight()).toBe('PRE_MARKET');
+      // Closed: the live point is closed too, so the last session traded in.
+      marketSession.set('CLOSED');
+      expect(dashboard.chartHighlight()).toBe('AFTER_HOURS');
+
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W' }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartHighlight()).toBeNull();
+    });
+
+    it('frames today by where the day is, laying it out by time', () => {
+      const hours = {
+        preMarketOpen: '2026-10-14T08:00:00Z', regularOpen: '2026-10-14T13:30:00Z',
+        regularClose: '2026-10-14T20:00:00Z', afterHoursClose: '2026-10-15T00:00:00Z'
+      };
+      const at = (iso: string) => Date.parse(iso);
+      expect(dashboard.chartDomain()).toBeNull();
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, hours }));
+      dashboard.loadHistory();
+
+      // Pre-market: the morning at the start, with room for the regular session.
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.preMarketOpen), end: at(hours.regularClose), leadInFrom: null });
+      // Regular hours slide from the pre-market frame to the after-hours one; this day has long closed.
+      marketSession.set('REGULAR');
+      expect(dashboard.chartDomain()).toMatchObject({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+      // After the close, overnight and at the weekend: the open to the end of after-hours.
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+      marketSession.set('CLOSED');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+
+      // A pre-market pinned for a demo over a day that has already traded past the open: a whole day.
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, hours, points: [
+        { ...history.points[0], timestamp: '2026-10-13T20:00:00Z' },
+        { ...history.points[0], timestamp: '2026-10-14T15:00:00Z', session: 'REGULAR' },
+        { ...history.points[1], timestamp: '2026-10-15T04:00:00Z' }
+      ] }));
+      dashboard.loadHistory();
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W', hours: null }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartDomain()).toBeNull();
+    });
+
+    it('draws longer ranges without sessions', () => {
+      marketSession.set('AFTER_HOURS');
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history, range: '1W',
+        points: [{ ...history.points[0], session: 'PRE_MARKET' }, history.points[1]]
+      }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartPoints().map(p => p.session)).toEqual([undefined, undefined]);
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).not.toContain('Pre-market');
+    });
+
+    it('notes a scrub before the account was first funded, where nothing changed', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history, range: '1W',
+        points: [{ ...history.points[0], beforeFunding: true }, history.points[1]]
+      }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartPoints()[0].beforeFunding).toBe(true);
+      expect(dashboard.chartPoints()[1].beforeFunding).toBeUndefined();
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).toMatch(/ · Before first deposit$/);
+      expect(dashboard.headlineChange()).toBe(0);
     });
 
     it('labels a daily-resolution scrub with the year', () => {

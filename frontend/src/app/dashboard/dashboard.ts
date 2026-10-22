@@ -12,6 +12,7 @@ import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models
 import { TickerStripComponent } from './ticker-strip/ticker-strip';
 import { SymbolSearchComponent } from './symbol-search/symbol-search';
 import { ChartPoint, LineChartComponent } from './line-chart/line-chart';
+import { ChartDomain, dayFrame } from '../shared/chart-layout';
 import { PositionsListComponent } from './positions-list/positions-list';
 import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
@@ -21,6 +22,8 @@ import { InactiveNoticeComponent } from './inactive-notice/inactive-notice';
 import { AccountDetailsComponent } from './account-details/account-details';
 import { OpenOrdersComponent } from './open-orders/open-orders';
 import { MarketDataService } from '../services/market-data';
+import { MarketStatusService } from '../services/market-status';
+import { MarketSession, sessionLabel, sessionsAt } from '../shared/market-session';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../shared/format';
 import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
@@ -61,6 +64,7 @@ export class DashboardComponent implements OnInit {
   private readonly orderStream = inject(OrderStreamService);
   private readonly portfolioService = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
+  private readonly market = inject(MarketStatusService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
 
@@ -96,6 +100,16 @@ export class DashboardComponent implements OnInit {
 
   /** The traded symbol's recent closes, drawn behind the price lines of a limit or stop order. */
   readonly selectedHistory = signal<number[]>([]);
+  /** When each of those closes' candles began, to tell which session it traded in. */
+  private readonly selectedStarts = signal<number[]>([]);
+  /** The session of each of the traded symbol's recent closes, or null until it's known. */
+  readonly selectedSessions = computed(() => sessionsAt(this.selectedStarts(), this.market.status()));
+
+  /** The session under way, for the sparklines and order chart to highlight. */
+  readonly marketSession = computed(() => this.market.session());
+
+  /** Whether the market is closed: the indices hold at their last level. */
+  readonly marketClosed = computed(() => this.market.session() === 'CLOSED');
 
   /** The traded symbol's ask and bid offsets, for the trade panel. */
   readonly selectedQuoteOffset = computed(() => {
@@ -199,21 +213,82 @@ export class DashboardComponent implements OnInit {
 
   /**
    * History points for the scope - all accounts, or the one account - with the final "now" point
-   * kept current from the live value.
+   * kept current from the live value. Today's chart carries each point's session, so pre-market and
+   * after-hours draw gray; the live point takes the session from the market clock, so the line turns
+   * gray at the close without waiting for a reload. Longer ranges are drawn all alike.
    */
   readonly chartPoints = computed<(ChartPoint & { contributions: number })[]>(() => {
     const history = this.history();
-    const points = history
-      ? history.points.map(p => ({ time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions }))
+    const withSessions = history?.range === '1D';
+    const points: (ChartPoint & { contributions: number })[] = history
+      ? history.points.map(p => ({
+          time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions,
+          ...(withSessions ? { session: p.session } : {}),
+          ...(p.beforeFunding ? { beforeFunding: true } : {})
+        }))
       : [];
-    const live = this.portfolioValue();
-    if (live !== null && points.length) {
-      points[points.length - 1] = { ...points[points.length - 1], time: Date.now(), value: live };
+    const last = points.at(-1);
+    if (last) {
+      const live = this.portfolioValue();
+      const session = withSessions ? this.market.session() ?? last.session : undefined;
+      points[points.length - 1] = {
+        ...last, ...(live !== null ? { time: Date.now(), value: live } : {}), ...(session ? { session } : {})
+      };
     }
     return points;
   });
 
   readonly baseline = computed(() => this.history()?.startValue ?? null);
+
+  /**
+   * Today's chart is laid out by time, framed by where the day is (see `dayFrame`): in pre-market
+   * the morning sits at the start with room for the day, led into by the previous session's last
+   * hour; once the market has opened, from the open. Null on other ranges, and with market hours
+   * off, which space points evenly.
+   */
+  readonly chartDomain = computed<ChartDomain | null>(() => {
+    const history = this.history();
+    const hours = history?.range === '1D' ? history.hours : null;
+    if (!history || !hours) {
+      return null;
+    }
+    // The prices the day traded at, not the baseline before them or the live value after.
+    const traded = history.points.slice(1, -1).map(point => Date.parse(point.timestamp));
+    return dayFrame(hours, this.market.session(), traded, this.minute());
+  });
+
+  /**
+   * Now by the market's clock, to the minute: today's frame slides through regular hours, and a
+   * minute's steps keep that smooth without redrawing the charts every second.
+   */
+  readonly minute = computed(() => Math.floor(this.market.now() / 60_000) * 60_000);
+
+  /**
+   * The session today's chart draws at full strength, the earlier ones tinted: the one under way,
+   * or while the market is closed, the last one traded in. Null on other ranges, which highlight
+   * regular hours.
+   */
+  readonly chartHighlight = computed<MarketSession | null>(() => {
+    if (this.history()?.range !== '1D') {
+      return null;
+    }
+    const session = this.market.session();
+    if (session && session !== 'CLOSED') {
+      return session;
+    }
+    // The first point is the previous close, not today's.
+    const points = this.chartPoints();
+    for (let i = points.length - 1; i >= 1; i--) {
+      const traded = points[i].session;
+      if (traded && traded !== 'CLOSED') {
+        return traded;
+      }
+    }
+    return null;
+  });
+
+  /** The hours of the trading day under way, for the stock sparklines to frame it the same way. */
+  readonly dayHours = this.valuation.dayHours;
 
   readonly chartLoading = this.historyLoading;
 
@@ -245,10 +320,41 @@ export class DashboardComponent implements OnInit {
   private readonly liveDayReturn = computed(() =>
     this.range() === '1D' && this.scrubIndex() === null && this.todaysReturn() !== null ? this.dayReturn() : null);
 
+  /**
+   * After the regular close, the move since it, shown on its own line under the headline as
+   * Robinhood does: the regular close is today's last regular-hours point on the chart, and the
+   * live value ends it. Money put in or taken out since is left out. Null on other ranges, while
+   * scrubbing, and until there's been a regular session today to measure from.
+   */
+  readonly afterHours = computed<{ change: number; percent: number | null } | null>(() => {
+    if (!this.liveDayReturn()) {
+      return null;
+    }
+    const points = this.chartPoints();
+    const live = points.at(-1);
+    if (!live || (live.session !== 'AFTER_HOURS' && live.session !== 'CLOSED')) {
+      return null;
+    }
+    // The first point is the previous close, not today's.
+    let close = -1;
+    for (let i = points.length - 2; i >= 1 && close < 0; i--) {
+      if (points[i].session === 'REGULAR') {
+        close = i;
+      }
+    }
+    if (close < 0) {
+      return null;
+    }
+    const { value, contributions } = points[close];
+    const change = live.value - value - (live.contributions - contributions);
+    return { change, percent: value > 0 ? (change / value) * 100 : null };
+  });
+
   readonly headlineChange = computed(() => {
     const day = this.liveDayReturn();
     if (day) {
-      return day.change;
+      // After the close, the headline stops at the regular session; the line below has the rest.
+      return day.change! - (this.afterHours()?.change ?? 0);
     }
     const value = this.headlineValue();
     const baseline = this.baseline();
@@ -259,7 +365,13 @@ export class DashboardComponent implements OnInit {
   readonly headlineChangePercent = computed(() => {
     const day = this.liveDayReturn();
     if (day) {
-      return day.percent;
+      const afterHours = this.afterHours();
+      if (!afterHours) {
+        return day.percent;
+      }
+      // Against the same base as today's return, so the two parts are on one scale.
+      const base = day.change && day.percent ? day.change / (day.percent / 100) : this.baseline();
+      return base ? (this.headlineChange()! / base) * 100 : null;
     }
     const change = this.headlineChange();
     const baseline = this.baseline();
@@ -279,15 +391,33 @@ export class DashboardComponent implements OnInit {
     return live === null || baseline === null ? 'flat' : direction(live - baseline - contributions);
   });
 
+  /**
+   * Under today's chart outside regular hours, what the market is doing and what's next:
+   * "After-hours · Ends in 1h 5m", "Market closed · Opens Mon 9:30 AM ET". Nothing in regular hours.
+   */
+  readonly sessionCaption = computed(() => {
+    const session = this.market.session();
+    if (this.range() !== '1D' || !session || session === 'REGULAR') {
+      return null;
+    }
+    const next = this.market.nextChange();
+    return next ? `${sessionLabel(session)} · ${next}` : sessionLabel(session);
+  });
+
   readonly headlineLabel = computed(() => {
     const index = this.scrubIndex();
     const points = this.chartPoints();
     if (index !== null && points[index]) {
       const date = new Date(points[index].time);
       const withTime = (this.history()?.intervalSeconds ?? 86400) < 86400;
-      return date.toLocaleString('en-US', withTime
+      const when = date.toLocaleString('en-US', withTime
         ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
         : { month: 'short', day: 'numeric', year: 'numeric' });
+      if (points[index].beforeFunding) {
+        return `${when} · Before first deposit`;
+      }
+      const session = points[index].session;
+      return session && session !== 'REGULAR' ? `${when} · ${sessionLabel(session)}` : when;
     }
     return this.ranges.find(r => r.range === this.activeRange())?.label ?? '';
   });
@@ -376,12 +506,14 @@ export class DashboardComponent implements OnInit {
       const symbol = this.selectedSymbol();
       untracked(() => {
         this.selectedHistory.set([]);
+        this.selectedStarts.set([]);
         if (symbol) {
           this.marketData.getIntradayCloses(symbol)
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe(closes => {
+            .subscribe(({ closes, starts }) => {
               if (this.selectedSymbol() === symbol) {
                 this.selectedHistory.set(closes);
+                this.selectedStarts.set(starts);
               }
             });
         }

@@ -288,7 +288,7 @@
       </div>
 
       <div *ngIf="(!isMarket() || bracketActive()) && priceHistory().length > 1" class="order-chart">
-        <app-order-chart [points]="priceHistory()" [lines]="chartLines()" (lineMove)="onChartLine($event)" />
+        <app-order-chart [points]="priceHistory()" [sessions]="priceSessions()" [highlight]="marketSession()" [lines]="chartLines()" (lineMove)="onChartLine($event)" />
         <p class="chart-hint">Drag a line to set its price, or type it below.</p>
       </div>
 

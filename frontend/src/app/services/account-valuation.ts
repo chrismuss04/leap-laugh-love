@@ -3,7 +3,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { forkJoin } from 'rxjs';
 import { AccountHoldings, AccountSummary, ClientHoldings, HoldingsService, PositionItem } from './holdings';
 import { BalanceResponse, BalanceService } from './balance';
-import { MarketDataService } from './market-data';
+import { IntradayCloses, MarketDataService } from './market-data';
+import { MarketStatusService } from './market-status';
+import { sessionsAt } from '../shared/market-session';
 import { PortfolioHistory, PortfolioService } from './portfolio';
 import { PriceStreamService } from './price-stream';
 import { ACCOUNT_COLORS, AccountView, HoldingView, accountMask, accountName } from '../dashboard/models';
@@ -43,6 +45,7 @@ export class AccountValuationService {
   private readonly marketData = inject(MarketDataService);
   private readonly portfolio = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
+  private readonly market = inject(MarketStatusService);
   private readonly destroyRef = inject(DestroyRef);
 
   // ---- Loaded state ----
@@ -56,7 +59,7 @@ export class AccountValuationService {
   /** Display name per symbol from market data, covering instruments the client doesn't hold. */
   readonly marketNames = signal<Record<string, string>>({});
   readonly previousCloses = signal<Record<string, number | null>>({});
-  private readonly intraday = signal<Record<string, number[]>>({});
+  private readonly intraday = signal<Record<string, IntradayCloses>>({});
   /** Each account's value today, from account-app's history, for sparklines. */
   private readonly dayHistories = signal<Record<string, PortfolioHistory>>({});
   private readonly requestedCloses = new Set<string>();
@@ -72,6 +75,13 @@ export class AccountValuationService {
   /** Prices as of the stream's last settle: for totals over many holdings. */
   readonly settledPrices = computed<Record<string, number>>(
     () => ({ ...this.snapshotPrices(), ...this.stream.settledPrices() }));
+
+  /**
+   * The hours of the trading day under way, from account-app's day history (any account's: the day
+   * is the same for all), so stock sparklines frame the day as the 1D chart does. Null until it
+   * loads, and with market hours off.
+   */
+  readonly dayHours = computed(() => Object.values(this.dayHistories()).find(history => history.hours)?.hours ?? null);
 
   /** Every account valued live, in the API's order so each keeps its colour. */
   readonly accounts = computed<AccountView[]>(() => {
@@ -111,6 +121,7 @@ export class AccountValuationService {
         share: 0,
         // The history ends on "now"; the live value takes that place wherever the series is drawn.
         intraday: history ? history.points.slice(0, -1).map(p => p.value) : [],
+        intradaySessions: history ? history.points.slice(0, -1).map(p => p.session) : null,
         dayStartValue: history?.startValue ?? null
       };
     });
@@ -183,6 +194,7 @@ export class AccountValuationService {
   priceHoldings(positions: PositionItem[], prices: Record<string, number> = this.prices()): HoldingView[] {
     const closes = this.previousCloses();
     const intraday = this.intraday();
+    const status = this.market.status();
     return this.merge(positions).map(position => {
       const { symbol, name, quantity, cost } = position;
       const price = prices[symbol] ?? null;
@@ -198,7 +210,9 @@ export class AccountValuationService {
         dayChangePercent: day.percent,
         totalReturn,
         totalReturnPercent: totalReturn !== null && cost ? (totalReturn / cost) * 100 : null,
-        intraday: intraday[symbol] ?? []
+        intraday: intraday[symbol]?.closes ?? [],
+        intradayTimes: intraday[symbol]?.starts ?? [],
+        intradaySessions: sessionsAt(intraday[symbol]?.starts ?? [], status)
       };
     }).sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));
   }

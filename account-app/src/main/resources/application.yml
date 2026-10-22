@@ -35,6 +35,15 @@ app:
     secret: ${JWT_SECRET:verylongsecretkeyforjwttokengenerationspecifiedhere12345}
     expiration-minutes: 60
 
+market:
+  hours:
+    # REAL follows the NYSE clock, and intraday portfolio charts skip the hours the market is
+    # closed; ALWAYS_OPEN trades around the clock, so they keep every hour. A pinned pre-market is
+    # charted as a new day from startup. Match order-app and market-data-app.
+    mode: ${MARKET_HOURS_MODE:REAL}
+    force-session: ${MARKET_HOURS_FORCE_SESSION:}
+    force-minutes: ${MARKET_HOURS_FORCE_MINUTES:0}
+
 marketdata:
   client:
     base-url: ${MARKET_DATA_BASE_URL:http://localhost:8083}

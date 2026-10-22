@@ -59,6 +59,64 @@ describe('dashboard display components', () => {
       const fixture = render(SparklineComponent, { values: [1, 2, 3], baseline: 2 });
       expect(fixture.componentInstance.path.startsWith('M0.0')).toBe(true);
       expect(fixture.nativeElement.querySelector('line.base')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.line.dimmed')).toBeNull();
+    });
+
+    describe('sessions', () => {
+      const values = [1, 2, 3, 4, 5];
+      // 22px apart: pre-market up to the second value, regular to the fourth, then after-hours.
+      const sessions = ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'REGULAR', 'AFTER_HOURS'];
+
+      it('draws the stretch at the end in the session under way at full strength, the rest tinted', () => {
+        const fixture = render(SparklineComponent, { values, sessions, highlight: 'AFTER_HOURS' });
+        const { path, dimmedPath } = fixture.componentInstance;
+        expect(path).toMatch(/^M66\.0,[\d.]+L88\.0,[\d.]+$/);
+        expect(dimmedPath.startsWith('M0.0,')).toBe(true);
+        expect(dimmedPath.match(/M/g)!.length).toBe(1);
+        expect(fixture.nativeElement.querySelector('.line.dimmed')).not.toBeNull();
+      });
+
+      it('leaves an earlier stretch in the same session tinted', () => {
+        // Yesterday's pre-market, then today's: only today's is under way.
+        const fixture = render(SparklineComponent, {
+          values, sessions: ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'PRE_MARKET', 'PRE_MARKET'], highlight: 'PRE_MARKET'
+        });
+        expect(fixture.componentInstance.path.startsWith('M44.0,')).toBe(true);
+        expect(fixture.componentInstance.dimmedPath.startsWith('M0.0,')).toBe(true);
+      });
+
+      it('highlights the last session traded in while the market is closed, carrying it to the live value', () => {
+        const fixture = render(SparklineComponent, { values: [...values, 5], sessions: [...sessions, 'CLOSED'], highlight: 'CLOSED' });
+        const { path, dimmedPath } = fixture.componentInstance;
+        // After-hours, from the fourth value to the live one, is at full strength.
+        expect(path.startsWith(`M${(3 / 5 * 88).toFixed(1)},`)).toBe(true);
+        expect(dimmedPath.match(/M/g)!.length).toBe(1);
+      });
+
+      it('frames the day as the 1D chart does, given times and the day\'s hours', () => {
+        const hours = {
+          preMarketOpen: '2026-10-14T08:00:00Z', regularOpen: '2026-10-14T13:30:00Z',
+          regularClose: '2026-10-14T20:00:00Z', afterHoursClose: '2026-10-15T00:00:00Z'
+        };
+        // Tuesday's last after-hours prices, then Wednesday's first two pre-market ones.
+        const times = ['2026-10-13T23:50:00Z', '2026-10-13T23:55:00Z', '2026-10-14T08:00:00Z', '2026-10-14T09:12:00Z']
+          .map(iso => Date.parse(iso));
+        const fixture = render(SparklineComponent, {
+          values: [1, 2, 3, 4], times, dayHours: hours, highlight: 'PRE_MARKET',
+          sessions: ['AFTER_HOURS', 'AFTER_HOURS', 'PRE_MARKET', 'PRE_MARKET']
+        });
+        const { path, dimmedPath } = fixture.componentInstance;
+        // The lead-in fills the first fifth (17.6px), tinted; pre-market comes in from its last price
+        // and runs by time from there, the rest of the day left empty.
+        expect(dimmedPath).toMatch(/^M0\.0,[\d.]+L8\.8,[\d.]+$/);
+        expect(path).toMatch(/^M8\.8,[\d.]+L17\.6,[\d.]+L24\.6,[\d.]+$/);
+      });
+
+      it('can tint the whole line', () => {
+        const fixture = render(SparklineComponent, { values: [1, 2], sessions: [null, 'REGULAR'], highlight: 'AFTER_HOURS' });
+        expect(fixture.componentInstance.path).toBe('');
+        expect(fixture.nativeElement.querySelector('svg')).not.toBeNull();
+      });
     });
   });
 
@@ -82,6 +140,14 @@ describe('dashboard display components', () => {
       const fixture = render(TickerStripComponent, { indices: [index(110, 100), index(null, null)] });
       expect(fixture.nativeElement.querySelectorAll('.item').length).toBe(2);
       expect(fixture.nativeElement.querySelectorAll('.placeholder').length).toBe(1);
+      expect(fixture.nativeElement.querySelector('.strip.closed')).toBeNull();
+    });
+
+    it('quietens the levels while the market is closed', () => {
+      const fixture = render(TickerStripComponent, { indices: [index(110, 100)], closed: true });
+      const strip = fixture.nativeElement.querySelector('.strip');
+      expect(strip.classList).toContain('closed');
+      expect(strip.getAttribute('aria-label')).toContain('last close');
     });
   });
 

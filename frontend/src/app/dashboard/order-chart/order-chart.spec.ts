@@ -105,6 +105,23 @@ describe('OrderChartComponent', () => {
     expect(values).toEqual([96.01, 95.99, 97, 95, 96.96, 95.04]);
   });
 
+  it('draws closes in other sessions than the one under way fainter, keeping the line whole', () => {
+    expect(component.segments().map(s => s.dimmed)).toEqual([false]);
+    fixture.componentRef.setInput('sessions', ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'AFTER_HOURS']);
+    fixture.componentRef.setInput('highlight', 'AFTER_HOURS');
+    fixture.detectChanges();
+    const segments = component.segments();
+    // Pre-market and regular hours to the third close, then after-hours, under way, to the last.
+    expect(segments.map(s => [s.dimmed, s.points.split(' ').length])).toEqual([[true, 3], [false, 2]]);
+    expect(segments[0].points.split(' ')[2]).toBe(segments[1].points.split(' ')[0]);
+    expect(fixture.nativeElement.querySelectorAll('.series-line.dimmed').length).toBe(1);
+
+    // Regular hours aren't at the end, so nothing is under way in them.
+    fixture.componentRef.setInput('highlight', 'REGULAR');
+    fixture.detectChanges();
+    expect(component.segments().map(s => [s.dimmed, s.points.split(' ').length])).toEqual([[true, 4]]);
+  });
+
   it('says so when there is no history to draw', () => {
     fixture.componentRef.setInput('points', []);
     fixture.detectChanges();

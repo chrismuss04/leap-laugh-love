@@ -1,6 +1,6 @@
 import {
   MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
-  sessionName, sessionShortLabel, sessionTone, timelinePosition, timelineSegments
+  highlightStart, highlightedSession, sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, tradedSession, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
 /** Wednesday 14 October 2026 (EDT, UTC-4): 4:00, 9:30, 16:00 and 20:00 ET. */
@@ -35,6 +35,67 @@ describe('market session helpers', () => {
     expect(canExecuteIn(null, 'MARKET', false)).toBe(true);
     expect(isExtendedSession('PRE_MARKET')).toBe(true);
     expect(isExtendedSession('CLOSED')).toBe(false);
+  });
+
+  it('carries a closed-market point on in the session before it, and picks the session to highlight', () => {
+    const sessions = ['REGULAR', 'AFTER_HOURS', 'CLOSED', 'CLOSED'] as const;
+    expect(tradedSession([...sessions], 3)).toBe('AFTER_HOURS');
+    expect(tradedSession([...sessions], 0)).toBe('REGULAR');
+    expect(tradedSession(['CLOSED'], 0)).toBe('REGULAR');
+    expect(highlightedSession('PRE_MARKET', [...sessions])).toBe('PRE_MARKET');
+    expect(highlightedSession('CLOSED', [...sessions])).toBe('AFTER_HOURS');
+    expect(highlightedSession(null, [...sessions])).toBe('AFTER_HOURS');
+    expect(highlightedSession(null, [])).toBe('REGULAR');
+    // Only the run at the end: yesterday's pre-market isn't today's.
+    expect(highlightStart(['PRE_MARKET', 'REGULAR', 'PRE_MARKET', 'PRE_MARKET'], 'PRE_MARKET')).toBe(2);
+    expect(highlightStart([...sessions], 'AFTER_HOURS')).toBe(1);
+    expect(highlightStart([...sessions], 'REGULAR')).toBe(4);
+  });
+
+  it('splits points into runs of the same session', () => {
+    expect(sessionRuns([])).toEqual([]);
+    expect(sessionRuns(['REGULAR', 'AFTER_HOURS', 'AFTER_HOURS', 'PRE_MARKET', undefined, null])).toEqual([
+      { session: 'REGULAR', from: 0, to: 0 },
+      { session: 'AFTER_HOURS', from: 1, to: 2 },
+      { session: 'PRE_MARKET', from: 3, to: 3 },
+      { session: 'REGULAR', from: 4, to: 5 }
+    ]);
+  });
+
+  describe('sessionAt', () => {
+    it('places other days on the usual hours, Eastern time', () => {
+      const s = status({});
+      // Tuesday 13 October 2026, EDT.
+      expect(sessionAt(at('2026-10-13T07:55:00Z'), s)).toBe('CLOSED');
+      expect(sessionAt(at('2026-10-13T08:00:00Z'), s)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T13:25:00Z'), s)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T13:30:00Z'), s)).toBe('REGULAR');
+      expect(sessionAt(at('2026-10-13T20:00:00Z'), s)).toBe('AFTER_HOURS');
+      expect(sessionAt(at('2026-10-14T00:00:00Z'), s)).toBe('CLOSED');
+      expect(sessionAt(at('2026-10-17T15:00:00Z'), s)).toBe('CLOSED');
+    });
+
+    it('uses today\'s own hours for today, so an early close is right', () => {
+      const early = status({ today: { ...DAY, earlyClose: true, regularClose: '2026-10-14T17:00:00Z',
+        afterHoursClose: '2026-10-14T21:00:00Z' } });
+      expect(sessionAt(at('2026-10-14T16:55:00Z'), early)).toBe('REGULAR');
+      expect(sessionAt(at('2026-10-14T17:00:00Z'), early)).toBe('AFTER_HOURS');
+      expect(sessionAt(at('2026-10-14T21:00:00Z'), early)).toBe('CLOSED');
+    });
+
+    it('counts a price from a closed time as the session pinned for a demo', () => {
+      const pinned = status({ session: 'PRE_MARKET', forced: true });
+      expect(sessionAt(at('2026-10-13T04:00:00Z'), pinned)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-15T03:00:00Z'), pinned)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T14:00:00Z'), pinned)).toBe('REGULAR');
+    });
+
+    it('is always regular hours when market hours are off, and unknown until the status loads', () => {
+      expect(sessionAt(at('2026-10-17T03:00:00Z'), status({ mode: 'ALWAYS_OPEN' }))).toBe('REGULAR');
+      expect(sessionsAt([at('2026-10-13T14:00:00Z'), at('2026-10-13T21:00:00Z')], status({})))
+        .toEqual(['REGULAR', 'AFTER_HOURS']);
+      expect(sessionsAt([at('2026-10-13T14:00:00Z')], null)).toBeNull();
+    });
   });
 
   it('labels and colours each session', () => {

@@ -1,4 +1,4 @@
-<app-ticker-strip [indices]="indices()"></app-ticker-strip>
+<app-ticker-strip [indices]="indices()" [closed]="marketClosed()"></app-ticker-strip>
 
 <div class="dashboard">
   <app-account-switcher *ngIf="multiAccount() || isAccountView()" class="scope"
@@ -31,6 +31,12 @@
           </ng-container>
           <span class="period">{{ headlineLabel() }}</span>
         </p>
+        <p *ngIf="afterHours() as after" class="change after-hours num fade-in" [ngClass]="'text-' + dir(after.change)"
+           data-testid="after-hours-change">
+          <span aria-hidden="true">{{ after.change > 0 ? '▲' : after.change < 0 ? '▼' : '' }}</span>
+          {{ signedMoney(after.change) }}<ng-container *ngIf="after.percent !== null"> ({{ signedPercent(after.percent) }})</ng-container>
+          <span class="period">After-hours</span>
+        </p>
       </ng-container>
       <ng-template #heroSkeleton>
         <span class="skeleton" style="display: block; width: 260px; height: 44px; margin: 6px 0 10px"></span>
@@ -44,10 +50,14 @@
           <button type="button" (click)="loadHistory()">Try again</button>
         </div>
         <app-line-chart *ngIf="chartPoints().length && !chartError()" class="fade-in" [class.stale]="chartLoading()"
-                        [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()"
+                        [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()" [domain]="chartDomain()" [highlight]="chartHighlight()"
                         [label]="'Portfolio value, ' + headlineLabel()"
                         (scrub)="scrubIndex.set($event)"></app-line-chart>
       </div>
+
+      <p *ngIf="sessionCaption() as caption" class="session-caption" data-testid="session-caption">
+        <span class="session-dot" aria-hidden="true"></span>{{ caption }}
+      </p>
 
       <div class="ranges" role="tablist" aria-label="Chart range" [attr.data-tone]="tone()">
         <button type="button" role="tab" *ngFor="let r of ranges" class="range"
@@ -80,17 +90,17 @@
     </section>
 
     <app-accounts-overview *ngIf="multiAccount() && !isAccountView()"
-                           [accounts]="accounts()" [loading]="accountsLoading()"></app-accounts-overview>
+                           [accounts]="accounts()" [loading]="accountsLoading()" [session]="marketSession()"></app-accounts-overview>
 
     <app-positions-list [holdings]="holdings()" [loading]="accountsLoading() && !accountError()"
-                        [selected]="selectedSymbol()" [openOrders]="openOrders()"
+                        [selected]="selectedSymbol()" [openOrders]="openOrders()" [session]="marketSession()" [dayHours]="dayHours()" [now]="minute()"
                         (select)="selectSymbol($event)"
                         (trade)="trade($event.symbol, $event.side)"></app-positions-list>
   </div>
 
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
-                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [priceHistory]="selectedHistory()"
+                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [priceHistory]="selectedHistory()" [priceSessions]="selectedSessions()"
                      [accounts]="tradeAccounts()"
                      [preferredAccountId]="accountId()"
                      (placed)="onOrderPlaced()"

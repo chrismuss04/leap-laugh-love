@@ -100,6 +100,18 @@ class MarketClockTest {
     }
 
     @Test
+    void reportsWhenAPinnedSessionBeganAndEnds() {
+        MovableClock time = new MovableClock(SATURDAY);
+        MarketClock pinned = new MarketClock(time, MarketClock.Mode.REAL, MarketSession.PRE_MARKET, Duration.ofMinutes(30));
+        time.advance(Duration.ofMinutes(10));
+
+        assertThat(pinned.pin()).isEqualTo(new MarketClock.Pin(MarketSession.PRE_MARKET, SATURDAY, SATURDAY.plusSeconds(1800)));
+        assertThat(new MarketClock(time, MarketClock.Mode.REAL, MarketSession.CLOSED, null).pin().until()).isNull();
+        assertThat(new MarketClock(time, MarketClock.Mode.REAL, null, null).pin()).isNull();
+        assertThat(new MarketClock(time, MarketClock.Mode.ALWAYS_OPEN, MarketSession.PRE_MARKET, null).pin()).isNull();
+    }
+
+    @Test
     void rejectsUnknownSettings() {
         assertThatThrownBy(() -> new MarketClock("SOMETIMES", "", 0)).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new MarketClock("REAL", "LUNCH", 0)).isInstanceOf(IllegalArgumentException.class);

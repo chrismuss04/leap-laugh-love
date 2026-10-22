@@ -33,7 +33,8 @@
           </span>
         </span>
 
-        <app-sparkline class="spark" [values]="h.intraday" [baseline]="h.previousClose"></app-sparkline>
+        <app-sparkline class="spark" [values]="h.intraday" [sessions]="h.intradaySessions ?? null" [highlight]="session"
+                       [times]="h.intradayTimes ?? null" [dayHours]="dayHours" [now]="now" [baseline]="h.previousClose"></app-sparkline>
 
         <span class="price-col">
           <span class="price num" [appRollingNumber]="h.price"></span>

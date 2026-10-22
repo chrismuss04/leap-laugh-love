@@ -44,8 +44,18 @@ public class MarketClock {
     public record Status(Instant now, MarketSession session, MarketCalendar.Transition next,
                          Instant nextRegularOpen, MarketCalendar.TradingDay today, Mode mode, boolean forced) {}
 
+    /**
+     * A session pinned for a demo.
+     * @param session the pinned session
+     * @param since when it was pinned: this clock's startup
+     * @param until when it ends and the regular session opens, or null if it never does
+     */
+    public record Pin(MarketSession session, Instant since, Instant until) {}
+
     private final Clock clock;
     private final Mode mode;
+    /** When this clock started, which is when a pinned session began. */
+    private final Instant startedAt;
     private final MarketSession forcedSession;
     /** When a forced session ends and the regular session opens; null if it never does. */
     private final Instant forcedUntil;
@@ -72,6 +82,7 @@ public class MarketClock {
      */
     public MarketClock(Clock clock, Mode mode, MarketSession forcedSession, Duration forceFor) {
         this.clock = clock;
+        this.startedAt = clock.instant();
         this.mode = mode != null ? mode : Mode.REAL;
         this.forcedSession = this.mode == Mode.ALWAYS_OPEN ? null : forcedSession;
         boolean expires = this.forcedSession != null && forceFor != null && !forceFor.isZero() && !forceFor.isNegative();
@@ -173,6 +184,14 @@ public class MarketClock {
      */
     public Mode mode() {
         return mode;
+    }
+
+    /**
+     * Returns the session pinned for a demo, if there is one.
+     * @return the pin, or null when the session follows the calendar (or market hours are off)
+     */
+    public Pin pin() {
+        return forcedSession != null ? new Pin(forcedSession, startedAt, forcedUntil) : null;
     }
 
     private static Mode parseMode(String value) {

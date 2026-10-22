@@ -79,6 +79,10 @@ const TIME = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, hour: 'numeri
 const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short' });
 const LONG_DATE = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short', month: 'short', day: 'numeric' });
 const DATE_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: EASTERN, year: 'numeric', month: '2-digit', day: '2-digit' });
+const CLOCK = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** The usual session boundaries, in minutes after midnight Eastern: 4:00, 9:30, 16:00 and 20:00. */
+const USUAL_DAY = { preMarketOpen: 4 * 60, regularOpen: 9 * 60 + 30, regularClose: 16 * 60, afterHoursClose: 20 * 60 };
 
 /**
  * Whether an order on these terms executes in a session, as order-app decides (SessionPolicy):
@@ -92,6 +96,121 @@ export function canExecuteIn(session: MarketSession | null, orderType: string, e
     case 'AFTER_HOURS': return orderType === 'LIMIT' && extendedHours;
     default: return false;
   }
+}
+
+/** A stretch of consecutive chart points in the same session, by index (both ends included). */
+export interface SessionRun {
+  session: MarketSession;
+  from: number;
+  to: number;
+}
+
+/**
+ * Splits a series of points' sessions into runs of the same session, oldest first, so a chart can
+ * draw each stretch in its own style. A point without a session counts as regular hours.
+ */
+export function sessionRuns(sessions: (MarketSession | null | undefined)[]): SessionRun[] {
+  const runs: SessionRun[] = [];
+  sessions.forEach((value, index) => {
+    const session = value ?? 'REGULAR';
+    const last = runs.at(-1);
+    if (last && last.session === session) {
+      last.to = index;
+    } else {
+      runs.push({ session, from: index, to: index });
+    }
+  });
+  return runs;
+}
+
+/**
+ * The session a moment fell in, for price history that comes without one (market data candles).
+ * Today's own hours are used for today, so an early close is right; other days take the usual
+ * hours, which only an early close on another day gets wrong. Always regular hours when market
+ * hours are off. A price from a time the calendar says is closed counts as the pinned demo session.
+ */
+export function sessionAt(timeMs: number, status: MarketStatus): MarketSession {
+  if (status.mode === 'ALWAYS_OPEN') {
+    return 'REGULAR';
+  }
+  const day = status.today;
+  if (hasFullSchedule(day) && DATE_KEY.format(new Date(timeMs)) === day.date) {
+    const session = sessionBetween(timeMs, Date.parse(day.preMarketOpen), Date.parse(day.regularOpen),
+      Date.parse(day.regularClose), Date.parse(day.afterHoursClose));
+    return session === 'CLOSED' ? closedOrPinned(status) : session;
+  }
+  const parts = Object.fromEntries(CLOCK.formatToParts(new Date(timeMs)).map(part => [part.type, part.value]));
+  const minutes = Number(parts['hour']) * 60 + Number(parts['minute']);
+  const session = parts['weekday'] === 'Sat' || parts['weekday'] === 'Sun'
+    ? 'CLOSED'
+    : sessionBetween(minutes, USUAL_DAY.preMarketOpen, USUAL_DAY.regularOpen, USUAL_DAY.regularClose,
+      USUAL_DAY.afterHoursClose);
+  return session === 'CLOSED' ? closedOrPinned(status) : session;
+}
+
+/**
+ * Prices are only made while the market trades, so one from a time the calendar says is closed was
+ * made in a session pinned for a demo: count it as that session.
+ */
+function closedOrPinned(status: MarketStatus): MarketSession {
+  return status.forced ? status.session : 'CLOSED';
+}
+
+/** The session of each moment, or null until the market status is known. */
+export function sessionsAt(times: number[], status: MarketStatus | null): MarketSession[] | null {
+  return status ? times.map(time => sessionAt(time, status)) : null;
+}
+
+function sessionBetween(at: number, preMarketOpen: number, regularOpen: number, regularClose: number,
+                        afterHoursClose: number): MarketSession {
+  if (at < preMarketOpen || at >= afterHoursClose) {
+    return 'CLOSED';
+  }
+  if (at < regularOpen) {
+    return 'PRE_MARKET';
+  }
+  return at < regularClose ? 'REGULAR' : 'AFTER_HOURS';
+}
+
+/**
+ * The session a point traded in, for styling the stretch it closes. A point in the closed market -
+ * the live value while the market is shut - counts as the session before it, so it carries on the
+ * stretch it follows. A point without a session counts as regular hours.
+ */
+export function tradedSession(sessions: (MarketSession | null | undefined)[], index: number): MarketSession {
+  for (let i = index; i >= 0; i--) {
+    const session = sessions[i] ?? 'REGULAR';
+    if (session !== 'CLOSED') {
+      return session;
+    }
+  }
+  return 'REGULAR';
+}
+
+/**
+ * The session a chart draws at full strength, the others tinted: the one under way, or while the
+ * market is closed (or before its status is known), the last one the series traded in.
+ */
+export function highlightedSession(current: MarketSession | null,
+                                   sessions: (MarketSession | null | undefined)[]): MarketSession {
+  if (current && current !== 'CLOSED') {
+    return current;
+  }
+  return sessions.length ? tradedSession(sessions, sessions.length - 1) : 'REGULAR';
+}
+
+/**
+ * Where the highlighted session's stretch at the end of a series begins: the first point of the
+ * trailing run in that session. Earlier stretches in the same session - yesterday's pre-market on a
+ * sparkline, or a finished day's while a new pre-market is pinned for a demo - aren't the session
+ * under way, so they stay tinted. The series' length when it doesn't end in that session.
+ */
+export function highlightStart(sessions: (MarketSession | null | undefined)[], highlight: MarketSession): number {
+  let start = sessions.length;
+  while (start > 0 && tradedSession(sessions, start - 1) === highlight) {
+    start--;
+  }
+  return start;
 }
 
 /** Whether a session is pre-market or after-hours. */

@@ -101,6 +101,31 @@
   font-weight: 400;
 }
 
+/* The move since the regular close: a quieter second line under today's change. */
+.change.after-hours {
+  font-size: 14px;
+  margin-top: 2px;
+}
+
+/* Outside regular hours: what the market is doing, under the chart's gray stretches. */
+.session-caption {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 12px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.8;
+}
+
 .chart-area {
   position: relative;
   height: 280px;

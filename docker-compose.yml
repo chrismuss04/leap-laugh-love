@@ -43,6 +43,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
+      # Market hours: with ALWAYS_OPEN, portfolio charts keep the night and weekend hours that
+      # REAL leaves out, and a pinned pre-market is charted as a new day. Keep these the same as
+      # order-app and market-data-app.
+      MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
+      MARKET_HOURS_FORCE_SESSION: "${MARKET_HOURS_FORCE_SESSION:-}"
+      MARKET_HOURS_FORCE_MINUTES: "${MARKET_HOURS_FORCE_MINUTES:-0}"
       # Inactive account emails go to the local mail catcher below, never to a real inbox.
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: 1025
@@ -81,7 +87,7 @@ services:
       # Market hours (see "Market hours" in the README): REAL follows the NYSE clock; ALWAYS_OPEN
       # trades around the clock. MARKET_HOURS_FORCE_SESSION pins a session (PRE_MARKET, REGULAR,
       # AFTER_HOURS or CLOSED) for a demo, for MARKET_HOURS_FORCE_MINUTES (0 = for good) before
-      # the market opens. Set the same values for order-app and market-data-app.
+      # the market opens. Set the same values for order-app, market-data-app and account-app.
       MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
       MARKET_HOURS_FORCE_SESSION: "${MARKET_HOURS_FORCE_SESSION:-}"
       MARKET_HOURS_FORCE_MINUTES: "${MARKET_HOURS_FORCE_MINUTES:-0}"
@@ -111,7 +117,7 @@ services:
       # Market hours (see "Market hours" in the README): REAL follows the NYSE clock; ALWAYS_OPEN
       # trades around the clock. MARKET_HOURS_FORCE_SESSION pins a session (PRE_MARKET, REGULAR,
       # AFTER_HOURS or CLOSED) for a demo, for MARKET_HOURS_FORCE_MINUTES (0 = for good) before
-      # the market opens. Set the same values for order-app and market-data-app.
+      # the market opens. Set the same values for order-app, market-data-app and account-app.
       MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
       MARKET_HOURS_FORCE_SESSION: "${MARKET_HOURS_FORCE_SESSION:-}"
       MARKET_HOURS_FORCE_MINUTES: "${MARKET_HOURS_FORCE_MINUTES:-0}"

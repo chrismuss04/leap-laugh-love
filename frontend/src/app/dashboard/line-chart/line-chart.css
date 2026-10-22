@@ -34,16 +34,43 @@ svg {
 
 .line {
   fill: none;
-  stroke: var(--tone);
   stroke-width: 2;
   stroke-linejoin: round;
   stroke-linecap: round;
-  transition: stroke 0.3s ease;
+}
+
+/*
+ * The line's colour runs through a gradient across the width: full strength in the session under
+ * way, a softer tint of the same colour in earlier ones, and a brief brighter glint where the line
+ * comes into the current session.
+ */
+.stroke-stop {
+  stop-color: var(--tone);
+  stop-opacity: 1;
+  transition: stop-color 0.3s ease, stop-opacity 0.3s ease;
+}
+
+.stroke-stop[data-kind='dim'] {
+  stop-opacity: 0.5;
+}
+
+.stroke-stop[data-kind='glint'] {
+  stop-color: color-mix(in srgb, var(--tone) 55%, #fff);
+}
+
+/* The fill under the line fades back in earlier sessions too. */
+.fade-stop {
+  stop-color: #fff;
+  stop-opacity: 1;
+}
+
+.fade-stop[data-kind='dim'] {
+  stop-opacity: 0.3;
 }
 
 .fill-stop-top {
   stop-color: var(--tone);
-  stop-opacity: 0.16;
+  stop-opacity: 0.13;
 }
 
 .fill-stop-bottom {
@@ -68,17 +95,39 @@ svg {
   fill: var(--tone);
   stroke: var(--background);
   stroke-width: 2;
+  transition: fill 0.3s ease;
 }
 
-.dot.live {
-  animation: pulse 2s ease-in-out infinite;
+/* In an earlier session the dot takes the line's softer tint, kept solid so it reads as a point. */
+.dot.dimmed,
+.live.dimmed .dot {
+  fill: color-mix(in srgb, var(--tone) 55%, var(--background));
 }
 
-@keyframes pulse {
-  0%, 100% { stroke-width: 2; }
-  50% { stroke-width: 6; stroke: color-mix(in srgb, var(--tone) 30%, transparent); }
+/* A soft glow that breathes around the live value. */
+.halo {
+  fill: var(--tone);
+  opacity: 0.18;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.live.dimmed .halo {
+  opacity: 0.1;
+}
+
+/* Nothing trades while the market is closed, so the live dot holds still, without its glow. */
+.live.closed .halo {
+  animation: none;
+  opacity: 0;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(0.55); }
+  50% { transform: scale(1); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .dot.live { animation: none; }
+  .halo { animation: none; transform: none; }
 }

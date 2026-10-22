@@ -5,6 +5,8 @@ import { HoldingView } from '../models';
 import { OpenOrder } from '../../services/order';
 import { openOrderTitle, waitingPrice } from '../../shared/order-types';
 import { SparklineComponent } from '../sparkline/sparkline';
+import { MarketSession } from '../../shared/market-session';
+import { TradingHours } from '../../shared/chart-layout';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../../shared/format';
 
@@ -21,6 +23,12 @@ export class PositionsListComponent {
   @Input() selected: string | null = null;
   /** Open orders in scope, shown as a pill on their symbol's row. */
   @Input() openOrders: OpenOrder[] = [];
+  /** The session under way, which the sparklines draw at full strength. */
+  @Input() session: MarketSession | null = null;
+  /** The hours of the trading day under way, so the sparklines frame the day as the 1D chart does. */
+  @Input() dayHours: TradingHours | null = null;
+  /** Now, to the minute, as the day's frame slides through regular hours. */
+  @Input() now: number | null = null;
   @Output() select = new EventEmitter<string>();
   @Output() trade = new EventEmitter<{ symbol: string; side: 'BUY' | 'SELL' }>();
 
