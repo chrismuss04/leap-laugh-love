@@ -121,6 +121,59 @@ describe('LineChartComponent', () => {
     expect(scrubs).toEqual([3, null]);
   });
 
+  describe('sessions', () => {
+    /** Five points, 75px apart: the first two in pre-market, then regular hours, then after-hours. */
+    const day: ChartPoint[] = [
+      { time: 1, value: 10, session: 'REGULAR' }, { time: 2, value: 12, session: 'PRE_MARKET' },
+      { time: 3, value: 11, session: 'PRE_MARKET' }, { time: 4, value: 20, session: 'REGULAR' },
+      { time: 5, value: 22, session: 'AFTER_HOURS' }
+    ];
+    const element = () => fixture.nativeElement as HTMLElement;
+
+    it('draws regular hours alone when no point is outside them', () => {
+      init();
+      expect(chart.bands).toEqual([]);
+      expect(chart.regularSpans).toEqual([{ x: 0, width: 300 }]);
+      expect(element().querySelector('.line.outside')).toBeNull();
+      expect(element().querySelector('.band')).toBeNull();
+    });
+
+    it('bands each stretch outside regular hours, from the point before it', () => {
+      init({ points: day });
+      // Points 1-2 close 0-150px; point 4 closes 225-300px.
+      expect(chart.bands).toEqual([
+        { x: 0, width: 150, label: 'Pre-market' },
+        { x: 225, width: 75, label: null }
+      ]);
+      expect(chart.regularSpans).toEqual([{ x: 150, width: 75 }]);
+      expect(element().querySelectorAll('.band').length).toBe(2);
+      expect(element().querySelector('.band-label')!.textContent!.trim()).toBe('Pre-market');
+      expect(element().querySelector('.line.outside')!.getAttribute('clip-path')).toBe(`url(#${chart.uid}-outside)`);
+      expect(element().querySelector('.area')!.getAttribute('clip-path')).toBe(`url(#${chart.uid}-regular)`);
+      expect(chart['host'].nativeElement.querySelector('.chart')!.getAttribute('aria-label')).toContain('shown in gray');
+    });
+
+    it('makes room above the line for band labels', () => {
+      init({ points: day });
+      expect(chart.y(22)).toBe(26);
+    });
+
+    it('greys the dot outside regular hours, and stills it while the market is closed', () => {
+      init({ points: day });
+      expect(element().querySelector('.dot.live')!.classList).toContain('outside');
+      key('ArrowLeft');
+      fixture.detectChanges();
+      expect(element().querySelector('.dot')!.classList).not.toContain('outside');
+
+      init({ points: [...day.slice(0, 4), { time: 5, value: 22, session: 'CLOSED' }] });
+      key('Escape');
+      fixture.detectChanges();
+      const dot = element().querySelector('.dot.live')!;
+      expect(dot.classList).toContain('closed');
+      expect(chart.bands.at(-1)!.label).toBeNull();
+    });
+  });
+
   it('rebuilds when its host is resized, and stops observing on destroy', async () => {
     const host = fixture.nativeElement as HTMLElement;
     host.style.cssText = 'display:block;width:240px;height:100px';

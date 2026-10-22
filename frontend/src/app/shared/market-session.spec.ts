@@ -1,6 +1,6 @@
 import {
   MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
-  sessionName, sessionShortLabel, sessionTone, timelinePosition, timelineSegments
+  sessionName, sessionRuns, sessionShortLabel, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
 /** Wednesday 14 October 2026 (EDT, UTC-4): 4:00, 9:30, 16:00 and 20:00 ET. */
@@ -35,6 +35,16 @@ describe('market session helpers', () => {
     expect(canExecuteIn(null, 'MARKET', false)).toBe(true);
     expect(isExtendedSession('PRE_MARKET')).toBe(true);
     expect(isExtendedSession('CLOSED')).toBe(false);
+  });
+
+  it('splits points into runs of the same session', () => {
+    expect(sessionRuns([])).toEqual([]);
+    expect(sessionRuns(['REGULAR', 'AFTER_HOURS', 'AFTER_HOURS', 'PRE_MARKET', undefined, null])).toEqual([
+      { session: 'REGULAR', from: 0, to: 0 },
+      { session: 'AFTER_HOURS', from: 1, to: 2 },
+      { session: 'PRE_MARKET', from: 3, to: 3 },
+      { session: 'REGULAR', from: 4, to: 5 }
+    ]);
   });
 
   it('labels and colours each session', () => {

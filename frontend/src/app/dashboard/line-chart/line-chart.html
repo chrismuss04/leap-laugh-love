@@ -1,5 +1,5 @@
 <div class="chart" [attr.data-tone]="tone"
-     tabindex="0" role="img" [attr.aria-label]="label + '. Use the left and right arrow keys to explore values.'"
+     tabindex="0" role="img" [attr.aria-label]="label + (bands.length ? '. Trading outside regular hours is shown in gray' : '') + '. Use the left and right arrow keys to explore values.'"
      (pointermove)="onPointer($event)" (pointerdown)="onPointer($event)"
      (pointerleave)="clear()" (keydown)="onKey($event)" (blur)="clear()">
   <svg *ngIf="linePath" [attr.width]="width()" [attr.height]="height" aria-hidden="true">
@@ -8,20 +8,35 @@
         <stop offset="0%" class="fill-stop-top" />
         <stop offset="100%" class="fill-stop-bottom" />
       </linearGradient>
+      <!-- The line is drawn twice, each clipped to its own stretches, so the colours meet cleanly. -->
+      <clipPath [attr.id]="uid + '-regular'">
+        <rect *ngFor="let span of regularSpans" [attr.x]="span.x" y="-8" [attr.width]="span.width" [attr.height]="height + 16" />
+      </clipPath>
+      <clipPath *ngIf="bands.length" [attr.id]="uid + '-outside'">
+        <rect *ngFor="let band of bands" [attr.x]="band.x" y="-8" [attr.width]="band.width" [attr.height]="height + 16" />
+      </clipPath>
     </defs>
+
+    <g *ngFor="let band of bands" class="session">
+      <rect class="band" [attr.x]="band.x" y="0" [attr.width]="band.width" [attr.height]="height" rx="6" />
+      <text *ngIf="band.label" class="band-label" [attr.x]="band.x + 10" y="16">{{ band.label }}</text>
+    </g>
 
     <line *ngIf="baselineY !== null" class="baseline"
           x1="0" [attr.x2]="width()" [attr.y1]="baselineY" [attr.y2]="baselineY" />
 
-    <path class="area" [attr.d]="areaPath" fill="url(#chart-fill)" />
-    <path class="line" [attr.d]="linePath" />
+    <path class="area" [attr.d]="areaPath" fill="url(#chart-fill)" [attr.clip-path]="'url(#' + uid + '-regular)'" />
+    <path class="line" [attr.d]="linePath" [attr.clip-path]="'url(#' + uid + '-regular)'" />
+    <path *ngIf="bands.length" class="line outside" [attr.d]="linePath" [attr.clip-path]="'url(#' + uid + '-outside)'" />
 
     <ng-container *ngIf="active() !== null; else liveDot">
       <line class="crosshair" [attr.x1]="x(active()!)" [attr.x2]="x(active()!)" y1="0" [attr.y2]="height" />
-      <circle class="dot" [attr.cx]="x(active()!)" [attr.cy]="y(points[active()!].value)" r="5" />
+      <circle class="dot" [class.outside]="outsideRegular(active()!)"
+              [attr.cx]="x(active()!)" [attr.cy]="y(points[active()!].value)" r="5" />
     </ng-container>
     <ng-template #liveDot>
-      <circle class="dot live" [attr.cx]="x(points.length - 1)" [attr.cy]="y(points[points.length - 1].value)" r="4" />
+      <circle class="dot live" [class.outside]="outsideRegular(points.length - 1)" [class.closed]="closedNow"
+              [attr.cx]="x(points.length - 1)" [attr.cy]="y(points[points.length - 1].value)" r="4" />
     </ng-template>
   </svg>
 </div>

@@ -21,6 +21,8 @@ import { InactiveNoticeComponent } from './inactive-notice/inactive-notice';
 import { AccountDetailsComponent } from './account-details/account-details';
 import { OpenOrdersComponent } from './open-orders/open-orders';
 import { MarketDataService } from '../services/market-data';
+import { MarketStatusService } from '../services/market-status';
+import { sessionLabel } from '../shared/market-session';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../shared/format';
 import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
@@ -61,6 +63,7 @@ export class DashboardComponent implements OnInit {
   private readonly orderStream = inject(OrderStreamService);
   private readonly portfolioService = inject(PortfolioService);
   private readonly stream = inject(PriceStreamService);
+  private readonly market = inject(MarketStatusService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
 
@@ -199,16 +202,26 @@ export class DashboardComponent implements OnInit {
 
   /**
    * History points for the scope - all accounts, or the one account - with the final "now" point
-   * kept current from the live value.
+   * kept current from the live value. Today's chart carries each point's session, so pre-market and
+   * after-hours draw gray; the live point takes the session from the market clock, so the line turns
+   * gray at the close without waiting for a reload. Longer ranges are drawn all alike.
    */
   readonly chartPoints = computed<(ChartPoint & { contributions: number })[]>(() => {
     const history = this.history();
-    const points = history
-      ? history.points.map(p => ({ time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions }))
+    const withSessions = history?.range === '1D';
+    const points: (ChartPoint & { contributions: number })[] = history
+      ? history.points.map(p => ({
+          time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions,
+          ...(withSessions ? { session: p.session } : {})
+        }))
       : [];
-    const live = this.portfolioValue();
-    if (live !== null && points.length) {
-      points[points.length - 1] = { ...points[points.length - 1], time: Date.now(), value: live };
+    const last = points.at(-1);
+    if (last) {
+      const live = this.portfolioValue();
+      const session = withSessions ? this.market.session() ?? last.session : undefined;
+      points[points.length - 1] = {
+        ...last, ...(live !== null ? { time: Date.now(), value: live } : {}), ...(session ? { session } : {})
+      };
     }
     return points;
   });
@@ -285,9 +298,11 @@ export class DashboardComponent implements OnInit {
     if (index !== null && points[index]) {
       const date = new Date(points[index].time);
       const withTime = (this.history()?.intervalSeconds ?? 86400) < 86400;
-      return date.toLocaleString('en-US', withTime
+      const when = date.toLocaleString('en-US', withTime
         ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
         : { month: 'short', day: 'numeric', year: 'numeric' });
+      const session = points[index].session;
+      return session && session !== 'REGULAR' ? `${when} · ${sessionLabel(session)}` : when;
     }
     return this.ranges.find(r => r.range === this.activeRange())?.label ?? '';
   });

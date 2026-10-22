@@ -9,6 +9,8 @@ import { OpenOrder, OrderHistoryPage, OrderService, OrderUpdate } from '../servi
 import { OrderStreamService } from '../services/order-stream';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
+import { MarketStatusService } from '../services/market-status';
+import { MarketSession } from '../shared/market-session';
 import { DashboardComponent } from './dashboard';
 import type { Mock, MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
@@ -55,6 +57,7 @@ describe('DashboardComponent', () => {
     watch: Mock;
   };
   let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
+  let marketSession: ReturnType<typeof signal<MarketSession | null>>;
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -77,6 +80,7 @@ describe('DashboardComponent', () => {
       watch: vi.fn().mockName('watch')
     };
     orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
+    marketSession = signal<MarketSession | null>(null);
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of(summaries));
@@ -102,7 +106,8 @@ describe('DashboardComponent', () => {
         { provide: OrderService, useValue: orderApi },
         { provide: PortfolioService, useValue: portfolioApi },
         { provide: PriceStreamService, useValue: stream },
-        { provide: OrderStreamService, useValue: orderStream }
+        { provide: OrderStreamService, useValue: orderStream },
+        { provide: MarketStatusService, useValue: { session: marketSession } }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -196,6 +201,35 @@ describe('DashboardComponent', () => {
       expect(dashboard.headlineLabel()).toMatch(/\d/);
       dashboard.scrubIndex.set(99);
       expect(dashboard.headlineValue()).toBe(3750);
+    });
+
+    it('marks today outside regular hours, with the live point in the session now', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history,
+        points: [{ ...history.points[0], session: 'PRE_MARKET' }, history.points[1]]
+      }));
+      dashboard.loadHistory();
+      expect(dashboard.chartPoints().map(p => p.session)).toEqual(['PRE_MARKET', 'REGULAR']);
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).toMatch(/:\d{2}\s*[AP]M · Pre-market$/);
+
+      // The close passes: the live point turns after-hours without a reload.
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartPoints()[1].session).toBe('AFTER_HOURS');
+      dashboard.scrubIndex.set(1);
+      expect(dashboard.headlineLabel()).toMatch(/:\d{2}\s*[AP]M · After-hours$/);
+    });
+
+    it('draws longer ranges without sessions', () => {
+      marketSession.set('AFTER_HOURS');
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history, range: '1W',
+        points: [{ ...history.points[0], session: 'PRE_MARKET' }, history.points[1]]
+      }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartPoints().map(p => p.session)).toEqual([undefined, undefined]);
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).not.toContain('Pre-market');
     });
 
     it('labels a daily-resolution scrub with the year', () => {

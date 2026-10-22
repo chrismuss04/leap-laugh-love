@@ -2,10 +2,27 @@ import {
   AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, computed, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MarketSession, sessionLabel, sessionRuns } from '../../shared/market-session';
 
 export interface ChartPoint {
   time: number;
   value: number;
+  /**
+   * The session of the stretch the point closes (from the point before up to it). Outside
+   * regular hours that stretch is drawn gray on a faint band. Leave it out to draw it all alike.
+   */
+  session?: MarketSession;
+}
+
+/** A horizontal stretch of the chart, in pixels. */
+export interface ChartSpan {
+  x: number;
+  width: number;
+}
+
+/** A stretch outside regular hours, drawn on a faint band; labelled when there's room. */
+export interface SessionBand extends ChartSpan {
+  label: string | null;
 }
 
 /** The drawn line, worked out from the points, the baseline and the chart's size. */
@@ -15,11 +32,24 @@ interface ChartShape {
   baselineY: number | null;
   min: number;
   max: number;
+  /** Room above the line: more when band labels sit there. */
+  top: number;
+  bands: SessionBand[];
+  /** Where the line is in regular hours: the rest of the width, between the bands. */
+  regular: ChartSpan[];
 }
+
+/** A band narrower than this, in pixels, goes unlabelled. */
+const MIN_LABELLED_BAND = 76;
+/** Room above the line for band labels. */
+const LABEL_ROOM = 26;
+
+let nextChartId = 0;
 
 /**
  * Robinhood-style value chart: one line, no axes or gridlines, a dotted baseline at the range's
- * starting value, and scrubbing. Pointer (mouse, pen, touch) or arrow keys pick a point, and the
+ * starting value, and scrubbing. Pre-market and after-hours stretches are drawn gray on a faint
+ * band, so the regular session's colour stands out and the chart reads as quiet when the market is. Pointer (mouse, pen, touch) or arrow keys pick a point, and the
  * parent shows that point's value in its headline via `scrub`. Drawn as SVG sized in real pixels
  * (via ResizeObserver) so the line keeps a crisp, even stroke at any width.
  */
@@ -39,6 +69,8 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   readonly width = signal(0);
   readonly active = signal<number | null>(null);
+  /** Unique per chart, for its clip paths. */
+  readonly uid = `line-chart-${nextChartId++}`;
 
   private readonly padding = 12;
   private observer?: ResizeObserver;
@@ -55,6 +87,8 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   get linePath(): string { return this.shape().linePath; }
   get areaPath(): string { return this.shape().areaPath; }
   get baselineY(): number | null { return this.shape().baselineY; }
+  get bands(): SessionBand[] { return this.shape().bands; }
+  get regularSpans(): ChartSpan[] { return this.shape().regular; }
 
   constructor(private host: ElementRef<HTMLElement>, private zone: NgZone) {}
 
@@ -91,6 +125,17 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   y(value: number): number {
     return this.scale(value, this.shape());
+  }
+
+  /** Whether a point closes a stretch outside regular hours, drawn gray. */
+  outsideRegular(index: number): boolean {
+    const session = this.points[index]?.session;
+    return session != null && session !== 'REGULAR';
+  }
+
+  /** Whether the market is closed at the live point, so the dot stops pulsing. */
+  get closedNow(): boolean {
+    return this.points.at(-1)?.session === 'CLOSED';
   }
 
   onPointer(event: PointerEvent): void {
@@ -136,23 +181,28 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
   }
 
-  private scale(value: number, { min, max }: Pick<ChartShape, 'min' | 'max'>): number {
+  private scale(value: number, { min, max, top }: Pick<ChartShape, 'min' | 'max' | 'top'>): number {
     const span = max - min || 1;
-    return this.padding + ((max - value) / span) * (this.height - this.padding * 2);
+    return top + ((max - value) / span) * (this.height - top - this.padding);
   }
 
   private build(points: ChartPoint[], baseline: number | null): ChartShape {
     const width = this.width();
     if (points.length === 0 || width === 0) {
-      return { linePath: '', areaPath: '', baselineY: null, min: 0, max: 0 };
+      return { linePath: '', areaPath: '', baselineY: null, min: 0, max: 0, top: this.padding, bands: [], regular: [] };
     }
     const values = points.map(point => point.value);
     if (baseline != null) {
       values.push(baseline);
     }
-    const range = { min: Math.min(...values), max: Math.max(...values) };
-    const y = (value: number) => this.scale(value, range);
     const x = (index: number) => points.length <= 1 ? width : (index / (points.length - 1)) * width;
+    const bands = points.length > 1 ? this.sessionBands(points, x) : [];
+    const range = {
+      min: Math.min(...values),
+      max: Math.max(...values),
+      top: bands.some(band => band.label) ? LABEL_ROOM : this.padding
+    };
+    const y = (value: number) => this.scale(value, range);
 
     const coords = points.length === 1
       ? [[0, y(points[0].value)], [width, y(points[0].value)]]
@@ -162,7 +212,41 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
       linePath,
       areaPath: `${linePath}L${width},${this.height}L0,${this.height}Z`,
       baselineY: baseline != null ? y(baseline) : null,
-      ...range
+      ...range,
+      bands,
+      regular: this.between(bands, width)
     };
+  }
+
+  /**
+   * The stretches outside regular hours. A point closes the stretch from the point before it, so
+   * a run of such points covers from the point before the run to its last point.
+   */
+  private sessionBands(points: ChartPoint[], x: (index: number) => number): SessionBand[] {
+    return sessionRuns(points.map(point => point.session))
+      .filter(run => run.session !== 'REGULAR')
+      .map(run => {
+        const start = x(Math.max(0, run.from - 1));
+        const width = x(run.to) - start;
+        const label = run.session === 'CLOSED' || width < MIN_LABELLED_BAND ? null : sessionLabel(run.session);
+        return { x: start, width, label };
+      })
+      .filter(band => band.width > 0);
+  }
+
+  /** The spans of the width that no band covers. */
+  private between(bands: ChartSpan[], width: number): ChartSpan[] {
+    const spans: ChartSpan[] = [];
+    let from = 0;
+    for (const band of bands) {
+      if (band.x > from) {
+        spans.push({ x: from, width: band.x - from });
+      }
+      from = band.x + band.width;
+    }
+    if (from < width) {
+      spans.push({ x: from, width: width - from });
+    }
+    return spans;
   }
 }

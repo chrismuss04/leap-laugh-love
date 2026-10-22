@@ -94,6 +94,31 @@ export function canExecuteIn(session: MarketSession | null, orderType: string, e
   }
 }
 
+/** A stretch of consecutive chart points in the same session, by index (both ends included). */
+export interface SessionRun {
+  session: MarketSession;
+  from: number;
+  to: number;
+}
+
+/**
+ * Splits a series of points' sessions into runs of the same session, oldest first, so a chart can
+ * draw each stretch in its own style. A point without a session counts as regular hours.
+ */
+export function sessionRuns(sessions: (MarketSession | null | undefined)[]): SessionRun[] {
+  const runs: SessionRun[] = [];
+  sessions.forEach((value, index) => {
+    const session = value ?? 'REGULAR';
+    const last = runs.at(-1);
+    if (last && last.session === session) {
+      last.to = index;
+    } else {
+      runs.push({ session, from: index, to: index });
+    }
+  });
+  return runs;
+}
+
 /** Whether a session is pre-market or after-hours. */
 export function isExtendedSession(session: MarketSession | null): boolean {
   return session === 'PRE_MARKET' || session === 'AFTER_HOURS';
