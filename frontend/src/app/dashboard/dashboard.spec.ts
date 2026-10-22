@@ -58,6 +58,7 @@ describe('DashboardComponent', () => {
   };
   let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
   let marketSession: ReturnType<typeof signal<MarketSession | null>>;
+  let nextChange: ReturnType<typeof signal<string | null>>;
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -81,6 +82,7 @@ describe('DashboardComponent', () => {
     };
     orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
     marketSession = signal<MarketSession | null>(null);
+    nextChange = signal<string | null>(null);
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of(summaries));
@@ -107,7 +109,7 @@ describe('DashboardComponent', () => {
         { provide: PortfolioService, useValue: portfolioApi },
         { provide: PriceStreamService, useValue: stream },
         { provide: OrderStreamService, useValue: orderStream },
-        { provide: MarketStatusService, useValue: { session: marketSession } }
+        { provide: MarketStatusService, useValue: { session: marketSession, nextChange } }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -218,6 +220,85 @@ describe('DashboardComponent', () => {
       expect(dashboard.chartPoints()[1].session).toBe('AFTER_HOURS');
       dashboard.scrubIndex.set(1);
       expect(dashboard.headlineLabel()).toMatch(/:\d{2}\s*[AP]M · After-hours$/);
+    });
+
+    it('says under today\'s chart what the market is doing outside regular hours', () => {
+      expect(dashboard.sessionCaption()).toBeNull();
+      marketSession.set('REGULAR');
+      nextChange.set('Closes in 2h 14m');
+      expect(dashboard.sessionCaption()).toBeNull();
+      marketSession.set('AFTER_HOURS');
+      nextChange.set('Ends in 1h 5m');
+      expect(dashboard.sessionCaption()).toBe('After-hours · Ends in 1h 5m');
+      marketSession.set('CLOSED');
+      nextChange.set('Opens Mon 9:30 AM ET');
+      expect(dashboard.sessionCaption()).toBe('Market closed · Opens Mon 9:30 AM ET');
+      // A pinned demo session has nothing coming next.
+      nextChange.set(null);
+      expect(dashboard.sessionCaption()).toBe('Market closed');
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W' }));
+      dashboard.setRange('1W');
+      expect(dashboard.sessionCaption()).toBeNull();
+    });
+
+    describe('after the regular close', () => {
+      // Yesterday's close, today's regular close at 3,700, then after-hours; live it's 3,750.
+      const afterClose: PortfolioHistory = {
+        ...history,
+        points: [
+          { ...history.points[0], session: 'REGULAR' },
+          { ...history.points[0], value: 3700, session: 'REGULAR' },
+          { ...history.points[1], value: 3720, session: 'AFTER_HOURS' },
+          { ...history.points[1], value: 3740, session: 'AFTER_HOURS' }
+        ]
+      };
+
+      beforeEach(() => {
+        marketSession.set('AFTER_HOURS');
+        portfolioApi.getHistory.mockReturnValue(of(afterClose));
+        dashboard.loadHistory();
+      });
+
+      it('splits the move since the close out of today\'s change', () => {
+        expect(dashboard.afterHours()!.change).toBe(50);
+        expect(dashboard.afterHours()!.percent).toBeCloseTo(50 / 3700 * 100);
+        // Today's return is 150: 100 of it in regular hours, 50 after.
+        expect(dashboard.todaysReturn()).toBe(150);
+        expect(dashboard.headlineChange()).toBe(100);
+        expect(dashboard.headlineChangePercent()).toBeCloseTo(dashboard.todaysReturnPercent()! * 100 / 150);
+      });
+
+      it('keeps it through the night, until the next day begins', () => {
+        marketSession.set('CLOSED');
+        expect(dashboard.afterHours()!.change).toBe(50);
+      });
+
+      it('leaves money put in since the close out of it', () => {
+        portfolioApi.getHistory.mockReturnValue(of({
+          ...afterClose,
+          points: [...afterClose.points.slice(0, 3), { ...afterClose.points[3], contributions: 30 }]
+        }));
+        dashboard.loadHistory();
+        expect(dashboard.afterHours()!.change).toBe(20);
+      });
+
+      it('shows nothing extra while scrubbing, in regular hours or before a regular session', () => {
+        dashboard.scrubIndex.set(1);
+        expect(dashboard.afterHours()).toBeNull();
+        dashboard.scrubIndex.set(null);
+        marketSession.set('REGULAR');
+        expect(dashboard.afterHours()).toBeNull();
+        expect(dashboard.headlineChange()).toBe(150);
+
+        marketSession.set('AFTER_HOURS');
+        portfolioApi.getHistory.mockReturnValue(of({
+          ...afterClose,
+          points: [afterClose.points[0], ...afterClose.points.slice(2)]
+        }));
+        dashboard.loadHistory();
+        expect(dashboard.afterHours()).toBeNull();
+        expect(dashboard.headlineChangePercent()).toBe(dashboard.todaysReturnPercent());
+      });
     });
 
     it('draws longer ranges without sessions', () => {

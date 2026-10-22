@@ -258,10 +258,41 @@ export class DashboardComponent implements OnInit {
   private readonly liveDayReturn = computed(() =>
     this.range() === '1D' && this.scrubIndex() === null && this.todaysReturn() !== null ? this.dayReturn() : null);
 
+  /**
+   * After the regular close, the move since it, shown on its own line under the headline as
+   * Robinhood does: the regular close is today's last regular-hours point on the chart, and the
+   * live value ends it. Money put in or taken out since is left out. Null on other ranges, while
+   * scrubbing, and until there's been a regular session today to measure from.
+   */
+  readonly afterHours = computed<{ change: number; percent: number | null } | null>(() => {
+    if (!this.liveDayReturn()) {
+      return null;
+    }
+    const points = this.chartPoints();
+    const live = points.at(-1);
+    if (!live || (live.session !== 'AFTER_HOURS' && live.session !== 'CLOSED')) {
+      return null;
+    }
+    // The first point is the previous close, not today's.
+    let close = -1;
+    for (let i = points.length - 2; i >= 1 && close < 0; i--) {
+      if (points[i].session === 'REGULAR') {
+        close = i;
+      }
+    }
+    if (close < 0) {
+      return null;
+    }
+    const { value, contributions } = points[close];
+    const change = live.value - value - (live.contributions - contributions);
+    return { change, percent: value > 0 ? (change / value) * 100 : null };
+  });
+
   readonly headlineChange = computed(() => {
     const day = this.liveDayReturn();
     if (day) {
-      return day.change;
+      // After the close, the headline stops at the regular session; the line below has the rest.
+      return day.change! - (this.afterHours()?.change ?? 0);
     }
     const value = this.headlineValue();
     const baseline = this.baseline();
@@ -272,7 +303,13 @@ export class DashboardComponent implements OnInit {
   readonly headlineChangePercent = computed(() => {
     const day = this.liveDayReturn();
     if (day) {
-      return day.percent;
+      const afterHours = this.afterHours();
+      if (!afterHours) {
+        return day.percent;
+      }
+      // Against the same base as today's return, so the two parts are on one scale.
+      const base = day.change && day.percent ? day.change / (day.percent / 100) : this.baseline();
+      return base ? (this.headlineChange()! / base) * 100 : null;
     }
     const change = this.headlineChange();
     const baseline = this.baseline();
@@ -290,6 +327,19 @@ export class DashboardComponent implements OnInit {
     const baseline = this.baseline();
     const contributions = this.chartPoints().at(-1)?.contributions ?? 0;
     return live === null || baseline === null ? 'flat' : direction(live - baseline - contributions);
+  });
+
+  /**
+   * Under today's chart outside regular hours, what the market is doing and what's next:
+   * "After-hours · Ends in 1h 5m", "Market closed · Opens Mon 9:30 AM ET". Nothing in regular hours.
+   */
+  readonly sessionCaption = computed(() => {
+    const session = this.market.session();
+    if (this.range() !== '1D' || !session || session === 'REGULAR') {
+      return null;
+    }
+    const next = this.market.nextChange();
+    return next ? `${sessionLabel(session)} · ${next}` : sessionLabel(session);
   });
 
   readonly headlineLabel = computed(() => {

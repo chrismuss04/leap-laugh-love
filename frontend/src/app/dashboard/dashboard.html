@@ -31,6 +31,12 @@
           </ng-container>
           <span class="period">{{ headlineLabel() }}</span>
         </p>
+        <p *ngIf="afterHours() as after" class="change after-hours num fade-in" [ngClass]="'text-' + dir(after.change)"
+           data-testid="after-hours-change">
+          <span aria-hidden="true">{{ after.change > 0 ? '▲' : after.change < 0 ? '▼' : '' }}</span>
+          {{ signedMoney(after.change) }}<ng-container *ngIf="after.percent !== null"> ({{ signedPercent(after.percent) }})</ng-container>
+          <span class="period">After-hours</span>
+        </p>
       </ng-container>
       <ng-template #heroSkeleton>
         <span class="skeleton" style="display: block; width: 260px; height: 44px; margin: 6px 0 10px"></span>
@@ -48,6 +54,10 @@
                         [label]="'Portfolio value, ' + headlineLabel()"
                         (scrub)="scrubIndex.set($event)"></app-line-chart>
       </div>
+
+      <p *ngIf="sessionCaption() as caption" class="session-caption" data-testid="session-caption">
+        <span class="session-dot" aria-hidden="true"></span>{{ caption }}
+      </p>
 
       <div class="ranges" role="tablist" aria-label="Chart range" [attr.data-tone]="tone()">
         <button type="button" role="tab" *ngFor="let r of ranges" class="range"
