@@ -5,7 +5,7 @@ import { AccountsService } from './accounts';
 import { BalanceService } from './balance';
 import { ClientRegistrationService, RegistrationRequest } from './client-registration.service';
 import { HoldingsService } from './holdings';
-import { MarketDataService } from './market-data';
+import { IntradayCloses, MarketDataService } from './market-data';
 import { PortfolioService } from './portfolio';
 
 describe('HTTP services', () => {
@@ -186,12 +186,18 @@ describe('HTTP services', () => {
 
     it('reads intraday closes, or none on failure', () => {
       const service = TestBed.inject(MarketDataService);
-      const results: number[][] = [];
+      const results: IntradayCloses[] = [];
       service.getIntradayCloses('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({ content: [{ close: 2 }, { close: 1 }], last: true });
+      http.expectOne(historyUrl).flush({ content: [
+        { bucketStart: '2026-10-14T14:05:00Z', close: 2 }, { bucketStart: '2026-10-14T14:00:00Z', close: 1 }
+      ], last: true });
       service.getIntradayCloses('AAPL').subscribe(r => results.push(r));
       http.expectOne(historyUrl).flush({}, failure);
-      expect(results).toEqual([[1, 2], []]);
+      // Oldest first, each with when its candle began.
+      expect(results).toEqual([
+        { closes: [1, 2], starts: [Date.parse('2026-10-14T14:00:00Z'), Date.parse('2026-10-14T14:05:00Z')] },
+        { closes: [], starts: [] }
+      ]);
     });
 
     it('asks for the newest day of 5-minute candles within a week, so a closed market still has a chart', () => {

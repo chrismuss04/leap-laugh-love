@@ -1,4 +1,4 @@
-<app-ticker-strip [indices]="indices()"></app-ticker-strip>
+<app-ticker-strip [indices]="indices()" [closed]="marketClosed()"></app-ticker-strip>
 
 <div class="dashboard">
   <app-account-switcher *ngIf="multiAccount() || isAccountView()" class="scope"
@@ -100,7 +100,7 @@
 
   <aside class="rail" aria-label="Trading">
     <app-trade-panel id="trade-panel" [symbol]="selectedSymbol()" [name]="selectedName()"
-                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [priceHistory]="selectedHistory()"
+                     [price]="selectedPrice()" [quoteOffset]="selectedQuoteOffset()" [priceHistory]="selectedHistory()" [priceSessions]="selectedSessions()"
                      [accounts]="tradeAccounts()"
                      [preferredAccountId]="accountId()"
                      (placed)="onOrderPlaced()"

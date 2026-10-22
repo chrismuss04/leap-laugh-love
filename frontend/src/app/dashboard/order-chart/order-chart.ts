@@ -1,6 +1,7 @@
 import { Component, ElementRef, ViewChild, computed, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { formatMoney } from '../../shared/format';
+import { MarketSession, sessionLabel, sessionRuns } from '../../shared/market-session';
 
 /** A price line on the chart. Draggable ones are handles that set the order's price. */
 export interface ChartLine {
@@ -13,6 +14,8 @@ export interface ChartLine {
 
 /** Room left above and below the data and lines, as a fraction of the range. */
 const PADDING = 0.12;
+/** A session band narrower than this, as a percentage of the width, goes unlabelled. */
+const MIN_LABELLED_BAND = 24;
 /** The smallest price range drawn, as a fraction of the price, so a flat day isn't blown up. */
 const MIN_RANGE = 0.004;
 
@@ -31,8 +34,11 @@ const MIN_RANGE = 0.004;
   template: `
     <div #area class="chart" role="group" [attr.aria-label]="label()" data-testid="order-chart">
       <svg class="series" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
+        <rect *ngFor="let band of bands()" class="band" [attr.x]="band.x" y="0" [attr.width]="band.width" height="100" />
         <polyline *ngIf="path()" class="series-line" [attr.points]="path()" />
       </svg>
+      <span *ngFor="let band of bands()" class="band-label" [style.left.%]="band.x" [hidden]="!band.label"
+            aria-hidden="true">{{ band.label }}</span>
       <p *ngIf="!path()" class="empty">Price history isn’t available right now.</p>
 
       <div *ngFor="let line of placed(); trackBy: trackById" class="line" [attr.data-tone]="line.tone"
@@ -65,6 +71,11 @@ const MIN_RANGE = 0.004;
       fill: none; stroke: var(--muted-foreground); stroke-width: 1.6; vector-effect: non-scaling-stroke;
       stroke-linejoin: round; stroke-linecap: round; opacity: 0.8;
     }
+    .band { fill: var(--muted-foreground); opacity: 0.08; }
+    .band-label {
+      position: absolute; top: 5px; margin-left: 7px; font-size: 10px; font-weight: 500;
+      color: var(--muted-foreground); opacity: 0.9; pointer-events: none; white-space: nowrap;
+    }
     .empty { position: absolute; inset: 0; display: grid; place-items: center; font-size: 12px; color: var(--muted-foreground); }
     .line { position: absolute; left: 0; right: 0; height: 0; --tone: var(--muted-foreground); }
     .line[data-tone='accent'] { --tone: var(--accent, var(--primary)); }
@@ -90,6 +101,8 @@ const MIN_RANGE = 0.004;
 export class OrderChartComponent {
   /** Recent closes, oldest first. */
   readonly points = input<number[]>([]);
+  /** The session each close traded in: pre-market and after-hours sit on a faint band. */
+  readonly sessions = input<(MarketSession | null | undefined)[] | null>(null);
   /** The lines to draw. */
   readonly lines = input<ChartLine[]>([]);
   readonly label = input('Price chart with order price lines');
@@ -137,6 +150,28 @@ export class OrderChartComponent {
       return '';
     }
     return points.map((value, i) => `${(i / (points.length - 1) * 100).toFixed(2)},${this.yOf(value).toFixed(2)}`).join(' ');
+  });
+
+  /**
+   * The stretches outside regular hours, as percentages of the width. A close ends the stretch
+   * from the close before it, so a run covers from the close before it to its last.
+   */
+  readonly bands = computed(() => {
+    const count = this.points().length;
+    const sessions = this.sessions();
+    if (count < 2 || !sessions) {
+      return [];
+    }
+    const x = (i: number) => i / (count - 1) * 100;
+    return sessionRuns(sessions.slice(0, count))
+      .filter(run => run.session !== 'REGULAR')
+      .map(run => {
+        const start = x(Math.max(0, run.from - 1));
+        const width = x(run.to) - start;
+        const label = run.session !== 'CLOSED' && width >= MIN_LABELLED_BAND ? sessionLabel(run.session) : null;
+        return { x: start, width, label };
+      })
+      .filter(band => band.width > 0);
   });
 
   readonly placed = computed(() => this.lines().map(line => ({ ...line, y: this.yOf(line.value) })));

@@ -102,7 +102,7 @@ describe('Trading Tools', () => {
       { symbol: 'MSFT', name: 'Microsoft', price: 400, asOf: '' }
     ]));
     marketApi.getPreviousClose.mockReturnValue(of(140));
-    marketApi.getIntradayCloses.mockReturnValue(of([145, 148, 150]));
+    marketApi.getIntradayCloses.mockReturnValue(of({ closes: [145, 148, 150], starts: [] }));
 
     TestBed.configureTestingModule({
       providers: [
@@ -114,7 +114,7 @@ describe('Trading Tools', () => {
         { provide: PriceStreamService, useValue: stream },
         { provide: PortfolioService, useValue: { getHistory: () => NEVER } },
         { provide: OrderService, useValue: orderApi },
-        { provide: MarketStatusService, useValue: { session } },
+        { provide: MarketStatusService, useValue: { session, status: signal(null) } },
         { provide: InstrumentsService, useValue: { getOverview: () => of({ period: 'today', periodStart: '', asOf: '', instruments: [] }) } }
       ]
     });

@@ -59,6 +59,24 @@ describe('dashboard display components', () => {
       const fixture = render(SparklineComponent, { values: [1, 2, 3], baseline: 2 });
       expect(fixture.componentInstance.path.startsWith('M0.0')).toBe(true);
       expect(fixture.nativeElement.querySelector('line.base')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('.line.outside')).toBeNull();
+    });
+
+    it('draws the stretches outside regular hours gray', () => {
+      const fixture = render(SparklineComponent, {
+        values: [1, 2, 3, 4, 5], sessions: ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'REGULAR', 'AFTER_HOURS']
+      });
+      const { path, outsidePath } = fixture.componentInstance;
+      // 22px apart: pre-market up to the second value, regular to the fourth, then after-hours.
+      expect(path.startsWith('M22.0,')).toBe(true);
+      expect(path.match(/M/g)!.length).toBe(1);
+      expect(outsidePath.startsWith('M0.0,')).toBe(true);
+      expect(outsidePath).toContain('M66.0,');
+      expect(fixture.nativeElement.querySelector('.line.outside')).not.toBeNull();
+
+      const closed = render(SparklineComponent, { values: [1, 2], sessions: [null, 'CLOSED'] });
+      expect(closed.componentInstance.path).toBe('');
+      expect(closed.nativeElement.querySelector('svg')).not.toBeNull();
     });
   });
 
@@ -82,6 +100,14 @@ describe('dashboard display components', () => {
       const fixture = render(TickerStripComponent, { indices: [index(110, 100), index(null, null)] });
       expect(fixture.nativeElement.querySelectorAll('.item').length).toBe(2);
       expect(fixture.nativeElement.querySelectorAll('.placeholder').length).toBe(1);
+      expect(fixture.nativeElement.querySelector('.strip.closed')).toBeNull();
+    });
+
+    it('quietens the levels while the market is closed', () => {
+      const fixture = render(TickerStripComponent, { indices: [index(110, 100)], closed: true });
+      const strip = fixture.nativeElement.querySelector('.strip');
+      expect(strip.classList).toContain('closed');
+      expect(strip.getAttribute('aria-label')).toContain('last close');
     });
   });
 

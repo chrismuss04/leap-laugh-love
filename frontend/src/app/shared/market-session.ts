@@ -79,6 +79,10 @@ const TIME = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, hour: 'numeri
 const WEEKDAY = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short' });
 const LONG_DATE = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short', month: 'short', day: 'numeric' });
 const DATE_KEY = new Intl.DateTimeFormat('en-CA', { timeZone: EASTERN, year: 'numeric', month: '2-digit', day: '2-digit' });
+const CLOCK = new Intl.DateTimeFormat('en-US', { timeZone: EASTERN, weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+/** The usual session boundaries, in minutes after midnight Eastern: 4:00, 9:30, 16:00 and 20:00. */
+const USUAL_DAY = { preMarketOpen: 4 * 60, regularOpen: 9 * 60 + 30, regularClose: 16 * 60, afterHoursClose: 20 * 60 };
 
 /**
  * Whether an order on these terms executes in a session, as order-app decides (SessionPolicy):
@@ -117,6 +121,46 @@ export function sessionRuns(sessions: (MarketSession | null | undefined)[]): Ses
     }
   });
   return runs;
+}
+
+/**
+ * The session a moment fell in, for price history that comes without one (market data candles).
+ * Today's own hours are used for today, so an early close is right; other days take the usual
+ * hours, which only an early close on another day gets wrong. Always regular hours when market
+ * hours are off. A pinned demo session is left out: it describes the market now, not its history.
+ */
+export function sessionAt(timeMs: number, status: MarketStatus): MarketSession {
+  if (status.mode === 'ALWAYS_OPEN') {
+    return 'REGULAR';
+  }
+  const day = status.today;
+  if (hasFullSchedule(day) && DATE_KEY.format(new Date(timeMs)) === day.date) {
+    return sessionBetween(timeMs, Date.parse(day.preMarketOpen), Date.parse(day.regularOpen),
+      Date.parse(day.regularClose), Date.parse(day.afterHoursClose));
+  }
+  const parts = Object.fromEntries(CLOCK.formatToParts(new Date(timeMs)).map(part => [part.type, part.value]));
+  if (parts['weekday'] === 'Sat' || parts['weekday'] === 'Sun') {
+    return 'CLOSED';
+  }
+  const minutes = Number(parts['hour']) * 60 + Number(parts['minute']);
+  return sessionBetween(minutes, USUAL_DAY.preMarketOpen, USUAL_DAY.regularOpen, USUAL_DAY.regularClose,
+    USUAL_DAY.afterHoursClose);
+}
+
+/** The session of each moment, or null until the market status is known. */
+export function sessionsAt(times: number[], status: MarketStatus | null): MarketSession[] | null {
+  return status ? times.map(time => sessionAt(time, status)) : null;
+}
+
+function sessionBetween(at: number, preMarketOpen: number, regularOpen: number, regularClose: number,
+                        afterHoursClose: number): MarketSession {
+  if (at < preMarketOpen || at >= afterHoursClose) {
+    return 'CLOSED';
+  }
+  if (at < regularOpen) {
+    return 'PRE_MARKET';
+  }
+  return at < regularClose ? 'REGULAR' : 'AFTER_HOURS';
 }
 
 /** Whether a session is pre-market or after-hours. */

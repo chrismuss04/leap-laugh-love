@@ -4,12 +4,16 @@ import { MarketIndex } from '../models';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { direction, formatNumber, formatSignedPercent, percentChange } from '../../shared/format';
 
-/** Headline market indices with their live level and change since the previous close. */
+/**
+ * Headline market indices with their live level and change since the previous close. While the
+ * market is closed they hold at their last level, so they're drawn quieter.
+ */
 @Component({
     selector: 'app-ticker-strip',
     imports: [CommonModule, RollingNumberComponent],
     template: `
-    <section class="strip" aria-label="Market indices">
+    <section class="strip" [class.closed]="closed"
+             [attr.aria-label]="closed ? 'Market indices, as of the last close' : 'Market indices'">
       <div class="item" *ngFor="let index of indices; trackBy: trackBySymbol">
         <span class="label">{{ index.label }}</span>
         <span class="values">
@@ -50,6 +54,9 @@ import { direction, formatNumber, formatSignedPercent, percentChange } from '../
     .change { font-size: 12px; }
     .text-flat { color: var(--muted-foreground); }
     .placeholder { display: inline-block; width: 72px; height: 14px; }
+    .price, .change { transition: color 0.3s ease, opacity 0.3s ease; }
+    .closed .price { color: var(--muted-foreground); }
+    .closed .change { opacity: 0.6; }
     @media (max-width: 1000px) {
       .strip { display: flex; overflow-x: auto; scrollbar-width: none; }
       .item { flex: 0 0 auto; min-width: 150px; }
@@ -58,6 +65,8 @@ import { direction, formatNumber, formatSignedPercent, percentChange } from '../
 })
 export class TickerStripComponent {
   @Input() indices: MarketIndex[] = [];
+  /** Whether the market is closed, so the levels aren't moving. */
+  @Input() closed = false;
 
   format = formatNumber;
 

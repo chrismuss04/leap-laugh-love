@@ -69,7 +69,7 @@ describe('AccountValuationService', () => {
       { symbol: 'SPX', name: null, price: 5000, asOf: '' }
     ]));
     marketApi.getPreviousClose.mockReturnValue(of(140));
-    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
+    marketApi.getIntradayCloses.mockReturnValue(of({ closes: [145, 150], starts: [] }));
     TestBed.configureTestingModule({
       providers: [
         AccountValuationService,

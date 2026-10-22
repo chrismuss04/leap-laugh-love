@@ -22,7 +22,7 @@ import { AccountDetailsComponent } from './account-details/account-details';
 import { OpenOrdersComponent } from './open-orders/open-orders';
 import { MarketDataService } from '../services/market-data';
 import { MarketStatusService } from '../services/market-status';
-import { sessionLabel } from '../shared/market-session';
+import { sessionLabel, sessionsAt } from '../shared/market-session';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../shared/format';
 import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
@@ -99,6 +99,13 @@ export class DashboardComponent implements OnInit {
 
   /** The traded symbol's recent closes, drawn behind the price lines of a limit or stop order. */
   readonly selectedHistory = signal<number[]>([]);
+  /** When each of those closes' candles began, to tell which session it traded in. */
+  private readonly selectedStarts = signal<number[]>([]);
+  /** The session of each of the traded symbol's recent closes, or null until it's known. */
+  readonly selectedSessions = computed(() => sessionsAt(this.selectedStarts(), this.market.status()));
+
+  /** Whether the market is closed: the indices hold at their last level. */
+  readonly marketClosed = computed(() => this.market.session() === 'CLOSED');
 
   /** The traded symbol's ask and bid offsets, for the trade panel. */
   readonly selectedQuoteOffset = computed(() => {
@@ -441,12 +448,14 @@ export class DashboardComponent implements OnInit {
       const symbol = this.selectedSymbol();
       untracked(() => {
         this.selectedHistory.set([]);
+        this.selectedStarts.set([]);
         if (symbol) {
           this.marketData.getIntradayCloses(symbol)
             .pipe(takeUntilDestroyed(this.destroyRef))
-            .subscribe(closes => {
+            .subscribe(({ closes, starts }) => {
               if (this.selectedSymbol() === symbol) {
                 this.selectedHistory.set(closes);
+                this.selectedStarts.set(starts);
               }
             });
         }

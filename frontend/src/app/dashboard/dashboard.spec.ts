@@ -10,7 +10,7 @@ import { OrderStreamService } from '../services/order-stream';
 import { PortfolioHistory, PortfolioService } from '../services/portfolio';
 import { PriceStreamService } from '../services/price-stream';
 import { MarketStatusService } from '../services/market-status';
-import { MarketSession } from '../shared/market-session';
+import { MarketSession, MarketStatus } from '../shared/market-session';
 import { DashboardComponent } from './dashboard';
 import type { Mock, MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
@@ -59,6 +59,7 @@ describe('DashboardComponent', () => {
   let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
   let marketSession: ReturnType<typeof signal<MarketSession | null>>;
   let nextChange: ReturnType<typeof signal<string | null>>;
+  let marketStatus: ReturnType<typeof signal<MarketStatus | null>>;
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -83,6 +84,7 @@ describe('DashboardComponent', () => {
     orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
     marketSession = signal<MarketSession | null>(null);
     nextChange = signal<string | null>(null);
+    marketStatus = signal<MarketStatus | null>(null);
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of(summaries));
@@ -92,7 +94,7 @@ describe('DashboardComponent', () => {
       { symbol: 'MSFT', name: 'Microsoft', price: 300, asOf: '' }
     ]));
     marketApi.getPreviousClose.mockImplementation(symbol => of(symbol === 'SPX' ? 5000 : 140));
-    marketApi.getIntradayCloses.mockReturnValue(of([145, 150]));
+    marketApi.getIntradayCloses.mockReturnValue(of({ closes: [145, 150], starts: [] }));
     orderApi.getOrderHistory.mockReturnValue(of({ content: [{ orderId: 'o1' }] } as OrderHistoryPage));
     orderApi.getOpenOrders.mockReturnValue(of([]));
     marketApi.getQuote.mockReturnValue(of({ symbol: 'AAPL', bidPrice: 149.9, askPrice: 150.1, lastPrice: 150 } as Quote));
@@ -109,7 +111,7 @@ describe('DashboardComponent', () => {
         { provide: PortfolioService, useValue: portfolioApi },
         { provide: PriceStreamService, useValue: stream },
         { provide: OrderStreamService, useValue: orderStream },
-        { provide: MarketStatusService, useValue: { session: marketSession, nextChange } }
+        { provide: MarketStatusService, useValue: { session: marketSession, nextChange, status: marketStatus } }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -299,6 +301,27 @@ describe('DashboardComponent', () => {
         expect(dashboard.afterHours()).toBeNull();
         expect(dashboard.headlineChangePercent()).toBe(dashboard.todaysReturnPercent());
       });
+    });
+
+    it('tells which session each of the traded symbol\'s closes traded in, and when the market is closed', () => {
+      marketApi.getIntradayCloses.mockReturnValue(of({
+        closes: [150, 151], starts: [Date.parse('2026-10-13T14:00:00Z'), Date.parse('2026-10-13T21:00:00Z')]
+      }));
+      dashboard.selectSymbol('MSFT');
+      fixture.detectChanges();
+      expect(dashboard.selectedHistory()).toEqual([150, 151]);
+      expect(dashboard.selectedSessions()).toBeNull();
+      marketStatus.set({
+        session: 'CLOSED', now: '2026-10-17T15:00:00Z', nextSession: 'PRE_MARKET', nextTransitionAt: null,
+        nextRegularOpen: null, mode: 'REAL', forced: false,
+        today: { date: '2026-10-17', open: false, holiday: null, earlyClose: false, preMarketOpen: null,
+          regularOpen: null, regularClose: null, afterHoursClose: null }
+      });
+      expect(dashboard.selectedSessions()).toEqual(['REGULAR', 'AFTER_HOURS']);
+
+      expect(dashboard.marketClosed()).toBe(false);
+      marketSession.set('CLOSED');
+      expect(dashboard.marketClosed()).toBe(true);
     });
 
     it('draws longer ranges without sessions', () => {

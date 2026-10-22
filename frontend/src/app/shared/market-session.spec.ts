@@ -1,6 +1,6 @@
 import {
   MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
-  sessionName, sessionRuns, sessionShortLabel, sessionTone, timelinePosition, timelineSegments
+  sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
 /** Wednesday 14 October 2026 (EDT, UTC-4): 4:00, 9:30, 16:00 and 20:00 ET. */
@@ -45,6 +45,35 @@ describe('market session helpers', () => {
       { session: 'PRE_MARKET', from: 3, to: 3 },
       { session: 'REGULAR', from: 4, to: 5 }
     ]);
+  });
+
+  describe('sessionAt', () => {
+    it('places other days on the usual hours, Eastern time', () => {
+      const s = status({});
+      // Tuesday 13 October 2026, EDT.
+      expect(sessionAt(at('2026-10-13T07:55:00Z'), s)).toBe('CLOSED');
+      expect(sessionAt(at('2026-10-13T08:00:00Z'), s)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T13:25:00Z'), s)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T13:30:00Z'), s)).toBe('REGULAR');
+      expect(sessionAt(at('2026-10-13T20:00:00Z'), s)).toBe('AFTER_HOURS');
+      expect(sessionAt(at('2026-10-14T00:00:00Z'), s)).toBe('CLOSED');
+      expect(sessionAt(at('2026-10-17T15:00:00Z'), s)).toBe('CLOSED');
+    });
+
+    it('uses today\'s own hours for today, so an early close is right', () => {
+      const early = status({ today: { ...DAY, earlyClose: true, regularClose: '2026-10-14T17:00:00Z',
+        afterHoursClose: '2026-10-14T21:00:00Z' } });
+      expect(sessionAt(at('2026-10-14T16:55:00Z'), early)).toBe('REGULAR');
+      expect(sessionAt(at('2026-10-14T17:00:00Z'), early)).toBe('AFTER_HOURS');
+      expect(sessionAt(at('2026-10-14T21:00:00Z'), early)).toBe('CLOSED');
+    });
+
+    it('is always regular hours when market hours are off, and unknown until the status loads', () => {
+      expect(sessionAt(at('2026-10-17T03:00:00Z'), status({ mode: 'ALWAYS_OPEN' }))).toBe('REGULAR');
+      expect(sessionsAt([at('2026-10-13T14:00:00Z'), at('2026-10-13T21:00:00Z')], status({})))
+        .toEqual(['REGULAR', 'AFTER_HOURS']);
+      expect(sessionsAt([at('2026-10-13T14:00:00Z')], null)).toBeNull();
+    });
   });
 
   it('labels and colours each session', () => {

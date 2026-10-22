@@ -20,6 +20,12 @@ export interface Quote {
   quoteTimestamp: string;
 }
 
+/** A stretch of 5-minute closes, oldest first, with when each candle began (epoch ms). */
+export interface IntradayCloses {
+  closes: number[];
+  starts: number[];
+}
+
 export interface Candle {
   bucketStart: string;
   bucketSeconds: number;
@@ -98,14 +104,18 @@ export class MarketDataService {
    *
    * Candles are only recorded while the market trades, so this reaches back up to a week for them
    * and takes the newest: while the market is closed, or paused for the night or a weekend, it is
-   * the last stretch that traded rather than nothing at all.
+   * the last stretch that traded rather than nothing at all. Each close comes with when its candle
+   * began, so a chart can tell which session it traded in.
    */
-  getIntradayCloses(symbol: string): Observable<number[]> {
+  getIntradayCloses(symbol: string): Observable<IntradayCloses> {
     const to = new Date();
     const from = new Date(to.getTime() - 7 * 86_400_000);
     return this.getHistory(symbol, from, to, 300, 288).pipe(
-      map(candles => candles.map(candle => candle.close)),
-      catchError(() => of([]))
+      map(candles => ({
+        closes: candles.map(candle => candle.close),
+        starts: candles.map(candle => Date.parse(candle.bucketStart))
+      })),
+      catchError(() => of({ closes: [], starts: [] }))
     );
   }
 }

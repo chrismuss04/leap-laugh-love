@@ -105,6 +105,20 @@ describe('OrderChartComponent', () => {
     expect(values).toEqual([96.01, 95.99, 97, 95, 96.96, 95.04]);
   });
 
+  it('bands the closes traded outside regular hours', () => {
+    expect(component.bands()).toEqual([]);
+    expect(fixture.nativeElement.querySelector('.band')).toBeNull();
+    fixture.componentRef.setInput('sessions', ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'AFTER_HOURS']);
+    fixture.detectChanges();
+    const bands = component.bands();
+    expect(bands.map(b => b.label)).toEqual(['Pre-market', 'After-hours']);
+    expect(bands[0].x).toBe(0);
+    expect(bands[0].width).toBeCloseTo(100 / 3);
+    expect(bands[1].x).toBeCloseTo(200 / 3);
+    expect(fixture.nativeElement.querySelectorAll('rect.band').length).toBe(2);
+    expect(fixture.nativeElement.querySelector('.band-label').textContent.trim()).toBe('Pre-market');
+  });
+
   it('says so when there is no history to draw', () => {
     fixture.componentRef.setInput('points', []);
     fixture.detectChanges();
