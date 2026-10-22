@@ -59,24 +59,37 @@ describe('dashboard display components', () => {
       const fixture = render(SparklineComponent, { values: [1, 2, 3], baseline: 2 });
       expect(fixture.componentInstance.path.startsWith('M0.0')).toBe(true);
       expect(fixture.nativeElement.querySelector('line.base')).not.toBeNull();
-      expect(fixture.nativeElement.querySelector('.line.outside')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.line.dimmed')).toBeNull();
     });
 
-    it('draws the stretches outside regular hours gray', () => {
-      const fixture = render(SparklineComponent, {
-        values: [1, 2, 3, 4, 5], sessions: ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'REGULAR', 'AFTER_HOURS']
-      });
-      const { path, outsidePath } = fixture.componentInstance;
+    describe('sessions', () => {
+      const values = [1, 2, 3, 4, 5];
       // 22px apart: pre-market up to the second value, regular to the fourth, then after-hours.
-      expect(path.startsWith('M22.0,')).toBe(true);
-      expect(path.match(/M/g)!.length).toBe(1);
-      expect(outsidePath.startsWith('M0.0,')).toBe(true);
-      expect(outsidePath).toContain('M66.0,');
-      expect(fixture.nativeElement.querySelector('.line.outside')).not.toBeNull();
+      const sessions = ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'REGULAR', 'AFTER_HOURS'];
 
-      const closed = render(SparklineComponent, { values: [1, 2], sessions: [null, 'CLOSED'] });
-      expect(closed.componentInstance.path).toBe('');
-      expect(closed.nativeElement.querySelector('svg')).not.toBeNull();
+      it('draws the session under way at full strength and the others tinted', () => {
+        const fixture = render(SparklineComponent, { values, sessions, highlight: 'REGULAR' });
+        const { path, dimmedPath } = fixture.componentInstance;
+        expect(path.startsWith('M22.0,')).toBe(true);
+        expect(path.match(/M/g)!.length).toBe(1);
+        expect(dimmedPath.startsWith('M0.0,')).toBe(true);
+        expect(dimmedPath).toContain('M66.0,');
+        expect(fixture.nativeElement.querySelector('.line.dimmed')).not.toBeNull();
+      });
+
+      it('highlights the last session traded in while the market is closed, carrying it to the live value', () => {
+        const fixture = render(SparklineComponent, { values: [...values, 5], sessions: [...sessions, 'CLOSED'], highlight: 'CLOSED' });
+        const { path, dimmedPath } = fixture.componentInstance;
+        // After-hours, from the fourth value to the live one, is at full strength.
+        expect(path.startsWith(`M${(3 / 5 * 88).toFixed(1)},`)).toBe(true);
+        expect(dimmedPath.match(/M/g)!.length).toBe(1);
+      });
+
+      it('can tint the whole line', () => {
+        const fixture = render(SparklineComponent, { values: [1, 2], sessions: [null, 'REGULAR'], highlight: 'AFTER_HOURS' });
+        expect(fixture.componentInstance.path).toBe('');
+        expect(fixture.nativeElement.querySelector('svg')).not.toBeNull();
+      });
     });
   });
 

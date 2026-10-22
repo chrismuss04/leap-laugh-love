@@ -2,7 +2,7 @@ import {
   AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, computed, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MarketSession } from '../../shared/market-session';
+import { MarketSession, tradedSession } from '../../shared/market-session';
 
 export interface ChartPoint {
   time: number;
@@ -152,9 +152,12 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     return this.scale(value, this.shape());
   }
 
-  /** Whether a point closes a stretch in another session than the highlighted one, drawn tinted. */
+  /**
+   * Whether a point closes a stretch in another session than the highlighted one, drawn tinted. The
+   * live point while the market is closed carries on the session before it.
+   */
   dimmed(index: number): boolean {
-    return (this.points[index]?.session ?? 'REGULAR') !== this.data().highlight;
+    return tradedSession(this.data().points.map(point => point.session), index) !== this.data().highlight;
   }
 
   /** Whether the market is closed at the live point, so the dot stops pulsing. */
@@ -264,17 +267,23 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Each point's x: by time across the domain (null before it; anything after it, such as a
-   * live point while the market is closed, sits at its end), or evenly spaced without one.
+   * Each point's x: by time across the domain, or evenly spaced without one. Points before the
+   * domain aren't drawn. The newest point past its end - the live value while the market is
+   * closed - takes the end in place of the point there, rather than standing straight above it.
    */
   private place(points: ChartPoint[], domain: ChartDomain | null, width: number): (number | null)[] {
     if (!domain) {
       return points.map((_, i) => points.length <= 1 ? width : (i / (points.length - 1)) * width);
     }
     const span = domain.end - domain.start || 1;
-    return points.map(point => point.time < domain.start
-      ? null
-      : Math.min(1, (point.time - domain.start) / span) * width);
+    const last = points.length - 1;
+    const pastEnd = points[last].time > domain.end;
+    return points.map((point, i) => {
+      if (point.time < domain.start || (pastEnd && i < last && point.time >= domain.end)) {
+        return null;
+      }
+      return Math.min(1, (point.time - domain.start) / span) * width;
+    });
   }
 
   /**

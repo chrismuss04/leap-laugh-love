@@ -163,6 +163,33 @@ function sessionBetween(at: number, preMarketOpen: number, regularOpen: number, 
   return at < regularClose ? 'REGULAR' : 'AFTER_HOURS';
 }
 
+/**
+ * The session a point traded in, for styling the stretch it closes. A point in the closed market -
+ * the live value while the market is shut - counts as the session before it, so it carries on the
+ * stretch it follows. A point without a session counts as regular hours.
+ */
+export function tradedSession(sessions: (MarketSession | null | undefined)[], index: number): MarketSession {
+  for (let i = index; i >= 0; i--) {
+    const session = sessions[i] ?? 'REGULAR';
+    if (session !== 'CLOSED') {
+      return session;
+    }
+  }
+  return 'REGULAR';
+}
+
+/**
+ * The session a chart draws at full strength, the others tinted: the one under way, or while the
+ * market is closed (or before its status is known), the last one the series traded in.
+ */
+export function highlightedSession(current: MarketSession | null,
+                                   sessions: (MarketSession | null | undefined)[]): MarketSession {
+  if (current && current !== 'CLOSED') {
+    return current;
+  }
+  return sessions.length ? tradedSession(sessions, sessions.length - 1) : 'REGULAR';
+}
+
 /** Whether a session is pre-market or after-hours. */
 export function isExtendedSession(session: MarketSession | null): boolean {
   return session === 'PRE_MARKET' || session === 'AFTER_HOURS';

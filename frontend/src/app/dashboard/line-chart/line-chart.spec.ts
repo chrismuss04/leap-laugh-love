@@ -165,9 +165,15 @@ describe('LineChartComponent', () => {
       expect(element().querySelector('.dot')!.classList).toContain('dimmed');
     });
 
-    it('stills the live dot while the market is closed', () => {
-      init({ points: [...day.slice(0, 4), { time: 5, value: 22, session: 'CLOSED' }] });
-      expect(element().querySelector('.live')!.classList).toContain('closed');
+    it('carries the last session on to the live value while the market is closed, and stills the dot', () => {
+      fixture.componentRef.setInput('highlight', 'AFTER_HOURS');
+      init({ points: [...day, { time: 6, value: 22, session: 'CLOSED' }] });
+      const live = element().querySelector('.live')!;
+      expect(live.classList).toContain('closed');
+      expect(live.classList).not.toContain('dimmed');
+      // After-hours runs on to the end, rather than fading out before the live value.
+      expect(chart.stops.at(-1)!.kind).toBe('bright');
+      expect(chart.stops.at(-2)!.kind).toBe('bright');
     });
   });
 
@@ -178,7 +184,7 @@ describe('LineChartComponent', () => {
     ];
     beforeEach(() => fixture.componentRef.setInput('domain', { start: 100, end: 200 }));
 
-    it('places points by time, leaving out those before the span and holding later ones at its end', () => {
+    it('places points by time, leaving out those before the span and holding a later one at its end', () => {
       init({ points: timed });
       expect(chart.x(1)).toBe(0);
       expect(chart.x(2)).toBe(150);
@@ -186,6 +192,13 @@ describe('LineChartComponent', () => {
       expect(chart.lastDrawn).toBe(3);
       expect(chart.linePath.startsWith('M0.0,')).toBe(true);
       expect(chart.linePath.match(/L/g)!.length).toBe(2);
+    });
+
+    it('lets a live value past the end take the end, rather than stand straight above the point there', () => {
+      init({ points: [...timed.slice(0, 3), { time: 200, value: 17 }, { time: 260, value: 19 }] });
+      expect(chart.lastDrawn).toBe(4);
+      expect(chart.x(4)).toBe(300);
+      expect(chart.linePath.match(/L300\.0,/g)!.length).toBe(1);
     });
 
     it('leaves the rest of a day still under way empty', () => {

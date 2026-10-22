@@ -105,15 +105,21 @@ describe('OrderChartComponent', () => {
     expect(values).toEqual([96.01, 95.99, 97, 95, 96.96, 95.04]);
   });
 
-  it('draws the closes traded outside regular hours fainter, keeping the line whole', () => {
-    expect(component.segments().map(s => s.outside)).toEqual([false]);
+  it('draws closes in other sessions than the one under way fainter, keeping the line whole', () => {
+    expect(component.segments().map(s => s.dimmed)).toEqual([false]);
     fixture.componentRef.setInput('sessions', ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'AFTER_HOURS']);
+    fixture.componentRef.setInput('highlight', 'REGULAR');
     fixture.detectChanges();
     const segments = component.segments();
     // Pre-market to the second close, regular to the third, after-hours to the last.
-    expect(segments.map(s => [s.outside, s.points.split(' ').length])).toEqual([[true, 2], [false, 2], [true, 2]]);
+    expect(segments.map(s => [s.dimmed, s.points.split(' ').length])).toEqual([[true, 2], [false, 2], [true, 2]]);
     expect(segments[0].points.split(' ')[1]).toBe(segments[1].points.split(' ')[0]);
-    expect(fixture.nativeElement.querySelectorAll('.series-line.outside').length).toBe(2);
+    expect(fixture.nativeElement.querySelectorAll('.series-line.dimmed').length).toBe(2);
+
+    // After the close, after-hours is the one at full strength.
+    fixture.componentRef.setInput('highlight', 'AFTER_HOURS');
+    fixture.detectChanges();
+    expect(component.segments().map(s => [s.dimmed, s.points.split(' ').length])).toEqual([[true, 3], [false, 2]]);
   });
 
   it('says so when there is no history to draw', () => {

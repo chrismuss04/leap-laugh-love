@@ -104,6 +104,9 @@ export class DashboardComponent implements OnInit {
   /** The session of each of the traded symbol's recent closes, or null until it's known. */
   readonly selectedSessions = computed(() => sessionsAt(this.selectedStarts(), this.market.status()));
 
+  /** The session under way, for the sparklines and order chart to highlight. */
+  readonly marketSession = computed(() => this.market.session());
+
   /** Whether the market is closed: the indices hold at their last level. */
   readonly marketClosed = computed(() => this.market.session() === 'CLOSED');
 

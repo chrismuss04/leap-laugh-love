@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterLink } from '@angular/router';
 import { AccountView } from '../models';
 import { SparklineComponent } from '../sparkline/sparkline';
+import { MarketSession } from '../../shared/market-session';
 import { RollingNumberComponent } from '../../shared/rolling-number';
 import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/format';
 
@@ -57,7 +58,7 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
                 </span>
               </span>
 
-              <app-sparkline class="spark" [values]="account.intraday" [sessions]="account.intradaySessions ?? null" [baseline]="account.dayStartValue"></app-sparkline>
+              <app-sparkline class="spark" [values]="account.intraday" [sessions]="account.intradaySessions ?? null" [highlight]="session" [baseline]="account.dayStartValue"></app-sparkline>
 
               <span class="value-col">
                 <span class="value num" [appRollingNumber]="account.value"></span>
@@ -125,6 +126,8 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
 export class AccountsOverviewComponent {
   @Input() accounts: AccountView[] = [];
   @Input() loading = false;
+  /** The session under way, which the sparklines draw at full strength. */
+  @Input() session: MarketSession | null = null;
 
   signedMoney = formatSignedMoney;
   signedPercent = formatSignedPercent;

@@ -1,6 +1,6 @@
 import {
   MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
-  sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, sessionTone, timelinePosition, timelineSegments
+  highlightedSession, sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, tradedSession, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
 /** Wednesday 14 October 2026 (EDT, UTC-4): 4:00, 9:30, 16:00 and 20:00 ET. */
@@ -35,6 +35,17 @@ describe('market session helpers', () => {
     expect(canExecuteIn(null, 'MARKET', false)).toBe(true);
     expect(isExtendedSession('PRE_MARKET')).toBe(true);
     expect(isExtendedSession('CLOSED')).toBe(false);
+  });
+
+  it('carries a closed-market point on in the session before it, and picks the session to highlight', () => {
+    const sessions = ['REGULAR', 'AFTER_HOURS', 'CLOSED', 'CLOSED'] as const;
+    expect(tradedSession([...sessions], 3)).toBe('AFTER_HOURS');
+    expect(tradedSession([...sessions], 0)).toBe('REGULAR');
+    expect(tradedSession(['CLOSED'], 0)).toBe('REGULAR');
+    expect(highlightedSession('PRE_MARKET', [...sessions])).toBe('PRE_MARKET');
+    expect(highlightedSession('CLOSED', [...sessions])).toBe('AFTER_HOURS');
+    expect(highlightedSession(null, [...sessions])).toBe('AFTER_HOURS');
+    expect(highlightedSession(null, [])).toBe('REGULAR');
   });
 
   it('splits points into runs of the same session', () => {
