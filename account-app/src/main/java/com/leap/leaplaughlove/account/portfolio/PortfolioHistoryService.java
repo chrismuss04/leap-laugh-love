@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.account.portfolio;
 
 import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.common.TradingDay;
 import com.leap.leaplaughlove.account.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.account.account.AccountRepository;
 import com.leap.leaplaughlove.account.instrument.Instrument;
@@ -62,7 +63,8 @@ import java.util.UUID;
  * <p>
  * Each point carries the market session it falls in. Intraday ranges skip the
  * points that fall while the market is closed, so a Monday morning's 1D chart
- * isn't mostly a flat weekend.
+ * isn't mostly a flat weekend; 1D also skips the previous day's after-hours,
+ * drawing today from its pre-market open against the previous close.
  */
 @Service
 public class PortfolioHistoryService {
@@ -144,7 +146,7 @@ public class PortfolioHistoryService {
                 .min(Comparator.naturalOrder())
                 .orElse(null);
         PortfolioRange.Window window = range.window(now, earliestOpen);
-        List<OffsetDateTime> timeline = timeline(window, now);
+        List<OffsetDateTime> timeline = timeline(window, now, drawFrom(range, now));
 
         if (accounts.isEmpty()) {
             return toResponse(range, window, timeline, new BigDecimal[timeline.size()],
@@ -291,12 +293,17 @@ public class PortfolioHistoryService {
      * first point stays whatever its session, as the baseline the change is measured
      * from, and so does "now". Anything that happened in a skipped stretch, such as a
      * deposit at night, shows in the next point.
+     *
+     * <p>
+     * Points up to {@code drawFrom} are left out too, again keeping the first: 1D
+     * keeps the previous close as its baseline but draws from today's pre-market.
      * 
-     * @param window The price history window.
-     * @param now    The current time.
+     * @param window   The price history window.
+     * @param now      The current time.
+     * @param drawFrom Leave out the points up to this time, apart from the first; null to keep them.
      * @return A list of timestamps for each point in the history.
      */
-    List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now) {
+    List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now, OffsetDateTime drawFrom) {
         long width = window.intervalSeconds();
         boolean tradingHoursOnly = width < SECONDS_PER_DAY;
         long nowSeconds = now.toEpochSecond();
@@ -304,12 +311,24 @@ public class PortfolioHistoryService {
         List<OffsetDateTime> points = new ArrayList<>();
         for (long end = firstEnd; end < nowSeconds; end += width) {
             OffsetDateTime point = OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC);
-            if (points.isEmpty() || !tradingHoursOnly || sessionOf(point) != MarketSession.CLOSED) {
+            boolean drawn = drawFrom == null || point.isAfter(drawFrom);
+            boolean trading = !tradingHoursOnly || sessionOf(point) != MarketSession.CLOSED;
+            if (points.isEmpty() || (drawn && trading)) {
                 points.add(point);
             }
         }
         points.add(now);
         return points;
+    }
+
+    /**
+     * Where a range's chart starts drawing, after its first point: today's
+     * pre-market open for 1D, so the previous day's after-hours isn't drawn. Null
+     * for other ranges, and when market hours are off and every hour trades.
+     */
+    private OffsetDateTime drawFrom(PortfolioRange range, OffsetDateTime now) {
+        return range == PortfolioRange.ONE_DAY && marketClock.mode() != MarketClock.Mode.ALWAYS_OPEN
+                ? TradingDay.openOf(now) : null;
     }
 
     /**

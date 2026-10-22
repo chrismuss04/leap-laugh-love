@@ -243,7 +243,7 @@ class PortfolioHistoryServiceTest {
     }
 
     @Test
-    @DisplayName("1D on a Monday morning skips the weekend and nights, tagging each point with its session")
+    @DisplayName("1D on a Monday morning draws from the pre-market open, tagging each point with its session")
     void oneDaySkipsClosedHours() {
         // Monday 12 January 2026, 10:00 ET (EST, UTC-5): the day runs from Friday's 16:00 ET close.
         service = serviceAt(OffsetDateTime.parse("2026-01-12T15:00:00Z"), MarketClock.Mode.REAL);
@@ -255,15 +255,13 @@ class PortfolioHistoryServiceTest {
         List<MarketSession> expected = new ArrayList<>();
         // Friday's close is the baseline, and closes the regular session.
         expected.add(MarketSession.REGULAR);
-        // Friday 16:05-20:00 ET, then Monday 4:05-9:30 ET, 9:35-9:55 ET and now.
-        expected.addAll(times(48, MarketSession.AFTER_HOURS));
+        // Then Monday 4:05-9:30 ET, 9:35-9:55 ET and now: not Friday's after-hours or the weekend.
         expected.addAll(times(66, MarketSession.PRE_MARKET));
         expected.addAll(times(6, MarketSession.REGULAR));
         assertEquals(expected, sessions(response));
         assertEquals(OffsetDateTime.parse("2026-01-09T21:00:00Z"), response.points().get(0).timestamp());
-        // After-hours' last bucket ends at 20:00 ET; the next point is Monday's first pre-market bucket.
-        assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(48).timestamp());
-        assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(49).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(1).timestamp());
+        assertFalse(hasPointAt(response, "2026-01-09T23:00:00Z"));
         assertFalse(hasPointAt(response, "2026-01-10T12:00:00Z"));
         // Skipping points doesn't change what the day is measured from.
         assertEquals(new BigDecimal("1000.00"), response.startValue());
@@ -280,8 +278,9 @@ class PortfolioHistoryServiceTest {
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
         List<MarketSession> sessions = sessions(response);
-        // Thursday's close, its after-hours, Friday's pre-market, regular day and after-hours, then now.
-        assertEquals(1 + 48 + 66 + 78 + 48 + 1, sessions.size());
+        // Thursday's close, then Friday's pre-market, regular day and after-hours, then now.
+        assertEquals(1 + 66 + 78 + 48 + 1, sessions.size());
+        assertEquals(OffsetDateTime.parse("2026-01-09T09:05:00Z"), response.points().get(1).timestamp());
         assertEquals(MarketSession.CLOSED, sessions.get(sessions.size() - 1));
         assertEquals(NOW, response.points().get(sessions.size() - 1).timestamp());
         assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(sessions.size() - 2).timestamp());
@@ -299,7 +298,8 @@ class PortfolioHistoryServiceTest {
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
         assertEquals(OffsetDateTime.parse("2026-01-16T21:00:00Z"), response.points().get(0).timestamp());
-        assertEquals(1 + 48 + 66 + 6, response.points().size());
+        assertEquals(1 + 66 + 6, response.points().size());
+        assertEquals(OffsetDateTime.parse("2026-01-20T09:05:00Z"), response.points().get(1).timestamp());
         assertFalse(response.points().stream()
                 .anyMatch(point -> point.timestamp().toLocalDate().equals(LocalDate.of(2026, 1, 19))));
     }
