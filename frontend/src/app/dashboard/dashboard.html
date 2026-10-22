@@ -93,7 +93,7 @@
                            [accounts]="accounts()" [loading]="accountsLoading()" [session]="marketSession()"></app-accounts-overview>
 
     <app-positions-list [holdings]="holdings()" [loading]="accountsLoading() && !accountError()"
-                        [selected]="selectedSymbol()" [openOrders]="openOrders()" [session]="marketSession()" [dayHours]="dayHours()"
+                        [selected]="selectedSymbol()" [openOrders]="openOrders()" [session]="marketSession()" [dayHours]="dayHours()" [now]="minute()"
                         (select)="selectSymbol($event)"
                         (trade)="trade($event.symbol, $event.side)"></app-positions-list>
   </div>

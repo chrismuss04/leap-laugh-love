@@ -254,8 +254,14 @@ export class DashboardComponent implements OnInit {
     }
     // The prices the day traded at, not the baseline before them or the live value after.
     const traded = history.points.slice(1, -1).map(point => Date.parse(point.timestamp));
-    return dayFrame(hours, this.market.session(), traded, Date.now());
+    return dayFrame(hours, this.market.session(), traded, this.minute());
   });
+
+  /**
+   * Now by the market's clock, to the minute: today's frame slides through regular hours, and a
+   * minute's steps keep that smooth without redrawing the charts every second.
+   */
+  readonly minute = computed(() => Math.floor(this.market.now() / 60_000) * 60_000);
 
   /**
    * The session today's chart draws at full strength, the earlier ones tinted: the one under way,

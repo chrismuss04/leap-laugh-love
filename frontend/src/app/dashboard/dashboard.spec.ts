@@ -111,7 +111,7 @@ describe('DashboardComponent', () => {
         { provide: PortfolioService, useValue: portfolioApi },
         { provide: PriceStreamService, useValue: stream },
         { provide: OrderStreamService, useValue: orderStream },
-        { provide: MarketStatusService, useValue: { session: marketSession, nextChange, status: marketStatus } }
+        { provide: MarketStatusService, useValue: { session: marketSession, nextChange, status: marketStatus, now: signal(Date.now()) } }
       ]
     });
     // The children are covered by their own specs; this one drives the page's own logic.
@@ -357,8 +357,9 @@ describe('DashboardComponent', () => {
       // Pre-market: the morning at the start, with room for the regular session.
       marketSession.set('PRE_MARKET');
       expect(dashboard.chartDomain()).toEqual({ start: at(hours.preMarketOpen), end: at(hours.regularClose), leadInFrom: null });
+      // Regular hours slide from the pre-market frame to the after-hours one; this day has long closed.
       marketSession.set('REGULAR');
-      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.regularClose) });
+      expect(dashboard.chartDomain()).toMatchObject({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
       // After the close, overnight and at the weekend: the open to the end of after-hours.
       marketSession.set('AFTER_HOURS');
       expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });

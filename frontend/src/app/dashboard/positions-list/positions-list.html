@@ -34,7 +34,7 @@
         </span>
 
         <app-sparkline class="spark" [values]="h.intraday" [sessions]="h.intradaySessions ?? null" [highlight]="session"
-                       [times]="h.intradayTimes ?? null" [dayHours]="dayHours" [baseline]="h.previousClose"></app-sparkline>
+                       [times]="h.intradayTimes ?? null" [dayHours]="dayHours" [now]="now" [baseline]="h.previousClose"></app-sparkline>
 
         <span class="price-col">
           <span class="price num" [appRollingNumber]="h.price"></span>

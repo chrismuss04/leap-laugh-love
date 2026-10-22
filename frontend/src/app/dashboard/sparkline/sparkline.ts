@@ -47,6 +47,8 @@ export class SparklineComponent implements OnChanges {
   @Input() times: number[] | null = null;
   /** The hours of the trading day under way, which frame the day; null spaces values evenly. */
   @Input() dayHours: TradingHours | null = null;
+  /** Now, as the day's frame slides through regular hours; the browser's clock when not given. */
+  @Input() now: number | null = null;
   @Input() width = 88;
   @Input() height = 32;
 
@@ -104,7 +106,7 @@ export class SparklineComponent implements OnChanges {
   /** The day this sparkline frames, given each value's time and the day's hours. */
   private domain() {
     return this.times && this.dayHours && this.times.length === this.values.length
-      ? dayFrame(this.dayHours, this.highlight, this.times, Date.now())
+      ? dayFrame(this.dayHours, this.highlight, this.times, this.now ?? Date.now())
       : null;
   }
 

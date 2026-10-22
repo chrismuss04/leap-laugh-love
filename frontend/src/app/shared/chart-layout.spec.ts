@@ -28,8 +28,24 @@ describe('chart layout', () => {
       expect(dayFrame(HOURS, 'PRE_MARKET', morning.slice(13), at('2026-10-14T12:00:00Z')).leadInFrom).toBeNull();
     });
 
-    it('frames regular hours, and after the close the open to the end of after-hours', () => {
-      expect(dayFrame(HOURS, 'REGULAR', morning, 0)).toEqual({ start: at(HOURS.regularOpen), end: at(HOURS.regularClose) });
+    it('slides through regular hours from the pre-market frame to the after-hours one', () => {
+      const regular = (iso: string) => dayFrame(HOURS, 'REGULAR', morning, at(iso));
+      // At the open, just as in pre-market, lead-in and all.
+      expect(regular(HOURS.regularOpen)).toEqual({
+        start: at(HOURS.preMarketOpen), end: at(HOURS.regularClose),
+        leadInFrom: at('2026-10-13T23:05:00Z'), leadInTo: at(HOURS.preMarketOpen), leadInScale: 1
+      });
+      // Halfway, 12:45 ET: from 6:45 AM to 6:00 PM, the lead-in at half width.
+      expect(regular('2026-10-14T16:45:00Z')).toMatchObject({
+        start: at('2026-10-14T10:45:00Z'), end: at('2026-10-14T22:00:00Z'), leadInScale: 0.5
+      });
+      // At the close, the after-hours frame: no pre-market, no lead-in.
+      expect(regular(HOURS.regularClose)).toMatchObject({
+        start: at(HOURS.regularOpen), end: at(HOURS.afterHoursClose), leadInFrom: null, leadInScale: 0
+      });
+    });
+
+    it('frames after the close from the open to the end of after-hours', () => {
       expect(dayFrame(HOURS, 'AFTER_HOURS', morning, 0)).toEqual({ start: at(HOURS.regularOpen), end: at(HOURS.afterHoursClose) });
       expect(dayFrame(HOURS, 'CLOSED', morning, 0)).toEqual({ start: at(HOURS.regularOpen), end: at(HOURS.afterHoursClose) });
     });
@@ -50,6 +66,13 @@ describe('chart layout', () => {
 
     it('places points by time, leaving out those before the domain', () => {
       expect(placeByTime([500, 1000, 1500, 2000], domain, 200)).toEqual([null, 0, 100, 200]);
+    });
+
+    it('shrinks a lead-in by its scale, and lets points between it and the domain slip away', () => {
+      const sliding = { start: 1200, end: 2000, leadInFrom: 600, leadInTo: 1000, leadInScale: 0.5 };
+      const band = 200 * LEAD_IN_WIDTH * 0.5;
+      // 1100 has slid off the left; the lead-in keeps 600 and 800 in a band half as wide.
+      expect(placeByTime([600, 800, 1100, 1200, 2000], sliding, 200)).toEqual([0, band / 2, null, band, 200]);
     });
 
     it('squeezes a lead-in into a band at the left, evenly spaced', () => {

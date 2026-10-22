@@ -27,6 +27,8 @@ export class PositionsListComponent {
   @Input() session: MarketSession | null = null;
   /** The hours of the trading day under way, so the sparklines frame the day as the 1D chart does. */
   @Input() dayHours: TradingHours | null = null;
+  /** Now, to the minute, as the day's frame slides through regular hours. */
+  @Input() now: number | null = null;
   @Output() select = new EventEmitter<string>();
   @Output() trade = new EventEmitter<{ symbol: string; side: 'BUY' | 'SELL' }>();
 
