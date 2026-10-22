@@ -127,7 +127,7 @@ export function sessionRuns(sessions: (MarketSession | null | undefined)[]): Ses
  * The session a moment fell in, for price history that comes without one (market data candles).
  * Today's own hours are used for today, so an early close is right; other days take the usual
  * hours, which only an early close on another day gets wrong. Always regular hours when market
- * hours are off. A pinned demo session is left out: it describes the market now, not its history.
+ * hours are off. A price from a time the calendar says is closed counts as the pinned demo session.
  */
 export function sessionAt(timeMs: number, status: MarketStatus): MarketSession {
   if (status.mode === 'ALWAYS_OPEN') {
@@ -135,16 +135,25 @@ export function sessionAt(timeMs: number, status: MarketStatus): MarketSession {
   }
   const day = status.today;
   if (hasFullSchedule(day) && DATE_KEY.format(new Date(timeMs)) === day.date) {
-    return sessionBetween(timeMs, Date.parse(day.preMarketOpen), Date.parse(day.regularOpen),
+    const session = sessionBetween(timeMs, Date.parse(day.preMarketOpen), Date.parse(day.regularOpen),
       Date.parse(day.regularClose), Date.parse(day.afterHoursClose));
+    return session === 'CLOSED' ? closedOrPinned(status) : session;
   }
   const parts = Object.fromEntries(CLOCK.formatToParts(new Date(timeMs)).map(part => [part.type, part.value]));
-  if (parts['weekday'] === 'Sat' || parts['weekday'] === 'Sun') {
-    return 'CLOSED';
-  }
   const minutes = Number(parts['hour']) * 60 + Number(parts['minute']);
-  return sessionBetween(minutes, USUAL_DAY.preMarketOpen, USUAL_DAY.regularOpen, USUAL_DAY.regularClose,
-    USUAL_DAY.afterHoursClose);
+  const session = parts['weekday'] === 'Sat' || parts['weekday'] === 'Sun'
+    ? 'CLOSED'
+    : sessionBetween(minutes, USUAL_DAY.preMarketOpen, USUAL_DAY.regularOpen, USUAL_DAY.regularClose,
+      USUAL_DAY.afterHoursClose);
+  return session === 'CLOSED' ? closedOrPinned(status) : session;
+}
+
+/**
+ * Prices are only made while the market trades, so one from a time the calendar says is closed was
+ * made in a session pinned for a demo: count it as that session.
+ */
+function closedOrPinned(status: MarketStatus): MarketSession {
+  return status.forced ? status.session : 'CLOSED';
 }
 
 /** The session of each moment, or null until the market status is known. */
@@ -188,6 +197,20 @@ export function highlightedSession(current: MarketSession | null,
     return current;
   }
   return sessions.length ? tradedSession(sessions, sessions.length - 1) : 'REGULAR';
+}
+
+/**
+ * Where the highlighted session's stretch at the end of a series begins: the first point of the
+ * trailing run in that session. Earlier stretches in the same session - yesterday's pre-market on a
+ * sparkline, or a finished day's while a new pre-market is pinned for a demo - aren't the session
+ * under way, so they stay tinted. The series' length when it doesn't end in that session.
+ */
+export function highlightStart(sessions: (MarketSession | null | undefined)[], highlight: MarketSession): number {
+  let start = sessions.length;
+  while (start > 0 && tradedSession(sessions, start - 1) === highlight) {
+    start--;
+  }
+  return start;
 }
 
 /** Whether a session is pre-market or after-hours. */

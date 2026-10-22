@@ -272,7 +272,7 @@ export class DashboardComponent implements OnInit {
   readonly chartDomain = computed<ChartDomain | null>(() => {
     const history = this.history();
     const hours = history?.range === '1D' ? history.hours : null;
-    if (!hours) {
+    if (!history || !hours) {
       return null;
     }
     const [preMarketOpen, regularOpen, regularClose, afterHoursClose] =
@@ -280,10 +280,14 @@ export class DashboardComponent implements OnInit {
     const session = this.market.session();
     // Until the market status loads, the browser's clock decides.
     const now = Date.now();
-    if (session === 'PRE_MARKET' || (!session && now < regularOpen)) {
+    // How far the charted day got, from its prices (not the live one): a session pinned for a demo
+    // can say pre-market over a day that has already finished, which is charted as a whole day.
+    const traded = history.points.slice(1, -1).map(point => Date.parse(point.timestamp));
+    const reached = (moment: number) => traded.some(time => time > moment);
+    if ((session === 'PRE_MARKET' || (!session && now < regularOpen)) && !reached(regularOpen)) {
       return { start: preMarketOpen, end: regularClose };
     }
-    if (session === 'REGULAR' || (!session && now < regularClose)) {
+    if ((session === 'REGULAR' || (!session && now < regularClose)) && !reached(regularClose)) {
       return { start: regularOpen, end: regularClose };
     }
     return { start: regularOpen, end: afterHoursClose };

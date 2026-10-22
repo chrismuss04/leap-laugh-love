@@ -67,14 +67,22 @@ describe('dashboard display components', () => {
       // 22px apart: pre-market up to the second value, regular to the fourth, then after-hours.
       const sessions = ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'REGULAR', 'AFTER_HOURS'];
 
-      it('draws the session under way at full strength and the others tinted', () => {
-        const fixture = render(SparklineComponent, { values, sessions, highlight: 'REGULAR' });
+      it('draws the stretch at the end in the session under way at full strength, the rest tinted', () => {
+        const fixture = render(SparklineComponent, { values, sessions, highlight: 'AFTER_HOURS' });
         const { path, dimmedPath } = fixture.componentInstance;
-        expect(path.startsWith('M22.0,')).toBe(true);
-        expect(path.match(/M/g)!.length).toBe(1);
+        expect(path).toMatch(/^M66\.0,[\d.]+L88\.0,[\d.]+$/);
         expect(dimmedPath.startsWith('M0.0,')).toBe(true);
-        expect(dimmedPath).toContain('M66.0,');
+        expect(dimmedPath.match(/M/g)!.length).toBe(1);
         expect(fixture.nativeElement.querySelector('.line.dimmed')).not.toBeNull();
+      });
+
+      it('leaves an earlier stretch in the same session tinted', () => {
+        // Yesterday's pre-market, then today's: only today's is under way.
+        const fixture = render(SparklineComponent, {
+          values, sessions: ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'PRE_MARKET', 'PRE_MARKET'], highlight: 'PRE_MARKET'
+        });
+        expect(fixture.componentInstance.path.startsWith('M44.0,')).toBe(true);
+        expect(fixture.componentInstance.dimmedPath.startsWith('M0.0,')).toBe(true);
       });
 
       it('highlights the last session traded in while the market is closed, carrying it to the live value', () => {

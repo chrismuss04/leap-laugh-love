@@ -1,6 +1,6 @@
 import {
   MarketStatus, TradingDay, canExecuteIn, dayNote, isExtendedSession, easternDateTime, easternMoment, formatDuration, nextChangePhrase, sessionLabel,
-  highlightedSession, sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, tradedSession, sessionTone, timelinePosition, timelineSegments
+  highlightStart, highlightedSession, sessionAt, sessionName, sessionRuns, sessionShortLabel, sessionsAt, tradedSession, sessionTone, timelinePosition, timelineSegments
 } from './market-session';
 
 /** Wednesday 14 October 2026 (EDT, UTC-4): 4:00, 9:30, 16:00 and 20:00 ET. */
@@ -46,6 +46,10 @@ describe('market session helpers', () => {
     expect(highlightedSession('CLOSED', [...sessions])).toBe('AFTER_HOURS');
     expect(highlightedSession(null, [...sessions])).toBe('AFTER_HOURS');
     expect(highlightedSession(null, [])).toBe('REGULAR');
+    // Only the run at the end: yesterday's pre-market isn't today's.
+    expect(highlightStart(['PRE_MARKET', 'REGULAR', 'PRE_MARKET', 'PRE_MARKET'], 'PRE_MARKET')).toBe(2);
+    expect(highlightStart([...sessions], 'AFTER_HOURS')).toBe(1);
+    expect(highlightStart([...sessions], 'REGULAR')).toBe(4);
   });
 
   it('splits points into runs of the same session', () => {
@@ -77,6 +81,13 @@ describe('market session helpers', () => {
       expect(sessionAt(at('2026-10-14T16:55:00Z'), early)).toBe('REGULAR');
       expect(sessionAt(at('2026-10-14T17:00:00Z'), early)).toBe('AFTER_HOURS');
       expect(sessionAt(at('2026-10-14T21:00:00Z'), early)).toBe('CLOSED');
+    });
+
+    it('counts a price from a closed time as the session pinned for a demo', () => {
+      const pinned = status({ session: 'PRE_MARKET', forced: true });
+      expect(sessionAt(at('2026-10-13T04:00:00Z'), pinned)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-15T03:00:00Z'), pinned)).toBe('PRE_MARKET');
+      expect(sessionAt(at('2026-10-13T14:00:00Z'), pinned)).toBe('REGULAR');
     });
 
     it('is always regular hours when market hours are off, and unknown until the status loads', () => {

@@ -138,21 +138,29 @@ describe('LineChartComponent', () => {
       expect(element().querySelector('.line')!.getAttribute('stroke')).toBe(`url(#${chart.uid}-stroke)`);
     });
 
-    it('highlights regular hours by default, tinting the rest and glinting into the highlight', () => {
-      init({ points: day });
-      // Pre-market to the third point (150px), regular hours to the fourth (225px), feathered 64px.
+    it('highlights regular hours at the end by default, tinting the rest and glinting into the highlight', () => {
+      init({ points: [...day.slice(0, 4), { time: 5, value: 22, session: 'REGULAR' }] });
+      // Pre-market to the third point (150px), then regular hours to the end, feathered 64px.
       expect(chart.stops).toEqual([
         { offset: 0, kind: 'dim' },
         { offset: 118 / 300, kind: 'dim' }, { offset: (150 + 64 / 6) / 300, kind: 'glint' },
         { offset: 182 / 300, kind: 'bright' },
-        { offset: 193 / 300, kind: 'bright' }, { offset: 257 / 300, kind: 'dim' },
-        { offset: 1, kind: 'dim' }
+        { offset: 1, kind: 'bright' }
       ]);
       // The fill fades without a glint.
       expect(chart.fadeStops.map(stop => stop.kind)).not.toContain('glint');
       expect(element().querySelector('.stroke-stop[data-kind="glint"]')).not.toBeNull();
       expect(element().querySelector('.area')!.getAttribute('mask')).toBe(`url(#${chart.uid}-mask)`);
       expect(element().querySelector('.chart')!.getAttribute('aria-label')).toContain('current session is highlighted');
+    });
+
+    it('highlights only the stretch at the end, not earlier ones in the same session', () => {
+      // Regular hours come before after-hours, so they aren't the session under way.
+      init({ points: day });
+      expect(kinds()).toEqual(['dim', 'dim']);
+      fixture.componentRef.setInput('highlight', 'PRE_MARKET');
+      init({ points: day });
+      expect(kinds()).toEqual(['dim', 'dim']);
     });
 
     it('highlights the session it is given: after the close, after-hours', () => {

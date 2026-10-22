@@ -365,6 +365,16 @@ describe('DashboardComponent', () => {
       marketSession.set('CLOSED');
       expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
 
+      // A pre-market pinned for a demo over a day that has already traded past the open: a whole day.
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, hours, points: [
+        { ...history.points[0], timestamp: '2026-10-13T20:00:00Z' },
+        { ...history.points[0], timestamp: '2026-10-14T15:00:00Z', session: 'REGULAR' },
+        { ...history.points[1], timestamp: '2026-10-15T04:00:00Z' }
+      ] }));
+      dashboard.loadHistory();
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+
       portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W', hours: null }));
       dashboard.setRange('1W');
       expect(dashboard.chartDomain()).toBeNull();

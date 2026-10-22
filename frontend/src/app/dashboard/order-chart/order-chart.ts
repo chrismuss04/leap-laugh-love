@@ -1,7 +1,7 @@
 import { Component, ElementRef, ViewChild, computed, input, output, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { formatMoney } from '../../shared/format';
-import { MarketSession, highlightedSession, tradedSession } from '../../shared/market-session';
+import { MarketSession, highlightStart, highlightedSession } from '../../shared/market-session';
 
 /** A price line on the chart. Draggable ones are handles that set the order's price. */
 export interface ChartLine {
@@ -158,9 +158,10 @@ export class OrderChartComponent {
     if (coords.length < 2) {
       return [];
     }
+    // Only the stretch at the end in the session under way is at full strength.
     const sessions = this.sessions();
-    const highlight = sessions ? highlightedSession(this.highlight(), sessions) : null;
-    const dimmed = (i: number) => highlight !== null && tradedSession(sessions!, i) !== highlight;
+    const brightFrom = sessions ? highlightStart(sessions, highlightedSession(this.highlight(), sessions)) : 0;
+    const dimmed = (i: number) => i < brightFrom;
     const runs: { points: string; dimmed: boolean }[] = [];
     let start = 0;
     for (let i = 2; i <= coords.length; i++) {

@@ -1,11 +1,11 @@
 import { Component, Input, OnChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MarketSession, highlightedSession, tradedSession } from '../../shared/market-session';
+import { MarketSession, highlightStart, highlightedSession } from '../../shared/market-session';
 
 /**
  * A tiny trend line with a dotted baseline, coloured by direction against that baseline. The
- * session under way is drawn at full strength and earlier ones as a softer tint, as on the
- * portfolio chart.
+ * stretch at the end in the session under way is drawn at full strength and the rest as a softer
+ * tint, as on the portfolio chart.
  */
 @Component({
     selector: 'app-sparkline',
@@ -65,13 +65,14 @@ export class SparklineComponent implements OnChanges {
     const point = (i: number) => `${((i / (values.length - 1)) * this.width).toFixed(1)},${y(values[i]).toFixed(1)}`;
     // Each segment, from value i - 1 to i, goes to the full-strength or tinted path; a run starts a
     // new subpath.
+    // Only the stretch at the end in the session under way is at full strength.
     const sessions = this.sessions ?? [];
-    const highlight = this.sessions ? highlightedSession(this.highlight, sessions) : null;
+    const brightFrom = this.sessions ? highlightStart(sessions, highlightedSession(this.highlight, sessions)) : 0;
     let bright = '';
     let dimmed = '';
     let previous: boolean | null = null;
     for (let i = 1; i < values.length; i++) {
-      const isDimmed = highlight !== null && tradedSession(sessions, i) !== highlight;
+      const isDimmed = i < brightFrom;
       const segment = `${isDimmed === previous ? '' : `M${point(i - 1)}`}L${point(i)}`;
       if (isDimmed) {
         dimmed += segment;

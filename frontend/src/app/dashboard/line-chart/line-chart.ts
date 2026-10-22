@@ -2,7 +2,7 @@ import {
   AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, computed, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MarketSession, tradedSession } from '../../shared/market-session';
+import { MarketSession, highlightStart } from '../../shared/market-session';
 
 export interface ChartPoint {
   time: number;
@@ -64,8 +64,9 @@ let nextChartId = 0;
  * parent shows that point's value in its headline via `scrub`. Drawn as SVG sized in real pixels
  * (via ResizeObserver) so the line keeps a crisp, even stroke at any width.
  *
- * One session is highlighted - the one under way, as Robinhood does - and the others are a softer
- * tint of the same line, which glints as it comes into the highlight rather than switching colour.
+ * The stretch at the end of the line in the highlighted session - the one under way, as Robinhood
+ * does - is drawn at full strength and the rest as a softer tint of the same line, which glints as
+ * it comes into the highlight rather than switching colour.
  * Given a `domain`, points are placed by time, so a day still under way leaves the rest of the day
  * empty to the right.
  */
@@ -82,7 +83,10 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() label = 'Portfolio value chart';
   /** Lays the points out by time across this span; null spaces them evenly. */
   @Input() domain: ChartDomain | null = null;
-  /** The session drawn at full strength; the others are tinted. Null highlights regular hours. */
+  /**
+   * The session whose stretch at the end of the line is drawn at full strength; the rest is tinted.
+   * Null highlights regular hours.
+   */
   @Input() highlight: MarketSession | null = null;
   /** Emits the scrubbed point's index, or null when scrubbing ends. */
   @Output() scrub = new EventEmitter<number | null>();
@@ -103,6 +107,9 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
    * Derived rather than assigned, so a resize (which the ResizeObserver reports outside change
    * detection) marks the view dirty instead of changing a bound value behind Angular's back.
    */
+  /** The first point of the highlighted stretch at the end of the line. */
+  private readonly brightFrom = computed(() =>
+    highlightStart(this.data().points.map(point => point.session), this.data().highlight));
   private readonly shape = computed(() => this.build(this.data()));
 
   get height(): number { return this.hostHeight(); }
@@ -153,11 +160,11 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Whether a point closes a stretch in another session than the highlighted one, drawn tinted. The
-   * live point while the market is closed carries on the session before it.
+   * Whether a point closes a stretch before the highlighted one at the end of the line, drawn
+   * tinted. The live point while the market is closed carries on the session before it.
    */
   dimmed(index: number): boolean {
-    return tradedSession(this.data().points.map(point => point.session), index) !== this.data().highlight;
+    return index < this.brightFrom();
   }
 
   /** Whether the market is closed at the live point, so the dot stops pulsing. */
