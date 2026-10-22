@@ -5,15 +5,19 @@ import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
- * The authenticated client's total portfolio value (cash plus holdings at market) over a range.
+ * The value (cash plus holdings at market) of the authenticated client's accounts, or of one of them,
+ * over a range.
  * @param range the range code that was charted, e.g. "1M"
  * @param intervalSeconds the spacing, in seconds, between points (the final point is "now" and
  *     may be closer to the one before it)
  * @param points the portfolio value at each point, oldest first
  * @param startValue the value at the first point, the baseline the change is measured from
  * @param endValue the value at the last point
- * @param change endValue minus startValue
- * @param changePercent the change as a percentage of startValue, or null if startValue is zero
+ * @param netContributions money deposited less money withdrawn after the first point, which moves
+ *     the value without being a gain or loss
+ * @param change the gain or loss: endValue minus startValue, less netContributions
+ * @param changePercent the change as a percentage of startValue plus netContributions, or null if
+ *     that is not positive
  */
 public record PortfolioHistoryResponse(
         String range,
@@ -21,6 +25,7 @@ public record PortfolioHistoryResponse(
         List<Point> points,
         BigDecimal startValue,
         BigDecimal endValue,
+        BigDecimal netContributions,
         BigDecimal change,
         BigDecimal changePercent
 ) {
@@ -28,8 +33,10 @@ public record PortfolioHistoryResponse(
      * One valued point in time.
      * @param timestamp when the portfolio held this value
      * @param value the portfolio value: cash plus every holding at that time's price
+     * @param contributions money deposited less money withdrawn since the first point, so the gain
+     *     or loss to this point is value minus the first point's value minus this
      */
-    public record Point(OffsetDateTime timestamp, BigDecimal value) {
+    public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions) {
     }
 }
 

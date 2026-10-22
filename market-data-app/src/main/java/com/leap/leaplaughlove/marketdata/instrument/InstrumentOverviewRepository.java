@@ -24,20 +24,38 @@ public class InstrumentOverviewRepository {
      * @return the instruments by symbol; baseline price is null where no earlier candle exists
      */
     public List<Metadata> findAll(OffsetDateTime periodStart) {
-        // A daily candle must end by periodStart. The existing candle primary key
+        return findAll(periodStart, 86400);
+    }
+
+    /**
+     * Loads every active instrument with the close of its last candle of one width that ended by
+     * the period start, falling back to a daily candle where that width has no history.
+     * @param periodStart the start of the period the baseline is measured from
+     * @param bucketSeconds the candle width to read the baseline from
+     * @return the instruments by symbol; baseline price is null where no earlier candle exists
+     */
+    public List<Metadata> findAll(OffsetDateTime periodStart, int bucketSeconds) {
+        // A candle must end by periodStart. The existing candle primary key
         // supports each backwards lookup. Schemas have separate UUIDs: join by symbol.
         return jdbc.query("""
                 SELECT m.symbol, m.display_name, t.asset_class, t.currency,
-                    (SELECT c.close FROM marketdata.price_candles c
-                     WHERE c.instrument_id = m.instrument_id AND c.bucket_seconds = 86400
-                       AND c.bucket_start <= ?
-                     ORDER BY c.bucket_start DESC LIMIT 1) AS baseline_price
+                    COALESCE(
+                        (SELECT c.close FROM marketdata.price_candles c
+                         WHERE c.instrument_id = m.instrument_id AND c.bucket_seconds = ?
+                           AND c.bucket_start <= ?
+                         ORDER BY c.bucket_start DESC LIMIT 1),
+                        (SELECT c.close FROM marketdata.price_candles c
+                         WHERE c.instrument_id = m.instrument_id AND c.bucket_seconds = 86400
+                           AND c.bucket_start <= ?
+                         ORDER BY c.bucket_start DESC LIMIT 1)) AS baseline_price
                 FROM marketdata.instruments m
                 LEFT JOIN trading.instruments t ON t.symbol = m.symbol
                 WHERE m.is_active = TRUE
                 ORDER BY m.symbol
                 """, (rs, row) -> new Metadata(rs.getString("symbol"), rs.getString("display_name"),
                 rs.getString("asset_class"), rs.getString("currency"), rs.getBigDecimal("baseline_price")),
+                bucketSeconds,
+                Timestamp.from(periodStart.minusSeconds(bucketSeconds).toInstant()),
                 Timestamp.from(periodStart.minusDays(1).toInstant()));
     }
 

@@ -62,6 +62,17 @@ class InstrumentOverviewRepositoryTest {
     }
 
     @Test
+    void readsAFinerBaselineThatEndedByTheStartFallingBackToDaily() {
+        candle(start.minusDays(1), 86400, 100);
+        candle(start.minusMinutes(10), 300, 110);
+        candle(start.minusMinutes(5), 300, 120);
+        candle(start, 300, 999);
+        assertThat(repository.findAll(start, 300).getFirst().baselinePrice()).isEqualByComparingTo("120");
+        jdbc.update("DELETE FROM marketdata.price_candles WHERE bucket_seconds = 300");
+        assertThat(repository.findAll(start, 300).getFirst().baselinePrice()).isEqualByComparingTo("100");
+    }
+
+    @Test
     void usesHistoricalBaselineForEarlierPeriod() {
         candle(start.minusDays(8), 86400, 70);
         candle(start.minusDays(1), 86400, 100);

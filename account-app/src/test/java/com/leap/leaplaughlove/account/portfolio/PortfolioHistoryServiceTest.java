@@ -1,6 +1,7 @@
 package com.leap.leaplaughlove.account.portfolio;
 
 import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.account.account.AccountRepository;
 import com.leap.leaplaughlove.account.ledger.CashLedgerEntry;
 import com.leap.leaplaughlove.account.ledger.CashLedgerRepository;
@@ -37,6 +38,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -47,10 +50,13 @@ class PortfolioHistoryServiceTest {
     private static final UUID CLIENT_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
     private static final UUID ACCOUNT_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static final UUID AAPL_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001");
+    /** A Saturday: 1D is still Friday's trading day, from Thursday's 16:00 ET (21:00 UTC) close. */
     private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-01-10T12:00:00Z");
-    private static final OffsetDateTime BUY_TIME = OffsetDateTime.parse("2026-01-10T00:00:00Z");
+    private static final OffsetDateTime PREVIOUS_CLOSE = OffsetDateTime.parse("2026-01-08T21:00:00Z");
+    private static final OffsetDateTime BUY_TIME = OffsetDateTime.parse("2026-01-10T03:00:00Z");
 
     @Mock private AccountRepository accountRepository;
+    @Mock private AccountAuthorizationService accountAuthorizationService;
     @Mock private PositionRepository positionRepository;
     @Mock private PositionMovementRepository positionMovementRepository;
     @Mock private CashLedgerRepository cashLedgerRepository;
@@ -63,7 +69,7 @@ class PortfolioHistoryServiceTest {
     void setUp() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(CLIENT_ID, null, List.of()));
-        service = new PortfolioHistoryService(accountRepository, positionRepository, positionMovementRepository,
+        service = new PortfolioHistoryService(accountRepository, accountAuthorizationService, positionRepository, positionMovementRepository,
                 cashLedgerRepository, instrumentRepository, priceHistoryClient,
                 Clock.fixed(NOW.toInstant(), ZoneOffset.UTC));
     }
@@ -119,25 +125,93 @@ class PortfolioHistoryServiceTest {
                 new CandleClose(OffsetDateTime.parse("2026-01-10T06:00:00Z"), new BigDecimal("110"))));
         when(priceHistoryClient.fetchLatestPrice("AAPL")).thenReturn(Optional.of(new BigDecimal("120")));
 
-        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY);
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
         assertEquals("1D", response.range());
         assertEquals(300, response.intervalSeconds());
-        // 5-minute bucket ends across the day, plus "now" as the final point.
-        assertEquals(288, response.points().size());
+        // 5-minute bucket ends from the previous close, plus "now" as the final point.
+        assertEquals(39 * 12 + 1, response.points().size());
+        assertEquals(PREVIOUS_CLOSE, response.points().get(0).timestamp());
         assertEquals(NOW, response.points().get(response.points().size() - 1).timestamp());
         // Before the buy: all cash, nothing held.
-        assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-09T12:05:00Z"));
-        // The buy itself: cash moved into 10 shares at the carried-forward 100 close.
         assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T00:00:00Z"));
+        // The buy itself: cash moved into 10 shares at the carried-forward 100 close.
+        assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T03:00:00Z"));
         // The 06:00 candle only counts once its bucket has ended.
         assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T06:00:00Z"));
         assertEquals(new BigDecimal("2100.00"), valueAt(response, "2026-01-10T06:05:00Z"));
         // Now: priced at the live price.
         assertEquals(new BigDecimal("2200.00"), response.endValue());
         assertEquals(new BigDecimal("2000.00"), response.startValue());
+        assertEquals(new BigDecimal("0.00"), response.netContributions());
         assertEquals(new BigDecimal("200.00"), response.change());
         assertEquals(new BigDecimal("10.00"), response.changePercent());
+    }
+
+    @Test
+    @DisplayName("leaves deposits and withdrawals out of the change")
+    void excludesContributionsFromChange() {
+        givenAccount();
+        givenHolding(10);
+        givenCash("1500.00");
+        when(positionMovementRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of());
+        when(cashLedgerRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of(
+                new CashLedgerEntry(ACCOUNT_ID, "DEPOSIT", new BigDecimal("700.00"), "USD",
+                        OffsetDateTime.parse("2026-01-10T06:00:00Z"), null),
+                new CashLedgerEntry(ACCOUNT_ID, "WITHDRAWAL", new BigDecimal("-200.00"), "USD",
+                        OffsetDateTime.parse("2026-01-10T07:00:00Z"), null)));
+        when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(300))).thenReturn(List.of(
+                new CandleClose(OffsetDateTime.parse("2026-01-09T23:55:00Z"), new BigDecimal("100"))));
+        when(priceHistoryClient.fetchLatestPrice("AAPL")).thenReturn(Optional.of(new BigDecimal("120")));
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
+
+        // 1,000 cash + 10 @ 100 at the previous close; 1,500 cash + 10 @ 120 now, 500 of it deposited.
+        assertEquals(new BigDecimal("2000.00"), response.startValue());
+        assertEquals(new BigDecimal("2700.00"), response.endValue());
+        assertEquals(new BigDecimal("500.00"), response.netContributions());
+        // Each point carries what had been put in by then, for a hovered point's own change.
+        assertEquals(new BigDecimal("0.00"), response.points().get(0).contributions());
+        assertEquals(new BigDecimal("700.00"),
+                response.points().stream().filter(p -> p.timestamp().isEqual(OffsetDateTime.parse("2026-01-10T06:30:00Z")))
+                        .findFirst().orElseThrow().contributions());
+        assertEquals(new BigDecimal("200.00"), response.change());
+        // Against the 2,500 put in by the end.
+        assertEquals(new BigDecimal("8.00"), response.changePercent());
+    }
+
+    @Test
+    @DisplayName("charts one account from when it opened, so a stock bought today shows only its move since")
+    void chartsNewAccountFromItsOpening() {
+        OffsetDateTime opened = OffsetDateTime.parse("2026-01-10T10:02:00Z");
+        OffsetDateTime bought = OffsetDateTime.parse("2026-01-10T11:00:00Z");
+        when(accountAuthorizationService.getAuthorizedAccount(ACCOUNT_ID)).thenReturn(
+                new Account(ACCOUNT_ID, CLIENT_ID, "ACC-2", "ACTIVE", "USD", true, opened));
+        givenHolding(10);
+        givenCash("0.00");
+        when(positionMovementRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of(
+                new PositionMovement(ACCOUNT_ID, AAPL_ID, null, null, "BUY_FILL", 10, new BigDecimal("1000.00"), bought)));
+        when(cashLedgerRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of(
+                new CashLedgerEntry(ACCOUNT_ID, "DEPOSIT", new BigDecimal("1000.00"), "USD", opened.plusMinutes(1), null),
+                new CashLedgerEntry(ACCOUNT_ID, "BUY_SETTLEMENT", new BigDecimal("-1000.00"), "USD", bought, null)));
+        // The stock is up on the day, but has slipped since the buy.
+        when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(300))).thenReturn(List.of(
+                new CandleClose(OffsetDateTime.parse("2026-01-09T23:55:00Z"), new BigDecimal("90")),
+                new CandleClose(OffsetDateTime.parse("2026-01-10T10:55:00Z"), new BigDecimal("100"))));
+        when(priceHistoryClient.fetchLatestPrice("AAPL")).thenReturn(Optional.of(new BigDecimal("99")));
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_WEEK, ACCOUNT_ID);
+
+        verify(accountRepository, never()).findByClientIdAndStatus(any(), any());
+        // A week is cut to the account's two hours, at a width that still draws them.
+        assertEquals(300, response.intervalSeconds());
+        assertEquals(OffsetDateTime.parse("2026-01-10T10:05:00Z"), response.points().get(0).timestamp());
+        // Funded before the first point, so the deposit is the baseline rather than a gain.
+        assertEquals(new BigDecimal("1000.00"), response.startValue());
+        assertEquals(new BigDecimal("0.00"), response.netContributions());
+        assertEquals(new BigDecimal("990.00"), response.endValue());
+        assertEquals(new BigDecimal("-10.00"), response.change());
+        assertEquals(new BigDecimal("-1.00"), response.changePercent());
     }
 
     @Test
@@ -151,7 +225,7 @@ class PortfolioHistoryServiceTest {
         when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), anyInt())).thenReturn(List.of());
         when(priceHistoryClient.fetchLatestPrice("AAPL")).thenReturn(Optional.of(new BigDecimal("50")));
 
-        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_WEEK);
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_WEEK, null);
 
         assertEquals(3600, response.intervalSeconds());
         response.points().forEach(point -> assertEquals(new BigDecimal("250.00"), point.value()));
@@ -163,7 +237,7 @@ class PortfolioHistoryServiceTest {
     void emptyForClientWithoutAccounts() {
         when(accountRepository.findByClientIdAndStatus(CLIENT_ID, "ACTIVE")).thenReturn(List.of());
 
-        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_MONTH);
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_MONTH, null);
 
         assertEquals(new BigDecimal("0.00"), response.endValue());
         assertNull(response.changePercent());
@@ -180,6 +254,30 @@ class PortfolioHistoryServiceTest {
         PortfolioRange.Window old = PortfolioRange.ALL.window(NOW, NOW.minusYears(5));
         assertEquals(NOW.minus(PortfolioRange.MAX_LOOKBACK), old.from());
         assertEquals(86400, old.intervalSeconds());
+    }
+
+    @Test
+    @DisplayName("1D starts at the previous trading day's regular close")
+    void oneDayStartsAtPreviousClose() {
+        PortfolioRange.Window day = PortfolioRange.ONE_DAY.window(NOW, NOW.minusYears(1));
+        assertEquals(PREVIOUS_CLOSE, day.from());
+        assertEquals(300, day.intervalSeconds());
+    }
+
+    @Test
+    @DisplayName("a range never starts before the account opened, and narrows its candles to fit")
+    void rangesStartNoEarlierThanAccountOpening() {
+        PortfolioRange.Window month = PortfolioRange.ONE_MONTH.window(NOW, NOW.minusYears(1));
+        assertEquals(NOW.minusDays(30), month.from());
+        assertEquals(3600, month.intervalSeconds());
+
+        PortfolioRange.Window youngYear = PortfolioRange.ONE_YEAR.window(NOW, NOW.minusDays(10));
+        assertEquals(NOW.minusDays(10), youngYear.from());
+        assertEquals(3600, youngYear.intervalSeconds());
+
+        // Never coarser than the range's own width, however old the account.
+        PortfolioRange.Window youngWeek = PortfolioRange.ONE_WEEK.window(NOW, NOW.minusDays(5));
+        assertEquals(3600, youngWeek.intervalSeconds());
     }
 
     @Test

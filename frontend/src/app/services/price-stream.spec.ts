@@ -225,6 +225,38 @@ describe('PriceStreamService', () => {
     expect(service.status()).toBe('reconnecting');
   });
 
+  it('settles prices for totals at most once per interval, but a new symbol at once', async () => {
+    service.watch(['AAPL', 'MSFT']);
+    await settle();
+    send(tick('AAPL', 100));
+    await settle();
+    flush();
+    expect(service.settledPrices()).toEqual({ AAPL: 100 });
+
+    const internals = service as unknown as { dueAt: Record<string, number>; settledAt: number };
+    internals.dueAt['AAPL'] = 0;
+    send(tick('AAPL', 101));
+    await settle();
+    flush();
+    // Live, but not yet settled: totals hold still.
+    expect(service.prices()['AAPL']).toBe(101);
+    expect(service.settledPrices()['AAPL']).toBe(100);
+
+    // A symbol never shown before settles straight away, carrying the others with it.
+    send(tick('MSFT', 300));
+    await settle();
+    flush();
+    expect(service.settledPrices()).toEqual({ AAPL: 101, MSFT: 300 });
+
+    // After the interval, the next published tick settles.
+    internals.dueAt['AAPL'] = 0;
+    internals.settledAt -= 5_000;
+    send(tick('AAPL', 102));
+    await settle();
+    flush();
+    expect(service.settledPrices()['AAPL']).toBe(102);
+  });
+
   it('forgets everything on stop', async () => {
     service.watch(['AAPL']);
     await settle();
@@ -233,6 +265,7 @@ describe('PriceStreamService', () => {
     flush();
     service.stop();
     expect(service.prices()).toEqual({});
+    expect(service.settledPrices()).toEqual({});
     expect(service.status()).toBe('idle');
   });
 

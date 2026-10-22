@@ -30,6 +30,9 @@ CREATE TABLE trading.position_movements (
     FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
 );
 
+-- Both accounts opened a month ago, so a week's history isn't cut short at their opening.
+UPDATE trading.accounts SET created_at = CURRENT_TIMESTAMP - INTERVAL '30' DAY;
+
 -- Owner: deposited 10,000 two days ago, bought 5 of their 25 AAPL for 800 an hour ago.
 INSERT INTO trading.cash_ledger (account_id, entry_type, amount, currency, created_at)
 VALUES

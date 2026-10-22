@@ -1,5 +1,6 @@
 package com.leap.leaplaughlove.marketdata.instrument;
 
+import com.leap.leaplaughlove.common.market.MarketCalendar;
 import com.leap.leaplaughlove.marketdata.api.InstrumentOverviewResponse;
 import com.leap.leaplaughlove.marketdata.api.InstrumentOverviewResponse.Instrument;
 import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
@@ -30,7 +31,10 @@ public class InstrumentOverviewService {
     /**
      * Builds the overview for a period. An instrument with no usable baseline is still listed,
      * with its change left null.
-     * @param period {@code today}, {@code week} or {@code month}; the period starts at UTC midnight
+     * @param period {@code today}, {@code week} or {@code month}. Today starts at the previous
+     *     trading day's regular close, like every other day change in the app (see
+     *     {@link MarketCalendar#previousClose}); a week or month starts at UTC midnight that many
+     *     days ago
      * @return the latest prices with their changes since the period start
      * @throws ResponseStatusException 400 if the period isn't one of the three
      */
@@ -43,10 +47,14 @@ public class InstrumentOverviewService {
                     "period must be today, week, or month");
         };
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        OffsetDateTime start = now.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days);
+        boolean today = days == 0;
+        OffsetDateTime start = today
+                ? MarketCalendar.previousClose(now.toInstant()).atOffset(ZoneOffset.UTC)
+                : now.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days);
         Map<String, PriceState> prices = simulation.latestAll().stream()
                 .collect(Collectors.toMap(PriceState::symbol, Function.identity()));
-        var instruments = repository.findAll(start).stream()
+        // Today's baseline is the 5-minute candle that ended on the close; a longer period's is a day's.
+        var instruments = repository.findAll(start, today ? 300 : 86400).stream()
                 .filter(metadata -> prices.containsKey(metadata.symbol()))
                 .map(metadata -> {
                     PriceState price = prices.get(metadata.symbol());

@@ -16,6 +16,8 @@ export const PORTFOLIO_RANGES: { range: PortfolioRange; label: string }[] = [
 export interface PortfolioPoint {
   timestamp: string;
   value: number;
+  /** Money deposited less withdrawn since the first point: part of the value, but not a gain. */
+  contributions: number;
 }
 
 export interface PortfolioHistory {
@@ -24,6 +26,8 @@ export interface PortfolioHistory {
   points: PortfolioPoint[];
   startValue: number;
   endValue: number;
+  /** Money deposited less withdrawn over the range, which change leaves out. */
+  netContributions: number;
   change: number;
   changePercent: number | null;
 }
@@ -37,7 +41,9 @@ export class PortfolioService {
 
   constructor(private http: HttpClient) {}
 
-  getHistory(range: PortfolioRange): Observable<PortfolioHistory> {
-    return this.http.get<PortfolioHistory>(`${this.API_URL}/history`, { params: { range } });
+  /** The value of every account combined over a range, or of one account when given. */
+  getHistory(range: PortfolioRange, accountId?: string | null): Observable<PortfolioHistory> {
+    const params: Record<string, string> = accountId ? { range, accountId } : { range };
+    return this.http.get<PortfolioHistory>(`${this.API_URL}/history`, { params });
   }
 }

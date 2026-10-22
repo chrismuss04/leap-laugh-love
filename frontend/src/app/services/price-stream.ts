@@ -11,6 +11,10 @@ import { parseSseFrame } from './sse-frame';
  * The simulation ticks every symbol in lockstep, which reads as robotic on screen. Instead each
  * symbol re-prices on its own randomized schedule, and only jumps the queue when it has moved
  * enough to matter - so the board updates a few names at a time, like a real market.
+ *
+ * A total over many symbols would still change every time any one of them did, several times a
+ * second for a big portfolio. Totals read `settledPrices` instead, which catches up with `prices`
+ * at most once per settle interval.
  */
 @Injectable({
   providedIn: 'root'
@@ -25,6 +29,8 @@ export class PriceStreamService extends EventStream implements OnDestroy {
   private static readonly BIG_MOVE = 0.0005;
   /** ...and even a big move waits this long, so one volatile name can't flicker. */
   private static readonly MIN_GAP_MS = 1_500;
+  /** How often totals over many symbols may change. */
+  private static readonly SETTLE_MS = 5_000;
   /**
    * Every instrument ticks once a second, so this long without a byte means the connection is
    * dead even though it never closed - e.g. market-data-app restarted and the dev-server proxy
@@ -35,6 +41,8 @@ export class PriceStreamService extends EventStream implements OnDestroy {
 
   /** Latest live price per symbol. */
   readonly prices = signal<Record<string, number>>({});
+  /** `prices` as of the last settle: what account and portfolio totals are valued at. */
+  readonly settledPrices = signal<Record<string, number>>({});
 
   private symbols = new Set<string>();
   private flushTimer?: ReturnType<typeof setInterval>;
@@ -42,6 +50,7 @@ export class PriceStreamService extends EventStream implements OnDestroy {
   private pending: Record<string, number> = {};
   private publishedAt: Record<string, number> = {};
   private dueAt: Record<string, number> = {};
+  private settledAt = 0;
 
   /** Adds symbols to the stream. Reconnects only if the set actually grew. */
   watch(symbols: Iterable<string>): void {
@@ -68,7 +77,9 @@ export class PriceStreamService extends EventStream implements OnDestroy {
     this.pending = {};
     this.publishedAt = {};
     this.dueAt = {};
+    this.settledAt = 0;
     this.prices.set({});
+    this.settledPrices.set({});
     this.status.set('idle');
   }
 
@@ -116,7 +127,15 @@ export class PriceStreamService extends EventStream implements OnDestroy {
       }
     }
     if (Object.keys(batch).length) {
-      this.zone.run(() => this.prices.update(current => ({ ...current, ...batch })));
+      this.zone.run(() => {
+        this.prices.update(current => ({ ...current, ...batch }));
+        // A symbol's first price settles at once, so a new holding is valued straight away.
+        const settled = this.settledPrices();
+        if (now - this.settledAt >= PriceStreamService.SETTLE_MS || Object.keys(batch).some(s => !(s in settled))) {
+          this.settledAt = now;
+          this.settledPrices.set(this.prices());
+        }
+      });
     }
   }
 }

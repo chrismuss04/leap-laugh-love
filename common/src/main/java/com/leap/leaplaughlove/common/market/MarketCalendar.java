@@ -161,6 +161,40 @@ public final class MarketCalendar {
     }
 
     /**
+     * Returns the regular close that today's change is measured from: the close of the trading day
+     * before the one under way. A trading day is under way from its pre-market open until the next
+     * one's, so its after-hours, the night after and a weekend or holiday that follows all still
+     * count toward it - on a Saturday, "today" is Friday's move from Thursday's close.
+     * @param instant the instant
+     * @return when the previous trading day's regular session ended
+     */
+    public static Instant previousClose(Instant instant) {
+        LocalDate date = instant.atZone(ZONE).toLocalDate();
+        for (int i = 0; i <= MAX_DAYS_AHEAD; i++) {
+            TradingDay day = tradingDay(date.minusDays(i));
+            if (day.isOpen() && !day.preMarketOpen().toInstant().isAfter(instant)) {
+                return previousTradingDay(day.date()).regularClose().toInstant();
+            }
+        }
+        throw new IllegalStateException("No trading day within " + MAX_DAYS_AHEAD + " days before " + instant);
+    }
+
+    /**
+     * Returns the last trading day before a date.
+     * @param date the date to look back from
+     * @return the first trading day before it
+     */
+    public static TradingDay previousTradingDay(LocalDate date) {
+        for (int i = 1; i <= MAX_DAYS_AHEAD; i++) {
+            TradingDay day = tradingDay(date.minusDays(i));
+            if (day.isOpen()) {
+                return day;
+            }
+        }
+        throw new IllegalStateException("No trading day within " + MAX_DAYS_AHEAD + " days before " + date);
+    }
+
+    /**
      * Returns the next trading day on or after a date.
      * @param date the date to start from
      * @return the first trading day from it

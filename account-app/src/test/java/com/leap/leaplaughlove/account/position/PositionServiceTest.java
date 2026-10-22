@@ -3,6 +3,8 @@ package com.leap.leaplaughlove.account.position;
 import com.leap.leaplaughlove.account.account.Account;
 import com.leap.leaplaughlove.account.account.AccountAuthorizationService;
 import com.leap.leaplaughlove.account.account.AccountRepository;
+import com.leap.leaplaughlove.account.instrument.Instrument;
+import com.leap.leaplaughlove.account.instrument.InstrumentRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -13,14 +15,19 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,6 +44,16 @@ class PositionServiceTest {
     @Mock
     private AccountAuthorizationService accountAuthorizationService;
 
+    @Mock
+    private PositionMovementRepository positionMovementRepository;
+
+    @Mock
+    private InstrumentRepository instrumentRepository;
+
+    /** A Saturday: "today" is still Friday's trading day, which began at Thursday's 16:00 ET close. */
+    private static final OffsetDateTime NOW = OffsetDateTime.parse("2026-01-10T15:00:00Z");
+    private static final OffsetDateTime START_OF_DAY = OffsetDateTime.parse("2026-01-08T21:00:00Z");
+
     private PositionService positionService;
 
     private UUID accountId;
@@ -45,7 +62,8 @@ class PositionServiceTest {
 
     @BeforeEach
     void setUp() {
-        positionService = new PositionService(accountRepository, positionRepository, accountAuthorizationService);
+        positionService = new PositionService(accountRepository, positionRepository, positionMovementRepository,
+                instrumentRepository, accountAuthorizationService, Clock.fixed(NOW.toInstant(), ZoneOffset.UTC));
         accountId = UUID.randomUUID();
         clientId = UUID.randomUUID();
         testAccount = new Account(accountId, clientId, "ACC-999", "ACTIVE", "USD", true, OffsetDateTime.now());
@@ -175,11 +193,72 @@ class PositionServiceTest {
     @Test
     @DisplayName("constructors initialize properly with default or null authorization service")
     void testConstructors() {
-        PositionService service2Arg = new PositionService(accountRepository, positionRepository);
-        assertNotNull(service2Arg);
+        PositionService nullAuth = new PositionService(accountRepository, positionRepository,
+                positionMovementRepository, instrumentRepository, null);
+        assertNotNull(nullAuth);
+    }
 
-        PositionService service3ArgNullAuth = new PositionService(accountRepository, positionRepository, null);
-        assertNotNull(service3ArgNullAuth);
+    @Test
+    @DisplayName("a position untouched today held its whole quantity at the open and moved no cash")
+    void testPositionUntouchedToday() {
+        String aapl = UUID.randomUUID().toString();
+        when(positionRepository.findPositionsByAccountId(accountId)).thenReturn(List.of(
+                createMockRow(aapl, "AAPL", "Apple Inc.", "EQUITY", 10L, new BigDecimal("150.00"))));
+
+        PositionItem item = positionService.toPositionsResponse(testAccount).positions().get(0);
+
+        assertEquals(10L, item.quantityAtOpen());
+        assertEquals(BigDecimal.ZERO, item.todayCashFlow());
+        verify(positionMovementRepository).findByAccountIdInAndCreatedAtAfter(List.of(accountId), START_OF_DAY);
+    }
+
+    @Test
+    @DisplayName("shares bought and sold today come off the opening quantity, with the cash they moved")
+    void testPositionTradedToday() {
+        UUID aapl = UUID.randomUUID();
+        UUID nvda = UUID.randomUUID();
+        when(positionRepository.findPositionsByAccountId(accountId)).thenReturn(List.of(
+                createMockRow(aapl.toString(), "AAPL", "Apple Inc.", "EQUITY", 12L, new BigDecimal("150.00")),
+                createMockRow(nvda.toString(), "NVDA", "NVIDIA Corp.", "EQUITY", 10L, new BigDecimal("100.00"))));
+        when(positionMovementRepository.findByAccountIdInAndCreatedAtAfter(anyList(), eq(START_OF_DAY))).thenReturn(List.of(
+                movement(aapl, 5, "800.00"),
+                movement(aapl, -3, "-510.00"),
+                movement(nvda, 10, "1000.00")));
+
+        List<PositionItem> positions = positionService.toPositionsResponse(testAccount).positions();
+
+        // AAPL: 10 at the open, +5 bought for 800, -3 sold for 510.
+        assertEquals(10L, positions.get(0).quantityAtOpen());
+        assertEquals(new BigDecimal("-290.00"), positions.get(0).todayCashFlow());
+        // NVDA: bought today in full, so nothing was held at the open.
+        assertEquals(0L, positions.get(1).quantityAtOpen());
+        assertEquals(new BigDecimal("-1000.00"), positions.get(1).todayCashFlow());
+    }
+
+    @Test
+    @DisplayName("a position sold off today is listed as closed today, not among the positions")
+    void testPositionClosedToday() {
+        UUID goog = UUID.randomUUID();
+        when(positionRepository.findPositionsByAccountId(accountId)).thenReturn(List.of());
+        when(positionMovementRepository.findByAccountIdInAndCreatedAtAfter(anyList(), eq(START_OF_DAY))).thenReturn(List.of(
+                movement(goog, -4, "-1200.00")));
+        when(instrumentRepository.findAllById(Set.of(goog))).thenReturn(List.of(
+                new Instrument(goog, "GOOG", "Alphabet Inc.", "EQUITY", "NASDAQ", "USD", true)));
+
+        PositionsResponse response = positionService.toPositionsResponse(testAccount);
+
+        assertTrue(response.positions().isEmpty());
+        assertEquals(1, response.closedToday().size());
+        PositionItem closed = response.closedToday().get(0);
+        assertEquals("GOOG", closed.symbol());
+        assertEquals(0L, closed.quantity());
+        assertEquals(4L, closed.quantityAtOpen());
+        assertEquals(new BigDecimal("1200.00"), closed.todayCashFlow());
+    }
+
+    private PositionMovement movement(UUID instrumentId, long quantity, String cost) {
+        return new PositionMovement(accountId, instrumentId, null, null, quantity > 0 ? "BUY_FILL" : "SELL_FILL",
+                quantity, new BigDecimal(cost), NOW.minusHours(1));
     }
 }
 

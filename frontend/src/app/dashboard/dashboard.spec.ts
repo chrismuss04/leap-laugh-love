@@ -35,9 +35,10 @@ describe('DashboardComponent', () => {
   ];
   const day = 86_400_000;
   const history: PortfolioHistory = {
-    range: '1D', intervalSeconds: 300, startValue: 2000, endValue: 2500, change: 500, changePercent: 25,
-    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000 },
-      { timestamp: new Date().toISOString(), value: 2400 }]
+    range: '1D', intervalSeconds: 300, startValue: 2000, endValue: 2500, netContributions: 0, change: 500,
+    changePercent: 25,
+    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000, contributions: 0 },
+      { timestamp: new Date().toISOString(), value: 2400, contributions: 0 }]
   };
 
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
@@ -48,7 +49,11 @@ describe('DashboardComponent', () => {
   let marketApi: MockedObject<MarketDataService>;
   let orderApi: MockedObject<OrderService>;
   let portfolioApi: MockedObject<PortfolioService>;
-  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: Mock };
+  let stream: {
+    prices: ReturnType<typeof signal<Record<string, number>>>;
+    settledPrices: ReturnType<typeof signal<Record<string, number>>>;
+    watch: Mock;
+  };
   let orderStream: { updates: Subject<OrderUpdate>; start: Mock; stop: Mock };
 
   function create(accountId: string | null = null): void {
@@ -66,7 +71,11 @@ describe('DashboardComponent', () => {
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses', 'getQuote']);
     orderApi = createSpyObj('OrderService', ['getOrderHistory', 'getOpenOrders']);
     portfolioApi = createSpyObj('PortfolioService', ['getHistory']);
-    stream = { prices: signal<Record<string, number>>({ SPX: 5100 }), watch: vi.fn().mockName('watch') };
+    stream = {
+      prices: signal<Record<string, number>>({ SPX: 5100 }),
+      settledPrices: signal<Record<string, number>>({ SPX: 5100 }),
+      watch: vi.fn().mockName('watch')
+    };
     orderStream = { updates: new Subject<OrderUpdate>(), start: vi.fn().mockName('start'), stop: vi.fn().mockName('stop') };
 
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
@@ -123,19 +132,60 @@ describe('DashboardComponent', () => {
       expect(dashboard.totalReturn()).toBe(2250 - 1700);
     });
 
+    it('moves totals at the settled price, while each holding follows the live one', () => {
+      stream.prices.set({ AAPL: 160 });
+      expect(dashboard.holdings()[0].price).toBe(160);
+      expect(dashboard.marketValue()).toBe(2250);
+      expect(dashboard.portfolioValue()).toBe(3750);
+
+      stream.settledPrices.set({ AAPL: 160 });
+      expect(dashboard.marketValue()).toBe(2400);
+      expect(dashboard.todaysReturn()).toBe(300);
+    });
+
+    it('counts shares bought today from what they cost, and shares sold today up to their sale', () => {
+      holdingsApi.getHoldings.mockReturnValue(of({
+        accounts: [{
+          accountId: 'a1', accountNumber: 'ACC-0001', baseCurrency: 'USD',
+          // Up on the day (140 to 150), but bought today at 152.
+          positions: [{ ...position('AAPL', 10, 152), quantityAtOpen: 0, todayCashFlow: -1520 }],
+          // Sold all 2 MSFT at 300, from a 140 close.
+          closedToday: [{ ...position('MSFT', 0, 0), quantityAtOpen: 2, todayCashFlow: 600 }]
+        }]
+      }));
+      dashboard.loadAccounts();
+      expect(dashboard.todaysReturn()).toBe(1500 - 1520 + 600 - 280);
+      expect(dashboard.todaysReturnPercent()).toBeCloseTo((300 / (1520 + 280)) * 100);
+      expect(dashboard.holdings().map(h => h.symbol)).toEqual(['AAPL']);
+    });
+
     it('keeps the last chart point at the live value', () => {
       const points = dashboard.chartPoints();
       expect(points.length).toBe(2);
       expect(points[1].value).toBe(3750);
       expect(dashboard.baseline()).toBe(2000);
       expect(dashboard.headlineValue()).toBe(3750);
-      expect(dashboard.headlineChange()).toBe(1750);
+      // Today's live change is today's return, so the headline and the stat agree.
+      expect(dashboard.headlineChange()).toBe(150);
+      expect(dashboard.headlineChangePercent()).toBe(dashboard.todaysReturnPercent());
       expect(dashboard.tone()).toBe('gain');
-      expect(dashboard.visibleRanges().length).toBe(6);
       expect(dashboard.activeRange()).toBe('1D');
-      expect(dashboard.chartEmpty()).toBe(false);
       expect(dashboard.chartError()).toBeNull();
       expect(dashboard.headlineLabel()).toBe('Today');
+      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1D', null);
+    });
+
+    it('measures longer ranges from the chart, leaving money deposited during them out', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history,
+        points: [history.points[0], { ...history.points[1], contributions: 1000 }]
+      }));
+      dashboard.setRange('1W');
+      // 3,750 now, from 2,000 at the start, 1,000 of it deposited since.
+      expect(dashboard.headlineChange()).toBe(750);
+      expect(dashboard.headlineChangePercent()).toBeCloseTo(25);
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineChange()).toBe(0);
     });
 
     it('shows the scrubbed point in the headline', () => {
@@ -184,7 +234,7 @@ describe('DashboardComponent', () => {
       expect(portfolioApi.getHistory).not.toHaveBeenCalled();
       dashboard.setRange('1M');
       expect(dashboard.range()).toBe('1M');
-      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1M');
+      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1M', null);
       expect(dashboard.headlineLabel()).toBe('Past month');
     });
 
@@ -394,17 +444,16 @@ describe('DashboardComponent', () => {
       expect(dashboard.portfolioValue()).toBe(1250);
       expect(dashboard.heroTitle()).toBe('Brokerage ··0002');
       expect(dashboard.accountLabel()).toBe('ACC-0002');
-      expect(dashboard.visibleRanges()).toEqual([]);
       expect(dashboard.activeRange()).toBe('1D');
       expect(dashboard.chartError()).toBeNull();
     });
 
-    it('charts the account from its intraday values, ending at the live value', () => {
+    it('charts the account from its own history, ending at the live value', () => {
+      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1D', 'a2');
       const points = dashboard.chartPoints();
       expect(points.length).toBe(2);
       expect(points[1].value).toBe(1250);
-      expect(points[1].time - points[0].time).toBeGreaterThan(0);
-      expect(dashboard.baseline()).toBe(selectedPreviousCloseValue());
+      expect(dashboard.baseline()).toBe(2000);
       expect(dashboard.chartLoading()).toBe(false);
     });
 
@@ -413,33 +462,43 @@ describe('DashboardComponent', () => {
       expect(dashboard.headlineLabel()).toMatch(/\d{1,2}:\d{2}/);
     });
 
-    it('ignores range changes', () => {
+    it('charts the account over other ranges too', () => {
       portfolioApi.getHistory.mockClear();
       dashboard.setRange('1M');
-      expect(dashboard.range()).toBe('1D');
-      expect(portfolioApi.getHistory).not.toHaveBeenCalled();
+      expect(dashboard.range()).toBe('1M');
+      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1M', 'a2');
     });
 
     it('selects a symbol held in the account when the scope changes', () => {
       expect(dashboard.selectedSymbol()).toBe('AAPL');
+      portfolioApi.getHistory.mockClear();
       params.next(convertToParamMap({ accountId: 'a1' }));
       fixture.detectChanges();
       expect(dashboard.scrubIndex()).toBeNull();
       expect(dashboard.selectedAccount()?.accountId).toBe('a1');
+      expect(portfolioApi.getHistory).toHaveBeenCalledWith('1D', 'a1');
     });
 
-    function selectedPreviousCloseValue(): number | null {
-      return dashboard.selectedAccount()?.previousCloseValue ?? null;
-    }
+    it('drops a chart that arrives for the scope it left', () => {
+      const slow = new Subject<PortfolioHistory>();
+      portfolioApi.getHistory.mockReturnValue(slow);
+      params.next(convertToParamMap({ accountId: 'a1' }));
+      fixture.detectChanges();
+      portfolioApi.getHistory.mockReturnValue(of(history));
+      params.next(convertToParamMap({ accountId: 'a2' }));
+      fixture.detectChanges();
+      slow.next({ ...history, startValue: 1 });
+      expect(dashboard.baseline()).toBe(2000);
+    });
   });
 
   describe('an account with nothing invested', () => {
-    it('has no chart to draw', () => {
+    it('still charts its cash', () => {
       holdingsApi.getHoldings.mockReturnValue(of({
         accounts: [{ accountId: 'a2', accountNumber: 'ACC-0002', baseCurrency: 'USD', positions: [] }]
       }));
       create('a2');
-      expect(dashboard.chartEmpty()).toBe(true);
+      expect(dashboard.chartPoints().length).toBe(2);
       expect(dashboard.holdings()).toEqual([]);
       expect(dashboard.selectedSymbol()).toBeNull();
       expect(dashboard.selectedName()).toBeNull();

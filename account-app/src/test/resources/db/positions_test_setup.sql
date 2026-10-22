@@ -68,6 +68,20 @@ CREATE TABLE trading.cash_ledger (
     FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id)
 );
 
+CREATE TABLE trading.position_movements (
+    movement_id UUID DEFAULT RANDOM_UUID() PRIMARY KEY,
+    account_id UUID NOT NULL,
+    instrument_id UUID NOT NULL,
+    order_id UUID,
+    execution_id UUID,
+    movement_type VARCHAR(32) NOT NULL,
+    quantity_delta BIGINT NOT NULL,
+    cost_delta NUMERIC(18,2) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (account_id) REFERENCES trading.accounts (account_id),
+    FOREIGN KEY (instrument_id) REFERENCES trading.instruments (instrument_id)
+);
+
 INSERT INTO iam.clients (client_id, email, status)
 VALUES
     ('11111111-1111-1111-1111-111111111111', 'owner@example.com', 'ACTIVE'),

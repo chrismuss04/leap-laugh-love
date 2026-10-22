@@ -64,6 +64,15 @@ describe('HTTP services', () => {
       TestBed.inject(PortfolioService).getHistory('1M').subscribe();
       const request = http.expectOne(r => r.url === '/api/account/portfolio/history');
       expect(request.request.params.get('range')).toBe('1M');
+      expect(request.request.params.has('accountId')).toBe(false);
+      request.flush({});
+    });
+
+    it('requests one account\'s history when given one', () => {
+      TestBed.inject(PortfolioService).getHistory('1W', 'acc-1').subscribe();
+      const request = http.expectOne(r => r.url === '/api/account/portfolio/history');
+      expect(request.request.params.get('range')).toBe('1W');
+      expect(request.request.params.get('accountId')).toBe('acc-1');
       request.flush({});
     });
   });
@@ -165,12 +174,13 @@ describe('HTTP services', () => {
     it('reads the previous close, or null when absent or failing', () => {
       const service = TestBed.inject(MarketDataService);
       const results: (number | null)[] = [];
+      const previousCloseUrl = '/api/marketdata/prices/AAPL/previous-close';
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({ content: [{ close: 9 }], last: true });
+      http.expectOne(previousCloseUrl).flush({ symbol: 'AAPL', close: 9, at: '2026-10-20T20:00:00Z' });
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({ content: [], last: true });
+      http.expectOne(previousCloseUrl).flush({ message: 'No history' }, { status: 404, statusText: 'Not Found' });
       service.getPreviousClose('AAPL').subscribe(r => results.push(r));
-      http.expectOne(historyUrl).flush({}, failure);
+      http.expectOne(previousCloseUrl).flush({}, failure);
       expect(results).toEqual([9, null, null]);
     });
 

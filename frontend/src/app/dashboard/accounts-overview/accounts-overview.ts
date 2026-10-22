@@ -57,7 +57,7 @@ import { direction, formatSignedMoney, formatSignedPercent } from '../../shared/
                 </span>
               </span>
 
-              <app-sparkline class="spark" [values]="account.intraday" [baseline]="account.previousCloseValue"></app-sparkline>
+              <app-sparkline class="spark" [values]="account.intraday" [baseline]="account.dayStartValue"></app-sparkline>
 
               <span class="value-col">
                 <span class="value num" [appRollingNumber]="account.value"></span>

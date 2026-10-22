@@ -76,6 +76,33 @@ class PositionControllerIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET /api/account/accounts/{id}/positions reports what each position did today, including ones sold off")
+    void testGetPositionsReportsToday() throws Exception {
+        // Today: bought 5 of the 25 AAPL for 1,000, and sold all 3 GOOG for 600.
+        sessionJdbc.update("INSERT INTO trading.position_movements "
+                + "(account_id, instrument_id, movement_type, quantity_delta, cost_delta) VALUES "
+                + "(?, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0001', 'BUY_FILL', 5, 1000.00), "
+                + "(?, 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaa0003', 'SELL_FILL', -3, -600.00)",
+                UUID.fromString(ACCOUNT_OWNER_USD_ID), UUID.fromString(ACCOUNT_OWNER_USD_ID));
+
+        mockMvc.perform(get("/api/account/accounts/{accountId}/positions", ACCOUNT_OWNER_USD_ID)
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.positions", hasSize(2)))
+                .andExpect(jsonPath("$.positions[0].symbol", is("AAPL")))
+                .andExpect(jsonPath("$.positions[0].quantityAtOpen", is(20)))
+                .andExpect(jsonPath("$.positions[0].todayCashFlow", is(-1000.00)))
+                .andExpect(jsonPath("$.positions[1].symbol", is("MSFT")))
+                .andExpect(jsonPath("$.positions[1].quantityAtOpen", is(10)))
+                .andExpect(jsonPath("$.positions[1].todayCashFlow", is(0)))
+                .andExpect(jsonPath("$.closedToday", hasSize(1)))
+                .andExpect(jsonPath("$.closedToday[0].symbol", is("GOOG")))
+                .andExpect(jsonPath("$.closedToday[0].quantity", is(0)))
+                .andExpect(jsonPath("$.closedToday[0].quantityAtOpen", is(3)))
+                .andExpect(jsonPath("$.closedToday[0].todayCashFlow", is(600.00)));
+    }
+
+    @Test
     @DisplayName("GET /api/account/accounts/{id}/positions returns 404 for unowned account")
     void testGetPositionsForUnownedAccount_NotFound() throws Exception {
         mockMvc.perform(get("/api/account/accounts/{accountId}/positions", ACCOUNT_OTHER_USD_ID)

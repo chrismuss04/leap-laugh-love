@@ -1265,12 +1265,12 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Account** | `POST /api/account/accounts` | Open an additional trading account | Bearer JWT (client) |
 | **Account** | `GET /api/account/accounts/{id}` | Get specific trading account | Bearer JWT (client) |
 | **Account** | `PUT /api/account/accounts/{id}/trade-settings` | Save the account's price tolerance (`max_slippage_pct`) | Bearer JWT (client) |
-| **Account** | `GET /api/account/accounts/{id}/positions` | Get holdings/positions for account | Bearer JWT (client) |
+| **Account** | `GET /api/account/accounts/{id}/positions` | Get holdings/positions for account. Each position has `quantityAtOpen` and `todayCashFlow` (since the previous close, see [Market hours](#market-hours)) for an exact day change; `closedToday` lists positions sold off today | Bearer JWT (client) |
 | **Account** | `GET /api/account/balance` | Get balances for authenticated client | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/accounts/{id}/deposit` | Deposit funds | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/transfers` | Transfer cash between the client's own accounts | Bearer JWT (client) |
-| **Account** | `GET /api/account/portfolio/history` | Portfolio value over time; `range` selects the period (default `1M`) | Bearer JWT (client) |
+| **Account** | `GET /api/account/portfolio/history` | Portfolio value over time; `range` selects the period (default `1M`; `1D` runs from the previous close), optional `accountId` charts one account. Ranges start no earlier than the account opened, and `change` leaves out deposits and withdrawals (`netContributions`) | Bearer JWT (client) |
 | **Account** | `GET /api/account/internal/accounts/{id}/validation-data` | Pre-trade validation data (account status, cash balance, holding in the instrument, saved price tolerance) for order-app | Bearer JWT (client or service) |
 | **Account** | `POST /api/account/internal/accounts/{id}/settlement` | Settle a filled order against cash and positions; called by order-app | Bearer JWT (client or service) |
 | **Account** | `GET /actuator/health` | Account service health check | Permitted |
@@ -1288,6 +1288,7 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Market Data** | `GET /api/marketdata/instruments` | Instrument metadata, latest prices and performance; `period=today` (default), `week`, or `month` | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}` | Latest simulated price for one instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/prices/{symbol}/history` | Paginated OHLC candle history; `interval` selects the candle width in seconds (`60`, `300`, `3600`, `86400`, default `60`) | Bearer JWT (client or service) |
+| **Market Data** | `GET /api/marketdata/prices/{symbol}/previous-close` | The price at the previous trading day's regular close, which today's change is measured from; 404 without history before it | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/quotes` | Latest ingested quote (bid, ask, last, sizes) for every instrument | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/quotes/{symbol}` | Latest ingested quote for one instrument; order-app uses it to price and stale-check orders | Bearer JWT (client) |
 | **Market Data** | `GET /api/marketdata/market/status` | The market session now (`PRE_MARKET`, `REGULAR`, `AFTER_HOURS`, `CLOSED`), when it next changes, when regular trading next opens, and today's hours | Bearer JWT (client) |
@@ -1803,3 +1804,7 @@ The header's market status pill shows the session and what happens next; clickin
 Docker: set them in `.env`, then `docker compose up -d` (see `.env.example`). Windows without Docker: `.\scripts\start-local.ps1 -MarketSession AFTER_HOURS`, or `-MarketSession CLOSED -MarketOpensInMinutes 3` to watch a queued order fill, or `-AlwaysOpen` for no market hours at all. The e2e and CI stacks run `ALWAYS_OPEN`, so market orders fill at any hour; `e2e/README.md` describes the market hours suite, which pins a session instead.
 
 `GET /api/marketdata/market/status` returns the session, when it next changes, when regular trading next opens and today's hours.
+
+### What "today" means
+
+Every day change - Today's return, each holding's and account's move today, the 1D chart, the ticker strip and the Instruments page's Today - is measured from the **previous trading day's regular close** (4 PM ET, or 1 PM on an early-close day). A trading day runs from its pre-market open to the next one's, so after-hours, the night after and a weekend or holiday that follows still count toward it: on a Saturday, today is Friday's move from Thursday's close. `MarketCalendar.previousClose` decides the boundary; `GET /api/marketdata/prices/{symbol}/previous-close` serves each symbol's price at it, and account-app counts each position's trades today and the 1D history from the same moment.

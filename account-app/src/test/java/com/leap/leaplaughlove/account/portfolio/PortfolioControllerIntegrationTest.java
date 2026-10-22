@@ -35,6 +35,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class PortfolioControllerIntegrationTest {
 
     private static final UUID CLIENT_OWNER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
+    private static final UUID OWNER_ACCOUNT_ID = UUID.fromString("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static final UUID OTHER_ACCOUNT_ID = UUID.fromString("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     @Autowired
     private MockMvc mockMvc;
@@ -76,15 +78,46 @@ class PortfolioControllerIntegrationTest {
     @DisplayName("GET /api/account/portfolio/history values only the caller's accounts, before and after their trade")
     void valuesOwnPortfolio() throws Exception {
         // Now: 9,200 cash + 25 AAPL @ 200 + 10 MSFT @ 400 = 18,200.
-        // A day ago, before the 5-share buy: 10,000 cash + 20 AAPL @ 200 + 10 MSFT @ 400 = 18,000.
-        mockMvc.perform(get("/api/account/portfolio/history").param("range", "1D")
+        // A week ago, before the deposit and the 5-share buy: 20 AAPL @ 200 + 10 MSFT @ 400 = 8,000.
+        // The 10,000 deposited since isn't a gain, so the change is the 200 the extra shares made.
+        mockMvc.perform(get("/api/account/portfolio/history").param("range", "1W")
                         .header("Authorization", "Bearer " + ownerToken))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.range", is("1D")))
-                .andExpect(jsonPath("$.intervalSeconds", is(300)))
-                .andExpect(jsonPath("$.startValue", is(18000.00)))
+                .andExpect(jsonPath("$.range", is("1W")))
+                .andExpect(jsonPath("$.intervalSeconds", is(3600)))
+                .andExpect(jsonPath("$.startValue", is(8000.00)))
+                .andExpect(jsonPath("$.endValue", is(18200.00)))
+                .andExpect(jsonPath("$.netContributions", is(10000.00)))
+                .andExpect(jsonPath("$.change", is(200.00)));
+    }
+
+    @Test
+    @DisplayName("GET /api/account/portfolio/history?accountId= values one of the caller's accounts")
+    void valuesOneAccount() throws Exception {
+        mockMvc.perform(get("/api/account/portfolio/history").param("range", "1W")
+                        .param("accountId", OWNER_ACCOUNT_ID.toString())
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isOk())
                 .andExpect(jsonPath("$.endValue", is(18200.00)))
                 .andExpect(jsonPath("$.change", is(200.00)));
+    }
+
+    @Test
+    @DisplayName("GET /api/account/portfolio/history?accountId= returns 404 for another client's account")
+    void rejectsAnotherClientsAccount() throws Exception {
+        mockMvc.perform(get("/api/account/portfolio/history").param("range", "1W")
+                        .param("accountId", OTHER_ACCOUNT_ID.toString())
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    @DisplayName("GET /api/account/portfolio/history?accountId= returns 400 for a malformed id")
+    void rejectsMalformedAccountId() throws Exception {
+        mockMvc.perform(get("/api/account/portfolio/history").param("range", "1W")
+                        .param("accountId", "not-a-uuid")
+                        .header("Authorization", "Bearer " + ownerToken))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

@@ -1,11 +1,12 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 import { BalanceService } from '../services/balance';
 import { HoldingsService } from '../services/holdings';
 import { MarketDataService } from '../services/market-data';
 import { PriceStreamService } from '../services/price-stream';
+import { PortfolioService } from '../services/portfolio';
 import { AccountsComponent } from './accounts';
 import type { Mock, MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
@@ -30,7 +31,11 @@ describe('AccountsComponent', () => {
   let fixture: ComponentFixture<AccountsComponent>;
   let page: AccountsComponent;
   let holdingsApi: MockedObject<HoldingsService>;
-  let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; watch: Mock };
+  let stream: {
+    prices: ReturnType<typeof signal<Record<string, number>>>;
+    settledPrices: ReturnType<typeof signal<Record<string, number>>>;
+    watch: Mock;
+  };
 
   function create(accountId: string | null = null): void {
     params.next(convertToParamMap(accountId ? { accountId } : {}));
@@ -45,7 +50,9 @@ describe('AccountsComponent', () => {
     const balanceApi = createSpyObj('BalanceService', ['getBalance']);
     const marketApi = createSpyObj('MarketDataService',
       ['getAllLatestPrices', 'getPreviousClose', 'getIntradayCloses']);
-    stream = { prices: signal<Record<string, number>>({}), watch: vi.fn().mockName('watch') };
+    // Every tick settles at once here; how often totals move is the stream's own spec's concern.
+    const prices = signal<Record<string, number>>({});
+    stream = { prices, settledPrices: prices, watch: vi.fn().mockName('watch') };
     holdingsApi.getHoldings.mockReturnValue(of(holdings));
     holdingsApi.getAccounts.mockReturnValue(of([]));
     balanceApi.getBalance.mockReturnValue(of(balance));
@@ -60,7 +67,8 @@ describe('AccountsComponent', () => {
         { provide: HoldingsService, useValue: holdingsApi },
         { provide: BalanceService, useValue: balanceApi },
         { provide: MarketDataService, useValue: marketApi },
-        { provide: PriceStreamService, useValue: stream }
+        { provide: PriceStreamService, useValue: stream },
+        { provide: PortfolioService, useValue: { getHistory: () => NEVER } }
       ]
     });
     // The panels are covered by their own specs; this one drives the page's own logic.

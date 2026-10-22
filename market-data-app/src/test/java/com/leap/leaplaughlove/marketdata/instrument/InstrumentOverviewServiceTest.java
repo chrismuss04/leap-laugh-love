@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.marketdata.simulation.PriceState;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import com.leap.leaplaughlove.common.market.MarketCalendar;
 import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
@@ -13,6 +14,7 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 
 class InstrumentOverviewServiceTest {
     private final InstrumentOverviewRepository repository = mock(InstrumentOverviewRepository.class);
@@ -20,15 +22,25 @@ class InstrumentOverviewServiceTest {
     private final InstrumentOverviewService service = new InstrumentOverviewService(repository, simulation);
 
     @ParameterizedTest
-    @CsvSource({"today,0", "week,7", "month,30"})
-    void periodsUseUtcMidnight(String period, int days) {
+    @CsvSource({"week,7", "month,30"})
+    void longerPeriodsUseUtcMidnight(String period, int days) {
         when(simulation.latestAll()).thenReturn(List.of());
-        when(repository.findAll(any())).thenReturn(List.of());
+        when(repository.findAll(any(), anyInt())).thenReturn(List.of());
         var response = service.getOverview(period);
         assertThat(response.period()).isEqualTo(period);
         assertThat(response.periodStart()).isEqualTo(response.asOf().toLocalDate()
                 .atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days));
-        verify(repository).findAll(response.periodStart());
+        verify(repository).findAll(response.periodStart(), 86400);
+    }
+
+    @Test
+    void todayStartsAtThePreviousCloseLikeTheDashboard() {
+        when(simulation.latestAll()).thenReturn(List.of());
+        when(repository.findAll(any(), anyInt())).thenReturn(List.of());
+        var response = service.getOverview("today");
+        assertThat(response.periodStart().toInstant())
+                .isEqualTo(MarketCalendar.previousClose(response.asOf().toInstant()));
+        verify(repository).findAll(response.periodStart(), 300);
     }
 
     @ParameterizedTest
@@ -54,7 +66,7 @@ class InstrumentOverviewServiceTest {
 
     @Test
     void preservesUnknownMetadataAndOmitsMissingSnapshots() {
-        when(repository.findAll(any())).thenReturn(List.of(
+        when(repository.findAll(any(), anyInt())).thenReturn(List.of(
                 new InstrumentOverviewRepository.Metadata("INDEX", "Index", null, null, null),
                 new InstrumentOverviewRepository.Metadata("ABSENT", "Absent", "EQUITY", "USD", null)));
         when(simulation.latestAll()).thenReturn(List.of(
@@ -75,7 +87,7 @@ class InstrumentOverviewServiceTest {
     }
 
     private void prepare(BigDecimal price, BigDecimal baseline) {
-        when(repository.findAll(any())).thenReturn(List.of(
+        when(repository.findAll(any(), anyInt())).thenReturn(List.of(
                 new InstrumentOverviewRepository.Metadata("AAPL", "Apple", "EQUITY", "USD", baseline)));
         when(simulation.latestAll()).thenReturn(List.of(
                 new PriceState("AAPL", price, OffsetDateTime.now(ZoneOffset.UTC))));
