@@ -1,5 +1,7 @@
 package com.leap.leaplaughlove.account.portfolio;
 
+import com.leap.leaplaughlove.common.market.MarketSession;
+
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -10,7 +12,9 @@ import java.util.List;
  * @param range the range code that was charted, e.g. "1M"
  * @param intervalSeconds the spacing, in seconds, between points (the final point is "now" and
  *     may be closer to the one before it)
- * @param points the portfolio value at each point, oldest first
+ * @param points the portfolio value at each point, oldest first. Intraday ranges skip the points
+ *     that fall while the market is closed (nights, weekends, holidays) apart from the first and
+ *     the last, so a chart spends its width on trading hours; daily ranges keep every day
  * @param startValue the value at the first point, the baseline the change is measured from
  * @param endValue the value at the last point
  * @param netContributions money deposited less money withdrawn after the first point, which moves
@@ -35,8 +39,12 @@ public record PortfolioHistoryResponse(
      * @param value the portfolio value: cash plus every holding at that time's price
      * @param contributions money deposited less money withdrawn since the first point, so the gain
      *     or loss to this point is value minus the first point's value minus this
+     * @param session the market session of the stretch this point closes (the candle ending at
+     *     its timestamp), so the 16:00 ET point is the regular close and the one after it is
+     *     after-hours; always REGULAR when market hours are off
      */
-    public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions) {
+    public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions,
+            MarketSession session) {
     }
 }
 

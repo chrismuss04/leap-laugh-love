@@ -37,8 +37,8 @@ describe('DashboardComponent', () => {
   const history: PortfolioHistory = {
     range: '1D', intervalSeconds: 300, startValue: 2000, endValue: 2500, netContributions: 0, change: 500,
     changePercent: 25,
-    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000, contributions: 0 },
-      { timestamp: new Date().toISOString(), value: 2400, contributions: 0 }]
+    points: [{ timestamp: new Date(Date.now() - day).toISOString(), value: 2000, contributions: 0, session: 'REGULAR' },
+      { timestamp: new Date().toISOString(), value: 2400, contributions: 0, session: 'REGULAR' }]
   };
 
   let params: BehaviorSubject<ReturnType<typeof convertToParamMap>>;

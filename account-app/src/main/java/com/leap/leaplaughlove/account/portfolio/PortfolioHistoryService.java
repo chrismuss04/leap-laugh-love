@@ -13,13 +13,15 @@ import com.leap.leaplaughlove.account.position.PositionRepository;
 import com.leap.leaplaughlove.account.quote.PriceHistoryClient;
 import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import com.leap.leaplaughlove.account.quote.QuoteUnavailableException;
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.common.security.SecurityUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -56,12 +58,20 @@ import java.util.UUID;
  * <p>
  * Deposits and withdrawals move the value without being a gain or loss, so the
  * change over the range leaves them out.
+ *
+ * <p>
+ * Each point carries the market session it falls in. Intraday ranges skip the
+ * points that fall while the market is closed, so a Monday morning's 1D chart
+ * isn't mostly a flat weekend.
  */
 @Service
 public class PortfolioHistoryService {
 
     /** Cash ledger entries that move money in or out of an account, rather than earn it. */
     private static final Set<String> CONTRIBUTION_TYPES = Set.of("DEPOSIT", "WITHDRAWAL");
+
+    /** Candles at least this wide are daily: every day is kept, open or not. */
+    private static final int SECONDS_PER_DAY = 86400;
 
     private final AccountRepository accountRepository;
     private final AccountAuthorizationService accountAuthorizationService;
@@ -70,25 +80,10 @@ public class PortfolioHistoryService {
     private final CashLedgerRepository cashLedgerRepository;
     private final InstrumentRepository instrumentRepository;
     private final PriceHistoryClient priceHistoryClient;
-    private final Clock clock;
+    private final MarketClock marketClock;
 
     /**
-     * Constructs a new PortfolioHistoryService on the system clock.
-     */
-    @Autowired
-    public PortfolioHistoryService(AccountRepository accountRepository,
-            AccountAuthorizationService accountAuthorizationService,
-            PositionRepository positionRepository,
-            PositionMovementRepository positionMovementRepository,
-            CashLedgerRepository cashLedgerRepository,
-            InstrumentRepository instrumentRepository,
-            PriceHistoryClient priceHistoryClient) {
-        this(accountRepository, accountAuthorizationService, positionRepository, positionMovementRepository, cashLedgerRepository,
-                instrumentRepository, priceHistoryClient, Clock.systemUTC());
-    }
-
-    /**
-     * Constructs a PortfolioHistoryService with a given clock
+     * Constructs a PortfolioHistoryService.
      * 
      * @param accountRepository          The repository for accessing account data.
      * @param accountAuthorizationService Checks a single charted account belongs to
@@ -102,16 +97,19 @@ public class PortfolioHistoryService {
      *                                   data.
      * @param priceHistoryClient         The client for accessing price history
      *                                   data.
-     * @param clock                      The clock to use for time-based operations.
+     * @param marketClock                The time now, and whether market hours are
+     *                                   on: with them off, every point is in the
+     *                                   regular session.
      */
-    PortfolioHistoryService(AccountRepository accountRepository,
+    @Autowired
+    public PortfolioHistoryService(AccountRepository accountRepository,
             AccountAuthorizationService accountAuthorizationService,
             PositionRepository positionRepository,
             PositionMovementRepository positionMovementRepository,
             CashLedgerRepository cashLedgerRepository,
             InstrumentRepository instrumentRepository,
             PriceHistoryClient priceHistoryClient,
-            Clock clock) {
+            MarketClock marketClock) {
         this.accountRepository = accountRepository;
         this.accountAuthorizationService = accountAuthorizationService;
         this.positionRepository = positionRepository;
@@ -119,7 +117,7 @@ public class PortfolioHistoryService {
         this.cashLedgerRepository = cashLedgerRepository;
         this.instrumentRepository = instrumentRepository;
         this.priceHistoryClient = priceHistoryClient;
-        this.clock = clock;
+        this.marketClock = marketClock;
     }
 
     /**
@@ -139,7 +137,7 @@ public class PortfolioHistoryService {
                 ? List.of(accountAuthorizationService.getAuthorizedAccount(accountId))
                 : accountRepository.findByClientIdAndStatus(
                         SecurityUtils.getAuthenticatedClientId(), AccountAuthorizationService.ACTIVE_STATUS);
-        OffsetDateTime now = OffsetDateTime.now(clock).withOffsetSameInstant(ZoneOffset.UTC);
+        OffsetDateTime now = marketClock.now().atOffset(ZoneOffset.UTC);
         OffsetDateTime earliestOpen = accounts.stream()
                 .map(Account::getCreatedAt)
                 .filter(Objects::nonNull)
@@ -286,21 +284,46 @@ public class PortfolioHistoryService {
      * the epoch the same way market data aligns candles, so point k lines up with
      * the candle starting one width earlier. A range that starts on a bucket
      * boundary - 1D at the previous close - gets a point there, valued at the close before it.
+     *
+     * <p>
+     * With intraday candles, buckets that close while the market is closed are left
+     * out: nothing trades then, and they would fill the chart with flat line. The
+     * first point stays whatever its session, as the baseline the change is measured
+     * from, and so does "now". Anything that happened in a skipped stretch, such as a
+     * deposit at night, shows in the next point.
      * 
      * @param window The price history window.
      * @param now    The current time.
      * @return A list of timestamps for each point in the history.
      */
-    static List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now) {
+    List<OffsetDateTime> timeline(PortfolioRange.Window window, OffsetDateTime now) {
         long width = window.intervalSeconds();
+        boolean tradingHoursOnly = width < SECONDS_PER_DAY;
         long nowSeconds = now.toEpochSecond();
         long firstEnd = -Math.floorDiv(-window.from().toEpochSecond(), width) * width;
         List<OffsetDateTime> points = new ArrayList<>();
         for (long end = firstEnd; end < nowSeconds; end += width) {
-            points.add(OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC));
+            OffsetDateTime point = OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC);
+            if (points.isEmpty() || !tradingHoursOnly || sessionOf(point) != MarketSession.CLOSED) {
+                points.add(point);
+            }
         }
         points.add(now);
         return points;
+    }
+
+    /**
+     * The session of the stretch a point closes: the candle ending at it. So the
+     * 16:00 ET point, the regular close, is in the regular session and the one after
+     * it is after-hours. Always the regular session when market hours are off, as
+     * trading then runs around the clock. A pinned demo session is left out: it
+     * describes the market now, not its history.
+     */
+    MarketSession sessionOf(OffsetDateTime point) {
+        if (marketClock.mode() == MarketClock.Mode.ALWAYS_OPEN) {
+            return MarketSession.REGULAR;
+        }
+        return MarketCalendar.sessionAt(point.toInstant().minusNanos(1));
     }
 
     /**
@@ -356,14 +379,15 @@ public class PortfolioHistoryService {
      * @param contributions Deposits less withdrawals from the first point to each one.
      * @return The PortfolioHistoryResponse containing the history data.
      */
-    private static PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
+    private PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
             List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
         BigDecimal zero = BigDecimal.ZERO.setScale(2);
         for (int k = 0; k < timeline.size(); k++) {
             points.add(new PortfolioHistoryResponse.Point(timeline.get(k),
                     values[k] != null ? values[k] : zero,
-                    contributions[k] != null ? contributions[k] : zero));
+                    contributions[k] != null ? contributions[k] : zero,
+                    sessionOf(timeline.get(k))));
         }
         BigDecimal start = points.get(0).value();
         BigDecimal end = points.get(points.size() - 1).value();

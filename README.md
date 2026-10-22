@@ -1270,7 +1270,7 @@ Protected endpoints require the `CLIENT` role unless the Auth column says otherw
 | **Account** | `POST /api/account/balance/accounts/{id}/deposit` | Deposit funds | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/accounts/{id}/withdrawal` | Withdraw funds | Bearer JWT (client) |
 | **Account** | `POST /api/account/balance/transfers` | Transfer cash between the client's own accounts | Bearer JWT (client) |
-| **Account** | `GET /api/account/portfolio/history` | Portfolio value over time; `range` selects the period (default `1M`; `1D` runs from the previous close), optional `accountId` charts one account. Ranges start no earlier than the account opened, and `change` leaves out deposits and withdrawals (`netContributions`) | Bearer JWT (client) |
+| **Account** | `GET /api/account/portfolio/history` | Portfolio value over time; `range` selects the period (default `1M`; `1D` runs from the previous close), optional `accountId` charts one account. Each point has its market `session`, and intraday ranges skip the hours the market is closed. Ranges start no earlier than the account opened, and `change` leaves out deposits and withdrawals (`netContributions`) | Bearer JWT (client) |
 | **Account** | `GET /api/account/internal/accounts/{id}/validation-data` | Pre-trade validation data (account status, cash balance, holding in the instrument, saved price tolerance) for order-app | Bearer JWT (client or service) |
 | **Account** | `POST /api/account/internal/accounts/{id}/settlement` | Settle a filled order against cash and positions; called by order-app | Bearer JWT (client or service) |
 | **Account** | `GET /actuator/health` | Account service health check | Permitted |

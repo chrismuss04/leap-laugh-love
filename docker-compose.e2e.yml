@@ -15,6 +15,10 @@ services:
       # hours suite (e2e/playwright.market-hours.config.ts) sets E2E_MARKET_HOURS_MODE=REAL and pins a
       # session with MARKET_HOURS_FORCE_SESSION; see "Market hours tests" in e2e/README.md.
       MARKET_HOURS_MODE: "${E2E_MARKET_HOURS_MODE:-ALWAYS_OPEN}"
+  account-app:
+    environment:
+      # Charts the night hours the suite trades in, as the market is open around the clock.
+      MARKET_HOURS_MODE: "${E2E_MARKET_HOURS_MODE:-ALWAYS_OPEN}"
   db:
     volumes:
       # After the regular seeds (01-06): funded per-worker trader accounts and the fixtures the

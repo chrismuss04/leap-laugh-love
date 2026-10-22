@@ -43,6 +43,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:-changeme}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
       MARKET_DATA_BASE_URL: http://market-data-app:8083
+      # Market hours: with ALWAYS_OPEN, portfolio charts keep the night and weekend hours that
+      # REAL leaves out. Keep it the same as order-app and market-data-app.
+      MARKET_HOURS_MODE: "${MARKET_HOURS_MODE:-REAL}"
       # Inactive account emails go to the local mail catcher below, never to a real inbox.
       SPRING_MAIL_HOST: mailpit
       SPRING_MAIL_PORT: 1025

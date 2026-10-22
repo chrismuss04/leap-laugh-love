@@ -25,6 +25,7 @@ services:
     cpus: 1.0
     environment:
       JAVA_TOOL_OPTIONS: "-Xmx384m -XX:+UseSerialGC"
+      MARKET_HOURS_MODE: ALWAYS_OPEN
   order-app:
     build:
       labels:

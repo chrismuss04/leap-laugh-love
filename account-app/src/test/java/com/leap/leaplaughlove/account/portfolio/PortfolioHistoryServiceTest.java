@@ -10,6 +10,8 @@ import com.leap.leaplaughlove.account.position.PositionMovement;
 import com.leap.leaplaughlove.account.position.PositionMovementRepository;
 import com.leap.leaplaughlove.account.position.PositionRepository;
 import com.leap.leaplaughlove.account.quote.PriceHistoryClient;
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
 import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -24,13 +26,18 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -69,9 +76,28 @@ class PortfolioHistoryServiceTest {
     void setUp() {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken(CLIENT_ID, null, List.of()));
-        service = new PortfolioHistoryService(accountRepository, accountAuthorizationService, positionRepository, positionMovementRepository,
+        // Market hours off, so the walk back is tested across every hour, as in e2e runs.
+        service = serviceAt(NOW, MarketClock.Mode.ALWAYS_OPEN);
+    }
+
+    private PortfolioHistoryService serviceAt(OffsetDateTime now, MarketClock.Mode mode) {
+        return new PortfolioHistoryService(accountRepository, accountAuthorizationService, positionRepository, positionMovementRepository,
                 cashLedgerRepository, instrumentRepository, priceHistoryClient,
-                Clock.fixed(NOW.toInstant(), ZoneOffset.UTC));
+                new MarketClock(Clock.fixed(now.toInstant(), ZoneOffset.UTC), mode, null, null));
+    }
+
+    private static List<MarketSession> sessions(PortfolioHistoryResponse response) {
+        return response.points().stream().map(PortfolioHistoryResponse.Point::session).toList();
+    }
+
+    private static boolean hasPointAt(PortfolioHistoryResponse response, String timestamp) {
+        OffsetDateTime at = OffsetDateTime.parse(timestamp);
+        return response.points().stream().anyMatch(point -> point.timestamp().isEqual(at));
+    }
+
+    /** n copies of a session, for comparing a run of points. */
+    private static List<MarketSession> times(int n, MarketSession session) {
+        return Collections.nCopies(n, session);
     }
 
     @AfterEach
@@ -133,6 +159,8 @@ class PortfolioHistoryServiceTest {
         assertEquals(39 * 12 + 1, response.points().size());
         assertEquals(PREVIOUS_CLOSE, response.points().get(0).timestamp());
         assertEquals(NOW, response.points().get(response.points().size() - 1).timestamp());
+        // Market hours off: trading runs around the clock, so every point is in the regular session.
+        assertTrue(sessions(response).stream().allMatch(MarketSession.REGULAR::equals));
         // Before the buy: all cash, nothing held.
         assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T00:00:00Z"));
         // The buy itself: cash moved into 10 shares at the carried-forward 100 close.
@@ -212,6 +240,85 @@ class PortfolioHistoryServiceTest {
         assertEquals(new BigDecimal("990.00"), response.endValue());
         assertEquals(new BigDecimal("-10.00"), response.change());
         assertEquals(new BigDecimal("-1.00"), response.changePercent());
+    }
+
+    @Test
+    @DisplayName("1D on a Monday morning skips the weekend and nights, tagging each point with its session")
+    void oneDaySkipsClosedHours() {
+        // Monday 12 January 2026, 10:00 ET (EST, UTC-5): the day runs from Friday's 16:00 ET close.
+        service = serviceAt(OffsetDateTime.parse("2026-01-12T15:00:00Z"), MarketClock.Mode.REAL);
+        givenAccount();
+        givenCash("1000.00");
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
+
+        List<MarketSession> expected = new ArrayList<>();
+        // Friday's close is the baseline, and closes the regular session.
+        expected.add(MarketSession.REGULAR);
+        // Friday 16:05-20:00 ET, then Monday 4:05-9:30 ET, 9:35-9:55 ET and now.
+        expected.addAll(times(48, MarketSession.AFTER_HOURS));
+        expected.addAll(times(66, MarketSession.PRE_MARKET));
+        expected.addAll(times(6, MarketSession.REGULAR));
+        assertEquals(expected, sessions(response));
+        assertEquals(OffsetDateTime.parse("2026-01-09T21:00:00Z"), response.points().get(0).timestamp());
+        // After-hours' last bucket ends at 20:00 ET; the next point is Monday's first pre-market bucket.
+        assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(48).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(49).timestamp());
+        assertFalse(hasPointAt(response, "2026-01-10T12:00:00Z"));
+        // Skipping points doesn't change what the day is measured from.
+        assertEquals(new BigDecimal("1000.00"), response.startValue());
+        assertEquals(new BigDecimal("0.00"), response.change());
+    }
+
+    @Test
+    @DisplayName("1D on a weekend charts Friday's whole day and ends on now, in the closed session")
+    void oneDayOnAWeekendEndsClosed() {
+        service = serviceAt(NOW, MarketClock.Mode.REAL);
+        givenAccount();
+        givenCash("1000.00");
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
+
+        List<MarketSession> sessions = sessions(response);
+        // Thursday's close, its after-hours, Friday's pre-market, regular day and after-hours, then now.
+        assertEquals(1 + 48 + 66 + 78 + 48 + 1, sessions.size());
+        assertEquals(MarketSession.CLOSED, sessions.get(sessions.size() - 1));
+        assertEquals(NOW, response.points().get(sessions.size() - 1).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(sessions.size() - 2).timestamp());
+        assertEquals(1, sessions.stream().filter(MarketSession.CLOSED::equals).count());
+    }
+
+    @Test
+    @DisplayName("1D after a holiday skips the holiday as well as the weekend")
+    void oneDaySkipsHolidays() {
+        // Tuesday 20 January 2026, 10:00 ET, after Martin Luther King Jr. Day.
+        service = serviceAt(OffsetDateTime.parse("2026-01-20T15:00:00Z"), MarketClock.Mode.REAL);
+        givenAccount();
+        givenCash("1000.00");
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
+
+        assertEquals(OffsetDateTime.parse("2026-01-16T21:00:00Z"), response.points().get(0).timestamp());
+        assertEquals(1 + 48 + 66 + 6, response.points().size());
+        assertFalse(response.points().stream()
+                .anyMatch(point -> point.timestamp().toLocalDate().equals(LocalDate.of(2026, 1, 19))));
+    }
+
+    @Test
+    @DisplayName("daily ranges keep weekends, tagged closed")
+    void dailyRangesKeepClosedDays() {
+        service = serviceAt(NOW, MarketClock.Mode.REAL);
+        givenAccount();
+        givenCash("1000.00");
+
+        PortfolioHistoryResponse response = service.getHistory(PortfolioRange.THREE_MONTHS, null);
+
+        assertEquals(86400, response.intervalSeconds());
+        assertEquals(91, response.points().size());
+        // Sunday 4 January 2026, 00:00 UTC closes Saturday.
+        assertEquals(MarketSession.CLOSED, response.points().stream()
+                .filter(point -> point.timestamp().isEqual(OffsetDateTime.parse("2026-01-04T00:00:00Z")))
+                .findFirst().orElseThrow().session());
     }
 
     @Test

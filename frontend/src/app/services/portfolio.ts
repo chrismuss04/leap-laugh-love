@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
+import { MarketSession } from '../shared/market-session';
 
 export type PortfolioRange = '1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL';
 
@@ -18,6 +19,12 @@ export interface PortfolioPoint {
   value: number;
   /** Money deposited less withdrawn since the first point: part of the value, but not a gain. */
   contributions: number;
+  /**
+   * The session of the stretch this point closes, so the 4:00 PM ET point is the regular close.
+   * Intraday ranges leave out the points that fall while the market is closed, except the first
+   * and the last (now).
+   */
+  session: MarketSession;
 }
 
 export interface PortfolioHistory {

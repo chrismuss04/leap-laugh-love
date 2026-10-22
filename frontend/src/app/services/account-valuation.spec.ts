@@ -38,9 +38,9 @@ describe('AccountValuationService', () => {
     range: '1D', intervalSeconds: 300, startValue: 2400, endValue: 2500, netContributions: 0, change: 100,
     changePercent: 4.17,
     points: [
-      { timestamp: '2026-01-10T00:00:00Z', value: 2400, contributions: 0 },
-      { timestamp: '2026-01-10T00:05:00Z', value: 2450, contributions: 0 },
-      { timestamp: '2026-01-10T00:07:00Z', value: 2500, contributions: 0 }
+      { timestamp: '2026-01-10T00:00:00Z', value: 2400, contributions: 0, session: 'REGULAR' },
+      { timestamp: '2026-01-10T00:05:00Z', value: 2450, contributions: 0, session: 'REGULAR' },
+      { timestamp: '2026-01-10T00:07:00Z', value: 2500, contributions: 0, session: 'REGULAR' }
     ]
   };
 
