@@ -392,6 +392,19 @@ describe('DashboardComponent', () => {
       expect(dashboard.headlineLabel()).not.toContain('Pre-market');
     });
 
+    it('notes a scrub before the account was first funded, where nothing changed', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history, range: '1W',
+        points: [{ ...history.points[0], beforeFunding: true }, history.points[1]]
+      }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartPoints()[0].beforeFunding).toBe(true);
+      expect(dashboard.chartPoints()[1].beforeFunding).toBeUndefined();
+      dashboard.scrubIndex.set(0);
+      expect(dashboard.headlineLabel()).toMatch(/ · Before first deposit$/);
+      expect(dashboard.headlineChange()).toBe(0);
+    });
+
     it('labels a daily-resolution scrub with the year', () => {
       portfolioApi.getHistory.mockReturnValue(of({ ...history, intervalSeconds: 86400 }));
       dashboard.loadHistory();

@@ -173,6 +173,18 @@ describe('LineChartComponent', () => {
       expect(element().querySelector('.dot')!.classList).toContain('dimmed');
     });
 
+    it('tints the flat lead-in before the account was funded, then its own history at full strength', () => {
+      init({ points: [
+        { time: 1, value: 20, beforeFunding: true }, { time: 2, value: 20, beforeFunding: true },
+        { time: 3, value: 20 }, { time: 4, value: 24 }, { time: 5, value: 22 }
+      ] });
+      expect(chart.dimmed(1)).toBe(true);
+      expect(chart.dimmed(2)).toBe(false);
+      expect(chart.stops[0].kind).toBe('dim');
+      expect(chart.stops.at(-1)!.kind).toBe('bright');
+      expect(chart.stops.map(stop => stop.kind)).toContain('glint');
+    });
+
     it('carries the last session on to the live value while the market is closed, and stills the dot', () => {
       fixture.componentRef.setInput('highlight', 'AFTER_HOURS');
       init({ points: [...day, { time: 6, value: 22, session: 'CLOSED' }] });

@@ -20,7 +20,8 @@ import java.util.List;
  *     the last, so a chart spends its width on trading hours; daily ranges keep every day. 1D's
  *     first point is the previous close, then the last hour that traded before today as a
  *     lead-in, then today from its pre-market
- * @param startValue the value at the first point, the baseline the change is measured from
+ * @param startValue the value the accounts were first funded with in the range (the first point's,
+ *     when they were open before it starts): the baseline the change is measured from
  * @param endValue the value at the last point
  * @param netContributions money deposited less money withdrawn after the first point, which moves
  *     the value without being a gain or loss
@@ -69,9 +70,12 @@ public record PortfolioHistoryResponse(
      * @param session the market session of the stretch this point closes (the candle ending at
      *     its timestamp), so the 16:00 ET point is the regular close and the one after it is
      *     after-hours; always REGULAR when market hours are off
+     * @param beforeFunding whether the point comes before the charted accounts were first funded,
+     *     in a range that starts before they opened: its value is the one they were first funded
+     *     with, a flat lead into their history rather than a climb from nothing
      */
     public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions,
-            MarketSession session) {
+            MarketSession session, boolean beforeFunding) {
     }
 }
 

@@ -26,6 +26,11 @@ export interface PortfolioPoint {
    * and the last (now).
    */
   session: MarketSession;
+  /**
+   * Whether the point comes before the accounts were first funded, in a range that starts before
+   * they opened: it holds the value they were funded with, a flat lead into their history.
+   */
+  beforeFunding?: boolean;
 }
 
 export interface PortfolioHistory {

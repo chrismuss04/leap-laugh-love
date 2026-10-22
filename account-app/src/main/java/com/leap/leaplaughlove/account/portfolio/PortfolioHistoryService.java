@@ -64,6 +64,12 @@ import java.util.UUID;
  * change over the range leaves them out.
  *
  * <p>
+ * A range keeps its whole span even when the accounts opened part way through it.
+ * Up to when they were first funded, each point holds the value they were funded
+ * with, flagged, so the chart leads in flat rather than climbing from nothing, and
+ * the change counts from then.
+ *
+ * <p>
  * Each point carries the market session it falls in. Intraday ranges skip the
  * points that fall while the market is closed, so a Monday morning's 1D chart
  * isn't mostly a flat weekend; 1D also skips the previous day's after-hours,
@@ -167,7 +173,7 @@ public class PortfolioHistoryService {
 
         if (accounts.isEmpty()) {
             return toResponse(range, window, timeline, new BigDecimal[timeline.size()],
-                    new BigDecimal[timeline.size()], hours);
+                    new BigDecimal[timeline.size()], 0, hours);
         }
 
         Map<UUID, String> baseCurrencies = new HashMap<>();
@@ -191,20 +197,54 @@ public class PortfolioHistoryService {
         entries.sort(Comparator.comparing(CashLedgerEntry::getCreatedAt).reversed());
 
         Map<UUID, BigDecimal[]> prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);
-        BigDecimal[] contributions = contributionsAt(timeline, entries);
         BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);
-        return toResponse(range, window, timeline, values, contributions, hours);
+        int funded = fundedFrom(timeline, values, window.opened());
+        // Before the accounts were funded there was nothing to value: hold the value they were
+        // funded with, so the chart leads in flat and the change counts from then.
+        for (int k = 0; k < funded; k++) {
+            values[k] = values[funded];
+        }
+        BigDecimal[] contributions = contributionsAt(timeline, entries, funded);
+        return toResponse(range, window, timeline, values, contributions, funded, hours);
     }
 
     /**
-     * Money deposited less money withdrawn between the first point and each point, so a point's
-     * gain or loss can leave it out. Between accounts that are charted together a transfer's two
-     * sides cancel out; for one account it counts.
+     * The first point once the accounts were open and held something, when they opened after the
+     * range starts: the opening deposit can come a little after the account opens. 0 when they were
+     * open from the start.
      */
-    private static BigDecimal[] contributionsAt(List<OffsetDateTime> timeline, List<CashLedgerEntry> entries) {
-        OffsetDateTime start = timeline.get(0);
-        BigDecimal[] totals = new BigDecimal[timeline.size()];
+    private static int fundedFrom(List<OffsetDateTime> timeline, BigDecimal[] values, OffsetDateTime opened) {
+        if (opened == null) {
+            return 0;
+        }
+        int open = timeline.size() - 1;
         for (int k = 0; k < timeline.size(); k++) {
+            if (!timeline.get(k).isBefore(opened)) {
+                open = k;
+                break;
+            }
+        }
+        for (int k = open; k < timeline.size(); k++) {
+            if (values[k] != null && values[k].signum() != 0) {
+                return k;
+            }
+        }
+        return open;
+    }
+
+    /**
+     * Money deposited less money withdrawn between the first funded point and each point, so a
+     * point's gain or loss can leave it out; none before it. Between accounts that are charted
+     * together a transfer's two sides cancel out; for one account it counts.
+     */
+    private static BigDecimal[] contributionsAt(List<OffsetDateTime> timeline, List<CashLedgerEntry> entries,
+            int funded) {
+        OffsetDateTime start = timeline.get(funded);
+        BigDecimal[] totals = new BigDecimal[timeline.size()];
+        for (int k = 0; k < funded; k++) {
+            totals[k] = BigDecimal.ZERO.setScale(2);
+        }
+        for (int k = funded; k < timeline.size(); k++) {
             OffsetDateTime at = timeline.get(k);
             totals[k] = entries.stream()
                     .filter(entry -> CONTRIBUTION_TYPES.contains(entry.getEntryType()))
@@ -464,12 +504,13 @@ public class PortfolioHistoryService {
      * @param window   The effective window used for the calculation.
      * @param timeline The timestamps for each point in the history.
      * @param values   The calculated portfolio values at each timestamp.
-     * @param contributions Deposits less withdrawals from the first point to each one.
+     * @param contributions Deposits less withdrawals from the first funded point to each one.
+     * @param funded   The first point once the accounts were funded; those before it are flagged.
      * @param hours    The charted trading day's sessions, or null.
      * @return The PortfolioHistoryResponse containing the history data.
      */
     private PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
-            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions,
+            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions, int funded,
             PortfolioHistoryResponse.Hours hours) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
         BigDecimal zero = BigDecimal.ZERO.setScale(2);
@@ -477,9 +518,9 @@ public class PortfolioHistoryService {
             points.add(new PortfolioHistoryResponse.Point(timeline.get(k),
                     values[k] != null ? values[k] : zero,
                     contributions[k] != null ? contributions[k] : zero,
-                    sessionOf(timeline.get(k))));
+                    sessionOf(timeline.get(k)), k < funded));
         }
-        BigDecimal start = points.get(0).value();
+        BigDecimal start = points.get(funded).value();
         BigDecimal end = points.get(points.size() - 1).value();
         BigDecimal netContributions = points.get(points.size() - 1).contributions();
         BigDecimal change = end.subtract(start).subtract(netContributions);

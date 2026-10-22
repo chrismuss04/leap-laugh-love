@@ -63,9 +63,10 @@ public enum PortfolioRange {
     }
 
     /**
-     * Resolves the start and candle width of this range. A range never starts before the earliest
-     * account it covers opened: there was nothing to value then, and a chart rising from zero would
-     * read as a gain.
+     * Resolves the start and candle width of this range. A range keeps its whole span even when the
+     * accounts it covers opened part way through, so a week is always a week; the time before then
+     * is noted as {@code opened}, for the chart to show apart. ALL is the accounts' lifetime, so it
+     * starts when the earliest opened.
      * 
      * @param now                 the end of the range, in UTC
      * @param earliestAccountOpen when the earliest charted account opened, or null if unknown
@@ -77,12 +78,13 @@ public enum PortfolioRange {
             case ALL -> now.minus(MAX_LOOKBACK);
             default -> now.minus(span);
         };
-        boolean clamped = earliestAccountOpen != null && earliestAccountOpen.isAfter(from);
-        if (clamped) {
-            from = earliestAccountOpen.withOffsetSameInstant(ZoneOffset.UTC);
+        boolean openedLater = earliestAccountOpen != null && earliestAccountOpen.isAfter(from);
+        OffsetDateTime opened = openedLater ? earliestAccountOpen.withOffsetSameInstant(ZoneOffset.UTC) : null;
+        if (this != ALL) {
+            return new Window(from, intervalSeconds, opened);
         }
-        if (!clamped && this != ALL) {
-            return new Window(from, intervalSeconds);
+        if (openedLater) {
+            from = opened;
         }
         // A young account would chart as one or two daily points; use the finest width that
         // still covers its whole life instead.
@@ -90,7 +92,7 @@ public enum PortfolioRange {
         int width = life.compareTo(Duration.ofDays(2)) <= 0 ? 300
                 : life.compareTo(Duration.ofDays(30)) <= 0 ? 3600
                         : 86400;
-        return new Window(from, Math.min(width, intervalSeconds));
+        return new Window(from, Math.min(width, intervalSeconds), null);
     }
 
     /**
@@ -114,7 +116,9 @@ public enum PortfolioRange {
      * 
      * @param from            the start of the range
      * @param intervalSeconds the candle width, in seconds
+     * @param opened          when the earliest charted account opened, if that was after the
+     *                        range starts; null otherwise
      */
-    record Window(OffsetDateTime from, int intervalSeconds) {
+    record Window(OffsetDateTime from, int intervalSeconds, OffsetDateTime opened) {
     }
 }

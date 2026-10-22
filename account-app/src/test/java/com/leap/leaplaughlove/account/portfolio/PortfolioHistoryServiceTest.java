@@ -212,9 +212,11 @@ class PortfolioHistoryServiceTest {
     }
 
     @Test
-    @DisplayName("charts one account from when it opened, so a stock bought today shows only its move since")
-    void chartsNewAccountFromItsOpening() {
-        OffsetDateTime opened = OffsetDateTime.parse("2026-01-10T10:02:00Z");
+    @DisplayName("keeps a young account's week whole, leading in flat at the value it was funded with")
+    void leadsInFlatBeforeAYoungAccountWasFunded() {
+        // Opened at 8:30, funded at 10:03, a stock bought at 11:00.
+        OffsetDateTime opened = OffsetDateTime.parse("2026-01-10T08:30:00Z");
+        OffsetDateTime funded = OffsetDateTime.parse("2026-01-10T10:03:00Z");
         OffsetDateTime bought = OffsetDateTime.parse("2026-01-10T11:00:00Z");
         when(accountAuthorizationService.getAuthorizedAccount(ACCOUNT_ID)).thenReturn(
                 new Account(ACCOUNT_ID, CLIENT_ID, "ACC-2", "ACTIVE", "USD", true, opened));
@@ -223,21 +225,32 @@ class PortfolioHistoryServiceTest {
         when(positionMovementRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of(
                 new PositionMovement(ACCOUNT_ID, AAPL_ID, null, null, "BUY_FILL", 10, new BigDecimal("1000.00"), bought)));
         when(cashLedgerRepository.findByAccountIdInAndCreatedAtAfter(anyList(), any())).thenReturn(List.of(
-                new CashLedgerEntry(ACCOUNT_ID, "DEPOSIT", new BigDecimal("1000.00"), "USD", opened.plusMinutes(1), null),
+                new CashLedgerEntry(ACCOUNT_ID, "DEPOSIT", new BigDecimal("1000.00"), "USD", funded, null),
                 new CashLedgerEntry(ACCOUNT_ID, "BUY_SETTLEMENT", new BigDecimal("-1000.00"), "USD", bought, null)));
-        // The stock is up on the day, but has slipped since the buy.
-        when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(300))).thenReturn(List.of(
-                new CandleClose(OffsetDateTime.parse("2026-01-09T23:55:00Z"), new BigDecimal("90")),
-                new CandleClose(OffsetDateTime.parse("2026-01-10T10:55:00Z"), new BigDecimal("100"))));
+        // Up on the day, but slipped since the buy.
+        when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), any(), eq(3600))).thenReturn(List.of(
+                new CandleClose(OffsetDateTime.parse("2026-01-10T09:00:00Z"), new BigDecimal("90")),
+                new CandleClose(OffsetDateTime.parse("2026-01-10T10:00:00Z"), new BigDecimal("100"))));
         when(priceHistoryClient.fetchLatestPrice("AAPL")).thenReturn(Optional.of(new BigDecimal("99")));
 
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_WEEK, ACCOUNT_ID);
 
         verify(accountRepository, never()).findByClientIdAndStatus(any(), any());
-        // A week is cut to the account's two hours, at a width that still draws them.
-        assertEquals(300, response.intervalSeconds());
-        assertEquals(OffsetDateTime.parse("2026-01-10T10:05:00Z"), response.points().get(0).timestamp());
-        // Funded before the first point, so the deposit is the baseline rather than a gain.
+        // The whole week, at the week's own width.
+        assertEquals(3600, response.intervalSeconds());
+        assertEquals(OffsetDateTime.parse("2026-01-03T12:00:00Z"), response.points().get(0).timestamp());
+        // Before it was funded - including the hour it was open but empty - flat at what it was
+        // funded with, flagged; from 11:00, its own history.
+        PortfolioHistoryResponse.Point first = response.points().get(0);
+        assertTrue(first.beforeFunding());
+        assertEquals(new BigDecimal("1000.00"), first.value());
+        assertTrue(response.points().stream()
+                .filter(point -> point.timestamp().isEqual(OffsetDateTime.parse("2026-01-10T10:00:00Z")))
+                .findFirst().orElseThrow().beforeFunding());
+        assertFalse(response.points().stream()
+                .filter(point -> point.timestamp().isEqual(bought))
+                .findFirst().orElseThrow().beforeFunding());
+        // The deposit is the baseline rather than a gain.
         assertEquals(new BigDecimal("1000.00"), response.startValue());
         assertEquals(new BigDecimal("0.00"), response.netContributions());
         assertEquals(new BigDecimal("990.00"), response.endValue());
@@ -448,19 +461,22 @@ class PortfolioHistoryServiceTest {
     }
 
     @Test
-    @DisplayName("a range never starts before the account opened, and narrows its candles to fit")
-    void rangesStartNoEarlierThanAccountOpening() {
+    @DisplayName("a range keeps its whole span and width, noting when a younger account opened")
+    void rangesKeepTheirSpanForYoungAccounts() {
         PortfolioRange.Window month = PortfolioRange.ONE_MONTH.window(NOW, NOW.minusYears(1));
         assertEquals(NOW.minusDays(30), month.from());
         assertEquals(3600, month.intervalSeconds());
+        assertNull(month.opened());
 
         PortfolioRange.Window youngYear = PortfolioRange.ONE_YEAR.window(NOW, NOW.minusDays(10));
-        assertEquals(NOW.minusDays(10), youngYear.from());
-        assertEquals(3600, youngYear.intervalSeconds());
+        assertEquals(NOW.minusDays(365), youngYear.from());
+        assertEquals(86400, youngYear.intervalSeconds());
+        assertEquals(NOW.minusDays(10), youngYear.opened());
 
-        // Never coarser than the range's own width, however old the account.
         PortfolioRange.Window youngWeek = PortfolioRange.ONE_WEEK.window(NOW, NOW.minusDays(5));
+        assertEquals(NOW.minusDays(7), youngWeek.from());
         assertEquals(3600, youngWeek.intervalSeconds());
+        assertEquals(NOW.minusDays(5), youngWeek.opened());
     }
 
     @Test

@@ -223,7 +223,8 @@ export class DashboardComponent implements OnInit {
     const points: (ChartPoint & { contributions: number })[] = history
       ? history.points.map(p => ({
           time: Date.parse(p.timestamp), value: p.value, contributions: p.contributions,
-          ...(withSessions ? { session: p.session } : {})
+          ...(withSessions ? { session: p.session } : {}),
+          ...(p.beforeFunding ? { beforeFunding: true } : {})
         }))
       : [];
     const last = points.at(-1);
@@ -406,6 +407,9 @@ export class DashboardComponent implements OnInit {
       const when = date.toLocaleString('en-US', withTime
         ? { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }
         : { month: 'short', day: 'numeric', year: 'numeric' });
+      if (points[index].beforeFunding) {
+        return `${when} · Before first deposit`;
+      }
       const session = points[index].session;
       return session && session !== 'REGULAR' ? `${when} · ${sessionLabel(session)}` : when;
     }

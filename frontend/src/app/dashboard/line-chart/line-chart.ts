@@ -16,6 +16,8 @@ export interface ChartPoint {
    * to count the point as regular hours.
    */
   session?: MarketSession;
+  /** Whether the point comes before the account was funded: a flat lead-in, always tinted. */
+  beforeFunding?: boolean;
 }
 
 /**
@@ -104,8 +106,10 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   /** The first point of the highlighted stretch at the end of the line. */
   private readonly brightFrom = computed(() => {
     const { points, highlight, domain } = this.data();
+    const funded = points.findIndex(point => !point.beforeFunding);
     return Math.max(highlightStart(points.map(point => point.session), highlight),
-      firstInDomain(points.map(point => point.time), domain));
+      firstInDomain(points.map(point => point.time), domain),
+      funded < 0 ? points.length : funded);
   });
   private readonly shape = computed(() => this.build(this.data()));
 
