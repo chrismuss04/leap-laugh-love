@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -65,6 +66,11 @@ import java.util.UUID;
  * points that fall while the market is closed, so a Monday morning's 1D chart
  * isn't mostly a flat weekend; 1D also skips the previous day's after-hours,
  * drawing today from its pre-market open against the previous close.
+ *
+ * <p>
+ * A pre-market pinned for a demo is charted as a new trading day that began when
+ * the pin did, whatever the calendar says: its hours trade in pre-market (then the
+ * regular session, if the pin ends), and the day's sessions are laid out from it.
  */
 @Service
 public class PortfolioHistoryService {
@@ -74,6 +80,11 @@ public class PortfolioHistoryService {
 
     /** Candles at least this wide are daily: every day is kept, open or not. */
     private static final int SECONDS_PER_DAY = 86400;
+
+    /** How long a pinned demo day's sessions last, as the calendar's usual day: 4:00, 9:30, 16:00, 20:00. */
+    private static final Duration PRE_MARKET_LENGTH = Duration.ofMinutes(330);
+    private static final Duration REGULAR_LENGTH = Duration.ofMinutes(390);
+    private static final Duration AFTER_HOURS_LENGTH = Duration.ofHours(4);
 
     private final AccountRepository accountRepository;
     private final AccountAuthorizationService accountAuthorizationService;
@@ -323,36 +334,66 @@ public class PortfolioHistoryService {
     }
 
     /**
-     * For 1D, the hours of the trading day under way, so the chart can frame the day by time.
-     * Null for other ranges, and when market hours are off and every hour trades.
+     * For 1D, the hours of the trading day under way, so the chart can frame the day by time: a
+     * pinned pre-market's day is laid out from the pin, opening when the pin ends (or a usual
+     * pre-market later). Null for other ranges, and when market hours are off and every hour trades.
      */
     private PortfolioHistoryResponse.Hours hours(PortfolioRange range, OffsetDateTime now) {
-        return range == PortfolioRange.ONE_DAY && marketClock.mode() != MarketClock.Mode.ALWAYS_OPEN
-                ? PortfolioHistoryResponse.Hours.of(TradingDay.hoursOf(now)) : null;
+        if (range != PortfolioRange.ONE_DAY || marketClock.mode() == MarketClock.Mode.ALWAYS_OPEN) {
+            return null;
+        }
+        MarketClock.Pin pin = pinnedPreMarket();
+        if (pin == null) {
+            return PortfolioHistoryResponse.Hours.of(TradingDay.hoursOf(now));
+        }
+        Instant open = pin.until() != null ? pin.until() : pin.since().plus(PRE_MARKET_LENGTH);
+        Instant close = open.plus(REGULAR_LENGTH);
+        return new PortfolioHistoryResponse.Hours(utc(pin.since()), utc(open), utc(close),
+                utc(close.plus(AFTER_HOURS_LENGTH)));
+    }
+
+    /** A pre-market pinned for a demo, charted as a new trading day; null otherwise. */
+    private MarketClock.Pin pinnedPreMarket() {
+        MarketClock.Pin pin = marketClock.mode() == MarketClock.Mode.REAL ? marketClock.pin() : null;
+        return pin != null && pin.session() == MarketSession.PRE_MARKET ? pin : null;
+    }
+
+    private static OffsetDateTime utc(Instant instant) {
+        return instant.atOffset(ZoneOffset.UTC);
     }
 
     /**
      * Where a range's chart starts drawing, after its first point: today's
-     * pre-market open for 1D, so the previous day's after-hours isn't drawn. Null
-     * for other ranges, and when market hours are off and every hour trades.
+     * pre-market open for 1D, so the previous day's after-hours isn't drawn, or
+     * when a pinned pre-market began. Null for other ranges, and when market hours
+     * are off and every hour trades.
      */
     private OffsetDateTime drawFrom(PortfolioRange range, OffsetDateTime now) {
-        return range == PortfolioRange.ONE_DAY && marketClock.mode() != MarketClock.Mode.ALWAYS_OPEN
-                ? TradingDay.openOf(now) : null;
+        if (range != PortfolioRange.ONE_DAY || marketClock.mode() == MarketClock.Mode.ALWAYS_OPEN) {
+            return null;
+        }
+        MarketClock.Pin pin = pinnedPreMarket();
+        return pin != null ? utc(pin.since()) : TradingDay.openOf(now);
     }
 
     /**
      * The session of the stretch a point closes: the candle ending at it. So the
      * 16:00 ET point, the regular close, is in the regular session and the one after
      * it is after-hours. Always the regular session when market hours are off, as
-     * trading then runs around the clock. A pinned demo session is left out: it
-     * describes the market now, not its history.
+     * trading then runs around the clock. Since a pre-market was pinned for a demo,
+     * pre-market, then the regular session once the pin ends; other pinned sessions
+     * describe the market now, not its history, so the calendar decides.
      */
     MarketSession sessionOf(OffsetDateTime point) {
         if (marketClock.mode() == MarketClock.Mode.ALWAYS_OPEN) {
             return MarketSession.REGULAR;
         }
-        return MarketCalendar.sessionAt(point.toInstant().minusNanos(1));
+        Instant stretch = point.toInstant().minusNanos(1);
+        MarketClock.Pin pin = pinnedPreMarket();
+        if (pin != null && !stretch.isBefore(pin.since())) {
+            return pin.until() == null || stretch.isBefore(pin.until()) ? MarketSession.PRE_MARKET : MarketSession.REGULAR;
+        }
+        return MarketCalendar.sessionAt(stretch);
     }
 
     /**

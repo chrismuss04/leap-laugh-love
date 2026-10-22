@@ -1794,7 +1794,7 @@ The header's market status pill shows the session and what happens next; clickin
 
 ### Trying it at any hour
 
-`MARKET_HOURS_MODE` is `REAL` (the NYSE clock, the default) or `ALWAYS_OPEN`. To demo a session at any time of day, pin one for both order-app and market-data-app:
+`MARKET_HOURS_MODE` is `REAL` (the NYSE clock, the default) or `ALWAYS_OPEN`. To demo a session at any time of day, pin one for order-app, market-data-app and account-app (Docker passes the same variables to all three):
 
 | Variable | |
 | --- | --- |
@@ -1802,6 +1802,8 @@ The header's market status pill shows the session and what happens next; clickin
 | `MARKET_HOURS_FORCE_MINUTES` | How long the pinned session lasts before the market opens; `0` (default) pins it for good |
 
 Docker: set them in `.env`, then `docker compose up -d` (see `.env.example`). Windows without Docker: `.\scripts\start-local.ps1 -MarketSession AFTER_HOURS`, or `-MarketSession CLOSED -MarketOpensInMinutes 3` to watch a queued order fill, or `-AlwaysOpen` for no market hours at all. The e2e and CI stacks run `ALWAYS_OPEN`, so market orders fill at any hour; `e2e/README.md` describes the market hours suite, which pins a session instead.
+
+A pinned `PRE_MARKET` charts as a new trading day that began at startup: the 1D chart draws from then, laid out like a usual day with room for the open. Day changes still count from the calendar's previous close, so the chart and Today's return agree. Other pinned sessions leave the 1D history on the calendar's day.
 
 `GET /api/marketdata/market/status` returns the session, when it next changes, when regular trading next opens and today's hours.
 

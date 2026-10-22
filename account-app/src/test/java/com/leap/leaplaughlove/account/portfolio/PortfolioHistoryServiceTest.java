@@ -26,6 +26,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -309,6 +311,66 @@ class PortfolioHistoryServiceTest {
         assertEquals(OffsetDateTime.parse("2026-01-20T09:05:00Z"), response.points().get(1).timestamp());
         assertFalse(response.points().stream()
                 .anyMatch(point -> point.timestamp().toLocalDate().equals(LocalDate.of(2026, 1, 19))));
+    }
+
+    /** A clock a test can move, so a pinned session can begin before now. */
+    private static final class MovableClock extends Clock {
+        private Instant now;
+
+        MovableClock(Instant start) {
+            now = start;
+        }
+
+        @Override public ZoneOffset getZone() { return ZoneOffset.UTC; }
+        @Override public Clock withZone(java.time.ZoneId zone) { return this; }
+        @Override public Instant instant() { return now; }
+    }
+
+    /** A pre-market pinned at midnight ET after Tuesday 13 January 2026, an hour ago. */
+    private PortfolioHistoryResponse pinnedPreMarketHistory(Duration pinFor) {
+        MovableClock time = new MovableClock(Instant.parse("2026-01-14T05:00:00Z"));
+        MarketClock pinned = new MarketClock(time, MarketClock.Mode.REAL, MarketSession.PRE_MARKET, pinFor);
+        time.now = Instant.parse("2026-01-14T06:00:00Z");
+        service = new PortfolioHistoryService(accountRepository, accountAuthorizationService, positionRepository,
+                positionMovementRepository, cashLedgerRepository, instrumentRepository, priceHistoryClient, pinned);
+        givenAccount();
+        givenCash("1000.00");
+        return service.getHistory(PortfolioRange.ONE_DAY, null);
+    }
+
+    @Test
+    @DisplayName("a pinned pre-market is charted as a new day from the pin")
+    void pinnedPreMarketIsANewDay() {
+        PortfolioHistoryResponse response = pinnedPreMarketHistory(null);
+
+        List<MarketSession> expected = new ArrayList<>();
+        // The calendar's previous close is still the baseline (at 1 AM it's still Tuesday's trading
+        // day, from Monday's close), so the chart agrees with today's return; then the pinned hour,
+        // though the calendar says closed, without Tuesday's own hours.
+        expected.add(MarketSession.REGULAR);
+        expected.addAll(times(12, MarketSession.PRE_MARKET));
+        assertEquals(expected, sessions(response));
+        assertEquals(OffsetDateTime.parse("2026-01-12T21:00:00Z"), response.points().get(0).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-14T05:05:00Z"), response.points().get(1).timestamp());
+        // Laid out like a usual day from the pin: the open five and a half hours on.
+        assertEquals(new PortfolioHistoryResponse.Hours(OffsetDateTime.parse("2026-01-14T05:00:00Z"),
+                OffsetDateTime.parse("2026-01-14T10:30:00Z"), OffsetDateTime.parse("2026-01-14T17:00:00Z"),
+                OffsetDateTime.parse("2026-01-14T21:00:00Z")), response.hours());
+    }
+
+    @Test
+    @DisplayName("a pinned pre-market that ends opens the regular session then")
+    void pinnedPreMarketOpens() {
+        PortfolioHistoryResponse response = pinnedPreMarketHistory(Duration.ofMinutes(30));
+
+        List<MarketSession> expected = new ArrayList<>();
+        expected.add(MarketSession.REGULAR);
+        // 0:05-0:30 ET pinned pre-market, then regular hours to now.
+        expected.addAll(times(6, MarketSession.PRE_MARKET));
+        expected.addAll(times(6, MarketSession.REGULAR));
+        assertEquals(expected, sessions(response));
+        assertEquals(OffsetDateTime.parse("2026-01-14T05:30:00Z"), response.hours().regularOpen());
+        assertEquals(OffsetDateTime.parse("2026-01-14T12:00:00Z"), response.hours().regularClose());
     }
 
     @Test
