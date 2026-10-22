@@ -11,7 +11,8 @@ import { PORTFOLIO_RANGES, PortfolioHistory, PortfolioRange, PortfolioService } 
 import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models';
 import { TickerStripComponent } from './ticker-strip/ticker-strip';
 import { SymbolSearchComponent } from './symbol-search/symbol-search';
-import { ChartDomain, ChartPoint, LineChartComponent } from './line-chart/line-chart';
+import { ChartPoint, LineChartComponent } from './line-chart/line-chart';
+import { ChartDomain, dayFrame } from '../shared/chart-layout';
 import { PositionsListComponent } from './positions-list/positions-list';
 import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
@@ -239,12 +240,22 @@ export class DashboardComponent implements OnInit {
   readonly baseline = computed(() => this.history()?.startValue ?? null);
 
   /**
-   * Today's chart is laid out by time, framed by where the day is: in pre-market it runs from the
-   * pre-market open to the regular close, so the morning sits at the start with room for the day
-   * ahead; in regular hours, the regular session; after the close (and overnight, and over a
-   * weekend) from the open to the end of after-hours. Pre-market isn't drawn once the market has
-   * opened. Null on other ranges, and with market hours off, which space points evenly.
+   * Today's chart is laid out by time, framed by where the day is (see `dayFrame`): in pre-market
+   * the morning sits at the start with room for the day, led into by the previous session's last
+   * hour; once the market has opened, from the open. Null on other ranges, and with market hours
+   * off, which space points evenly.
    */
+  readonly chartDomain = computed<ChartDomain | null>(() => {
+    const history = this.history();
+    const hours = history?.range === '1D' ? history.hours : null;
+    if (!history || !hours) {
+      return null;
+    }
+    // The prices the day traded at, not the baseline before them or the live value after.
+    const traded = history.points.slice(1, -1).map(point => Date.parse(point.timestamp));
+    return dayFrame(hours, this.market.session(), traded, Date.now());
+  });
+
   /**
    * The session today's chart draws at full strength, the earlier ones tinted: the one under way,
    * or while the market is closed, the last one traded in. Null on other ranges, which highlight
@@ -269,29 +280,8 @@ export class DashboardComponent implements OnInit {
     return null;
   });
 
-  readonly chartDomain = computed<ChartDomain | null>(() => {
-    const history = this.history();
-    const hours = history?.range === '1D' ? history.hours : null;
-    if (!history || !hours) {
-      return null;
-    }
-    const [preMarketOpen, regularOpen, regularClose, afterHoursClose] =
-      [hours.preMarketOpen, hours.regularOpen, hours.regularClose, hours.afterHoursClose].map(Date.parse);
-    const session = this.market.session();
-    // Until the market status loads, the browser's clock decides.
-    const now = Date.now();
-    // How far the charted day got, from its prices (not the live one): a session pinned for a demo
-    // can say pre-market over a day that has already finished, which is charted as a whole day.
-    const traded = history.points.slice(1, -1).map(point => Date.parse(point.timestamp));
-    const reached = (moment: number) => traded.some(time => time > moment);
-    if ((session === 'PRE_MARKET' || (!session && now < regularOpen)) && !reached(regularOpen)) {
-      return { start: preMarketOpen, end: regularClose };
-    }
-    if ((session === 'REGULAR' || (!session && now < regularClose)) && !reached(regularClose)) {
-      return { start: regularOpen, end: regularClose };
-    }
-    return { start: regularOpen, end: afterHoursClose };
-  });
+  /** The hours of the trading day under way, for the stock sparklines to frame it the same way. */
+  readonly dayHours = this.valuation.dayHours;
 
   readonly chartLoading = this.historyLoading;
 

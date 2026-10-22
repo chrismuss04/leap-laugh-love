@@ -3,6 +3,9 @@ import {
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MarketSession, highlightStart } from '../../shared/market-session';
+import { ChartDomain, firstInDomain, placeByTime } from '../../shared/chart-layout';
+
+export type { ChartDomain } from '../../shared/chart-layout';
 
 export interface ChartPoint {
   time: number;
@@ -13,15 +16,6 @@ export interface ChartPoint {
    * to count the point as regular hours.
    */
   session?: MarketSession;
-}
-
-/**
- * The stretch of time the chart spans, in epoch ms, when it's laid out by time rather than point
- * by point: points before it aren't drawn, and time after the last point is left empty.
- */
-export interface ChartDomain {
-  start: number;
-  end: number;
 }
 
 /**
@@ -68,7 +62,7 @@ let nextChartId = 0;
  * does - is drawn at full strength and the rest as a softer tint of the same line, which glints as
  * it comes into the highlight rather than switching colour.
  * Given a `domain`, points are placed by time, so a day still under way leaves the rest of the day
- * empty to the right.
+ * empty to the right, and a pre-market can lead in from the previous session's last hour.
  */
 @Component({
     selector: 'app-line-chart',
@@ -108,8 +102,11 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
    * detection) marks the view dirty instead of changing a bound value behind Angular's back.
    */
   /** The first point of the highlighted stretch at the end of the line. */
-  private readonly brightFrom = computed(() =>
-    highlightStart(this.data().points.map(point => point.session), this.data().highlight));
+  private readonly brightFrom = computed(() => {
+    const { points, highlight, domain } = this.data();
+    return Math.max(highlightStart(points.map(point => point.session), highlight),
+      firstInDomain(points.map(point => point.time), domain));
+  });
   private readonly shape = computed(() => this.build(this.data()));
 
   get height(): number { return this.hostHeight(); }
@@ -273,24 +270,12 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     };
   }
 
-  /**
-   * Each point's x: by time across the domain, or evenly spaced without one. Points before the
-   * domain aren't drawn. The newest point past its end - the live value while the market is
-   * closed - takes the end in place of the point there, rather than standing straight above it.
-   */
+  /** Each point's x: by time across the domain (see `placeByTime`), or evenly spaced without one. */
   private place(points: ChartPoint[], domain: ChartDomain | null, width: number): (number | null)[] {
     if (!domain) {
       return points.map((_, i) => points.length <= 1 ? width : (i / (points.length - 1)) * width);
     }
-    const span = domain.end - domain.start || 1;
-    const last = points.length - 1;
-    const pastEnd = points[last].time > domain.end;
-    return points.map((point, i) => {
-      if (point.time < domain.start || (pastEnd && i < last && point.time >= domain.end)) {
-        return null;
-      }
-      return Math.min(1, (point.time - domain.start) / span) * width;
-    });
+    return placeByTime(points.map(point => point.time), domain, width);
   }
 
   /**

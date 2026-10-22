@@ -76,6 +76,13 @@ export class AccountValuationService {
   readonly settledPrices = computed<Record<string, number>>(
     () => ({ ...this.snapshotPrices(), ...this.stream.settledPrices() }));
 
+  /**
+   * The hours of the trading day under way, from account-app's day history (any account's: the day
+   * is the same for all), so stock sparklines frame the day as the 1D chart does. Null until it
+   * loads, and with market hours off.
+   */
+  readonly dayHours = computed(() => Object.values(this.dayHistories()).find(history => history.hours)?.hours ?? null);
+
   /** Every account valued live, in the API's order so each keeps its colour. */
   readonly accounts = computed<AccountView[]>(() => {
     const holdings = this.holdingsResponse();
@@ -204,6 +211,7 @@ export class AccountValuationService {
         totalReturn,
         totalReturnPercent: totalReturn !== null && cost ? (totalReturn / cost) * 100 : null,
         intraday: intraday[symbol]?.closes ?? [],
+        intradayTimes: intraday[symbol]?.starts ?? [],
         intradaySessions: sessionsAt(intraday[symbol]?.starts ?? [], status)
       };
     }).sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0));

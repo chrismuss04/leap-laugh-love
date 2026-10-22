@@ -93,6 +93,25 @@ describe('dashboard display components', () => {
         expect(dimmedPath.match(/M/g)!.length).toBe(1);
       });
 
+      it('frames the day as the 1D chart does, given times and the day\'s hours', () => {
+        const hours = {
+          preMarketOpen: '2026-10-14T08:00:00Z', regularOpen: '2026-10-14T13:30:00Z',
+          regularClose: '2026-10-14T20:00:00Z', afterHoursClose: '2026-10-15T00:00:00Z'
+        };
+        // Tuesday's last after-hours prices, then Wednesday's first two pre-market ones.
+        const times = ['2026-10-13T23:50:00Z', '2026-10-13T23:55:00Z', '2026-10-14T08:00:00Z', '2026-10-14T09:12:00Z']
+          .map(iso => Date.parse(iso));
+        const fixture = render(SparklineComponent, {
+          values: [1, 2, 3, 4], times, dayHours: hours, highlight: 'PRE_MARKET',
+          sessions: ['AFTER_HOURS', 'AFTER_HOURS', 'PRE_MARKET', 'PRE_MARKET']
+        });
+        const { path, dimmedPath } = fixture.componentInstance;
+        // The lead-in fills the first fifth (17.6px), tinted; pre-market comes in from its last price
+        // and runs by time from there, the rest of the day left empty.
+        expect(dimmedPath).toMatch(/^M0\.0,[\d.]+L8\.8,[\d.]+$/);
+        expect(path).toMatch(/^M8\.8,[\d.]+L17\.6,[\d.]+L24\.6,[\d.]+$/);
+      });
+
       it('can tint the whole line', () => {
         const fixture = render(SparklineComponent, { values: [1, 2], sessions: [null, 'REGULAR'], highlight: 'AFTER_HOURS' });
         expect(fixture.componentInstance.path).toBe('');

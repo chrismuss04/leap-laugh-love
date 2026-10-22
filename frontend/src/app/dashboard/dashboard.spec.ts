@@ -356,7 +356,7 @@ describe('DashboardComponent', () => {
 
       // Pre-market: the morning at the start, with room for the regular session.
       marketSession.set('PRE_MARKET');
-      expect(dashboard.chartDomain()).toEqual({ start: at(hours.preMarketOpen), end: at(hours.regularClose) });
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.preMarketOpen), end: at(hours.regularClose), leadInFrom: null });
       marketSession.set('REGULAR');
       expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.regularClose) });
       // After the close, overnight and at the weekend: the open to the end of after-hours.

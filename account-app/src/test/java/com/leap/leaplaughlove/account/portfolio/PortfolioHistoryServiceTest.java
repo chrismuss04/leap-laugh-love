@@ -258,12 +258,15 @@ class PortfolioHistoryServiceTest {
         List<MarketSession> expected = new ArrayList<>();
         // Friday's close is the baseline, and closes the regular session.
         expected.add(MarketSession.REGULAR);
-        // Then Monday 4:05-9:30 ET, 9:35-9:55 ET and now: not Friday's after-hours or the weekend.
+        // Friday's last hour of after-hours as a lead-in, then Monday 4:05-9:30 ET, 9:35-9:55 ET and
+        // now: not the rest of Friday's after-hours, or the weekend.
+        expected.addAll(times(12, MarketSession.AFTER_HOURS));
         expected.addAll(times(66, MarketSession.PRE_MARKET));
         expected.addAll(times(6, MarketSession.REGULAR));
         assertEquals(expected, sessions(response));
         assertEquals(OffsetDateTime.parse("2026-01-09T21:00:00Z"), response.points().get(0).timestamp());
-        assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(1).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-10T00:05:00Z"), response.points().get(1).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(13).timestamp());
         assertFalse(hasPointAt(response, "2026-01-09T23:00:00Z"));
         assertFalse(hasPointAt(response, "2026-01-10T12:00:00Z"));
         // Monday's hours, for the chart to frame the day by time.
@@ -285,9 +288,9 @@ class PortfolioHistoryServiceTest {
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
         List<MarketSession> sessions = sessions(response);
-        // Thursday's close, then Friday's pre-market, regular day and after-hours, then now.
-        assertEquals(1 + 66 + 78 + 48 + 1, sessions.size());
-        assertEquals(OffsetDateTime.parse("2026-01-09T09:05:00Z"), response.points().get(1).timestamp());
+        // Thursday's close and last hour, then Friday's pre-market, regular day and after-hours, then now.
+        assertEquals(1 + 12 + 66 + 78 + 48 + 1, sessions.size());
+        assertEquals(OffsetDateTime.parse("2026-01-09T09:05:00Z"), response.points().get(13).timestamp());
         assertEquals(MarketSession.CLOSED, sessions.get(sessions.size() - 1));
         assertEquals(NOW, response.points().get(sessions.size() - 1).timestamp());
         assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(sessions.size() - 2).timestamp());
@@ -307,8 +310,8 @@ class PortfolioHistoryServiceTest {
         PortfolioHistoryResponse response = service.getHistory(PortfolioRange.ONE_DAY, null);
 
         assertEquals(OffsetDateTime.parse("2026-01-16T21:00:00Z"), response.points().get(0).timestamp());
-        assertEquals(1 + 66 + 6, response.points().size());
-        assertEquals(OffsetDateTime.parse("2026-01-20T09:05:00Z"), response.points().get(1).timestamp());
+        assertEquals(1 + 12 + 66 + 6, response.points().size());
+        assertEquals(OffsetDateTime.parse("2026-01-20T09:05:00Z"), response.points().get(13).timestamp());
         assertFalse(response.points().stream()
                 .anyMatch(point -> point.timestamp().toLocalDate().equals(LocalDate.of(2026, 1, 19))));
     }
@@ -346,12 +349,14 @@ class PortfolioHistoryServiceTest {
         List<MarketSession> expected = new ArrayList<>();
         // The calendar's previous close is still the baseline (at 1 AM it's still Tuesday's trading
         // day, from Monday's close), so the chart agrees with today's return; then the pinned hour,
-        // though the calendar says closed, without Tuesday's own hours.
+        // though the calendar says closed, led into by Tuesday's last hour of after-hours.
         expected.add(MarketSession.REGULAR);
+        expected.addAll(times(12, MarketSession.AFTER_HOURS));
         expected.addAll(times(12, MarketSession.PRE_MARKET));
         assertEquals(expected, sessions(response));
         assertEquals(OffsetDateTime.parse("2026-01-12T21:00:00Z"), response.points().get(0).timestamp());
-        assertEquals(OffsetDateTime.parse("2026-01-14T05:05:00Z"), response.points().get(1).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-14T00:05:00Z"), response.points().get(1).timestamp());
+        assertEquals(OffsetDateTime.parse("2026-01-14T05:05:00Z"), response.points().get(13).timestamp());
         // Laid out like a usual day from the pin: the open five and a half hours on.
         assertEquals(new PortfolioHistoryResponse.Hours(OffsetDateTime.parse("2026-01-14T05:00:00Z"),
                 OffsetDateTime.parse("2026-01-14T10:30:00Z"), OffsetDateTime.parse("2026-01-14T17:00:00Z"),
@@ -365,6 +370,7 @@ class PortfolioHistoryServiceTest {
 
         List<MarketSession> expected = new ArrayList<>();
         expected.add(MarketSession.REGULAR);
+        expected.addAll(times(12, MarketSession.AFTER_HOURS));
         // 0:05-0:30 ET pinned pre-market, then regular hours to now.
         expected.addAll(times(6, MarketSession.PRE_MARKET));
         expected.addAll(times(6, MarketSession.REGULAR));

@@ -27,9 +27,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -80,6 +82,9 @@ public class PortfolioHistoryService {
 
     /** Candles at least this wide are daily: every day is kept, open or not. */
     private static final int SECONDS_PER_DAY = 86400;
+
+    /** How many trading points before 1D's drawn day to keep as a lead-in: the last hour, at 5 minutes. */
+    static final int LEAD_IN_POINTS = 12;
 
     /** How long a pinned demo day's sessions last, as the calendar's usual day: 4:00, 9:30, 16:00, 20:00. */
     private static final Duration PRE_MARKET_LENGTH = Duration.ofMinutes(330);
@@ -307,8 +312,10 @@ public class PortfolioHistoryService {
      * deposit at night, shows in the next point.
      *
      * <p>
-     * Points up to {@code drawFrom} are left out too, again keeping the first: 1D
-     * keeps the previous close as its baseline but draws from today's pre-market.
+     * Points up to {@code drawFrom} are left out too, again keeping the first, and
+     * the last hour that traded before it as a lead-in: 1D keeps the previous close
+     * as its baseline and draws from today's pre-market, which the chart can lead
+     * into from where the previous session left off.
      * 
      * @param window   The price history window.
      * @param now      The current time.
@@ -321,14 +328,25 @@ public class PortfolioHistoryService {
         long nowSeconds = now.toEpochSecond();
         long firstEnd = -Math.floorDiv(-window.from().toEpochSecond(), width) * width;
         List<OffsetDateTime> points = new ArrayList<>();
+        Deque<OffsetDateTime> leadIn = new ArrayDeque<>();
         for (long end = firstEnd; end < nowSeconds; end += width) {
             OffsetDateTime point = OffsetDateTime.ofInstant(Instant.ofEpochSecond(end), ZoneOffset.UTC);
-            boolean drawn = drawFrom == null || point.isAfter(drawFrom);
-            boolean trading = !tradingHoursOnly || sessionOf(point) != MarketSession.CLOSED;
-            if (points.isEmpty() || (drawn && trading)) {
+            if (points.isEmpty()) {
                 points.add(point);
+            } else if (!tradingHoursOnly || sessionOf(point) != MarketSession.CLOSED) {
+                if (drawFrom != null && !point.isAfter(drawFrom)) {
+                    leadIn.addLast(point);
+                    if (leadIn.size() > LEAD_IN_POINTS) {
+                        leadIn.removeFirst();
+                    }
+                } else {
+                    points.addAll(leadIn);
+                    leadIn.clear();
+                    points.add(point);
+                }
             }
         }
+        points.addAll(leadIn);
         points.add(now);
         return points;
     }

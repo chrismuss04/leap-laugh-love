@@ -15,6 +15,8 @@ export interface HoldingView {
   totalReturn: number | null;
   totalReturnPercent: number | null;
   intraday: number[];
+  /** When each intraday close's candle began (epoch ms), to lay the day out by time. */
+  intradayTimes?: number[];
   /** The session each intraday close traded in, or null until it's known. */
   intradaySessions?: MarketSession[] | null;
 }

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { MarketSession } from '../shared/market-session';
+import { TradingHours } from '../shared/chart-layout';
 
 export type PortfolioRange = '1D' | '1W' | '1M' | '3M' | '1Y' | 'ALL';
 
@@ -25,14 +26,6 @@ export interface PortfolioPoint {
    * and the last (now).
    */
   session: MarketSession;
-}
-
-/** One trading day's sessions, as ISO instants. */
-export interface TradingHours {
-  preMarketOpen: string;
-  regularOpen: string;
-  regularClose: string;
-  afterHoursClose: string;
 }
 
 export interface PortfolioHistory {

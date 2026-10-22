@@ -215,6 +215,25 @@ describe('LineChartComponent', () => {
       expect(chart.areaPath).not.toContain('L300.0,');
     });
 
+    it('leads in from the last hour before the day, tinted, then highlights the day', () => {
+      fixture.componentRef.setInput('domain', { start: 100, end: 200, leadInFrom: 60 });
+      fixture.componentRef.setInput('highlight', 'PRE_MARKET');
+      init({ points: [
+        { time: 20, value: 10, session: 'REGULAR' }, { time: 60, value: 11, session: 'AFTER_HOURS' },
+        { time: 80, value: 12, session: 'AFTER_HOURS' }, { time: 110, value: 13, session: 'PRE_MARKET' },
+        { time: 150, value: 15, session: 'PRE_MARKET' }
+      ] });
+      // The baseline point before the lead-in isn't drawn; the lead-in fills the first 30px.
+      expect(chart.x(1)).toBe(0);
+      expect(chart.x(2)).toBe(15);
+      expect(chart.x(3)).toBeCloseTo(30 + 27);
+      expect(chart.linePath.startsWith('M0.0,')).toBe(true);
+      expect(chart.stops[0].kind).toBe('dim');
+      expect(chart.stops.at(-1)!.kind).toBe('bright');
+      expect(chart.dimmed(2)).toBe(true);
+      expect(chart.dimmed(3)).toBe(false);
+    });
+
     it('scrubs only the points drawn, snapping to the nearest', () => {
       init({ points: timed.slice(0, 3) });
       vi.spyOn(chart['host'].nativeElement, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 300 } as DOMRect);
