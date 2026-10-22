@@ -22,7 +22,7 @@ import { AccountDetailsComponent } from './account-details/account-details';
 import { OpenOrdersComponent } from './open-orders/open-orders';
 import { MarketDataService } from '../services/market-data';
 import { MarketStatusService } from '../services/market-status';
-import { sessionLabel, sessionsAt } from '../shared/market-session';
+import { MarketSession, sessionLabel, sessionsAt } from '../shared/market-session';
 import { RollingNumberComponent } from '../shared/rolling-number';
 import { direction, formatMoney, formatSignedMoney, formatSignedPercent } from '../shared/format';
 import { QuoteOffset, holdsByAccount, openOrderTitle } from '../shared/order-types';
@@ -242,6 +242,30 @@ export class DashboardComponent implements OnInit {
    * weekend) from the open to the end of after-hours. Pre-market isn't drawn once the market has
    * opened. Null on other ranges, and with market hours off, which space points evenly.
    */
+  /**
+   * The session today's chart draws at full strength, the earlier ones tinted: the one under way,
+   * or while the market is closed, the last one traded in. Null on other ranges, which highlight
+   * regular hours.
+   */
+  readonly chartHighlight = computed<MarketSession | null>(() => {
+    if (this.history()?.range !== '1D') {
+      return null;
+    }
+    const session = this.market.session();
+    if (session && session !== 'CLOSED') {
+      return session;
+    }
+    // The first point is the previous close, not today's.
+    const points = this.chartPoints();
+    for (let i = points.length - 1; i >= 1; i--) {
+      const traded = points[i].session;
+      if (traded && traded !== 'CLOSED') {
+        return traded;
+      }
+    }
+    return null;
+  });
+
   readonly chartDomain = computed<ChartDomain | null>(() => {
     const history = this.history();
     const hours = history?.range === '1D' ? history.hours : null;

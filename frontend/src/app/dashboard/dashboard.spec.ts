@@ -324,6 +324,26 @@ describe('DashboardComponent', () => {
       expect(dashboard.marketClosed()).toBe(true);
     });
 
+    it('highlights the session under way, or the last one traded in while closed', () => {
+      portfolioApi.getHistory.mockReturnValue(of({
+        ...history,
+        points: [history.points[0], { ...history.points[0], session: 'REGULAR' },
+          { ...history.points[1], session: 'AFTER_HOURS' }, { ...history.points[1], session: 'CLOSED' }]
+      }));
+      dashboard.loadHistory();
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartHighlight()).toBe('AFTER_HOURS');
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartHighlight()).toBe('PRE_MARKET');
+      // Closed: the live point is closed too, so the last session traded in.
+      marketSession.set('CLOSED');
+      expect(dashboard.chartHighlight()).toBe('AFTER_HOURS');
+
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W' }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartHighlight()).toBeNull();
+    });
+
     it('frames today by where the day is, laying it out by time', () => {
       const hours = {
         preMarketOpen: '2026-10-14T08:00:00Z', regularOpen: '2026-10-14T13:30:00Z',

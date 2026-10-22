@@ -129,39 +129,44 @@ describe('LineChartComponent', () => {
       { time: 5, value: 22, session: 'AFTER_HOURS' }
     ];
     const element = () => fixture.nativeElement as HTMLElement;
+    const kinds = () => chart.stops.map(stop => stop.kind);
 
-    it('draws regular hours at full strength when no point is outside them', () => {
+    it('draws the whole line at full strength when it is all in the highlighted session', () => {
       init();
-      expect(chart.stops).toEqual([{ offset: 0, outside: false }, { offset: 1, outside: false }]);
-      expect(chart.hasOutside).toBe(false);
+      expect(chart.stops).toEqual([{ offset: 0, kind: 'bright' }, { offset: 1, kind: 'bright' }]);
+      expect(chart.hasDimmed).toBe(false);
       expect(element().querySelector('.line')!.getAttribute('stroke')).toBe(`url(#${chart.uid}-stroke)`);
     });
 
-    it('tints the stretches outside regular hours, blending at each boundary', () => {
+    it('highlights regular hours by default, tinting the rest and glinting into the highlight', () => {
       init({ points: day });
-      // Pre-market runs to the third point (150px), regular hours to the fourth (225px).
+      // Pre-market to the third point (150px), regular hours to the fourth (225px), feathered 64px.
       expect(chart.stops).toEqual([
-        { offset: 0, outside: true },
-        { offset: 145 / 300, outside: true }, { offset: 155 / 300, outside: false },
-        { offset: 220 / 300, outside: false }, { offset: 230 / 300, outside: true },
-        { offset: 1, outside: true }
+        { offset: 0, kind: 'dim' },
+        { offset: 118 / 300, kind: 'dim' }, { offset: (150 + 64 / 6) / 300, kind: 'glint' },
+        { offset: 182 / 300, kind: 'bright' },
+        { offset: 193 / 300, kind: 'bright' }, { offset: 257 / 300, kind: 'dim' },
+        { offset: 1, kind: 'dim' }
       ]);
-      expect(element().querySelectorAll('.stroke-stop.outside').length).toBe(4);
+      // The fill fades without a glint.
+      expect(chart.fadeStops.map(stop => stop.kind)).not.toContain('glint');
+      expect(element().querySelector('.stroke-stop[data-kind="glint"]')).not.toBeNull();
       expect(element().querySelector('.area')!.getAttribute('mask')).toBe(`url(#${chart.uid}-mask)`);
-      expect(element().querySelector('.band')).toBeNull();
-      expect(element().querySelector('.chart')!.getAttribute('aria-label')).toContain('shown lighter');
+      expect(element().querySelector('.chart')!.getAttribute('aria-label')).toContain('current session is highlighted');
     });
 
-    it('tints the dot outside regular hours, and stills it while the market is closed', () => {
+    it('highlights the session it is given: after the close, after-hours', () => {
+      fixture.componentRef.setInput('highlight', 'AFTER_HOURS');
       init({ points: day });
-      expect(element().querySelector('.live')!.classList).toContain('outside');
+      expect(kinds()).toEqual(['dim', 'dim', 'glint', 'bright', 'bright']);
+      expect(element().querySelector('.live')!.classList).not.toContain('dimmed');
       key('ArrowLeft');
       fixture.detectChanges();
-      expect(element().querySelector('.dot')!.classList).not.toContain('outside');
+      expect(element().querySelector('.dot')!.classList).toContain('dimmed');
+    });
 
+    it('stills the live dot while the market is closed', () => {
       init({ points: [...day.slice(0, 4), { time: 5, value: 22, session: 'CLOSED' }] });
-      key('Escape');
-      fixture.detectChanges();
       expect(element().querySelector('.live')!.classList).toContain('closed');
     });
   });

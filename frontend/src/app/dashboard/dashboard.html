@@ -50,7 +50,7 @@
           <button type="button" (click)="loadHistory()">Try again</button>
         </div>
         <app-line-chart *ngIf="chartPoints().length && !chartError()" class="fade-in" [class.stale]="chartLoading()"
-                        [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()" [domain]="chartDomain()"
+                        [points]="chartPoints()" [baseline]="baseline()" [tone]="tone()" [domain]="chartDomain()" [highlight]="chartHighlight()"
                         [label]="'Portfolio value, ' + headlineLabel()"
                         (scrub)="scrubIndex.set($event)"></app-line-chart>
       </div>

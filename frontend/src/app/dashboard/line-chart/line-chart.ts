@@ -8,8 +8,9 @@ export interface ChartPoint {
   time: number;
   value: number;
   /**
-   * The session of the stretch the point closes (from the point before up to it). Outside
-   * regular hours that stretch is drawn as a softer tint of the line. Leave it out to draw it all alike.
+   * The session of the stretch the point closes (from the point before up to it). Stretches in
+   * other sessions than the highlighted one are drawn as a softer tint of the line. Leave it out
+   * to count the point as regular hours.
    */
   session?: MarketSession;
 }
@@ -23,11 +24,14 @@ export interface ChartDomain {
   end: number;
 }
 
-/** A colour stop across the line's width: full strength in regular hours, a soft tint outside. */
+/**
+ * A colour stop across the line's width: full strength in the highlighted session, a soft tint in
+ * the others, and a brief brighter glint where the line comes into the highlight.
+ */
 export interface ChartStop {
   /** 0-1 across the width. */
   offset: number;
-  outside: boolean;
+  kind: 'dim' | 'bright' | 'glint';
 }
 
 /** The drawn line, worked out from the points, the baseline and the chart's size. */
@@ -41,14 +45,14 @@ interface ChartShape {
   xs: (number | null)[];
   /** The indexes of the points drawn, oldest first. */
   drawn: number[];
-  /** Where the line changes between regular hours and outside them, feathered so it blends. */
+  /** Where the line changes between the highlighted session and others, feathered so it blends. */
   stops: ChartStop[];
   /** The same for the fill under the line, feathered wider so it has no visible edge. */
   fadeStops: ChartStop[];
 }
 
-/** How far, in pixels, the line takes to blend between regular hours and outside them. */
-const FEATHER = 10;
+/** How far, in pixels, the line takes to blend into or out of the highlighted session. */
+const FEATHER = 64;
 /** How far the fill under the line takes to blend: wider, as a soft wash shows a seam sooner. */
 const FILL_FEATHER = 48;
 
@@ -60,9 +64,10 @@ let nextChartId = 0;
  * parent shows that point's value in its headline via `scrub`. Drawn as SVG sized in real pixels
  * (via ResizeObserver) so the line keeps a crisp, even stroke at any width.
  *
- * Pre-market and after-hours stretches are a softer tint of the same line, blending into regular
- * hours rather than breaking from them. Given a `domain`, points are placed by time, so a day
- * still under way leaves the rest of the day empty to the right.
+ * One session is highlighted - the one under way, as Robinhood does - and the others are a softer
+ * tint of the same line, which glints as it comes into the highlight rather than switching colour.
+ * Given a `domain`, points are placed by time, so a day still under way leaves the rest of the day
+ * empty to the right.
  */
 @Component({
     selector: 'app-line-chart',
@@ -77,6 +82,8 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() label = 'Portfolio value chart';
   /** Lays the points out by time across this span; null spaces them evenly. */
   @Input() domain: ChartDomain | null = null;
+  /** The session drawn at full strength; the others are tinted. Null highlights regular hours. */
+  @Input() highlight: MarketSession | null = null;
   /** Emits the scrubbed point's index, or null when scrubbing ends. */
   @Output() scrub = new EventEmitter<number | null>();
 
@@ -89,13 +96,14 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   private observer?: ResizeObserver;
   /** Taken from the host, so the parent sizes the chart with CSS. */
   private readonly hostHeight = signal(280);
-  private readonly data = signal<{ points: ChartPoint[]; baseline: number | null; domain: ChartDomain | null }>(
-    { points: [], baseline: null, domain: null });
+  private readonly data = signal<{
+    points: ChartPoint[]; baseline: number | null; domain: ChartDomain | null; highlight: MarketSession
+  }>({ points: [], baseline: null, domain: null, highlight: 'REGULAR' });
   /**
    * Derived rather than assigned, so a resize (which the ResizeObserver reports outside change
    * detection) marks the view dirty instead of changing a bound value behind Angular's back.
    */
-  private readonly shape = computed(() => this.build(this.data().points, this.data().baseline, this.data().domain));
+  private readonly shape = computed(() => this.build(this.data()));
 
   get height(): number { return this.hostHeight(); }
   get linePath(): string { return this.shape().linePath; }
@@ -103,8 +111,8 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   get baselineY(): number | null { return this.shape().baselineY; }
   get stops(): ChartStop[] { return this.shape().stops; }
   get fadeStops(): ChartStop[] { return this.shape().fadeStops; }
-  /** Whether any of the line is outside regular hours. */
-  get hasOutside(): boolean { return this.shape().stops.some(stop => stop.outside); }
+  /** Whether any of the line is tinted, being in another session than the highlighted one. */
+  get hasDimmed(): boolean { return this.shape().stops.some(stop => stop.kind === 'dim'); }
   /** The newest point drawn: where the live dot sits. */
   get lastDrawn(): number | null { return this.shape().drawn.at(-1) ?? null; }
 
@@ -129,7 +137,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (this.active() !== null && this.active()! >= this.points.length) {
       this.clear();
     }
-    this.data.set({ points: this.points, baseline: this.baseline, domain: this.domain });
+    this.data.set({ points: this.points, baseline: this.baseline, domain: this.domain, highlight: this.highlight ?? 'REGULAR' });
   }
 
   ngOnDestroy(): void {
@@ -144,10 +152,9 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     return this.scale(value, this.shape());
   }
 
-  /** Whether a point closes a stretch outside regular hours, drawn as a softer tint. */
-  outsideRegular(index: number): boolean {
-    const session = this.points[index]?.session;
-    return session != null && session !== 'REGULAR';
+  /** Whether a point closes a stretch in another session than the highlighted one, drawn tinted. */
+  dimmed(index: number): boolean {
+    return (this.points[index]?.session ?? 'REGULAR') !== this.data().highlight;
   }
 
   /** Whether the market is closed at the live point, so the dot stops pulsing. */
@@ -217,7 +224,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     return this.padding + ((max - value) / span) * (this.height - this.padding * 2);
   }
 
-  private build(points: ChartPoint[], baseline: number | null, domain: ChartDomain | null): ChartShape {
+  private build({ points, baseline, domain }: { points: ChartPoint[]; baseline: number | null; domain: ChartDomain | null }): ChartShape {
     const width = this.width();
     const empty: ChartShape = {
       linePath: '', areaPath: '', baselineY: null, min: 0, max: 0, xs: [], drawn: [], stops: [], fadeStops: []
@@ -251,7 +258,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
       ...range,
       xs,
       drawn,
-      stops: this.colourStops(xs, drawn, width, FEATHER),
+      stops: this.colourStops(xs, drawn, width, FEATHER, true),
       fadeStops: this.colourStops(xs, drawn, width, FILL_FEATHER)
     };
   }
@@ -271,23 +278,28 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Stops for a gradient across the width that tints the line outside regular hours. A drawn point
-   * closes the stretch from the drawn point before it, so each boundary falls on a point, and the
-   * line blends across it over a few pixels instead of switching colour at a hard edge.
+   * Stops for a gradient across the width that tints the line outside the highlighted session. A
+   * drawn point closes the stretch from the drawn point before it, so each boundary falls on a
+   * point, and the line blends across it instead of switching colour at a hard edge - catching a
+   * brighter glint on the way into the highlight, when `glint` is set.
    */
-  private colourStops(xs: (number | null)[], drawn: number[], width: number, feather: number): ChartStop[] {
-    const outside = (i: number) => this.outsideRegular(i);
-    const stops: ChartStop[] = [{ offset: 0, outside: drawn.length > 1 ? outside(drawn[1]) : outside(drawn[0]) }];
+  private colourStops(xs: (number | null)[], drawn: number[], width: number, feather: number, glint = false): ChartStop[] {
+    const kind = (i: number): ChartStop['kind'] => this.dimmed(i) ? 'dim' : 'bright';
+    const offset = (x: number) => Math.min(width, Math.max(0, x)) / width;
+    const stops: ChartStop[] = [{ offset: 0, kind: kind(drawn.length > 1 ? drawn[1] : drawn[0]) }];
     for (let k = 2; k < drawn.length; k++) {
-      const before = outside(drawn[k - 1]);
-      const after = outside(drawn[k]);
+      const before = kind(drawn[k - 1]);
+      const after = kind(drawn[k]);
       if (before !== after) {
         const at = xs[drawn[k - 1]]!;
-        stops.push({ offset: Math.max(0, at - feather / 2) / width, outside: before });
-        stops.push({ offset: Math.min(width, at + feather / 2) / width, outside: after });
+        stops.push({ offset: offset(at - feather / 2), kind: before });
+        if (glint && after === 'bright') {
+          stops.push({ offset: offset(at + feather / 6), kind: 'glint' });
+        }
+        stops.push({ offset: offset(at + feather / 2), kind: after });
       }
     }
-    stops.push({ offset: 1, outside: stops[stops.length - 1].outside });
+    stops.push({ offset: 1, kind: stops[stops.length - 1].kind });
     return stops;
   }
 }

@@ -1,5 +1,5 @@
 <div class="chart" [attr.data-tone]="tone"
-     tabindex="0" role="img" [attr.aria-label]="label + (hasOutside ? '. Trading outside regular hours is shown lighter' : '') + '. Use the left and right arrow keys to explore values.'"
+     tabindex="0" role="img" [attr.aria-label]="label + (hasDimmed ? '. The current session is highlighted; earlier ones are shown lighter' : '') + '. Use the left and right arrow keys to explore values.'"
      (pointermove)="onPointer($event)" (pointerdown)="onPointer($event)"
      (pointerleave)="clear()" (keydown)="onKey($event)" (blur)="clear()">
   <svg *ngIf="linePath" [attr.width]="width()" [attr.height]="height" aria-hidden="true">
@@ -8,12 +8,12 @@
         <stop offset="0%" class="fill-stop-top" />
         <stop offset="100%" class="fill-stop-bottom" />
       </linearGradient>
-      <!-- Across the width: the line at full strength in regular hours, a soft tint outside them. -->
+      <!-- Across the width: the line at full strength in the highlighted session, a soft tint in others. -->
       <linearGradient [attr.id]="uid + '-stroke'" gradientUnits="userSpaceOnUse" x1="0" y1="0" [attr.x2]="width()" y2="0">
-        <stop *ngFor="let stop of stops" class="stroke-stop" [class.outside]="stop.outside" [attr.offset]="stop.offset" />
+        <stop *ngFor="let stop of stops" class="stroke-stop" [attr.data-kind]="stop.kind" [attr.offset]="stop.offset" />
       </linearGradient>
       <linearGradient [attr.id]="uid + '-fade'" gradientUnits="userSpaceOnUse" x1="0" y1="0" [attr.x2]="width()" y2="0">
-        <stop *ngFor="let stop of fadeStops" class="fade-stop" [class.outside]="stop.outside" [attr.offset]="stop.offset" />
+        <stop *ngFor="let stop of fadeStops" class="fade-stop" [attr.data-kind]="stop.kind" [attr.offset]="stop.offset" />
       </linearGradient>
       <mask [attr.id]="uid + '-mask'">
         <rect x="0" y="0" [attr.width]="width()" [attr.height]="height" [attr.fill]="'url(#' + uid + '-fade)'" />
@@ -28,11 +28,11 @@
 
     <ng-container *ngIf="active() !== null; else liveDot">
       <line class="crosshair" [attr.x1]="x(active()!)" [attr.x2]="x(active()!)" y1="0" [attr.y2]="height" />
-      <circle class="dot" [class.outside]="outsideRegular(active()!)"
+      <circle class="dot" [class.dimmed]="dimmed(active()!)"
               [attr.cx]="x(active()!)" [attr.cy]="y(points[active()!].value)" r="5" />
     </ng-container>
     <ng-template #liveDot>
-      <g *ngIf="lastDrawn !== null" class="live" [class.outside]="outsideRegular(lastDrawn)" [class.closed]="closedNow">
+      <g *ngIf="lastDrawn !== null" class="live" [class.dimmed]="dimmed(lastDrawn)" [class.closed]="closedNow">
         <circle class="halo" [attr.cx]="x(lastDrawn)" [attr.cy]="y(points[lastDrawn].value)" r="11" />
         <circle class="dot" [attr.cx]="x(lastDrawn)" [attr.cy]="y(points[lastDrawn].value)" r="4" />
       </g>
