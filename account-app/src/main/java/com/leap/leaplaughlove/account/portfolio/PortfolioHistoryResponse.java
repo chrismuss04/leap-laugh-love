@@ -1,9 +1,12 @@
 package com.leap.leaplaughlove.account.portfolio;
 
+import com.leap.leaplaughlove.common.market.MarketCalendar;
 import com.leap.leaplaughlove.common.market.MarketSession;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
 import java.util.List;
 
 /**
@@ -23,6 +26,8 @@ import java.util.List;
  * @param change the gain or loss: endValue minus startValue, less netContributions
  * @param changePercent the change as a percentage of startValue plus netContributions, or null if
  *     that is not positive
+ * @param hours for 1D, the sessions of the trading day being charted, so a chart can lay the day
+ *     out by time; null for other ranges and when market hours are off
  */
 public record PortfolioHistoryResponse(
         String range,
@@ -32,8 +37,28 @@ public record PortfolioHistoryResponse(
         BigDecimal endValue,
         BigDecimal netContributions,
         BigDecimal change,
-        BigDecimal changePercent
+        BigDecimal changePercent,
+        Hours hours
 ) {
+    /**
+     * One trading day's sessions, early close included.
+     * @param preMarketOpen when pre-market began
+     * @param regularOpen when regular trading began
+     * @param regularClose when regular trading ended, or ends
+     * @param afterHoursClose when after-hours trading ended, or ends
+     */
+    public record Hours(OffsetDateTime preMarketOpen, OffsetDateTime regularOpen, OffsetDateTime regularClose,
+            OffsetDateTime afterHoursClose) {
+        static Hours of(MarketCalendar.TradingDay day) {
+            return new Hours(utc(day.preMarketOpen()), utc(day.regularOpen()), utc(day.regularClose()),
+                    utc(day.afterHoursClose()));
+        }
+
+        private static OffsetDateTime utc(ZonedDateTime time) {
+            return time.toOffsetDateTime().withOffsetSameInstant(ZoneOffset.UTC);
+        }
+    }
+
     /**
      * One valued point in time.
      * @param timestamp when the portfolio held this value

@@ -161,6 +161,7 @@ class PortfolioHistoryServiceTest {
         assertEquals(NOW, response.points().get(response.points().size() - 1).timestamp());
         // Market hours off: trading runs around the clock, so every point is in the regular session.
         assertTrue(sessions(response).stream().allMatch(MarketSession.REGULAR::equals));
+        assertNull(response.hours());
         // Before the buy: all cash, nothing held.
         assertEquals(new BigDecimal("2000.00"), valueAt(response, "2026-01-10T00:00:00Z"));
         // The buy itself: cash moved into 10 shares at the carried-forward 100 close.
@@ -263,6 +264,10 @@ class PortfolioHistoryServiceTest {
         assertEquals(OffsetDateTime.parse("2026-01-12T09:05:00Z"), response.points().get(1).timestamp());
         assertFalse(hasPointAt(response, "2026-01-09T23:00:00Z"));
         assertFalse(hasPointAt(response, "2026-01-10T12:00:00Z"));
+        // Monday's hours, for the chart to frame the day by time.
+        assertEquals(new PortfolioHistoryResponse.Hours(OffsetDateTime.parse("2026-01-12T09:00:00Z"),
+                OffsetDateTime.parse("2026-01-12T14:30:00Z"), OffsetDateTime.parse("2026-01-12T21:00:00Z"),
+                OffsetDateTime.parse("2026-01-13T01:00:00Z")), response.hours());
         // Skipping points doesn't change what the day is measured from.
         assertEquals(new BigDecimal("1000.00"), response.startValue());
         assertEquals(new BigDecimal("0.00"), response.change());
@@ -285,6 +290,8 @@ class PortfolioHistoryServiceTest {
         assertEquals(NOW, response.points().get(sessions.size() - 1).timestamp());
         assertEquals(OffsetDateTime.parse("2026-01-10T01:00:00Z"), response.points().get(sessions.size() - 2).timestamp());
         assertEquals(1, sessions.stream().filter(MarketSession.CLOSED::equals).count());
+        // Friday's hours: the trading day under way on a Saturday.
+        assertEquals(OffsetDateTime.parse("2026-01-09T14:30:00Z"), response.hours().regularOpen());
     }
 
     @Test
@@ -315,6 +322,7 @@ class PortfolioHistoryServiceTest {
 
         assertEquals(86400, response.intervalSeconds());
         assertEquals(91, response.points().size());
+        assertNull(response.hours());
         // Sunday 4 January 2026, 00:00 UTC closes Saturday.
         assertEquals(MarketSession.CLOSED, response.points().stream()
                 .filter(point -> point.timestamp().isEqual(OffsetDateTime.parse("2026-01-04T00:00:00Z")))

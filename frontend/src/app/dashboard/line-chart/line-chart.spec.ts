@@ -49,7 +49,7 @@ describe('LineChartComponent', () => {
     expect(chart.baselineY).not.toBeNull();
     expect(fixture.nativeElement.querySelector('svg')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('.baseline')).not.toBeNull();
-    expect(fixture.nativeElement.querySelector('.dot.live')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('.live .dot')).not.toBeNull();
   });
 
   it('draws a flat line for a single point', () => {
@@ -122,7 +122,7 @@ describe('LineChartComponent', () => {
   });
 
   describe('sessions', () => {
-    /** Five points, 75px apart: the first two in pre-market, then regular hours, then after-hours. */
+    /** Five points, 75px apart: pre-market up to the third, then regular hours, then after-hours. */
     const day: ChartPoint[] = [
       { time: 1, value: 10, session: 'REGULAR' }, { time: 2, value: 12, session: 'PRE_MARKET' },
       { time: 3, value: 11, session: 'PRE_MARKET' }, { time: 4, value: 20, session: 'REGULAR' },
@@ -130,37 +130,31 @@ describe('LineChartComponent', () => {
     ];
     const element = () => fixture.nativeElement as HTMLElement;
 
-    it('draws regular hours alone when no point is outside them', () => {
+    it('draws regular hours at full strength when no point is outside them', () => {
       init();
-      expect(chart.bands).toEqual([]);
-      expect(chart.regularSpans).toEqual([{ x: 0, width: 300 }]);
-      expect(element().querySelector('.line.outside')).toBeNull();
-      expect(element().querySelector('.band')).toBeNull();
+      expect(chart.stops).toEqual([{ offset: 0, outside: false }, { offset: 1, outside: false }]);
+      expect(chart.hasOutside).toBe(false);
+      expect(element().querySelector('.line')!.getAttribute('stroke')).toBe(`url(#${chart.uid}-stroke)`);
     });
 
-    it('bands each stretch outside regular hours, from the point before it', () => {
+    it('tints the stretches outside regular hours, blending at each boundary', () => {
       init({ points: day });
-      // Points 1-2 close 0-150px; point 4 closes 225-300px.
-      expect(chart.bands).toEqual([
-        { x: 0, width: 150, label: 'Pre-market' },
-        { x: 225, width: 75, label: null }
+      // Pre-market runs to the third point (150px), regular hours to the fourth (225px).
+      expect(chart.stops).toEqual([
+        { offset: 0, outside: true },
+        { offset: 145 / 300, outside: true }, { offset: 155 / 300, outside: false },
+        { offset: 220 / 300, outside: false }, { offset: 230 / 300, outside: true },
+        { offset: 1, outside: true }
       ]);
-      expect(chart.regularSpans).toEqual([{ x: 150, width: 75 }]);
-      expect(element().querySelectorAll('.band').length).toBe(2);
-      expect(element().querySelector('.band-label')!.textContent!.trim()).toBe('Pre-market');
-      expect(element().querySelector('.line.outside')!.getAttribute('clip-path')).toBe(`url(#${chart.uid}-outside)`);
-      expect(element().querySelector('.area')!.getAttribute('clip-path')).toBe(`url(#${chart.uid}-regular)`);
-      expect(chart['host'].nativeElement.querySelector('.chart')!.getAttribute('aria-label')).toContain('shown in gray');
+      expect(element().querySelectorAll('.stroke-stop.outside').length).toBe(4);
+      expect(element().querySelector('.area')!.getAttribute('mask')).toBe(`url(#${chart.uid}-mask)`);
+      expect(element().querySelector('.band')).toBeNull();
+      expect(element().querySelector('.chart')!.getAttribute('aria-label')).toContain('shown lighter');
     });
 
-    it('makes room above the line for band labels', () => {
+    it('tints the dot outside regular hours, and stills it while the market is closed', () => {
       init({ points: day });
-      expect(chart.y(22)).toBe(26);
-    });
-
-    it('greys the dot outside regular hours, and stills it while the market is closed', () => {
-      init({ points: day });
-      expect(element().querySelector('.dot.live')!.classList).toContain('outside');
+      expect(element().querySelector('.live')!.classList).toContain('outside');
       key('ArrowLeft');
       fixture.detectChanges();
       expect(element().querySelector('.dot')!.classList).not.toContain('outside');
@@ -168,9 +162,42 @@ describe('LineChartComponent', () => {
       init({ points: [...day.slice(0, 4), { time: 5, value: 22, session: 'CLOSED' }] });
       key('Escape');
       fixture.detectChanges();
-      const dot = element().querySelector('.dot.live')!;
-      expect(dot.classList).toContain('closed');
-      expect(chart.bands.at(-1)!.label).toBeNull();
+      expect(element().querySelector('.live')!.classList).toContain('closed');
+    });
+  });
+
+  describe('laid out by time', () => {
+    // 100-200 spans the chart; the first point is before it, the live one after.
+    const timed: ChartPoint[] = [
+      { time: 50, value: 10 }, { time: 100, value: 12 }, { time: 150, value: 18 }, { time: 250, value: 16 }
+    ];
+    beforeEach(() => fixture.componentRef.setInput('domain', { start: 100, end: 200 }));
+
+    it('places points by time, leaving out those before the span and holding later ones at its end', () => {
+      init({ points: timed });
+      expect(chart.x(1)).toBe(0);
+      expect(chart.x(2)).toBe(150);
+      expect(chart.x(3)).toBe(300);
+      expect(chart.lastDrawn).toBe(3);
+      expect(chart.linePath.startsWith('M0.0,')).toBe(true);
+      expect(chart.linePath.match(/L/g)!.length).toBe(2);
+    });
+
+    it('leaves the rest of a day still under way empty', () => {
+      init({ points: timed.slice(0, 3) });
+      expect(chart.areaPath).toContain('L150.0,');
+      expect(chart.areaPath).not.toContain('L300.0,');
+    });
+
+    it('scrubs only the points drawn, snapping to the nearest', () => {
+      init({ points: timed.slice(0, 3) });
+      vi.spyOn(chart['host'].nativeElement, 'getBoundingClientRect').mockReturnValue({ left: 0, width: 300 } as DOMRect);
+      chart.onPointer({ clientX: 0 } as PointerEvent);
+      chart.onPointer({ clientX: 290 } as PointerEvent);
+      key('Home');
+      key('ArrowLeft');
+      key('End');
+      expect(scrubs).toEqual([1, 2, 1, 2]);
     });
   });
 

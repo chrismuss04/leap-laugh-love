@@ -27,6 +27,14 @@ export interface PortfolioPoint {
   session: MarketSession;
 }
 
+/** One trading day's sessions, as ISO instants. */
+export interface TradingHours {
+  preMarketOpen: string;
+  regularOpen: string;
+  regularClose: string;
+  afterHoursClose: string;
+}
+
 export interface PortfolioHistory {
   range: PortfolioRange;
   intervalSeconds: number;
@@ -37,6 +45,8 @@ export interface PortfolioHistory {
   netContributions: number;
   change: number;
   changePercent: number | null;
+  /** For 1D, the hours of the trading day charted; null for other ranges and with market hours off. */
+  hours?: TradingHours | null;
 }
 
 @Injectable({

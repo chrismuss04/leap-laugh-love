@@ -33,8 +33,17 @@ public final class TradingDay {
      * @return the pre-market open of the trading day under way, in UTC
      */
     public static OffsetDateTime openOf(OffsetDateTime now) {
+        return hoursOf(now).preMarketOpen().toOffsetDateTime().withOffsetSameInstant(ZoneOffset.UTC);
+    }
+
+    /**
+     * The hours of the trading day under way: the first trading day after the previous close, so
+     * on a Saturday Friday's, and its early close if it had one.
+     * @param now the point in time
+     * @return that day's sessions
+     */
+    public static MarketCalendar.TradingDay hoursOf(OffsetDateTime now) {
         LocalDate closed = MarketCalendar.previousClose(now.toInstant()).atZone(MarketCalendar.ZONE).toLocalDate();
-        return MarketCalendar.nextTradingDay(closed.plusDays(1)).preMarketOpen().toOffsetDateTime()
-                .withOffsetSameInstant(ZoneOffset.UTC);
+        return MarketCalendar.nextTradingDay(closed.plusDays(1));
     }
 }

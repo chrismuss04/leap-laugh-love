@@ -324,6 +324,32 @@ describe('DashboardComponent', () => {
       expect(dashboard.marketClosed()).toBe(true);
     });
 
+    it('frames today by where the day is, laying it out by time', () => {
+      const hours = {
+        preMarketOpen: '2026-10-14T08:00:00Z', regularOpen: '2026-10-14T13:30:00Z',
+        regularClose: '2026-10-14T20:00:00Z', afterHoursClose: '2026-10-15T00:00:00Z'
+      };
+      const at = (iso: string) => Date.parse(iso);
+      expect(dashboard.chartDomain()).toBeNull();
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, hours }));
+      dashboard.loadHistory();
+
+      // Pre-market: the morning at the start, with room for the regular session.
+      marketSession.set('PRE_MARKET');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.preMarketOpen), end: at(hours.regularClose) });
+      marketSession.set('REGULAR');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.regularClose) });
+      // After the close, overnight and at the weekend: the open to the end of after-hours.
+      marketSession.set('AFTER_HOURS');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+      marketSession.set('CLOSED');
+      expect(dashboard.chartDomain()).toEqual({ start: at(hours.regularOpen), end: at(hours.afterHoursClose) });
+
+      portfolioApi.getHistory.mockReturnValue(of({ ...history, range: '1W', hours: null }));
+      dashboard.setRange('1W');
+      expect(dashboard.chartDomain()).toBeNull();
+    });
+
     it('draws longer ranges without sessions', () => {
       marketSession.set('AFTER_HOURS');
       portfolioApi.getHistory.mockReturnValue(of({

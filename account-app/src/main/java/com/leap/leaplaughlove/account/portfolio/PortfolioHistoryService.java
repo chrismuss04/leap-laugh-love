@@ -147,10 +147,11 @@ public class PortfolioHistoryService {
                 .orElse(null);
         PortfolioRange.Window window = range.window(now, earliestOpen);
         List<OffsetDateTime> timeline = timeline(window, now, drawFrom(range, now));
+        PortfolioHistoryResponse.Hours hours = hours(range, now);
 
         if (accounts.isEmpty()) {
             return toResponse(range, window, timeline, new BigDecimal[timeline.size()],
-                    new BigDecimal[timeline.size()]);
+                    new BigDecimal[timeline.size()], hours);
         }
 
         Map<UUID, String> baseCurrencies = new HashMap<>();
@@ -176,7 +177,7 @@ public class PortfolioHistoryService {
         Map<UUID, BigDecimal[]> prices = priceHeldInstruments(quantities, symbols, movements, window, timeline);
         BigDecimal[] contributions = contributionsAt(timeline, entries);
         BigDecimal[] values = walkBack(timeline, quantities, cash, movements, entries, prices);
-        return toResponse(range, window, timeline, values, contributions);
+        return toResponse(range, window, timeline, values, contributions, hours);
     }
 
     /**
@@ -322,6 +323,15 @@ public class PortfolioHistoryService {
     }
 
     /**
+     * For 1D, the hours of the trading day under way, so the chart can frame the day by time.
+     * Null for other ranges, and when market hours are off and every hour trades.
+     */
+    private PortfolioHistoryResponse.Hours hours(PortfolioRange range, OffsetDateTime now) {
+        return range == PortfolioRange.ONE_DAY && marketClock.mode() != MarketClock.Mode.ALWAYS_OPEN
+                ? PortfolioHistoryResponse.Hours.of(TradingDay.hoursOf(now)) : null;
+    }
+
+    /**
      * Where a range's chart starts drawing, after its first point: today's
      * pre-market open for 1D, so the previous day's after-hours isn't drawn. Null
      * for other ranges, and when market hours are off and every hour trades.
@@ -396,10 +406,12 @@ public class PortfolioHistoryService {
      * @param timeline The timestamps for each point in the history.
      * @param values   The calculated portfolio values at each timestamp.
      * @param contributions Deposits less withdrawals from the first point to each one.
+     * @param hours    The charted trading day's sessions, or null.
      * @return The PortfolioHistoryResponse containing the history data.
      */
     private PortfolioHistoryResponse toResponse(PortfolioRange range, PortfolioRange.Window window,
-            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions) {
+            List<OffsetDateTime> timeline, BigDecimal[] values, BigDecimal[] contributions,
+            PortfolioHistoryResponse.Hours hours) {
         List<PortfolioHistoryResponse.Point> points = new ArrayList<>(timeline.size());
         BigDecimal zero = BigDecimal.ZERO.setScale(2);
         for (int k = 0; k < timeline.size(); k++) {
@@ -418,6 +430,6 @@ public class PortfolioHistoryService {
         BigDecimal changePercent = invested.signum() <= 0 ? null
                 : change.multiply(BigDecimal.valueOf(100)).divide(invested, 2, RoundingMode.HALF_UP);
         return new PortfolioHistoryResponse(range.code(), window.intervalSeconds(), points,
-                start, end, netContributions, change, changePercent);
+                start, end, netContributions, change, changePercent, hours);
     }
 }

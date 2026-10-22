@@ -105,18 +105,15 @@ describe('OrderChartComponent', () => {
     expect(values).toEqual([96.01, 95.99, 97, 95, 96.96, 95.04]);
   });
 
-  it('bands the closes traded outside regular hours', () => {
-    expect(component.bands()).toEqual([]);
-    expect(fixture.nativeElement.querySelector('.band')).toBeNull();
+  it('draws the closes traded outside regular hours fainter, keeping the line whole', () => {
+    expect(component.segments().map(s => s.outside)).toEqual([false]);
     fixture.componentRef.setInput('sessions', ['PRE_MARKET', 'PRE_MARKET', 'REGULAR', 'AFTER_HOURS']);
     fixture.detectChanges();
-    const bands = component.bands();
-    expect(bands.map(b => b.label)).toEqual(['Pre-market', 'After-hours']);
-    expect(bands[0].x).toBe(0);
-    expect(bands[0].width).toBeCloseTo(100 / 3);
-    expect(bands[1].x).toBeCloseTo(200 / 3);
-    expect(fixture.nativeElement.querySelectorAll('rect.band').length).toBe(2);
-    expect(fixture.nativeElement.querySelector('.band-label').textContent.trim()).toBe('Pre-market');
+    const segments = component.segments();
+    // Pre-market to the second close, regular to the third, after-hours to the last.
+    expect(segments.map(s => [s.outside, s.points.split(' ').length])).toEqual([[true, 2], [false, 2], [true, 2]]);
+    expect(segments[0].points.split(' ')[1]).toBe(segments[1].points.split(' ')[0]);
+    expect(fixture.nativeElement.querySelectorAll('.series-line.outside').length).toBe(2);
   });
 
   it('says so when there is no history to draw', () => {

@@ -2,27 +2,32 @@ import {
   AfterViewInit, Component, ElementRef, EventEmitter, Input, NgZone, OnChanges, OnDestroy, Output, computed, signal
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { MarketSession, sessionLabel, sessionRuns } from '../../shared/market-session';
+import { MarketSession } from '../../shared/market-session';
 
 export interface ChartPoint {
   time: number;
   value: number;
   /**
    * The session of the stretch the point closes (from the point before up to it). Outside
-   * regular hours that stretch is drawn gray on a faint band. Leave it out to draw it all alike.
+   * regular hours that stretch is drawn as a softer tint of the line. Leave it out to draw it all alike.
    */
   session?: MarketSession;
 }
 
-/** A horizontal stretch of the chart, in pixels. */
-export interface ChartSpan {
-  x: number;
-  width: number;
+/**
+ * The stretch of time the chart spans, in epoch ms, when it's laid out by time rather than point
+ * by point: points before it aren't drawn, and time after the last point is left empty.
+ */
+export interface ChartDomain {
+  start: number;
+  end: number;
 }
 
-/** A stretch outside regular hours, drawn on a faint band; labelled when there's room. */
-export interface SessionBand extends ChartSpan {
-  label: string | null;
+/** A colour stop across the line's width: full strength in regular hours, a soft tint outside. */
+export interface ChartStop {
+  /** 0-1 across the width. */
+  offset: number;
+  outside: boolean;
 }
 
 /** The drawn line, worked out from the points, the baseline and the chart's size. */
@@ -32,26 +37,32 @@ interface ChartShape {
   baselineY: number | null;
   min: number;
   max: number;
-  /** Room above the line: more when band labels sit there. */
-  top: number;
-  bands: SessionBand[];
-  /** Where the line is in regular hours: the rest of the width, between the bands. */
-  regular: ChartSpan[];
+  /** Each point's x, or null for one that isn't drawn (before the domain starts). */
+  xs: (number | null)[];
+  /** The indexes of the points drawn, oldest first. */
+  drawn: number[];
+  /** Where the line changes between regular hours and outside them, feathered so it blends. */
+  stops: ChartStop[];
+  /** The same for the fill under the line, feathered wider so it has no visible edge. */
+  fadeStops: ChartStop[];
 }
 
-/** A band narrower than this, in pixels, goes unlabelled. */
-const MIN_LABELLED_BAND = 76;
-/** Room above the line for band labels. */
-const LABEL_ROOM = 26;
+/** How far, in pixels, the line takes to blend between regular hours and outside them. */
+const FEATHER = 10;
+/** How far the fill under the line takes to blend: wider, as a soft wash shows a seam sooner. */
+const FILL_FEATHER = 48;
 
 let nextChartId = 0;
 
 /**
  * Robinhood-style value chart: one line, no axes or gridlines, a dotted baseline at the range's
- * starting value, and scrubbing. Pre-market and after-hours stretches are drawn gray on a faint
- * band, so the regular session's colour stands out and the chart reads as quiet when the market is. Pointer (mouse, pen, touch) or arrow keys pick a point, and the
+ * starting value, and scrubbing. Pointer (mouse, pen, touch) or arrow keys pick a point, and the
  * parent shows that point's value in its headline via `scrub`. Drawn as SVG sized in real pixels
  * (via ResizeObserver) so the line keeps a crisp, even stroke at any width.
+ *
+ * Pre-market and after-hours stretches are a softer tint of the same line, blending into regular
+ * hours rather than breaking from them. Given a `domain`, points are placed by time, so a day
+ * still under way leaves the rest of the day empty to the right.
  */
 @Component({
     selector: 'app-line-chart',
@@ -64,31 +75,38 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   @Input() baseline: number | null = null;
   @Input() tone: 'gain' | 'loss' | 'flat' = 'gain';
   @Input() label = 'Portfolio value chart';
+  /** Lays the points out by time across this span; null spaces them evenly. */
+  @Input() domain: ChartDomain | null = null;
   /** Emits the scrubbed point's index, or null when scrubbing ends. */
   @Output() scrub = new EventEmitter<number | null>();
 
   readonly width = signal(0);
   readonly active = signal<number | null>(null);
-  /** Unique per chart, for its clip paths. */
+  /** Unique per chart, for its gradients and mask. */
   readonly uid = `line-chart-${nextChartId++}`;
 
   private readonly padding = 12;
   private observer?: ResizeObserver;
   /** Taken from the host, so the parent sizes the chart with CSS. */
   private readonly hostHeight = signal(280);
-  private readonly data = signal<{ points: ChartPoint[]; baseline: number | null }>({ points: [], baseline: null });
+  private readonly data = signal<{ points: ChartPoint[]; baseline: number | null; domain: ChartDomain | null }>(
+    { points: [], baseline: null, domain: null });
   /**
    * Derived rather than assigned, so a resize (which the ResizeObserver reports outside change
    * detection) marks the view dirty instead of changing a bound value behind Angular's back.
    */
-  private readonly shape = computed(() => this.build(this.data().points, this.data().baseline));
+  private readonly shape = computed(() => this.build(this.data().points, this.data().baseline, this.data().domain));
 
   get height(): number { return this.hostHeight(); }
   get linePath(): string { return this.shape().linePath; }
   get areaPath(): string { return this.shape().areaPath; }
   get baselineY(): number | null { return this.shape().baselineY; }
-  get bands(): SessionBand[] { return this.shape().bands; }
-  get regularSpans(): ChartSpan[] { return this.shape().regular; }
+  get stops(): ChartStop[] { return this.shape().stops; }
+  get fadeStops(): ChartStop[] { return this.shape().fadeStops; }
+  /** Whether any of the line is outside regular hours. */
+  get hasOutside(): boolean { return this.shape().stops.some(stop => stop.outside); }
+  /** The newest point drawn: where the live dot sits. */
+  get lastDrawn(): number | null { return this.shape().drawn.at(-1) ?? null; }
 
   constructor(private host: ElementRef<HTMLElement>, private zone: NgZone) {}
 
@@ -111,7 +129,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     if (this.active() !== null && this.active()! >= this.points.length) {
       this.clear();
     }
-    this.data.set({ points: this.points, baseline: this.baseline });
+    this.data.set({ points: this.points, baseline: this.baseline, domain: this.domain });
   }
 
   ngOnDestroy(): void {
@@ -119,15 +137,14 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   x(index: number): number {
-    const n = this.points.length;
-    return n <= 1 ? this.width() : (index / (n - 1)) * this.width();
+    return this.shape().xs[index] ?? 0;
   }
 
   y(value: number): number {
     return this.scale(value, this.shape());
   }
 
-  /** Whether a point closes a stretch outside regular hours, drawn gray. */
+  /** Whether a point closes a stretch outside regular hours, drawn as a softer tint. */
   outsideRegular(index: number): boolean {
     const session = this.points[index]?.session;
     return session != null && session !== 'REGULAR';
@@ -139,20 +156,22 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   onPointer(event: PointerEvent): void {
-    if (this.points.length === 0 || this.width() === 0) {
+    const drawn = this.shape().drawn;
+    if (drawn.length === 0 || this.width() === 0) {
       return;
     }
     const rect = this.host.nativeElement.getBoundingClientRect();
-    const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
-    this.setActive(Math.round(ratio * (this.points.length - 1)));
+    const at = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * this.width();
+    this.setActive(this.nearest(at, drawn));
   }
 
   onKey(event: KeyboardEvent): void {
-    const last = this.points.length - 1;
-    if (last < 0) {
+    const drawn = this.shape().drawn;
+    if (drawn.length === 0) {
       return;
     }
-    const current = this.active() ?? last;
+    const last = drawn.length - 1;
+    const current = Math.max(0, drawn.indexOf(this.active() ?? drawn[last]));
     const step = event.shiftKey ? 10 : 1;
     let next: number | null = null;
     switch (event.key) {
@@ -164,7 +183,7 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
       default: return;
     }
     event.preventDefault();
-    this.setActive(next);
+    this.setActive(drawn[next]);
   }
 
   clear(): void {
@@ -181,72 +200,94 @@ export class LineChartComponent implements OnChanges, AfterViewInit, OnDestroy {
     }
   }
 
-  private scale(value: number, { min, max, top }: Pick<ChartShape, 'min' | 'max' | 'top'>): number {
-    const span = max - min || 1;
-    return top + ((max - value) / span) * (this.height - top - this.padding);
+  /** The drawn point nearest an x position (the later one when halfway): past the newest, the newest. */
+  private nearest(at: number, drawn: number[]): number {
+    const xs = this.shape().xs;
+    let best = drawn[0];
+    for (const index of drawn) {
+      if (Math.abs(xs[index]! - at) <= Math.abs(xs[best]! - at)) {
+        best = index;
+      }
+    }
+    return best;
   }
 
-  private build(points: ChartPoint[], baseline: number | null): ChartShape {
+  private scale(value: number, { min, max }: Pick<ChartShape, 'min' | 'max'>): number {
+    const span = max - min || 1;
+    return this.padding + ((max - value) / span) * (this.height - this.padding * 2);
+  }
+
+  private build(points: ChartPoint[], baseline: number | null, domain: ChartDomain | null): ChartShape {
     const width = this.width();
+    const empty: ChartShape = {
+      linePath: '', areaPath: '', baselineY: null, min: 0, max: 0, xs: [], drawn: [], stops: [], fadeStops: []
+    };
     if (points.length === 0 || width === 0) {
-      return { linePath: '', areaPath: '', baselineY: null, min: 0, max: 0, top: this.padding, bands: [], regular: [] };
+      return empty;
     }
-    const values = points.map(point => point.value);
+    const xs = this.place(points, domain, width);
+    const drawn = xs.flatMap((x, i) => x === null ? [] : [i]);
+    if (drawn.length === 0) {
+      return { ...empty, xs };
+    }
+    const values = drawn.map(i => points[i].value);
     if (baseline != null) {
       values.push(baseline);
     }
-    const x = (index: number) => points.length <= 1 ? width : (index / (points.length - 1)) * width;
-    const bands = points.length > 1 ? this.sessionBands(points, x) : [];
-    const range = {
-      min: Math.min(...values),
-      max: Math.max(...values),
-      top: bands.some(band => band.label) ? LABEL_ROOM : this.padding
-    };
+    const range = { min: Math.min(...values), max: Math.max(...values) };
     const y = (value: number) => this.scale(value, range);
 
-    const coords = points.length === 1
+    // A lone point (evenly spaced) is a flat line across the chart.
+    const coords = drawn.length === 1 && !domain
       ? [[0, y(points[0].value)], [width, y(points[0].value)]]
-      : points.map((point, i) => [x(i), y(point.value)]);
+      : drawn.map(i => [xs[i]!, y(points[i].value)]);
     const linePath = coords.map(([cx, cy], i) => `${i === 0 ? 'M' : 'L'}${cx.toFixed(1)},${cy.toFixed(1)}`).join('');
+    const first = coords[0][0];
+    const last = coords[coords.length - 1][0];
     return {
       linePath,
-      areaPath: `${linePath}L${width},${this.height}L0,${this.height}Z`,
+      areaPath: `${linePath}L${last.toFixed(1)},${this.height}L${first.toFixed(1)},${this.height}Z`,
       baselineY: baseline != null ? y(baseline) : null,
       ...range,
-      bands,
-      regular: this.between(bands, width)
+      xs,
+      drawn,
+      stops: this.colourStops(xs, drawn, width, FEATHER),
+      fadeStops: this.colourStops(xs, drawn, width, FILL_FEATHER)
     };
   }
 
   /**
-   * The stretches outside regular hours. A point closes the stretch from the point before it, so
-   * a run of such points covers from the point before the run to its last point.
+   * Each point's x: by time across the domain (null before it; anything after it, such as a
+   * live point while the market is closed, sits at its end), or evenly spaced without one.
    */
-  private sessionBands(points: ChartPoint[], x: (index: number) => number): SessionBand[] {
-    return sessionRuns(points.map(point => point.session))
-      .filter(run => run.session !== 'REGULAR')
-      .map(run => {
-        const start = x(Math.max(0, run.from - 1));
-        const width = x(run.to) - start;
-        const label = run.session === 'CLOSED' || width < MIN_LABELLED_BAND ? null : sessionLabel(run.session);
-        return { x: start, width, label };
-      })
-      .filter(band => band.width > 0);
+  private place(points: ChartPoint[], domain: ChartDomain | null, width: number): (number | null)[] {
+    if (!domain) {
+      return points.map((_, i) => points.length <= 1 ? width : (i / (points.length - 1)) * width);
+    }
+    const span = domain.end - domain.start || 1;
+    return points.map(point => point.time < domain.start
+      ? null
+      : Math.min(1, (point.time - domain.start) / span) * width);
   }
 
-  /** The spans of the width that no band covers. */
-  private between(bands: ChartSpan[], width: number): ChartSpan[] {
-    const spans: ChartSpan[] = [];
-    let from = 0;
-    for (const band of bands) {
-      if (band.x > from) {
-        spans.push({ x: from, width: band.x - from });
+  /**
+   * Stops for a gradient across the width that tints the line outside regular hours. A drawn point
+   * closes the stretch from the drawn point before it, so each boundary falls on a point, and the
+   * line blends across it over a few pixels instead of switching colour at a hard edge.
+   */
+  private colourStops(xs: (number | null)[], drawn: number[], width: number, feather: number): ChartStop[] {
+    const outside = (i: number) => this.outsideRegular(i);
+    const stops: ChartStop[] = [{ offset: 0, outside: drawn.length > 1 ? outside(drawn[1]) : outside(drawn[0]) }];
+    for (let k = 2; k < drawn.length; k++) {
+      const before = outside(drawn[k - 1]);
+      const after = outside(drawn[k]);
+      if (before !== after) {
+        const at = xs[drawn[k - 1]]!;
+        stops.push({ offset: Math.max(0, at - feather / 2) / width, outside: before });
+        stops.push({ offset: Math.min(width, at + feather / 2) / width, outside: after });
       }
-      from = band.x + band.width;
     }
-    if (from < width) {
-      spans.push({ x: from, width: width - from });
-    }
-    return spans;
+    stops.push({ offset: 1, outside: stops[stops.length - 1].outside });
+    return stops;
   }
 }

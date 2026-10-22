@@ -1,33 +1,30 @@
 <div class="chart" [attr.data-tone]="tone"
-     tabindex="0" role="img" [attr.aria-label]="label + (bands.length ? '. Trading outside regular hours is shown in gray' : '') + '. Use the left and right arrow keys to explore values.'"
+     tabindex="0" role="img" [attr.aria-label]="label + (hasOutside ? '. Trading outside regular hours is shown lighter' : '') + '. Use the left and right arrow keys to explore values.'"
      (pointermove)="onPointer($event)" (pointerdown)="onPointer($event)"
      (pointerleave)="clear()" (keydown)="onKey($event)" (blur)="clear()">
   <svg *ngIf="linePath" [attr.width]="width()" [attr.height]="height" aria-hidden="true">
     <defs>
-      <linearGradient id="chart-fill" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient [attr.id]="uid + '-fill'" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" class="fill-stop-top" />
         <stop offset="100%" class="fill-stop-bottom" />
       </linearGradient>
-      <!-- The line is drawn twice, each clipped to its own stretches, so the colours meet cleanly. -->
-      <clipPath [attr.id]="uid + '-regular'">
-        <rect *ngFor="let span of regularSpans" [attr.x]="span.x" y="-8" [attr.width]="span.width" [attr.height]="height + 16" />
-      </clipPath>
-      <clipPath *ngIf="bands.length" [attr.id]="uid + '-outside'">
-        <rect *ngFor="let band of bands" [attr.x]="band.x" y="-8" [attr.width]="band.width" [attr.height]="height + 16" />
-      </clipPath>
+      <!-- Across the width: the line at full strength in regular hours, a soft tint outside them. -->
+      <linearGradient [attr.id]="uid + '-stroke'" gradientUnits="userSpaceOnUse" x1="0" y1="0" [attr.x2]="width()" y2="0">
+        <stop *ngFor="let stop of stops" class="stroke-stop" [class.outside]="stop.outside" [attr.offset]="stop.offset" />
+      </linearGradient>
+      <linearGradient [attr.id]="uid + '-fade'" gradientUnits="userSpaceOnUse" x1="0" y1="0" [attr.x2]="width()" y2="0">
+        <stop *ngFor="let stop of fadeStops" class="fade-stop" [class.outside]="stop.outside" [attr.offset]="stop.offset" />
+      </linearGradient>
+      <mask [attr.id]="uid + '-mask'">
+        <rect x="0" y="0" [attr.width]="width()" [attr.height]="height" [attr.fill]="'url(#' + uid + '-fade)'" />
+      </mask>
     </defs>
-
-    <g *ngFor="let band of bands" class="session">
-      <rect class="band" [attr.x]="band.x" y="0" [attr.width]="band.width" [attr.height]="height" rx="6" />
-      <text *ngIf="band.label" class="band-label" [attr.x]="band.x + 10" y="16">{{ band.label }}</text>
-    </g>
 
     <line *ngIf="baselineY !== null" class="baseline"
           x1="0" [attr.x2]="width()" [attr.y1]="baselineY" [attr.y2]="baselineY" />
 
-    <path class="area" [attr.d]="areaPath" fill="url(#chart-fill)" [attr.clip-path]="'url(#' + uid + '-regular)'" />
-    <path class="line" [attr.d]="linePath" [attr.clip-path]="'url(#' + uid + '-regular)'" />
-    <path *ngIf="bands.length" class="line outside" [attr.d]="linePath" [attr.clip-path]="'url(#' + uid + '-outside)'" />
+    <path class="area" [attr.d]="areaPath" [attr.fill]="'url(#' + uid + '-fill)'" [attr.mask]="'url(#' + uid + '-mask)'" />
+    <path class="line" [attr.d]="linePath" [attr.stroke]="'url(#' + uid + '-stroke)'" />
 
     <ng-container *ngIf="active() !== null; else liveDot">
       <line class="crosshair" [attr.x1]="x(active()!)" [attr.x2]="x(active()!)" y1="0" [attr.y2]="height" />
@@ -35,8 +32,10 @@
               [attr.cx]="x(active()!)" [attr.cy]="y(points[active()!].value)" r="5" />
     </ng-container>
     <ng-template #liveDot>
-      <circle class="dot live" [class.outside]="outsideRegular(points.length - 1)" [class.closed]="closedNow"
-              [attr.cx]="x(points.length - 1)" [attr.cy]="y(points[points.length - 1].value)" r="4" />
+      <g *ngIf="lastDrawn !== null" class="live" [class.outside]="outsideRegular(lastDrawn)" [class.closed]="closedNow">
+        <circle class="halo" [attr.cx]="x(lastDrawn)" [attr.cy]="y(points[lastDrawn].value)" r="11" />
+        <circle class="dot" [attr.cx]="x(lastDrawn)" [attr.cy]="y(points[lastDrawn].value)" r="4" />
+      </g>
     </ng-template>
   </svg>
 </div>

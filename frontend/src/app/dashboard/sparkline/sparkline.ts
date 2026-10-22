@@ -4,7 +4,7 @@ import { MarketSession } from '../../shared/market-session';
 
 /**
  * A tiny trend line with a dotted baseline, coloured by direction against that baseline. Stretches
- * traded outside regular hours are drawn gray, as on the portfolio chart.
+ * traded outside regular hours are a softer tint of the line, as on the portfolio chart.
  */
 @Component({
     selector: 'app-sparkline',
@@ -23,7 +23,7 @@ import { MarketSession } from '../../shared/market-session';
     .line { fill: none; stroke: var(--gain); stroke-width: 1.5; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
     svg[data-tone='loss'] .line { stroke: var(--loss); }
     svg[data-tone='flat'] .line { stroke: var(--muted-foreground); }
-    svg[data-tone] .line.outside { stroke: var(--muted-foreground); opacity: 0.7; }
+    .line.outside { opacity: 0.42; }
     .base { stroke: var(--muted-foreground); stroke-dasharray: 1 3; stroke-width: 1; opacity: 0.5; vector-effect: non-scaling-stroke; }
     .empty { display: inline-block; }
   `]
@@ -33,15 +33,15 @@ export class SparklineComponent implements OnChanges {
   /** The value the trend is judged against, e.g. the previous close. Defaults to the first value. */
   @Input() baseline: number | null = null;
   /**
-   * The session of each value: the stretch from the value before up to it is drawn gray outside
-   * regular hours. Null draws it all alike.
+   * The session of each value: the stretch from the value before up to it is drawn as a softer
+   * tint outside regular hours. Null draws it all alike.
    */
   @Input() sessions: (MarketSession | null | undefined)[] | null = null;
   @Input() width = 88;
   @Input() height = 32;
 
   path = '';
-  /** The stretches outside regular hours, drawn gray over the same scale. */
+  /** The stretches outside regular hours, drawn as a softer tint over the same scale. */
   outsidePath = '';
   baselineY: number | null = null;
   tone: 'gain' | 'loss' | 'flat' = 'flat';

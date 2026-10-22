@@ -11,7 +11,7 @@ import { PORTFOLIO_RANGES, PortfolioHistory, PortfolioRange, PortfolioService } 
 import { HoldingView, MARKET_INDICES, MarketIndex, TradeAccount } from './models';
 import { TickerStripComponent } from './ticker-strip/ticker-strip';
 import { SymbolSearchComponent } from './symbol-search/symbol-search';
-import { ChartPoint, LineChartComponent } from './line-chart/line-chart';
+import { ChartDomain, ChartPoint, LineChartComponent } from './line-chart/line-chart';
 import { PositionsListComponent } from './positions-list/positions-list';
 import { RecentActivityComponent } from './recent-activity/recent-activity';
 import { TradePanelComponent } from './trade-panel/trade-panel';
@@ -234,6 +234,33 @@ export class DashboardComponent implements OnInit {
   });
 
   readonly baseline = computed(() => this.history()?.startValue ?? null);
+
+  /**
+   * Today's chart is laid out by time, framed by where the day is: in pre-market it runs from the
+   * pre-market open to the regular close, so the morning sits at the start with room for the day
+   * ahead; in regular hours, the regular session; after the close (and overnight, and over a
+   * weekend) from the open to the end of after-hours. Pre-market isn't drawn once the market has
+   * opened. Null on other ranges, and with market hours off, which space points evenly.
+   */
+  readonly chartDomain = computed<ChartDomain | null>(() => {
+    const history = this.history();
+    const hours = history?.range === '1D' ? history.hours : null;
+    if (!hours) {
+      return null;
+    }
+    const [preMarketOpen, regularOpen, regularClose, afterHoursClose] =
+      [hours.preMarketOpen, hours.regularOpen, hours.regularClose, hours.afterHoursClose].map(Date.parse);
+    const session = this.market.session();
+    // Until the market status loads, the browser's clock decides.
+    const now = Date.now();
+    if (session === 'PRE_MARKET' || (!session && now < regularOpen)) {
+      return { start: preMarketOpen, end: regularClose };
+    }
+    if (session === 'REGULAR' || (!session && now < regularClose)) {
+      return { start: regularOpen, end: regularClose };
+    }
+    return { start: regularOpen, end: afterHoursClose };
+  });
 
   readonly chartLoading = this.historyLoading;
 
