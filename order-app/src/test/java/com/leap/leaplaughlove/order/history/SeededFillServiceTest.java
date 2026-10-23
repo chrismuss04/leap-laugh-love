@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.order.Order;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -89,8 +91,9 @@ class SeededFillServiceTest {
                 when(priceHistoryClient.fetchCloses(anyString(), any(), any(), anyInt(), anyString()))
                                 .thenReturn(List.of());
                 when(orderRepository.findByIdForUpdate(any())).thenAnswer(invocation -> Optional.empty());
-                when(fillRecorder.recordExecution(any(), any(), any())).thenAnswer(invocation -> filledExecution(
-                                invocation.getArgument(0), invocation.getArgument(1), invocation.getArgument(2)));
+                when(fillRecorder.recordExecution(any(), any(), any(ExecutionQuote.class), any(OffsetDateTime.class)))
+                                .thenAnswer(invocation -> filledExecution(invocation.getArgument(0),
+                                                invocation.getArgument(1), invocation.getArgument(3)));
         }
 
         private static Execution filledExecution(Order order, BigDecimal price, OffsetDateTime time) {
@@ -125,7 +128,30 @@ class SeededFillServiceTest {
 
                 assertEquals(0, service.bookPendingFills());
 
-                verify(fillRecorder).recordExecution(order, new BigDecimal("461.2346"), FILLED_AT);
+                verify(fillRecorder).recordExecution(eq(order), eq(new BigDecimal("461.2346")),
+                                any(ExecutionQuote.class), eq(FILLED_AT));
+        }
+
+        @Test
+        @DisplayName("keeps the candle a fill was priced from as its quote, quoted when the candle closed")
+        void recordsCandleAsQuote() {
+                Order order = filledOrder(aapl, Order.Side.BUY, FILLED_AT);
+                when(orderRepository.findWithoutPositionMovementByStatus(Order.Status.FILLED))
+                                .thenReturn(List.of(order));
+                when(priceHistoryClient.fetchCloses(eq("AAPL"), any(), eq(FILLED_AT), eq(60), eq("history-token")))
+                                .thenReturn(List.of(new CandleClose(FILLED_AT.withSecond(0).minusMinutes(1),
+                                                new BigDecimal("461.234567"))));
+
+                assertEquals(0, service.bookPendingFills());
+
+                ArgumentCaptor<ExecutionQuote> quote = ArgumentCaptor.forClass(ExecutionQuote.class);
+                verify(fillRecorder).recordExecution(eq(order), eq(new BigDecimal("461.2346")), quote.capture(),
+                                eq(FILLED_AT));
+                assertEquals(new BigDecimal("461.2346"), quote.getValue().getBid());
+                assertEquals(new BigDecimal("461.2346"), quote.getValue().getAsk());
+                assertEquals(new BigDecimal("461.2346"), quote.getValue().getLast());
+                assertEquals(FILLED_AT.withSecond(0), quote.getValue().getQuotedAt());
+                assertEquals("SEEDED", quote.getValue().getExchange());
         }
 
         @Test
@@ -142,7 +168,8 @@ class SeededFillServiceTest {
 
                 assertEquals(0, service.bookPendingFills());
 
-                verify(fillRecorder).recordExecution(order, new BigDecimal("310.5000"), filledAt);
+                verify(fillRecorder).recordExecution(eq(order), eq(new BigDecimal("310.5000")),
+                                any(ExecutionQuote.class), eq(filledAt));
         }
 
         @Test
@@ -158,9 +185,12 @@ class SeededFillServiceTest {
 
                 assertEquals(2, service.bookPendingFills());
 
-                verify(fillRecorder).recordExecution(msftBuy, new BigDecimal("305.0000"), FILLED_AT);
-                verify(fillRecorder, never()).recordExecution(eq(firstAapl), any(), any());
-                verify(fillRecorder, never()).recordExecution(eq(laterAapl), any(), any());
+                verify(fillRecorder).recordExecution(eq(msftBuy), eq(new BigDecimal("305.0000")),
+                                any(ExecutionQuote.class), eq(FILLED_AT));
+                verify(fillRecorder, never()).recordExecution(eq(firstAapl), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
+                verify(fillRecorder, never()).recordExecution(eq(laterAapl), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
         }
 
         @Test
@@ -182,8 +212,10 @@ class SeededFillServiceTest {
                 assertEquals(2, service.bookPendingFills());
 
                 verify(fillRecorder, never()).recordPositionMovement(eq(aaplSell), any());
-                verify(fillRecorder, never()).recordExecution(eq(laterAapl), any(), any());
-                verify(fillRecorder).recordExecution(msftBuy, new BigDecimal("300.0000"), FILLED_AT);
+                verify(fillRecorder, never()).recordExecution(eq(laterAapl), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
+                verify(fillRecorder).recordExecution(eq(msftBuy), eq(new BigDecimal("300.0000")),
+                                any(ExecutionQuote.class), eq(FILLED_AT));
         }
 
         @Test
@@ -197,7 +229,8 @@ class SeededFillServiceTest {
 
                 assertEquals(1, service.bookPendingFills());
 
-                verify(fillRecorder, never()).recordExecution(any(), any(), any());
+                verify(fillRecorder, never()).recordExecution(any(), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
         }
 
         @Test
@@ -212,7 +245,8 @@ class SeededFillServiceTest {
 
                 service.bookPendingFills();
 
-                verify(fillRecorder, never()).recordExecution(any(), any(), any());
+                verify(fillRecorder, never()).recordExecution(any(), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
                 verify(fillRecorder, never()).settle(any(), any(), any());
         }
 
@@ -247,7 +281,8 @@ class SeededFillServiceTest {
 
                 assertEquals(0, service.bookPendingFills());
 
-                verify(fillRecorder, never()).recordExecution(any(), any(), any());
+                verify(fillRecorder, never()).recordExecution(any(), any(),
+                                any(ExecutionQuote.class), any(OffsetDateTime.class));
                 verify(fillRecorder).settle(eq(order), eq(earlier), anyString());
                 verify(fillRecorder).recordPositionMovement(order, earlier);
         }

@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.order.Order;
 import com.leap.leaplaughlove.order.order.OrderRepository;
@@ -40,7 +41,9 @@ import java.util.UUID;
  * holding - through the same {@link FillRecorder} steps live orders use, at the close of the last
  * candle that ended at or before the fill. That is the price the portfolio chart values the
  * holding at, so the chart moves smoothly through the trade instead of jumping by the gap
- * between a hard-coded fill price and the simulated market.
+ * between a hard-coded fill price and the simulated market. That candle is also kept as the
+ * execution's quote - bid, ask and last all at its close, stamped when it closed, from the
+ * SEEDED exchange - so a seeded order's trace shows what it was priced from.
  *
  * <p>Market data may still be starting, or still backfilling, when this app is ready, so the
  * work runs on its own thread and retries until every pending fill is booked. It is a no-op once
@@ -58,6 +61,9 @@ public class SeededFillService {
 
     /** Live fills are priced to 4 decimal places; seeded ones match. */
     private static final int PRICE_SCALE = 4;
+
+    /** The exchange a seeded fill's quote is recorded from: a candle close, not a live quote. */
+    static final String SEEDED_EXCHANGE = "SEEDED";
 
     private final OrderRepository orderRepository;
     private final AccountRepository accountRepository;
@@ -161,13 +167,13 @@ public class SeededFillService {
             if (blocked.contains(holding)) {
                 continue;
             }
-            Optional<BigDecimal> price = order.getFilledAt() == null ? Optional.empty() : priceAt(order);
-            if (price.isEmpty()) {
+            Optional<ExecutionQuote> quote = order.getFilledAt() == null ? Optional.empty() : quoteAt(order);
+            if (quote.isEmpty()) {
                 blocked.add(holding);
                 continue;
             }
             try {
-                if (book(order, price.get())) {
+                if (book(order, quote.get())) {
                     booked++;
                 }
             } catch (RuntimeException ex) {
@@ -193,7 +199,7 @@ public class SeededFillService {
      * booking stopped part-way - its execution written but settling failed - is picked up again
      * here and settled with that same execution, which account-app settles only once.
      */
-    private boolean book(Order order, BigDecimal price) {
+    private boolean book(Order order, ExecutionQuote quote) {
         Execution execution = transactionTemplate.execute(status -> {
             Optional<Order> locked = orderRepository.findByIdForUpdate(order.getOrderId());
             // Another instance may have booked it between the query and the lock.
@@ -201,7 +207,8 @@ public class SeededFillService {
                 return null;
             }
             return executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED)
-                    .orElseGet(() -> fillRecorder.recordExecution(locked.get(), price, locked.get().getFilledAt()));
+                    .orElseGet(() -> fillRecorder.recordExecution(locked.get(), quote.getLast(), quote,
+                            locked.get().getFilledAt()));
         });
         if (execution == null) {
             return false;
@@ -232,9 +239,10 @@ public class SeededFillService {
      * Prices a fill at the close of the last candle that ended at or before it, using the
      * finest candle width market data still holds for that moment.
      * @param order the filled order
-     * @return the fill price, or empty if market data has no history covering the fill yet
+     * @return the quote the fill is priced from - bid, ask and last at the candle's close, quoted
+     *         when it closed - or empty if market data has no history covering the fill yet
      */
-    private Optional<BigDecimal> priceAt(Order order) {
+    private Optional<ExecutionQuote> quoteAt(Order order) {
         OffsetDateTime filledAt = order.getFilledAt();
         String symbol = order.getInstrument().getSymbol();
         // Session Timeout & Revocation: historical pricing uses a restricted backend token;
@@ -245,12 +253,13 @@ public class SeededFillService {
             for (int width : CANDLE_WIDTHS) {
                 List<CandleClose> closes = priceHistoryClient.fetchCloses(
                         symbol, filledAt.minusSeconds(2L * width), filledAt, width, token);
-                Optional<BigDecimal> close = closes.stream()
-                        .filter(candle -> !candle.bucketStart().plusSeconds(width).isAfter(filledAt))
-                        .reduce((earlier, later) -> later)
-                        .map(CandleClose::close);
-                if (close.isPresent()) {
-                    return close.map(value -> value.setScale(PRICE_SCALE, RoundingMode.HALF_UP));
+                Optional<CandleClose> candle = closes.stream()
+                        .filter(close -> !close.bucketStart().plusSeconds(width).isAfter(filledAt))
+                        .reduce((earlier, later) -> later);
+                if (candle.isPresent()) {
+                    BigDecimal price = candle.get().close().setScale(PRICE_SCALE, RoundingMode.HALF_UP);
+                    return Optional.of(new ExecutionQuote(price, price, price,
+                            candle.get().bucketStart().plusSeconds(width), SEEDED_EXCHANGE));
                 }
             }
         } catch (QuoteUnavailableException ex) {
