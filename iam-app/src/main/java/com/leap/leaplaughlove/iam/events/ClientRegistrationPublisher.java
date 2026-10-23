@@ -20,6 +20,12 @@ public class ClientRegistrationPublisher {
     private final boolean enabled;
     private final String topic;
 
+    /**
+     * Constructs a new ClientRegistrationPublisher.
+     * @param kafka sends the events
+     * @param enabled whether registrations are published at all
+     * @param topic the Kafka topic registrations go to
+     */
     public ClientRegistrationPublisher(KafkaTemplate<String, ClientRegistrationEvent> kafka,
             @Value("${reporting.registrations.enabled:false}") boolean enabled,
             @Value("${reporting.registrations.topic:client-register}") String topic) {

@@ -33,6 +33,7 @@ public class MarketDataSecurityConfig {
      * @param http the security configuration builder
      * @param jwtService the JWT service used to validate bearer tokens
      * @param objectMapper the object mapper used to write the JSON 401 response body
+     * @param sessions checks that the session behind each token is still live
      * @return the configured security filter chain
      * @throws Exception if the security configuration cannot be built
      */

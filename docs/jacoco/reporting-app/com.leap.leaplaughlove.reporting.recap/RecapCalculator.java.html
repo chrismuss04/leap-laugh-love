@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapCalculator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapCalculator.java</span></div><h1>RecapCalculator.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.Benchmark;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.MoneyMoved;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.SymbolReturn;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.TickerActivity;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.TopGainer;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.TopSector;
+import com.leap.leaplaughlove.reporting.recap.RecapPayload.TradingReturn;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
+import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/**
+ * Works out a client's monthly recap from their fills and daily closing prices. Pure: no database
+ * or network, so every figure is tested on its own.
+ *
+ * &lt;p&gt;Each symbol's trading return for the month is
+ * &lt;pre&gt;
+ *   gain     = (units held at month end x end price + money from sells)
+ *            - (units held at month start x start price + money spent on buys)
+ *   invested = start value + money spent on buys so far - money from sells so far
+ *   return   = gain / the most invested at any point in the month
+ * &lt;/pre&gt;
+ * Dividing by the peak rather than by every buy keeps money that is sold and bought back from
+ * counting twice, so a client who trades the same 1,000 in and out ten times is measured on 1,000,
+ * not 10,000. The client's trading return is the total gain over the total of those peaks, so a
+ * large position counts for more than a small one. A symbol is left out of every return when it can't be
+ * priced, or when the client's fills sell more units than they bought: the reporting schema then
+ * doesn't hold the whole history, and any return would be made up. Such symbols still count towards
+ * money moved, top tickers, instruments traded and sector.
+ */
+@Component
+<span class="fc" id="L53">public class RecapCalculator {</span>
+
+    /** The version of {@link RecapPayload}'s JSON shape this calculator writes. */
+    public static final int SCHEMA_VERSION = 2;
+
+    /** How many symbols the top tickers, gainers and losers lists hold. */
+    static final int TOP_COUNT = 5;
+
+    /** The index a client's trading return is compared with. */
+    static final String BENCHMARK_SYMBOL = &quot;SPX&quot;;
+    static final String BENCHMARK_NAME = &quot;S&amp;P 500&quot;;
+
+    /** Rankings are only shown to clients in this top percentage of the month's clients. */
+    static final int TOP_PERCENT_SHOWN_UP_TO = 50;
+
+    /** The short sector names the recap card has room for, by GICS sector. */
+<span class="fc" id="L69">    static final Map&lt;String, String&gt; SECTOR_LABELS = Map.ofEntries(</span>
+<span class="fc" id="L70">            Map.entry(&quot;Communication Services&quot;, &quot;Comms&quot;),</span>
+<span class="fc" id="L71">            Map.entry(&quot;Consumer Discretionary&quot;, &quot;Consumer&quot;),</span>
+<span class="fc" id="L72">            Map.entry(&quot;Consumer Staples&quot;, &quot;Staples&quot;),</span>
+<span class="fc" id="L73">            Map.entry(&quot;Energy&quot;, &quot;Energy&quot;),</span>
+<span class="fc" id="L74">            Map.entry(&quot;Financials&quot;, &quot;Finance&quot;),</span>
+<span class="fc" id="L75">            Map.entry(&quot;Health Care&quot;, &quot;Health&quot;),</span>
+<span class="fc" id="L76">            Map.entry(&quot;Industrials&quot;, &quot;Industrials&quot;),</span>
+<span class="fc" id="L77">            Map.entry(&quot;Information Technology&quot;, &quot;Tech&quot;),</span>
+<span class="fc" id="L78">            Map.entry(&quot;Materials&quot;, &quot;Materials&quot;),</span>
+<span class="fc" id="L79">            Map.entry(&quot;Real Estate&quot;, &quot;Real Estate&quot;),</span>
+<span class="fc" id="L80">            Map.entry(&quot;Utilities&quot;, &quot;Utilities&quot;),</span>
+<span class="fc" id="L81">            Map.entry(&quot;Crypto&quot;, &quot;Crypto&quot;));</span>
+
+<span class="fc" id="L83">    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);</span>
+
+    /**
+     * Works out one client's recap. The ranking is left unset; {@link #topPercents} fills it in once
+     * every client's recap for the month is known.
+     * @param month the month to recap
+     * @param fills the client's fills up to the end of the month, in any order; earlier months' fills
+     *              give the units held when the month starts, later ones are ignored
+     * @param prices daily closes for every symbol the client held or traded, and for the benchmark,
+     *               from the last day of the month before through the month's last day
+     * @param sectors GICS sector by trading symbol
+     * @return the recap, without a ranking
+     */
+    public RecapPayload calculate(YearMonth month, List&lt;RecapFill&gt; fills, PriceBook prices,
+                                  Map&lt;String, String&gt; sectors) {
+<span class="fc" id="L98">        OffsetDateTime start = month.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L99">        OffsetDateTime end = month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L100">        List&lt;RecapFill&gt; history = fills.stream()</span>
+<span class="fc" id="L101">                .filter(fill -&gt; fill.filledAt().isBefore(end))</span>
+<span class="fc" id="L102">                .sorted(Comparator.comparing(RecapFill::filledAt))</span>
+<span class="fc" id="L103">                .toList();</span>
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        List&lt;RecapFill&gt; inMonth = history.stream().filter(fill -&gt; !fill.filledAt().isBefore(start)).toList();</span>
+
+<span class="fc" id="L106">        List&lt;Position&gt; positions = positions(month, history, start, prices);</span>
+<span class="fc" id="L107">        List&lt;SymbolReturn&gt; returns = positions.stream()</span>
+<span class="fc" id="L108">                .map(position -&gt; new SymbolReturn(position.symbol, percent(position.gain(), position.putIn()),</span>
+<span class="fc" id="L109">                        money(position.gain())))</span>
+<span class="fc" id="L110">                .toList();</span>
+<span class="fc" id="L111">        List&lt;SymbolReturn&gt; gainers = returns.stream()</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">                .filter(r -&gt; r.returnPct().signum() &gt; 0)</span>
+<span class="fc" id="L113">                .sorted(Comparator.comparing(SymbolReturn::returnPct).reversed().thenComparing(SymbolReturn::symbol))</span>
+<span class="fc" id="L114">                .limit(TOP_COUNT)</span>
+<span class="fc" id="L115">                .toList();</span>
+<span class="fc" id="L116">        List&lt;SymbolReturn&gt; losers = returns.stream()</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">                .filter(r -&gt; r.returnPct().signum() &lt; 0)</span>
+<span class="fc" id="L118">                .sorted(Comparator.comparing(SymbolReturn::returnPct).thenComparing(SymbolReturn::symbol))</span>
+<span class="fc" id="L119">                .limit(TOP_COUNT)</span>
+<span class="fc" id="L120">                .toList();</span>
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        TopGainer topGainer = gainers.isEmpty() ? null : new TopGainer(gainers.get(0).symbol(),</span>
+<span class="fc" id="L122">                gainers.get(0).returnPct(), gainers.get(0).pnl(), closes(month, gainers.get(0).symbol(), prices));</span>
+
+<span class="fc" id="L124">        TradingReturn tradingReturn = tradingReturn(month, positions);</span>
+<span class="fc" id="L125">        return new RecapPayload(</span>
+                month,
+<span class="fc" id="L127">                inMonth.isEmpty(),</span>
+<span class="fc" id="L128">                moneyMoved(inMonth),</span>
+<span class="fc" id="L129">                topTickers(month, inMonth, prices),</span>
+                topGainer,
+                gainers,
+                losers,
+                tradingReturn,
+<span class="fc" id="L134">                benchmark(month, prices, tradingReturn.returnPct()),</span>
+<span class="fc" id="L135">                (int) inMonth.stream().map(RecapFill::symbol).distinct().count(),</span>
+<span class="fc" id="L136">                topSector(inMonth, sectors),</span>
+                null);
+    }
+
+    /**
+     * Ranks the month's clients by trading return. A client's top percent is the smallest top slice
+     * they are in: the best of 25 clients is in the top 4%. Tied clients share the better rank.
+     * Clients with no trading return aren't ranked and don't count towards anyone's slice.
+     * @param tradingReturns each client's trading return, null when they have none
+     * @return the top percent of each client in the top {@value #TOP_PERCENT_SHOWN_UP_TO}%; clients
+     *         below that are left out, so the card never boasts about being in the top 90%
+     */
+    public Map&lt;UUID, Integer&gt; topPercents(Map&lt;UUID, BigDecimal&gt; tradingReturns) {
+<span class="fc" id="L149">        List&lt;Map.Entry&lt;UUID, BigDecimal&gt;&gt; ranked = tradingReturns.entrySet().stream()</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">                .filter(entry -&gt; entry.getValue() != null)</span>
+<span class="fc" id="L151">                .sorted(Map.Entry.&lt;UUID, BigDecimal&gt;comparingByValue().reversed())</span>
+<span class="fc" id="L152">                .toList();</span>
+<span class="fc" id="L153">        Map&lt;UUID, Integer&gt; topPercents = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L154">        int rank = 0;</span>
+<span class="fc bfc" id="L155" title="All 2 branches covered.">        for (int i = 0; i &lt; ranked.size(); i++) {</span>
+            // 1 + the number of clients who did strictly better, so ties share the better rank.
+<span class="fc bfc" id="L157" title="All 4 branches covered.">            if (i == 0 || ranked.get(i).getValue().compareTo(ranked.get(i - 1).getValue()) &lt; 0) {</span>
+<span class="fc" id="L158">                rank = i + 1;</span>
+            }
+<span class="fc" id="L160">            int topPercent = (int) Math.ceilDiv(rank * 100L, ranked.size());</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">            if (topPercent &gt; TOP_PERCENT_SHOWN_UP_TO) {</span>
+<span class="fc" id="L162">                break;</span>
+            }
+<span class="fc" id="L164">            topPercents.put(ranked.get(i).getKey(), topPercent);</span>
+        }
+<span class="fc" id="L166">        return topPercents;</span>
+    }
+
+    /**
+     * The symbols a client's recap needs prices for: those traded in the month, and those held when
+     * it began. Symbols closed out earlier are left out, so a long history doesn't mean fetching
+     * prices nobody needs.
+     * @param month the month to recap
+     * @param fills the client's fills, in any order
+     * @return the trading symbols to price
+     */
+    public Set&lt;String&gt; symbolsToPrice(YearMonth month, Collection&lt;RecapFill&gt; fills) {
+<span class="fc" id="L178">        OffsetDateTime start = month.atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L179">        OffsetDateTime end = month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L180">        Map&lt;String, Long&gt; unitsAtStart = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L181">        Set&lt;String&gt; symbols = new TreeSet&lt;&gt;();</span>
+<span class="fc bfc" id="L182" title="All 2 branches covered.">        for (RecapFill fill : fills) {</span>
+<span class="fc bfc" id="L183" title="All 2 branches covered.">            if (fill.filledAt().isBefore(start)) {</span>
+<span class="fc" id="L184">                unitsAtStart.merge(fill.symbol(), fill.signedQuantity(), Long::sum);</span>
+<span class="fc bfc" id="L185" title="All 2 branches covered.">            } else if (fill.filledAt().isBefore(end)) {</span>
+<span class="fc" id="L186">                symbols.add(fill.symbol());</span>
+            }
+<span class="fc" id="L188">        }</span>
+<span class="fc" id="L189">        unitsAtStart.forEach((symbol, units) -&gt; {</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">            if (units &gt; 0) {</span>
+<span class="fc" id="L191">                symbols.add(symbol);</span>
+            }
+<span class="fc" id="L193">        });</span>
+<span class="fc" id="L194">        return symbols;</span>
+    }
+
+    private static MoneyMoved moneyMoved(List&lt;RecapFill&gt; inMonth) {
+<span class="fc bfc" id="L198" title="All 2 branches covered.">        BigDecimal bought = sum(inMonth.stream().filter(fill -&gt; fill.side() == RecapFill.Side.BUY).toList(),</span>
+                RecapFill::value);
+<span class="fc bfc" id="L200" title="All 2 branches covered.">        BigDecimal sold = sum(inMonth.stream().filter(fill -&gt; fill.side() == RecapFill.Side.SELL).toList(),</span>
+                RecapFill::value);
+<span class="fc" id="L202">        return new MoneyMoved(money(bought.add(sold)), money(bought), money(sold), inMonth.size(),</span>
+<span class="fc" id="L203">                (int) inMonth.stream().map(RecapFill::accountId).distinct().count());</span>
+    }
+
+    private static List&lt;TickerActivity&gt; topTickers(YearMonth month, List&lt;RecapFill&gt; inMonth, PriceBook prices) {
+<span class="fc" id="L207">        Map&lt;String, List&lt;RecapFill&gt;&gt; bySymbol = inMonth.stream().collect(Collectors.groupingBy(RecapFill::symbol));</span>
+<span class="fc" id="L208">        return bySymbol.entrySet().stream()</span>
+<span class="fc" id="L209">                .map(entry -&gt; Map.entry(entry.getKey(), sum(entry.getValue(), RecapFill::value)))</span>
+<span class="fc" id="L210">                .sorted(Map.Entry.&lt;String, BigDecimal&gt;comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))</span>
+<span class="fc" id="L211">                .limit(TOP_COUNT)</span>
+<span class="fc" id="L212">                .map(entry -&gt; new TickerActivity(entry.getKey(), money(entry.getValue()),</span>
+<span class="fc" id="L213">                        bySymbol.get(entry.getKey()).size(), closes(month, entry.getKey(), prices)))</span>
+<span class="fc" id="L214">                .toList();</span>
+    }
+
+    private static TradingReturn tradingReturn(YearMonth month, List&lt;Position&gt; positions) {
+<span class="fc" id="L218">        BigDecimal gain = sum(positions, Position::gain);</span>
+<span class="fc" id="L219">        BigDecimal putIn = sum(positions, Position::putIn);</span>
+<span class="fc" id="L220">        List&lt;BigDecimal&gt; dailyPnl = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L221" title="All 2 branches covered.">        for (int day = 1; day &lt;= month.lengthOfMonth(); day++) {</span>
+<span class="fc" id="L222">            LocalDate date = month.atDay(day);</span>
+<span class="fc" id="L223">            dailyPnl.add(money(sum(positions, position -&gt; position.gainBy(date))));</span>
+        }
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        return new TradingReturn(positions.isEmpty() ? null : percent(gain, putIn), money(gain), dailyPnl);</span>
+    }
+
+    private static Benchmark benchmark(YearMonth month, PriceBook prices, BigDecimal tradingReturnPct) {
+<span class="fc" id="L229">        Optional&lt;BigDecimal&gt; startPrice = prices.closeOn(BENCHMARK_SYMBOL, month.atDay(1).minusDays(1));</span>
+<span class="fc" id="L230">        Optional&lt;BigDecimal&gt; endPrice = prices.closeOn(BENCHMARK_SYMBOL, month.atEndOfMonth());</span>
+<span class="pc bpc" id="L231" title="2 of 6 branches missed.">        if (startPrice.isEmpty() || endPrice.isEmpty() || startPrice.get().signum() == 0) {</span>
+<span class="fc" id="L232">            return null;</span>
+        }
+<span class="fc" id="L234">        BigDecimal returnPct = percent(endPrice.get().subtract(startPrice.get()), startPrice.get());</span>
+<span class="fc" id="L235">        return new Benchmark(BENCHMARK_SYMBOL, BENCHMARK_NAME, returnPct,</span>
+<span class="fc bfc" id="L236" title="All 2 branches covered.">                tradingReturnPct == null ? null : tradingReturnPct.subtract(returnPct));</span>
+    }
+
+    private static TopSector topSector(List&lt;RecapFill&gt; inMonth, Map&lt;String, String&gt; sectors) {
+<span class="fc" id="L240">        Map&lt;String, BigDecimal&gt; bySector = new TreeMap&lt;&gt;();</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">        for (RecapFill fill : inMonth) {</span>
+<span class="fc" id="L242">            String sector = sectors.get(fill.symbol());</span>
+<span class="fc bfc" id="L243" title="All 2 branches covered.">            if (sector != null) {</span>
+<span class="fc" id="L244">                bySector.merge(sector, fill.value(), BigDecimal::add);</span>
+            }
+<span class="fc" id="L246">        }</span>
+<span class="fc" id="L247">        return bySector.entrySet().stream()</span>
+                // The TreeMap's name order breaks ties, since max keeps the first of equals.
+<span class="fc" id="L249">                .max(Map.Entry.comparingByValue())</span>
+<span class="fc" id="L250">                .map(entry -&gt; new TopSector(entry.getKey(), SECTOR_LABELS.getOrDefault(entry.getKey(), entry.getKey()),</span>
+<span class="fc" id="L251">                        money(entry.getValue())))</span>
+<span class="fc" id="L252">                .orElse(null);</span>
+    }
+
+    /**
+     * Every symbol the client held at the month's start or traded in it, with what it takes to
+     * value it, leaving out the ones no return can honestly be given for.
+     */
+    private static List&lt;Position&gt; positions(YearMonth month, List&lt;RecapFill&gt; history, OffsetDateTime start,
+                                            PriceBook prices) {
+<span class="fc" id="L261">        Map&lt;String, List&lt;RecapFill&gt;&gt; bySymbol = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L262">        history.forEach(fill -&gt; bySymbol.computeIfAbsent(fill.symbol(), symbol -&gt; new ArrayList&lt;&gt;()).add(fill));</span>
+
+<span class="fc" id="L264">        List&lt;Position&gt; positions = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L265">        bySymbol.forEach((symbol, fills) -&gt; position(month, symbol, fills, start, prices).ifPresent(positions::add));</span>
+<span class="fc" id="L266">        return positions;</span>
+    }
+
+    /**
+     * One symbol's position, from all its fills in order; empty when no return can honestly be
+     * given for it.
+     */
+    private static Optional&lt;Position&gt; position(YearMonth month, String symbol, List&lt;RecapFill&gt; fills,
+                                               OffsetDateTime start, PriceBook prices) {
+<span class="fc" id="L275">        long units = 0;</span>
+<span class="fc" id="L276">        long startUnits = 0;</span>
+<span class="fc" id="L277">        List&lt;RecapFill&gt; inMonth = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">        for (RecapFill fill : fills) {</span>
+<span class="fc" id="L279">            units += fill.signedQuantity();</span>
+<span class="fc bfc" id="L280" title="All 2 branches covered.">            if (units &lt; 0) {</span>
+<span class="fc" id="L281">                return Optional.empty();    // sold more than it bought: the history is incomplete</span>
+            }
+<span class="fc bfc" id="L283" title="All 2 branches covered.">            if (fill.filledAt().isBefore(start)) {</span>
+<span class="fc" id="L284">                startUnits = units;</span>
+            } else {
+<span class="fc" id="L286">                inMonth.add(fill);</span>
+            }
+<span class="fc" id="L288">        }</span>
+<span class="fc bfc" id="L289" title="All 4 branches covered.">        if (startUnits == 0 &amp;&amp; inMonth.isEmpty()) {</span>
+<span class="fc" id="L290">            return Optional.empty();        // closed out before the month began</span>
+        }
+<span class="fc" id="L292">        Optional&lt;BigDecimal&gt; startPrice = prices.closeOn(symbol, month.atDay(1).minusDays(1));</span>
+<span class="fc" id="L293">        Optional&lt;BigDecimal&gt; endPrice = prices.closeOn(symbol, month.atEndOfMonth());</span>
+<span class="fc bfc" id="L294" title="All 8 branches covered.">        if ((startUnits &gt; 0 &amp;&amp; startPrice.isEmpty()) || (units &gt; 0 &amp;&amp; endPrice.isEmpty())) {</span>
+<span class="fc" id="L295">            return Optional.empty();        // can't be valued</span>
+        }
+<span class="fc" id="L297">        Position position = new Position(symbol, startUnits, startPrice.orElse(BigDecimal.ZERO), inMonth, prices,</span>
+<span class="fc" id="L298">                month.atEndOfMonth());</span>
+<span class="pc bpc" id="L299" title="1 of 2 branches missed.">        return position.putIn().signum() &gt; 0 ? Optional.of(position) : Optional.empty();</span>
+    }
+
+    /** One symbol's position through the month. */
+    private static final class Position {
+        private final String symbol;
+        private final long startUnits;
+        private final BigDecimal startValue;
+        private final BigDecimal peakInvested;
+        private final List&lt;RecapFill&gt; inMonth;
+        private final PriceBook prices;
+        private final LocalDate monthEnd;
+
+        Position(String symbol, long startUnits, BigDecimal startPrice, List&lt;RecapFill&gt; inMonth, PriceBook prices,
+<span class="fc" id="L313">                 LocalDate monthEnd) {</span>
+<span class="fc" id="L314">            this.symbol = symbol;</span>
+<span class="fc" id="L315">            this.startUnits = startUnits;</span>
+<span class="fc" id="L316">            this.startValue = startPrice.multiply(BigDecimal.valueOf(startUnits));</span>
+<span class="fc" id="L317">            this.inMonth = inMonth;</span>
+<span class="fc" id="L318">            this.prices = prices;</span>
+<span class="fc" id="L319">            this.monthEnd = monthEnd;</span>
+<span class="fc" id="L320">            BigDecimal invested = startValue;</span>
+<span class="fc" id="L321">            BigDecimal peak = startValue;</span>
+<span class="fc bfc" id="L322" title="All 2 branches covered.">            for (RecapFill fill : inMonth) {</span>
+<span class="fc bfc" id="L323" title="All 2 branches covered.">                invested = fill.side() == RecapFill.Side.BUY ? invested.add(fill.value()) : invested.subtract(fill.value());</span>
+<span class="fc" id="L324">                peak = peak.max(invested);</span>
+<span class="fc" id="L325">            }</span>
+<span class="fc" id="L326">            this.peakInvested = peak;</span>
+<span class="fc" id="L327">        }</span>
+
+        /**
+         * The most money in the position at any point in the month: the start value, plus buys,
+         * less sells, at its highest. Buying back with money a sell freed up adds nothing.
+         */
+        BigDecimal putIn() {
+<span class="fc" id="L334">            return peakInvested;</span>
+        }
+
+        /** The gain at the end of the month. */
+        BigDecimal gain() {
+<span class="fc" id="L339">            return gainBy(monthEnd);</span>
+        }
+
+        /**
+         * The gain at the end of a day: the units then held at that day's close, plus the money from
+         * sells so far, less the start value and the money spent on buys so far.
+         */
+        BigDecimal gainBy(LocalDate day) {
+<span class="fc bfc" id="L347" title="All 2 branches covered.">            List&lt;RecapFill&gt; soFar = inMonth.stream().filter(fill -&gt; !fillDay(fill).isAfter(day)).toList();</span>
+<span class="fc" id="L348">            long units = startUnits + soFar.stream().mapToLong(RecapFill::signedQuantity).sum();</span>
+<span class="fc bfc" id="L349" title="All 2 branches covered.">            BigDecimal held = units == 0 ? BigDecimal.ZERO : priceOn(day, soFar).multiply(BigDecimal.valueOf(units));</span>
+<span class="fc" id="L350">            return held</span>
+<span class="fc" id="L351">                    .add(sum(side(soFar, RecapFill.Side.SELL), RecapFill::value))</span>
+<span class="fc" id="L352">                    .subtract(startValue)</span>
+<span class="fc" id="L353">                    .subtract(sum(side(soFar, RecapFill.Side.BUY), RecapFill::value));</span>
+        }
+
+        /**
+         * The day's close. Units held at the month's start always have one, as the start price
+         * exists; units bought in the month before the symbol's first candle fall back to the price
+         * of the latest fill.
+         */
+        private BigDecimal priceOn(LocalDate day, List&lt;RecapFill&gt; soFar) {
+<span class="fc" id="L362">            return prices.closeOn(symbol, day).orElseGet(() -&gt; soFar.get(soFar.size() - 1).price());</span>
+        }
+
+        private static List&lt;RecapFill&gt; side(List&lt;RecapFill&gt; fills, RecapFill.Side side) {
+<span class="fc bfc" id="L366" title="All 2 branches covered.">            return fills.stream().filter(fill -&gt; fill.side() == side).toList();</span>
+        }
+
+        private static LocalDate fillDay(RecapFill fill) {
+<span class="fc" id="L370">            return fill.filledAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();</span>
+        }
+    }
+
+    /**
+     * The symbol's price at the end of each day of the month, oldest first, starting from its first
+     * candle when that falls inside the month.
+     */
+    private static List&lt;BigDecimal&gt; closes(YearMonth month, String symbol, PriceBook prices) {
+<span class="fc" id="L379">        List&lt;BigDecimal&gt; closes = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L380" title="All 2 branches covered.">        for (int day = 1; day &lt;= month.lengthOfMonth(); day++) {</span>
+<span class="fc" id="L381">            prices.closeOn(symbol, month.atDay(day)).ifPresent(close -&gt; closes.add(money(close)));</span>
+        }
+<span class="fc" id="L383">        return closes;</span>
+    }
+
+    private static &lt;T&gt; BigDecimal sum(List&lt;T&gt; items, Function&lt;T, BigDecimal&gt; amount) {
+<span class="fc" id="L387">        return items.stream().map(amount).reduce(BigDecimal.ZERO, BigDecimal::add);</span>
+    }
+
+    /** part as a percentage of whole, to two places. */
+    private static BigDecimal percent(BigDecimal part, BigDecimal whole) {
+<span class="fc" id="L392">        return part.multiply(HUNDRED).divide(whole, 2, RoundingMode.HALF_UP);</span>
+    }
+
+    private static BigDecimal money(BigDecimal amount) {
+<span class="fc" id="L396">        return amount.setScale(2, RoundingMode.HALF_UP);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -55,7 +55,14 @@ public class InactiveAccountNotifier {
     private final String from;
     private final Clock clock;
 
-    /** Creates the notifier on the system clock. */
+    /**
+     * Creates the notifier on the system clock.
+     * @param accountRepository finds flagged accounts and records each email
+     * @param clientStatusRepository looks up each client's email address and status
+     * @param mailSender sends the emails
+     * @param transactionManager runs each account's notification in its own transaction
+     * @param from the address the emails come from
+     */
     @Autowired
     public InactiveAccountNotifier(AccountRepository accountRepository,
                                    ClientStatusRepository clientStatusRepository,

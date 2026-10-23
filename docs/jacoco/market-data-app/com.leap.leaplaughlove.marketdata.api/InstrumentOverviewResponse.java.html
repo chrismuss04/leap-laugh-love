@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InstrumentOverviewResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.api</a> &gt; <span class="el_source">InstrumentOverviewResponse.java</span></div><h1>InstrumentOverviewResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.api;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.List;
+
+/**
+ * A market snapshot with a shared UTC performance period.
+ * @param period the period changes are measured over: today, week or month
+ * @param periodStart when the period started
+ * @param asOf when the snapshot was taken
+ * @param instruments every listed instrument
+ */
+<span class="fc" id="L14">public record InstrumentOverviewResponse(String period, OffsetDateTime periodStart,</span>
+        OffsetDateTime asOf, List&lt;Instrument&gt; instruments) {
+
+    /**
+     * Unknown metadata and unavailable performance are represented by null.
+     * @param symbol the ticker symbol
+     * @param name the instrument's name
+     * @param assetClass the asset class: EQUITY, FX or CRYPTO
+     * @param currency the currency it trades in
+     * @param price the latest price
+     * @param asOf when the latest price was set
+     * @param baselinePrice the price at the start of the period
+     * @param change the change in price since the start of the period
+     * @param changePercent the change as a percentage of the baseline price
+     */
+<span class="fc" id="L29">    public record Instrument(String symbol, String name, String assetClass, String currency,</span>
+            BigDecimal price, OffsetDateTime asOf, BigDecimal baselinePrice,
+            BigDecimal change, BigDecimal changePercent) {}
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

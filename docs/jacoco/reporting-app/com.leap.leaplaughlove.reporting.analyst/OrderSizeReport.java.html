@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderSizeReport.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">OrderSizeReport.java</span></div><h1>OrderSizeReport.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.util.List;
+
+/**
+ * How filled orders spread across value bands each month, with the typical order's value.
+ * @param window the months reported on
+ * @param months one entry per month in the window, oldest first
+ */
+<span class="fc" id="L12">public record OrderSizeReport(ReportWindow window, List&lt;Month&gt; months) {</span>
+
+    /**
+     * One month's filled orders by value.
+     * @param month the month
+     * @param filledOrders how many orders filled
+     * @param meanValue mean filled order value; null when nothing filled
+     * @param medianValue median filled order value; null when nothing filled
+     * @param bands every band, smallest first, including empty ones
+     */
+<span class="fc" id="L22">    public record Month(YearMonth month, long filledOrders, BigDecimal meanValue, BigDecimal medianValue,</span>
+                        List&lt;Band&gt; bands) {}
+
+    /**
+     * One value band's filled orders in the month.
+     * @param band the band
+     * @param from the band's lower bound, inclusive; null for the lowest band
+     * @param to the band's upper bound, exclusive; null for the highest band
+     * @param orders how many filled orders fell in the band
+     * @param value their combined value
+     */
+<span class="fc" id="L33">    public record Band(OrderSizeBand band, BigDecimal from, BigDecimal to, long orders, BigDecimal value) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

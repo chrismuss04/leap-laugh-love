@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapPrices.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapPrices.java</span></div><h1>RecapPrices.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import com.leap.leaplaughlove.common.marketdata.MarketDataPriceClient.CandleClose;
+import com.leap.leaplaughlove.common.security.JwtService;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TreeSet;
+import java.util.UUID;
+
+/**
+ * Loads the daily closes a month's recaps are valued at, from the market data service. Each symbol
+ * is fetched once however many clients hold it, along with the benchmark index.
+ *
+ * &lt;p&gt;Runs outside any request (the monthly job) as well as inside one, so it never forwards the
+ * caller's token: it signs a market-history service token, which market data accepts on its history
+ * endpoint only. Those tokens live for a minute, so each symbol gets a fresh one rather than a whole
+ * batch sharing one that could expire halfway through.
+ */
+@Component
+public class RecapPrices {
+
+    /** One daily candle, in seconds. */
+    static final int DAILY = 86_400;
+
+    /** The subject of the service token: a batch acts for no one client. */
+<span class="fc" id="L34">    private static final UUID NO_CLIENT = new UUID(0L, 0L);</span>
+
+    private final RecapPriceClient client;
+    private final JwtService jwtService;
+
+    /**
+     * Creates the loader.
+     * @param client the market data history client
+     * @param jwtService signs the market-history service tokens
+     */
+<span class="fc" id="L44">    public RecapPrices(RecapPriceClient client, JwtService jwtService) {</span>
+<span class="fc" id="L45">        this.client = client;</span>
+<span class="fc" id="L46">        this.jwtService = jwtService;</span>
+<span class="fc" id="L47">    }</span>
+
+    /**
+     * Fetches the daily closes for the symbols and the benchmark, from the last day of the month
+     * before, whose close the month starts from, through the month's last day.
+     * @param month the month being recapped
+     * @param symbols trading symbols, as reporting.orders holds them
+     * @return the closes, keyed by trading symbol; a symbol market data doesn't know has none
+     * @throws RecapPricesUnavailableException when the market data service fails
+     */
+    public PriceBook load(YearMonth month, Collection&lt;String&gt; symbols) {
+<span class="fc" id="L58">        OffsetDateTime from = month.atDay(1).minusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L59">        OffsetDateTime to = month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+<span class="fc" id="L60">        TreeSet&lt;String&gt; wanted = new TreeSet&lt;&gt;(symbols);</span>
+<span class="fc" id="L61">        wanted.add(RecapCalculator.BENCHMARK_SYMBOL);</span>
+
+<span class="fc" id="L63">        Map&lt;String, Map&lt;LocalDate, BigDecimal&gt;&gt; closes = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        for (String symbol : wanted) {</span>
+<span class="fc" id="L65">            Map&lt;LocalDate, BigDecimal&gt; byDay = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">            for (CandleClose candle : client.fetchCloses(marketDataSymbol(symbol), from, to, DAILY,</span>
+<span class="fc" id="L67">                    jwtService.generateHistoryToken(NO_CLIENT))) {</span>
+<span class="fc" id="L68">                byDay.put(candle.bucketStart().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate(), candle.close());</span>
+<span class="fc" id="L69">            }</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">            if (!byDay.isEmpty()) {</span>
+<span class="fc" id="L71">                closes.put(symbol, byDay);</span>
+            }
+<span class="fc" id="L73">        }</span>
+<span class="fc" id="L74">        return new PriceBook(closes);</span>
+    }
+
+    /**
+     * The market data service's name for a trading symbol: the same, less any &quot;/&quot;, which can't
+     * appear in a URL path segment (BTC/USD trades as BTCUSD there).
+     * @param tradingSymbol the symbol reporting.orders holds
+     * @return the market data symbol
+     */
+    static String marketDataSymbol(String tradingSymbol) {
+<span class="fc" id="L84">        return tradingSymbol.replace(&quot;/&quot;, &quot;&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

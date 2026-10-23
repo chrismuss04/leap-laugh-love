@@ -6,7 +6,14 @@ package com.leap.leaplaughlove.common.market;
  * and closed overnight, at weekends and on exchange holidays.
  */
 public enum MarketSession {
-    PRE_MARKET, REGULAR, AFTER_HOURS, CLOSED;
+    /** 4:00-9:30, before the opening bell. */
+    PRE_MARKET,
+    /** 9:30 until the close. */
+    REGULAR,
+    /** From the close until 20:00, or 17:00 on early-close days. */
+    AFTER_HOURS,
+    /** Overnight, at weekends and on exchange holidays. */
+    CLOSED;
 
     /**
      * Returns whether any trading happens in this session.

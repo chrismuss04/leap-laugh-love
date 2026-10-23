@@ -62,21 +62,39 @@ public class Account extends BaseAccount {
      */
     public void setMaxSlippagePercent(BigDecimal maxSlippagePercent) { this.maxSlippagePercent = maxSlippagePercent; }
 
-    /** @return when the account became empty, if the inactivity job has flagged it; otherwise null */
+    /**
+     * Returns when the account became empty, if the inactivity job has flagged it.
+     * @return when the account became empty, if the inactivity job has flagged it; otherwise null
+     */
     public OffsetDateTime getInactiveSince() { return inactiveSince; }
 
-    /** Flags the account inactive since the given time, or clears the flag with null. */
+    /**
+     * Flags the account inactive since the given time, or clears the flag with null.
+     * @param inactiveSince when the account became empty, or null to clear the flag
+     */
     public void setInactiveSince(OffsetDateTime inactiveSince) { this.inactiveSince = inactiveSince; }
 
-    /** @return when the client was emailed about the current inactive period; null until then */
+    /**
+     * Returns when the client was emailed about the current inactive period.
+     * @return when the client was emailed about the current inactive period; null until then
+     */
     public OffsetDateTime getInactiveNotifiedAt() { return inactiveNotifiedAt; }
 
-    /** Records when the client was emailed about the inactive account, or clears it with null. */
+    /**
+     * Records when the client was emailed about the inactive account, or clears it with null.
+     * @param inactiveNotifiedAt when the email was sent, or null to clear it
+     */
     public void setInactiveNotifiedAt(OffsetDateTime inactiveNotifiedAt) { this.inactiveNotifiedAt = inactiveNotifiedAt; }
 
-    /** @return the account's place among its client's accounts (1, 2, ...), or null if it was never numbered */
+    /**
+     * Returns the account's place among its client's accounts.
+     * @return the account's place among its client's accounts (1, 2, ...), or null if it was never numbered
+     */
     public Integer getAccountSeq() { return accountSeq; }
 
-    /** Numbers the account among its client's accounts; shown to the client as "Brokerage N". */
+    /**
+     * Numbers the account among its client's accounts; shown to the client as "Brokerage N".
+     * @param accountSeq the account's place among its client's accounts, starting at 1
+     */
     public void setAccountSeq(Integer accountSeq) { this.accountSeq = accountSeq; }
 }

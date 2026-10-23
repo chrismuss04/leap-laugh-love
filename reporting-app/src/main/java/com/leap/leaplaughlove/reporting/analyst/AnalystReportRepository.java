@@ -319,29 +319,77 @@ public class AnalystReportRepository {
         return "CASE " + whens + " ELSE '" + bands[bands.length - 1].name() + "' END";
     }
 
-    /** One month's activity totals. */
+    /**
+     * One month's activity totals.
+     * @param month the month
+     * @param activeClients the clients who placed an order that month
+     * @param filledOrders the orders filled that month
+     * @param volume the total value filled that month
+     */
     public record MonthlyTotals(YearMonth month, long activeClients, long filledOrders, BigDecimal volume) {}
 
-    /** A number of clients in one month. */
+    /**
+     * A number of clients in one month.
+     * @param month the month
+     * @param clients how many clients
+     */
     public record MonthlyCount(YearMonth month, long clients) {}
 
-    /** One month's active clients by what they did the month before. */
+    /**
+     * One month's active clients by what they did the month before.
+     * @param month the month
+     * @param newClients active for the first time
+     * @param returningClients also active the month before
+     * @param reactivatedClients active before, but not the month before
+     */
     public record ClientActivity(YearMonth month, long newClients, long returningClients, long reactivatedClients) {}
 
-    /** How many of one sign-up month's clients were active in a later month. */
+    /**
+     * How many of one sign-up month's clients were active in a later month.
+     * @param cohort the sign-up month
+     * @param month the month they were active in
+     * @param activeClients how many of the cohort were active that month
+     */
     public record CohortActivity(YearMonth cohort, YearMonth month, long activeClients) {}
 
-    /** One sign-up month's first orders; the median is null when nobody has ordered. */
+    /**
+     * One sign-up month's first orders; the median is null when nobody has ordered.
+     * @param cohort the sign-up month
+     * @param registered how many clients signed up that month
+     * @param orderedWithin30Days how many placed their first order within 30 days of signing up
+     * @param orderedEver how many have placed an order at all
+     * @param medianDaysToFirstOrder the median days from sign-up to first order, or null
+     */
     public record Activation(YearMonth cohort, long registered, long orderedWithin30Days, long orderedEver,
                              BigDecimal medianDaysToFirstOrder) {}
 
-    /** One month's traded volume and the share of it from its top clients. */
+    /**
+     * One month's traded volume and the share of it from its top clients.
+     * @param month the month
+     * @param traders the clients with a filled order that month
+     * @param volume the total value filled that month
+     * @param top1PctVolume the value filled by the top 1% of traders by value, rounded up to a whole client
+     * @param top10PctVolume the value filled by the top 10% of traders by value
+     * @param top20PctVolume the value filled by the top 20% of traders by value
+     */
     public record Concentration(YearMonth month, long traders, BigDecimal volume,
                                 BigDecimal top1PctVolume, BigDecimal top10PctVolume, BigDecimal top20PctVolume) {}
 
-    /** Filled orders in one value band in one month. */
+    /**
+     * Filled orders in one value band in one month.
+     * @param month the month
+     * @param band the value band
+     * @param orders how many filled orders fell in the band
+     * @param value their total value
+     */
     public record BandCount(YearMonth month, OrderSizeBand band, long orders, BigDecimal value) {}
 
-    /** The mean and median filled order value in one month. */
+    /**
+     * The mean and median filled order value in one month.
+     * @param month the month
+     * @param orders how many orders were filled
+     * @param mean the mean order value
+     * @param median the median order value
+     */
     public record OrderSizeStats(YearMonth month, long orders, BigDecimal mean, BigDecimal median) {}
 }

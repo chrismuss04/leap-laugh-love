@@ -20,6 +20,11 @@ public class TradeOpsReportService {
     private final Duration stuckAfter;
     private final Clock clock;
 
+    /**
+     * Constructs a new TradeOpsReportService on the system clock.
+     * @param tradeOpsRepository reads the trading audit records
+     * @param stuckAfterMinutes how long after submission an unexecuted order counts as stuck
+     */
     @Autowired
     public TradeOpsReportService(TradeOpsRepository tradeOpsRepository,
                                  @Value("${order.ops.stuck-after-minutes:5}") long stuckAfterMinutes) {
@@ -34,6 +39,9 @@ public class TradeOpsReportService {
 
     /**
      * Orders submitted in the period (from inclusive, to exclusive) and rejected, by reason.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @return the rejection counts, most frequent first
      * @throws IllegalArgumentException if the period is missing, or from is not before to
      */
     public List<RejectionCount> rejectionsByReason(OffsetDateTime from, OffsetDateTime to) {
@@ -50,6 +58,7 @@ public class TradeOpsReportService {
      * Orders still SUBMITTED or ACCEPTED longer than order.ops.stuck-after-minutes after they
      * were submitted, oldest first. A market order executes within seconds, so these are waiting
      * on something that failed.
+     * @return the stuck orders, oldest first
      */
     public List<TradeSummary> stuckOrders() {
         return tradeOpsRepository.findAwaitingExecutionSince(OffsetDateTime.now(clock).minus(stuckAfter));

@@ -17,6 +17,7 @@ import java.util.UUID;
  */
 @Service
 public class ClientSessionValidator {
+    /** How long a session may go without activity before it stops being accepted. */
     public static final Duration IDLE_TIMEOUT = Duration.ofMinutes(10);
     /**
      * How far ahead of this service's clock a session's last activity may be. iam-app records
@@ -28,6 +29,10 @@ public class ClientSessionValidator {
     private final JdbcTemplate jdbc;
     private final Clock clock;
 
+    /**
+     * Creates a validator that reads sessions through {@code jdbc}, timed by the UTC system clock.
+     * @param jdbc access to the shared session tables
+     */
     @Autowired
     public ClientSessionValidator(JdbcTemplate jdbc) {
         this(jdbc, Clock.systemUTC());

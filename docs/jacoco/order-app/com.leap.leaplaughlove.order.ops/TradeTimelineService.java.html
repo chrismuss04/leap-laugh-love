@@ -1,0 +1,220 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradeTimelineService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">TradeTimelineService.java</span></div><h1>TradeTimelineService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.CashEntryRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.ExecutionRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.OrderRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.PositionMovementRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Finds trades and reconstructs one step by step from the trading audit records.
+ */
+@Service
+public class TradeTimelineService {
+
+<span class="fc" id="L29">    private static final BigDecimal HUNDRED = BigDecimal.valueOf(100);</span>
+
+    private final TradeOpsRepository tradeOpsRepository;
+
+    /**
+     * Constructs a new TradeTimelineService.
+     * @param tradeOpsRepository reads the trading audit records
+     */
+<span class="fc" id="L37">    public TradeTimelineService(TradeOpsRepository tradeOpsRepository) {</span>
+<span class="fc" id="L38">        this.tradeOpsRepository = tradeOpsRepository;</span>
+<span class="fc" id="L39">    }</span>
+
+    /**
+     * Needs a period (from inclusive, to exclusive) and the client, by id or email; the rest is optional.
+     * @param criteria the search criteria
+     * @return the matching trades, newest first
+     * @throws IllegalArgumentException if the period or client is missing, or from is not before to
+     */
+    public List&lt;TradeSummary&gt; search(TradeSearch criteria) {
+<span class="fc" id="L48">        return tradeOpsRepository.search(validated(criteria));</span>
+    }
+
+    /**
+     * How many orders the same search finds, by outcome: every match, not only those
+     * {@link #search} returns. Needs the same criteria.
+     * @param criteria the search criteria
+     * @return the counts by outcome
+     * @throws IllegalArgumentException if the period or client is missing, or from is not before to
+     */
+    public OrderCounts countByStatus(TradeSearch criteria) {
+<span class="fc" id="L59">        return tradeOpsRepository.countByStatus(validated(criteria));</span>
+    }
+
+    /**
+     * Loads everything recorded for an order.
+     * @param orderId the order
+     * @return the order, its executions, cash entries and position movements
+     * @throws ResponseStatusException 404 if there is no such order
+     */
+    public TradeRecords getRecords(UUID orderId) {
+<span class="fc" id="L69">        return new TradeRecords(findOrder(orderId), tradeOpsRepository.findExecutions(orderId),</span>
+<span class="fc" id="L70">                tradeOpsRepository.findCashEntries(orderId), tradeOpsRepository.findPositionMovements(orderId));</span>
+    }
+
+    /**
+     * Reconstructs an order step by step from its records.
+     * @param orderId the order
+     * @return the order's timeline, oldest step first
+     * @throws ResponseStatusException 404 if there is no such order
+     */
+    public TradeTimeline getTimeline(UUID orderId) {
+<span class="fc" id="L80">        OrderRecord order = findOrder(orderId);</span>
+<span class="fc" id="L81">        TradeSummary trade = order.summary();</span>
+<span class="fc" id="L82">        Order.Side side = Order.Side.valueOf(trade.side());</span>
+
+<span class="fc" id="L84">        List&lt;TimelineStep&gt; steps = new ArrayList&lt;&gt;();</span>
+<span class="fc" id="L85">        steps.add(new TimelineStep(trade.submittedAt(), TimelineStepType.SUBMITTED, submitted(order)));</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        if (order.acceptedAt() != null) {</span>
+<span class="fc" id="L87">            steps.add(new TimelineStep(order.acceptedAt(), TimelineStepType.ACCEPTED, &quot;Order accepted after validation&quot;));</span>
+        }
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (order.rejectedAt() != null) {</span>
+<span class="fc" id="L90">            steps.add(new TimelineStep(order.rejectedAt(), TimelineStepType.REJECTED,</span>
+<span class="fc" id="L91">                    &quot;Order rejected: &quot; + order.rejectionReason()));</span>
+        }
+
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        for (ExecutionRecord execution : tradeOpsRepository.findExecutions(orderId)) {</span>
+<span class="fc" id="L95">            boolean filled = &quot;FILLED&quot;.equals(execution.status());</span>
+<span class="fc bfc" id="L96" title="All 2 branches covered.">            if (execution.quote() != null) {</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">                OffsetDateTime quotedAt = execution.quote().getQuotedAt() != null</span>
+<span class="pc" id="L98">                        ? execution.quote().getQuotedAt() : execution.executedAt();</span>
+<span class="fc" id="L99">                steps.add(new TimelineStep(quotedAt, TimelineStepType.PRICED, priced(order, side, execution.quote())));</span>
+<span class="fc bfc" id="L100" title="All 2 branches covered.">            } else if (filled) {</span>
+<span class="fc" id="L101">                steps.add(new TimelineStep(execution.executedAt(), TimelineStepType.PRICED,</span>
+                        &quot;Market quote not recorded for this execution (placed before quotes were stored, or a seeded fill)&quot;));
+            }
+<span class="fc bfc" id="L104" title="All 2 branches covered.">            if (filled) {</span>
+<span class="fc" id="L105">                steps.add(new TimelineStep(execution.executedAt(), TimelineStepType.EXECUTED,</span>
+<span class="fc" id="L106">                        &quot;Executed &quot; + execution.fillQuantity() + &quot; at &quot; + money(execution.fillPrice())</span>
+<span class="fc" id="L107">                                + &quot; (execution &quot; + execution.executionId() + &quot;)&quot;));</span>
+<span class="fc bfc" id="L108" title="All 2 branches covered.">            } else if (!Objects.equals(execution.reason(), order.rejectionReason())) {</span>
+                // Skips the REJECTED execution a validation rejection writes: the REJECTED step covers it.
+<span class="fc" id="L110">                steps.add(new TimelineStep(execution.executedAt(), TimelineStepType.EXECUTION_REJECTED,</span>
+<span class="fc" id="L111">                        &quot;Execution rejected: &quot; + execution.reason()));</span>
+            }
+<span class="fc" id="L113">        }</span>
+
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        for (CashEntryRecord cash : tradeOpsRepository.findCashEntries(orderId)) {</span>
+<span class="fc" id="L116">            steps.add(new TimelineStep(cash.createdAt(), TimelineStepType.CASH_SETTLED,</span>
+<span class="fc" id="L117">                    &quot;Cash ledger &quot; + cash.entryType() + &quot;: &quot; + signedMoney(cash.amount()) + &quot; &quot; + cash.currency()));</span>
+<span class="fc" id="L118">        }</span>
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        for (PositionMovementRecord movement : tradeOpsRepository.findPositionMovements(orderId)) {</span>
+<span class="fc" id="L120">            steps.add(new TimelineStep(movement.createdAt(), TimelineStepType.POSITION_UPDATED,</span>
+<span class="fc" id="L121">                    &quot;Holding &quot; + movement.movementType() + &quot;: &quot; + signed(movement.quantityDelta()) + &quot; &quot;</span>
+<span class="fc" id="L122">                            + trade.symbol() + &quot;, cost &quot; + signedMoney(movement.costDelta())));</span>
+<span class="fc" id="L123">        }</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">        if (order.filledAt() != null) {</span>
+<span class="fc" id="L125">            steps.add(new TimelineStep(order.filledAt(), TimelineStepType.FILLED, &quot;Order filled&quot;));</span>
+        }
+
+<span class="fc" id="L128">        steps.sort(Comparator.comparing(TimelineStep::at).thenComparing(TimelineStep::type));</span>
+<span class="fc" id="L129">        return new TradeTimeline(trade, order.quotedPrice(), order.maxSlippagePercent(), steps);</span>
+    }
+
+    private OrderRecord findOrder(UUID orderId) {
+<span class="fc" id="L133">        return tradeOpsRepository.findOrder(orderId)</span>
+<span class="fc" id="L134">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Order not found: &quot; + orderId));</span>
+    }
+
+    private static TradeSearch validated(TradeSearch criteria) {
+<span class="fc" id="L138">        TradeSearch search = new TradeSearch(criteria.orderId(), criteria.clientId(),</span>
+<span class="fc" id="L139">                blankToNull(criteria.clientEmail()), criteria.accountId(), blankToNull(criteria.accountNumber()),</span>
+<span class="fc" id="L140">                blankToNull(criteria.symbol()), criteria.side(), criteria.status(), criteria.from(), criteria.to());</span>
+<span class="fc bfc" id="L141" title="All 4 branches covered.">        if (search.from() == null || search.to() == null) {</span>
+<span class="fc" id="L142">            throw new IllegalArgumentException(&quot;Give a time period to search&quot;);</span>
+        }
+<span class="fc bfc" id="L144" title="All 4 branches covered.">        if (search.clientId() == null &amp;&amp; search.clientEmail() == null) {</span>
+<span class="fc" id="L145">            throw new IllegalArgumentException(&quot;Give a client id or client email to search&quot;);</span>
+        }
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        if (!search.from().isBefore(search.to())) {</span>
+<span class="fc" id="L148">            throw new IllegalArgumentException(&quot;from must be before to&quot;);</span>
+        }
+<span class="fc" id="L150">        return search;</span>
+    }
+
+    private static String submitted(OrderRecord order) {
+<span class="fc" id="L154">        TradeSummary trade = order.summary();</span>
+<span class="fc" id="L155">        StringBuilder text = new StringBuilder()</span>
+<span class="fc" id="L156">                .append(trade.side()).append(' ').append(trade.quantity()).append(' ').append(trade.symbol())</span>
+<span class="fc" id="L157">                .append(&quot; placed in account &quot;).append(trade.accountNumber())</span>
+<span class="fc" id="L158">                .append(&quot; by &quot;).append(trade.clientEmail());</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        if (order.quotedPrice() != null) {</span>
+<span class="fc" id="L160">            text.append(&quot;; client was quoted &quot;).append(money(order.quotedPrice()));</span>
+        }
+<span class="fc bfc" id="L162" title="All 2 branches covered.">        if (order.maxSlippagePercent() != null) {</span>
+<span class="fc" id="L163">            text.append(&quot; with a &quot;).append(percent(order.maxSlippagePercent())).append(&quot; price tolerance&quot;);</span>
+        }
+<span class="fc" id="L165">        return text.toString();</span>
+    }
+
+    // Same price rule and tolerance arithmetic as order submission, so it matches the actual decision.
+    private static String priced(OrderRecord order, Order.Side side, ExecutionQuote quote) {
+<span class="fc" id="L170">        StringBuilder text = new StringBuilder(&quot;Market quote&quot;)</span>
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">                .append(quote.getExchange() != null ? &quot; from &quot; + quote.getExchange() : &quot;&quot;)</span>
+<span class="fc" id="L172">                .append(&quot;: bid &quot;).append(money(quote.getBid()))</span>
+<span class="fc" id="L173">                .append(&quot;, ask &quot;).append(money(quote.getAsk()))</span>
+<span class="fc" id="L174">                .append(&quot;, last &quot;).append(money(quote.getLast()));</span>
+<span class="fc" id="L175">        BigDecimal price = quote.executablePrice(side);</span>
+<span class="pc bpc" id="L176" title="1 of 2 branches missed.">        if (price == null) {</span>
+<span class="nc" id="L177">            return text.append(&quot;; no usable price for a &quot;).append(side).toString();</span>
+        }
+<span class="fc" id="L179">        text.append(&quot;; a &quot;).append(side).append(&quot; prices at &quot;).append(money(price));</span>
+<span class="fc" id="L180">        BigDecimal quoted = order.quotedPrice();</span>
+<span class="fc bfc" id="L181" title="All 2 branches covered.">        if (quoted != null) {</span>
+<span class="fc" id="L182">            BigDecimal move = price.subtract(quoted).abs();</span>
+<span class="fc" id="L183">            text.append(&quot;, &quot;).append(percent(move.multiply(HUNDRED).divide(quoted, 2, RoundingMode.HALF_UP)))</span>
+<span class="fc" id="L184">                    .append(&quot; from the client's quoted &quot;).append(money(quoted));</span>
+<span class="fc" id="L185">            BigDecimal tolerance = order.maxSlippagePercent();</span>
+<span class="pc bpc" id="L186" title="1 of 2 branches missed.">            if (tolerance != null) {</span>
+<span class="fc bfc" id="L187" title="All 2 branches covered.">                boolean within = move.multiply(HUNDRED).compareTo(tolerance.multiply(quoted)) &lt;= 0;</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">                text.append(within ? &quot;, within&quot; : &quot;, beyond&quot;).append(&quot; the &quot;)</span>
+<span class="fc" id="L189">                        .append(percent(tolerance)).append(&quot; tolerance&quot;);</span>
+            }
+        }
+<span class="fc" id="L192">        return text.toString();</span>
+    }
+
+    // Keeps sub-cent digits a price was stored with.
+    private static String money(BigDecimal value) {
+<span class="pc bpc" id="L197" title="1 of 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L198">            return &quot;n/a&quot;;</span>
+        }
+<span class="fc" id="L200">        BigDecimal stripped = value.stripTrailingZeros();</span>
+<span class="fc" id="L201">        return &quot;$&quot; + value.setScale(Math.max(2, stripped.scale()), RoundingMode.UNNECESSARY).toPlainString();</span>
+    }
+
+    private static String signedMoney(BigDecimal value) {
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        return (value.signum() &lt; 0 ? &quot;-&quot; : &quot;+&quot;) + money(value.abs());</span>
+    }
+
+    private static String signed(long value) {
+<span class="pc bpc" id="L209" title="1 of 2 branches missed.">        return value &lt; 0 ? String.valueOf(value) : &quot;+&quot; + value;</span>
+    }
+
+    private static String percent(BigDecimal value) {
+<span class="fc" id="L213">        return value.setScale(2, RoundingMode.HALF_UP).toPlainString() + &quot;%&quot;;</span>
+    }
+
+    private static String blankToNull(String value) {
+<span class="fc bfc" id="L217" title="All 4 branches covered.">        return value == null || value.isBlank() ? null : value.trim();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

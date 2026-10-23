@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderEventPublisher.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.events</a> &gt; <span class="el_source">OrderEventPublisher.java</span></div><h1>OrderEventPublisher.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.events;
+
+import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.order.Order;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Publishes an {@link OrderCompletedEvent} to Kafka once an order reaches its final status.
+ *
+ * Callers publish only after the transaction that finished the order has committed, so an
+ * order that rolled back is never reported, and they pass the order as it now stands. Nothing
+ * here throws: the trade is already committed and must still succeed, so a failure to publish
+ * (broker down, account not found) is logged and the event is lost. The send waits at most
+ * {@code max.block.ms} for the broker, so a Kafka outage can't hold up an order response for long.
+ */
+@Component
+public class OrderEventPublisher {
+
+<span class="fc" id="L31">    private static final Logger log = LoggerFactory.getLogger(OrderEventPublisher.class);</span>
+
+    private final KafkaTemplate&lt;String, OrderCompletedEvent&gt; kafkaTemplate;
+    private final AccountRepository accountRepository;
+    private final boolean enabled;
+    private final String topic;
+
+    /**
+     * Constructs an OrderEventPublisher.
+     * @param kafkaTemplate sends the events
+     * @param accountRepository looks up the client who owns the order's account
+     * @param enabled false turns publishing off (tests, or a stack without Kafka)
+     * @param topic the topic to publish to
+     */
+    public OrderEventPublisher(KafkaTemplate&lt;String, OrderCompletedEvent&gt; kafkaTemplate,
+                               AccountRepository accountRepository,
+                               @Value(&quot;${reporting.events.enabled:true}&quot;) boolean enabled,
+<span class="fc" id="L48">                               @Value(&quot;${reporting.events.topic:order-events}&quot;) String topic) {</span>
+<span class="fc" id="L49">        this.kafkaTemplate = kafkaTemplate;</span>
+<span class="fc" id="L50">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L51">        this.enabled = enabled;</span>
+<span class="fc" id="L52">        this.topic = topic;</span>
+<span class="fc" id="L53">    }</span>
+
+    /**
+     * Publishes a FILLED order.
+     * @param order the order, marked FILLED, with its instrument loaded
+     * @param execution its FILLED execution, which carries the fill price
+     */
+    public void publishFilled(Order order, Execution execution) {
+<span class="fc" id="L61">        publish(order, execution.getFillPrice(), order.getFilledAt());</span>
+<span class="fc" id="L62">    }</span>
+
+    /**
+     * Publishes an order rejected after its execution, i.e. refused at settlement. Orders
+     * rejected by validation never executed and are not published.
+     * @param order the order, marked REJECTED, with its instrument loaded
+     */
+    public void publishRejected(Order order) {
+<span class="fc" id="L70">        publish(order, null, order.getRejectedAt());</span>
+<span class="fc" id="L71">    }</span>
+
+    /**
+     * Publishes an order the client cancelled, or that a bracket cancelled because its other exit
+     * executed. Sent once the transaction that cancelled it commits, if there is one.
+     * @param order the order, marked CANCELLED, with its instrument loaded
+     */
+    public void publishCancelled(Order order) {
+<span class="fc" id="L79">        publish(order, null, order.getCancelledAt());</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Publishes an order that expired unfilled. Sent once the transaction that expired it commits,
+     * if there is one.
+     * @param order the order, marked EXPIRED, with its instrument loaded
+     */
+    public void publishExpired(Order order) {
+<span class="fc" id="L88">        publish(order, null, order.getExpiredAt());</span>
+<span class="fc" id="L89">    }</span>
+
+    private void publish(Order order, BigDecimal fillPrice, OffsetDateTime completedAt) {
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        if (!enabled) {</span>
+<span class="fc" id="L93">            return;</span>
+        }
+<span class="fc" id="L95">        UUID orderId = order.getOrderId();</span>
+        try {
+<span class="fc" id="L97">            OrderCompletedEvent event = new OrderCompletedEvent(</span>
+<span class="fc" id="L98">                    UUID.randomUUID(),</span>
+                    orderId,
+<span class="fc" id="L100">                    order.getAccountId(),</span>
+<span class="fc" id="L101">                    clientIdOf(order),</span>
+<span class="fc" id="L102">                    order.getInstrument().getInstrumentId(),</span>
+<span class="fc" id="L103">                    order.getInstrument().getSymbol(),</span>
+<span class="fc" id="L104">                    order.getSide().name(),</span>
+<span class="fc" id="L105">                    order.getQuantity(),</span>
+<span class="fc" id="L106">                    order.getStatus().name(),</span>
+                    fillPrice,
+<span class="fc" id="L108">                    order.getRejectionReason(),</span>
+<span class="fc" id="L109">                    order.getSubmittedAt(),</span>
+                    completedAt,
+<span class="fc" id="L111">                    order.getOrderType().name());</span>
+            // Built now, while the order is loaded; sent once what made it final has committed.
+<span class="fc" id="L113">            afterCommit(() -&gt; send(orderId, event));</span>
+<span class="fc" id="L114">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L115">            log.warn(&quot;Could not publish order event for order {}: {}&quot;, orderId, ex.getMessage());</span>
+<span class="fc" id="L116">        }</span>
+<span class="fc" id="L117">    }</span>
+
+    /** Keyed by order, so any later event for the same order lands on the same partition. */
+    private void send(UUID orderId, OrderCompletedEvent event) {
+        try {
+<span class="fc" id="L122">            kafkaTemplate.send(topic, orderId.toString(), event)</span>
+<span class="fc" id="L123">                    .whenComplete((result, failure) -&gt; {</span>
+<span class="fc bfc" id="L124" title="All 2 branches covered.">                        if (failure != null) {</span>
+<span class="fc" id="L125">                            log.warn(&quot;Order event for order {} was not delivered: {}&quot;, orderId, failure.getMessage());</span>
+                        }
+<span class="fc" id="L127">                    });</span>
+<span class="fc" id="L128">        } catch (RuntimeException ex) {</span>
+<span class="fc" id="L129">            log.warn(&quot;Could not publish order event for order {}: {}&quot;, orderId, ex.getMessage());</span>
+<span class="fc" id="L130">        }</span>
+<span class="fc" id="L131">    }</span>
+
+    /**
+     * Runs the action once the current transaction commits, so a cancel that rolls back is never
+     * reported; at once when there is no transaction, as for the fills and rejections, which are
+     * published after theirs has committed.
+     */
+    private static void afterCommit(Runnable action) {
+<span class="pc bpc" id="L139" title="1 of 2 branches missed.">        if (!TransactionSynchronizationManager.isSynchronizationActive()) {</span>
+<span class="fc" id="L140">            action.run();</span>
+<span class="fc" id="L141">            return;</span>
+        }
+<span class="nc" id="L143">        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {</span>
+            @Override
+            public void afterCommit() {
+<span class="nc" id="L146">                action.run();</span>
+<span class="nc" id="L147">            }</span>
+        });
+<span class="nc" id="L149">    }</span>
+
+    /**
+     * The client who owns the order's account.
+     * @param order the order
+     * @return its account's client ID
+     */
+    private UUID clientIdOf(Order order) {
+<span class="fc" id="L157">        return accountRepository.findById(order.getAccountId())</span>
+<span class="fc" id="L158">                .map(Account::getClientId)</span>
+<span class="fc" id="L159">                .orElseThrow(() -&gt; new IllegalStateException(&quot;Account not found: &quot; + order.getAccountId()));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderGlobalExceptionHandler.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.common</a> &gt; <span class="el_source">OrderGlobalExceptionHandler.java</span></div><h1>OrderGlobalExceptionHandler.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.common;
+
+import com.leap.leaplaughlove.common.web.BaseGlobalExceptionHandler;
+import com.leap.leaplaughlove.order.quote.QuoteUnavailableException;
+import com.leap.leaplaughlove.order.quote.StaleQuoteException;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.RestControllerAdvice;
+
+import java.util.Map;
+
+/**
+ * Global exception handler for Order app.
+ */
+@RestControllerAdvice
+<span class="fc" id="L17">public class OrderGlobalExceptionHandler extends BaseGlobalExceptionHandler {</span>
+
+    /**
+     * Handles StaleQuoteException and returns an appropriate HTTP response.
+     * @param ex the StaleQuoteException to handle
+     * @return a ResponseEntity containing the error details
+     */
+    @ExceptionHandler(StaleQuoteException.class)
+    public ResponseEntity&lt;Map&lt;String, String&gt;&gt; handleStaleQuote(StaleQuoteException ex) {
+<span class="fc" id="L26">        return error(HttpStatus.CONFLICT, &quot;STALE_QUOTE&quot;, ex.getMessage());</span>
+    }
+
+    /**
+     * Handles QuoteUnavailableException and returns an appropriate HTTP response.
+     * @param ex the QuoteUnavailableException to handle
+     * @return a ResponseEntity containing the error details
+     */
+    @ExceptionHandler(QuoteUnavailableException.class)
+    public ResponseEntity&lt;Map&lt;String, String&gt;&gt; handleQuoteUnavailable(QuoteUnavailableException ex) {
+<span class="fc" id="L36">        return error(HttpStatus.SERVICE_UNAVAILABLE, &quot;QUOTE_UNAVAILABLE&quot;, ex.getMessage());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

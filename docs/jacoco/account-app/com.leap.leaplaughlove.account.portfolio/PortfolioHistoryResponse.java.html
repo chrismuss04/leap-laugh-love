@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PortfolioHistoryResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.portfolio</a> &gt; <span class="el_source">PortfolioHistoryResponse.java</span></div><h1>PortfolioHistoryResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.portfolio;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.common.market.MarketSession;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.List;
+
+/**
+ * The value (cash plus holdings at market) of the authenticated client's accounts, or of one of them,
+ * over a range.
+ * @param range the range code that was charted, e.g. &quot;1M&quot;
+ * @param intervalSeconds the spacing, in seconds, between points (the final point is &quot;now&quot; and
+ *     may be closer to the one before it)
+ * @param points the portfolio value at each point, oldest first. Intraday ranges skip the points
+ *     that fall while the market is closed (nights, weekends, holidays) apart from the first and
+ *     the last, so a chart spends its width on trading hours; daily ranges keep every day. 1D's
+ *     first point is the previous close, then the last hour that traded before today as a
+ *     lead-in, then today from its pre-market
+ * @param startValue the value the accounts were first funded with in the range (the first point's,
+ *     when they were open before it starts): the baseline the change is measured from
+ * @param endValue the value at the last point
+ * @param netContributions money deposited less money withdrawn after the first point, which moves
+ *     the value without being a gain or loss
+ * @param change the gain or loss: endValue minus startValue, less netContributions
+ * @param changePercent the change as a percentage of startValue plus netContributions, or null if
+ *     that is not positive
+ * @param hours for 1D, the sessions of the trading day being charted, so a chart can lay the day
+ *     out by time; null for other ranges and when market hours are off
+ */
+<span class="fc" id="L34">public record PortfolioHistoryResponse(</span>
+        String range,
+        int intervalSeconds,
+        List&lt;Point&gt; points,
+        BigDecimal startValue,
+        BigDecimal endValue,
+        BigDecimal netContributions,
+        BigDecimal change,
+        BigDecimal changePercent,
+        Hours hours
+) {
+    /**
+     * One trading day's sessions, early close included.
+     * @param preMarketOpen when pre-market began
+     * @param regularOpen when regular trading began
+     * @param regularClose when regular trading ended, or ends
+     * @param afterHoursClose when after-hours trading ended, or ends
+     */
+<span class="fc" id="L52">    public record Hours(OffsetDateTime preMarketOpen, OffsetDateTime regularOpen, OffsetDateTime regularClose,</span>
+            OffsetDateTime afterHoursClose) {
+        static Hours of(MarketCalendar.TradingDay day) {
+<span class="fc" id="L55">            return new Hours(utc(day.preMarketOpen()), utc(day.regularOpen()), utc(day.regularClose()),</span>
+<span class="fc" id="L56">                    utc(day.afterHoursClose()));</span>
+        }
+
+        private static OffsetDateTime utc(ZonedDateTime time) {
+<span class="fc" id="L60">            return time.toOffsetDateTime().withOffsetSameInstant(ZoneOffset.UTC);</span>
+        }
+    }
+
+    /**
+     * One valued point in time.
+     * @param timestamp when the portfolio held this value
+     * @param value the portfolio value: cash plus every holding at that time's price
+     * @param contributions money deposited less money withdrawn since the first point, so the gain
+     *     or loss to this point is value minus the first point's value minus this
+     * @param session the market session of the stretch this point closes (the candle ending at
+     *     its timestamp), so the 16:00 ET point is the regular close and the one after it is
+     *     after-hours; always REGULAR when market hours are off
+     * @param beforeFunding whether the point comes before the charted accounts were first funded,
+     *     in a range that starts before they opened: its value is the one they were first funded
+     *     with, a flat lead into their history rather than a climb from nothing
+     */
+<span class="fc" id="L77">    public record Point(OffsetDateTime timestamp, BigDecimal value, BigDecimal contributions,</span>
+            MarketSession session, boolean beforeFunding) {
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

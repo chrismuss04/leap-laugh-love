@@ -21,6 +21,10 @@ import java.util.UUID;
 public class PasswordResetTokenRepository {
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Constructs a new PasswordResetTokenRepository.
+     * @param jdbcTemplate access to the iam schema
+     */
     public PasswordResetTokenRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

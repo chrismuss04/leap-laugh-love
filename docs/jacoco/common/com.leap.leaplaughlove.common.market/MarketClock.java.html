@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MarketClock.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.market</a> &gt; <span class="el_source">MarketClock.java</span></div><h1>MarketClock.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.common.market;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Locale;
+
+/**
+ * Tells every service which market session is in force, from {@link MarketCalendar} and the
+ * {@code market.hours.*} settings. common is outside each app's component scan, so an app that
+ * needs it imports it, as with JwtService.
+ *
+ * &lt;ul&gt;
+ *     &lt;li&gt;{@code market.hours.mode}: {@code REAL} (the default) follows the NYSE clock;
+ *     {@code ALWAYS_OPEN} is always the regular session, for e2e and CI runs at any hour.&lt;/li&gt;
+ *     &lt;li&gt;{@code market.hours.force-session}: pins a session, so a demo can show any state at any
+ *     hour. Ignored when always open.&lt;/li&gt;
+ *     &lt;li&gt;{@code market.hours.force-minutes}: how long a forced session lasts from startup before
+ *     the regular session opens, e.g. to watch queued orders fill; 0 (the default) pins it for
+ *     good. Each service counts from its own startup, so they may disagree for a few seconds.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+@Component
+public class MarketClock {
+
+    /** How the clock decides the session. */
+<span class="fc" id="L31">    public enum Mode {</span>
+        /** Follows the NYSE calendar and clock. */
+<span class="fc" id="L33">        REAL,</span>
+        /** Always the regular session, whatever the hour. */
+<span class="fc" id="L35">        ALWAYS_OPEN</span>
+    }
+
+    /**
+     * The market's state at one instant.
+     * @param now the instant it describes
+     * @param session the session in force
+     * @param next the next change of session, or null if there won't be one (always open, or pinned)
+     * @param nextRegularOpen when regular trading next starts (now, if it is under way), or null
+     *                        if it never will (a pinned session that isn't REGULAR)
+     * @param today today's trading hours by the real calendar, US Eastern time
+     * @param mode how the session was decided
+     * @param forced whether the session is pinned by {@code market.hours.force-session}
+     */
+<span class="fc" id="L49">    public record Status(Instant now, MarketSession session, MarketCalendar.Transition next,</span>
+                         Instant nextRegularOpen, MarketCalendar.TradingDay today, Mode mode, boolean forced) {}
+
+    /**
+     * A session pinned for a demo.
+     * @param session the pinned session
+     * @param since when it was pinned: this clock's startup
+     * @param until when it ends and the regular session opens, or null if it never does
+     */
+<span class="fc" id="L58">    public record Pin(MarketSession session, Instant since, Instant until) {}</span>
+
+    private final Clock clock;
+    private final Mode mode;
+    /** When this clock started, which is when a pinned session began. */
+    private final Instant startedAt;
+    private final MarketSession forcedSession;
+    /** When a forced session ends and the regular session opens; null if it never does. */
+    private final Instant forcedUntil;
+
+    /**
+     * Constructs a MarketClock from the application's settings.
+     * @param mode REAL or ALWAYS_OPEN, case-insensitive
+     * @param forceSession a session to pin, or blank for none
+     * @param forceMinutes how long a pinned session lasts from now; 0 for good
+     */
+    @Autowired
+    public MarketClock(@Value(&quot;${market.hours.mode:REAL}&quot;) String mode,
+                       @Value(&quot;${market.hours.force-session:}&quot;) String forceSession,
+                       @Value(&quot;${market.hours.force-minutes:0}&quot;) long forceMinutes) {
+<span class="fc" id="L78">        this(Clock.systemUTC(), parseMode(mode), parseSession(forceSession), Duration.ofMinutes(forceMinutes));</span>
+<span class="fc" id="L79">    }</span>
+
+    /**
+     * Constructs a MarketClock.
+     * @param clock the clock to read the time from
+     * @param mode how to decide the session
+     * @param forcedSession a session to pin, or null for none
+     * @param forceFor how long a pinned session lasts from now; zero or null for good
+     */
+<span class="fc" id="L88">    public MarketClock(Clock clock, Mode mode, MarketSession forcedSession, Duration forceFor) {</span>
+<span class="fc" id="L89">        this.clock = clock;</span>
+<span class="fc" id="L90">        this.startedAt = clock.instant();</span>
+<span class="pc bpc" id="L91" title="1 of 2 branches missed.">        this.mode = mode != null ? mode : Mode.REAL;</span>
+<span class="fc bfc" id="L92" title="All 2 branches covered.">        this.forcedSession = this.mode == Mode.ALWAYS_OPEN ? null : forcedSession;</span>
+<span class="pc bpc" id="L93" title="1 of 8 branches missed.">        boolean expires = this.forcedSession != null &amp;&amp; forceFor != null &amp;&amp; !forceFor.isZero() &amp;&amp; !forceFor.isNegative();</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">        this.forcedUntil = expires ? clock.instant().plus(forceFor) : null;</span>
+<span class="fc" id="L95">    }</span>
+
+    /**
+     * A clock with market hours off: always the regular session. For code built without Spring,
+     * e.g. in tests, and for callers that predate market hours.
+     * @return an always-open clock on the system time
+     */
+    public static MarketClock alwaysOpen() {
+<span class="nc" id="L103">        return new MarketClock(Clock.systemUTC(), Mode.ALWAYS_OPEN, null, null);</span>
+    }
+
+    /**
+     * Returns the current instant, by this clock.
+     * @return now
+     */
+    public Instant now() {
+<span class="fc" id="L111">        return clock.instant();</span>
+    }
+
+    /**
+     * Returns the session in force now.
+     * @return the session
+     */
+    public MarketSession session() {
+<span class="fc" id="L119">        return sessionAt(now());</span>
+    }
+
+    /**
+     * Returns the session in force at an instant, by this clock's settings.
+     * @param instant the instant
+     * @return the session
+     */
+    public MarketSession sessionAt(Instant instant) {
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        if (mode == Mode.ALWAYS_OPEN) {</span>
+<span class="fc" id="L129">            return MarketSession.REGULAR;</span>
+        }
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (forcedSession != null) {</span>
+<span class="fc bfc" id="L132" title="All 4 branches covered.">            return forcedUntil == null || instant.isBefore(forcedUntil) ? forcedSession : MarketSession.REGULAR;</span>
+        }
+<span class="fc" id="L134">        return MarketCalendar.sessionAt(instant);</span>
+    }
+
+    /**
+     * Returns when regular trading next starts: now, if it is under way.
+     * @return the instant, or null if a pinned session means it never will
+     */
+    public Instant nextRegularOpen() {
+<span class="fc" id="L142">        return nextRegularOpen(now());</span>
+    }
+
+    private Instant nextRegularOpen(Instant now) {
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (sessionAt(now) == MarketSession.REGULAR) {</span>
+<span class="fc" id="L147">            return now;</span>
+        }
+<span class="fc bfc" id="L149" title="All 2 branches covered.">        if (forcedSession != null) {</span>
+<span class="fc" id="L150">            return forcedUntil;</span>
+        }
+<span class="fc" id="L152">        return MarketCalendar.nextRegularOpen(now);</span>
+    }
+
+    /**
+     * Returns the next change of session.
+     * @return when it happens and to what, or null if the session won't change
+     */
+    public MarketCalendar.Transition nextTransition() {
+<span class="fc" id="L160">        return nextTransition(now());</span>
+    }
+
+    private MarketCalendar.Transition nextTransition(Instant now) {
+<span class="fc bfc" id="L164" title="All 2 branches covered.">        if (mode == Mode.ALWAYS_OPEN) {</span>
+<span class="fc" id="L165">            return null;</span>
+        }
+<span class="fc bfc" id="L167" title="All 2 branches covered.">        if (forcedSession != null) {</span>
+<span class="fc bfc" id="L168" title="All 4 branches covered.">            return forcedUntil != null &amp;&amp; now.isBefore(forcedUntil)</span>
+<span class="fc" id="L169">                    ? new MarketCalendar.Transition(forcedUntil, MarketSession.REGULAR)</span>
+<span class="fc" id="L170">                    : null;</span>
+        }
+<span class="fc" id="L172">        return MarketCalendar.nextTransition(now);</span>
+    }
+
+    /**
+     * Returns the market's state now.
+     * @return the session, what comes next and today's hours
+     */
+    public Status status() {
+<span class="fc" id="L180">        Instant now = now();</span>
+<span class="fc" id="L181">        return new Status(now, sessionAt(now), nextTransition(now), nextRegularOpen(now),</span>
+<span class="fc bfc" id="L182" title="All 2 branches covered.">                MarketCalendar.tradingDay(now.atZone(MarketCalendar.ZONE).toLocalDate()),</span>
+                mode, forcedSession != null);
+    }
+
+    /**
+     * Returns how this clock decides the session.
+     * @return the mode
+     */
+    public Mode mode() {
+<span class="fc" id="L191">        return mode;</span>
+    }
+
+    /**
+     * Returns the session pinned for a demo, if there is one.
+     * @return the pin, or null when the session follows the calendar (or market hours are off)
+     */
+    public Pin pin() {
+<span class="fc bfc" id="L199" title="All 2 branches covered.">        return forcedSession != null ? new Pin(forcedSession, startedAt, forcedUntil) : null;</span>
+    }
+
+    private static Mode parseMode(String value) {
+<span class="pc bpc" id="L203" title="1 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L204">            return Mode.REAL;</span>
+        }
+<span class="fc" id="L206">        return Mode.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));</span>
+    }
+
+    private static MarketSession parseSession(String value) {
+<span class="pc bpc" id="L210" title="1 of 4 branches missed.">        if (value == null || value.isBlank()) {</span>
+<span class="fc" id="L211">            return null;</span>
+        }
+<span class="fc" id="L213">        return MarketSession.valueOf(value.trim().toUpperCase(Locale.ROOT).replace('-', '_'));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

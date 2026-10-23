@@ -60,22 +60,33 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      * Locks an account owned by the specified client until the calling transaction ends.
      * Call within a write transaction before reading cash or holdings for validation.
      * Competing trades and withdrawals must acquire this same lock before validation.
+     * @param accountId the account to lock
+     * @param clientId the client who must own it
+     * @return the locked account, or empty if the client doesn't own one with that ID
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Account a WHERE a.accountId = :accountId AND a.clientId = :clientId")
     Optional<Account> findByAccountIdAndClientIdForUpdate(
             @Param("accountId") UUID accountId, @Param("clientId") UUID clientId);
 
-    /** @return the accounts the inactivity job has flagged */
+    /**
+     * Finds the accounts the inactivity job has flagged.
+     * @return the accounts the inactivity job has flagged
+     */
     List<Account> findByInactiveSinceIsNotNull();
 
-    /** @return the flagged accounts whose client has not yet been emailed about it */
+    /**
+     * Finds the flagged accounts whose client has not yet been emailed.
+     * @return the flagged accounts whose client has not yet been emailed about it
+     */
     List<Account> findByInactiveSinceIsNotNullAndInactiveNotifiedAtIsNull();
 
     /**
      * Records that the client was emailed about the account's inactive period. Sets only this
      * column, so it cannot overwrite a change made to the account since it was read, and does
      * nothing if the account was reactivated in the meantime.
+     * @param accountId the account
+     * @param notifiedAt when the email was sent
      * @return the number of accounts updated, 0 or 1
      */
     @Modifying
@@ -85,7 +96,16 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     /** An account with nothing in it, and when it became empty. */
     interface EmptyAccount {
+        /**
+         * Returns the empty account.
+         * @return the account's ID
+         */
         UUID getAccountId();
+
+        /**
+         * Returns when the account became empty.
+         * @return the time of its last ledger entry, or when it was opened if it has none
+         */
         OffsetDateTime getEmptySince();
     }
 
@@ -93,6 +113,8 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
      * Finds active accounts with no cash in any currency and no shares that have been empty since
      * before the cutoff. Cash only changes with a ledger entry, so an empty account has been empty
      * since its last entry, or since it was opened if it has none.
+     * @param cutoff only accounts that became empty before this are returned
+     * @return the empty accounts, with when each became empty
      */
     @Query("""
             SELECT a.accountId AS accountId, COALESCE(MAX(c.createdAt), a.createdAt) AS emptySince

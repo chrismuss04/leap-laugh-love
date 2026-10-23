@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>QuoteSnapshot.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.quote</a> &gt; <span class="el_source">QuoteSnapshot.java</span></div><h1>QuoteSnapshot.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.quote;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+
+/**
+ * Record to represent a current market quote fetched from the market data service, used to
+ * price an order at execution time.
+ * @param symbol the instrument's symbol
+ * @param bidPrice the best bid
+ * @param bidSize the shares bid at the best bid
+ * @param askPrice the best ask
+ * @param askSize the shares offered at the best ask
+ * @param lastPrice the last traded price
+ * @param lastSize the shares in the last trade
+ * @param exchange the exchange the quote came from
+ * @param quoteTimestamp when the market data provider produced the quote
+ */
+<span class="fc" id="L19">public record QuoteSnapshot(</span>
+        String symbol,
+        BigDecimal bidPrice,
+        long bidSize,
+        BigDecimal askPrice,
+        long askSize,
+        BigDecimal lastPrice,
+        long lastSize,
+        String exchange,
+        OffsetDateTime quoteTimestamp
+) {}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

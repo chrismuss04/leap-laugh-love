@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PositionMovement.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.position</a> &gt; <span class="el_source">PositionMovement.java</span></div><h1>PositionMovement.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.position;
+
+import com.leap.leaplaughlove.common.persistence.BasePositionMovement;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Represents an entry in the position movements ledger (trading.position_movements).
+ * An immutable audit record capturing changes to account holdings.
+ */
+@Entity
+@Table(name = &quot;position_movements&quot;, schema = &quot;trading&quot;)
+public class PositionMovement extends BasePositionMovement {
+
+    /**
+     * Protected no-argument constructor for JPA.
+     */
+<span class="fc" id="L22">    protected PositionMovement() {</span>
+<span class="fc" id="L23">    }</span>
+
+    /**
+     * Constructs a new PositionMovement instance with the specified details.
+     * @param accountId the ID of the account associated with this position movement
+     * @param instrumentId the ID of the instrument associated with this position movement
+     * @param orderId the ID of the order that triggered this position movement, if applicable
+     * @param executionId the ID of the execution that triggered this position movement, if applicable
+     * @param movementType the type of movement (e.g., &quot;BUY&quot;, &quot;SELL&quot;)
+     * @param quantityDelta the change in quantity for this position movement
+     * @param costDelta the change in cost for this position movement
+     * @param createdAt the timestamp when this position movement was created
+     */
+    public PositionMovement(UUID accountId, UUID instrumentId, UUID orderId, UUID executionId,
+                            String movementType, long quantityDelta, BigDecimal costDelta, OffsetDateTime createdAt) {
+<span class="fc" id="L38">        super(accountId, instrumentId, orderId, executionId, movementType, quantityDelta, costDelta, createdAt);</span>
+<span class="fc" id="L39">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

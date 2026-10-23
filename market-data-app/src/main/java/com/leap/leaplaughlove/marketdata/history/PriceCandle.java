@@ -207,8 +207,11 @@ public class PriceCandle implements Persistable<PriceCandle.Key> {
      */
     public static class Key implements Serializable {
 
+        /** The instrument the candle prices. */
         private UUID instrumentId;
+        /** The candle's width in seconds. */
         private int bucketSeconds;
+        /** When the candle's interval starts. */
         private OffsetDateTime bucketStart;
 
         /**

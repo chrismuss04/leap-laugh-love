@@ -18,6 +18,10 @@ import java.util.UUID;
 public class ClientSessionRepository {
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Constructs a new ClientSessionRepository.
+     * @param jdbcTemplate access to the iam schema
+     */
     public ClientSessionRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

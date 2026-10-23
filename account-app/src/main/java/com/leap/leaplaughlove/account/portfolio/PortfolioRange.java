@@ -23,9 +23,13 @@ public enum PortfolioRange {
      * from the same close as each holding's day change.
      */
     ONE_DAY("1D", null, 300),
+    /** The last 7 days, in hourly points. */
     ONE_WEEK("1W", Duration.ofDays(7), 3600),
+    /** The last 30 days, in hourly points. */
     ONE_MONTH("1M", Duration.ofDays(30), 3600),
+    /** The last 90 days, in daily points. */
     THREE_MONTHS("3M", Duration.ofDays(90), 86400),
+    /** The last 365 days, in daily points. */
     ONE_YEAR("1Y", Duration.ofDays(365), 86400),
     /**
      * Since the client's first account opened, capped at the daily candle

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MarketStatusResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.api</a> &gt; <span class="el_source">MarketStatusResponse.java</span></div><h1>MarketStatusResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.api;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
+
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+
+/**
+ * The market's session now, what comes next, and today's hours. Times are UTC instants; the
+ * frontend shows them in US Eastern time.
+ *
+ * @param session the session in force: PRE_MARKET, REGULAR, AFTER_HOURS or CLOSED
+ * @param now when this was worked out, so the client can correct for its own clock
+ * @param nextSession the session that starts next, or null if it won't change
+ * @param nextTransitionAt when it starts, or null
+ * @param nextRegularOpen when regular trading next starts (now, if it is under way), or null if never
+ * @param today today's trading hours
+ * @param mode REAL or ALWAYS_OPEN
+ * @param forced whether the session is pinned for a demo
+ */
+<span class="fc" id="L26">public record MarketStatusResponse(</span>
+        MarketSession session,
+        OffsetDateTime now,
+        MarketSession nextSession,
+        OffsetDateTime nextTransitionAt,
+        OffsetDateTime nextRegularOpen,
+        TradingDayResponse today,
+        MarketClock.Mode mode,
+        boolean forced) {
+
+    /**
+     * One day's trading hours; the times are null when the market is closed all day.
+     *
+     * @param date the date, in US Eastern time
+     * @param open whether the market trades that day
+     * @param holiday the holiday it is closed for, or null
+     * @param earlyClose whether regular trading ends at 13:00
+     * @param preMarketOpen when pre-market starts
+     * @param regularOpen when regular trading starts
+     * @param regularClose when regular trading ends
+     * @param afterHoursClose when after-hours trading ends
+     */
+<span class="fc" id="L48">    public record TradingDayResponse(</span>
+            LocalDate date,
+            boolean open,
+            String holiday,
+            boolean earlyClose,
+            OffsetDateTime preMarketOpen,
+            OffsetDateTime regularOpen,
+            OffsetDateTime regularClose,
+            OffsetDateTime afterHoursClose) {
+
+        static TradingDayResponse of(MarketCalendar.TradingDay day) {
+<span class="fc" id="L59">            return new TradingDayResponse(day.date(), day.isOpen(), day.holiday(), day.earlyClose(),</span>
+<span class="fc" id="L60">                    utc(day.preMarketOpen()), utc(day.regularOpen()), utc(day.regularClose()),</span>
+<span class="fc" id="L61">                    utc(day.afterHoursClose()));</span>
+        }
+
+        static OffsetDateTime utc(Instant instant) {
+<span class="fc bfc" id="L65" title="All 2 branches covered.">            return instant != null ? instant.atOffset(ZoneOffset.UTC) : null;</span>
+        }
+
+        static OffsetDateTime utc(ZonedDateTime time) {
+<span class="fc bfc" id="L69" title="All 2 branches covered.">            return time != null ? utc(time.toInstant()) : null;</span>
+        }
+    }
+
+    /**
+     * Builds the response from the clock's status.
+     * @param status the market's state
+     * @return the response
+     */
+    public static MarketStatusResponse of(MarketClock.Status status) {
+<span class="fc" id="L79">        return new MarketStatusResponse(</span>
+<span class="fc" id="L80">                status.session(),</span>
+<span class="fc" id="L81">                TradingDayResponse.utc(status.now()),</span>
+<span class="fc bfc" id="L82" title="All 2 branches covered.">                status.next() != null ? status.next().session() : null,</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                status.next() != null ? TradingDayResponse.utc(status.next().at()) : null,</span>
+<span class="fc" id="L84">                TradingDayResponse.utc(status.nextRegularOpen()),</span>
+<span class="fc" id="L85">                TradingDayResponse.of(status.today()),</span>
+<span class="fc" id="L86">                status.mode(),</span>
+<span class="fc" id="L87">                status.forced());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

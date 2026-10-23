@@ -21,7 +21,7 @@ public class CurrentQuoteClient {
     private final RestClient restClient;
     /**
      * Constructs a new CurrentQuoteClient with the given market data REST client.
-     * @param marketDataRestClient
+     * @param marketDataRestClient the REST client pointed at the market data service
      */
     public CurrentQuoteClient(RestClient marketDataRestClient) {
         this.restClient = marketDataRestClient;

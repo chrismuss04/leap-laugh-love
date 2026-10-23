@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapFill.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapFill.java</span></div><h1>RecapFill.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * One of a client's filled orders, as reporting.orders holds it. Recaps only ever see fills:
+ * rejected, cancelled and expired orders never moved shares or cash.
+ * @param accountId the account the order was placed in
+ * @param symbol the instrument's trading symbol
+ * @param side whether the order bought or sold
+ * @param quantity the whole number of units filled
+ * @param price the fill price per unit
+ * @param filledAt when the order filled
+ */
+<span class="fc" id="L17">public record RecapFill(UUID accountId, String symbol, Side side, long quantity, BigDecimal price,</span>
+                        OffsetDateTime filledAt) {
+
+    /** The direction of a fill. */
+<span class="fc" id="L21">    public enum Side {</span>
+        /** Bought units. */
+<span class="fc" id="L23">        BUY,</span>
+        /** Sold units. */
+<span class="fc" id="L25">        SELL</span>
+    }
+
+    /**
+     * The fill's value.
+     * @return quantity times price
+     */
+    public BigDecimal value() {
+<span class="fc" id="L33">        return price.multiply(BigDecimal.valueOf(quantity));</span>
+    }
+
+    /**
+     * The change the fill makes to the units held.
+     * @return the quantity, negative for a sell
+     */
+    public long signedQuantity() {
+<span class="fc bfc" id="L41" title="All 2 branches covered.">        return side == Side.BUY ? quantity : -quantity;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

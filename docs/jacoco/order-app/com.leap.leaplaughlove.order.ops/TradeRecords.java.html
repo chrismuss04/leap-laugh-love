@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradeRecords.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">TradeRecords.java</span></div><h1>TradeRecords.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.CashEntryRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.ExecutionRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.OrderRecord;
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.PositionMovementRecord;
+
+import java.util.List;
+
+/**
+ * One order's audit records as stored: the order, then its executions, cash ledger entries and
+ * position movements, each oldest first.
+ * @param order the order
+ * @param executions its execution attempts
+ * @param cashEntries the cash ledger entries made for it
+ * @param positionMovements the changes to holdings made for it
+ */
+public record TradeRecords(
+        OrderRecord order,
+        List&lt;ExecutionRecord&gt; executions,
+        List&lt;CashEntryRecord&gt; cashEntries,
+        List&lt;PositionMovementRecord&gt; positionMovements
+) {
+    /**
+     * Copies the lists, treating null as empty.
+     * @param order the order
+     * @param executions its execution attempts, or null for none
+     * @param cashEntries the cash ledger entries made for it, or null for none
+     * @param positionMovements the changes to holdings made for it, or null for none
+     */
+<span class="fc" id="L31">    public TradeRecords {</span>
+<span class="pc bpc" id="L32" title="1 of 2 branches missed.">        executions = executions != null ? List.copyOf(executions) : List.of();</span>
+<span class="pc bpc" id="L33" title="1 of 2 branches missed.">        cashEntries = cashEntries != null ? List.copyOf(cashEntries) : List.of();</span>
+<span class="pc bpc" id="L34" title="1 of 2 branches missed.">        positionMovements = positionMovements != null ? List.copyOf(positionMovements) : List.of();</span>
+<span class="fc" id="L35">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

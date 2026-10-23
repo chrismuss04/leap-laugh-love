@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ModifyOrderRequest.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">ModifyOrderRequest.java</span></div><h1>ModifyOrderRequest.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.leap.leaplaughlove.order.order.Order;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Positive;
+
+import java.math.BigDecimal;
+import java.util.Objects;
+import java.util.stream.Stream;
+
+/**
+ * An edit to an OPEN order. Only the fields given change; each must apply to the order's type
+ * (a limit price to LIMIT and STOP_LIMIT, a stop price to STOP and STOP_LIMIT, a trail to
+ * TRAILING_STOP). The order keeps its ID and place in history.
+ *
+ * @param quantity the new whole-share quantity
+ * @param limitPrice the new limit price
+ * @param stopPrice the new stop price
+ * @param trailAmount the new trail in dollars; replaces a percent trail
+ * @param trailPercent the new trail in percent; replaces a dollar trail
+ * @param timeInForce DAY or GTC; a change restarts the time the order may work for
+ */
+<span class="fc" id="L28">public record ModifyOrderRequest(</span>
+        @Min(value = 1, message = &quot;quantity must be at least 1 whole share&quot;)
+        Long quantity,
+
+        @Positive(message = &quot;limitPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;limitPrice may have at most two decimal places&quot;)
+        BigDecimal limitPrice,
+
+        @Positive(message = &quot;stopPrice must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;stopPrice may have at most two decimal places&quot;)
+        BigDecimal stopPrice,
+
+        @Positive(message = &quot;trailAmount must be greater than zero&quot;)
+        @Digits(integer = 12, fraction = 2, message = &quot;trailAmount may have at most two decimal places&quot;)
+        BigDecimal trailAmount,
+
+        @DecimalMin(value = &quot;0.10&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @DecimalMax(value = &quot;50.00&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @Digits(integer = 2, fraction = 2, message = &quot;trailPercent may have at most two decimal places&quot;)
+        BigDecimal trailPercent,
+
+        Order.TimeInForce timeInForce
+) {
+
+    /**
+     * An edit that changes nothing is a mistake.
+     * @return false when no field is given
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;Give at least one thing to change&quot;)
+    public boolean isChangingSomething() {
+<span class="fc" id="L59">        return Stream.of(quantity, limitPrice, stopPrice, trailAmount, trailPercent, timeInForce)</span>
+<span class="fc" id="L60">                .anyMatch(Objects::nonNull);</span>
+    }
+
+    /**
+     * A trail is an amount or a percent, not both.
+     * @return false when both are given
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;Give trailAmount or trailPercent, not both&quot;)
+    public boolean isOneTrail() {
+<span class="fc bfc" id="L70" title="All 4 branches covered.">        return trailAmount == null || trailPercent == null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

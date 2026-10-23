@@ -20,6 +20,9 @@ public interface PositionRepository extends JpaRepository<Position, PositionId> 
     /**
      * Locks the position row for the duration of the transaction so concurrent
      * executions against the same account/instrument can't lose an update.
+     * @param accountId the account holding the position
+     * @param instrumentId the instrument held
+     * @return the locked position, or empty if the account doesn't hold the instrument
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Position p WHERE p.accountId = :accountId AND p.instrumentId = :instrumentId")

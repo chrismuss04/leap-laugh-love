@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderUpdateBroadcaster.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OrderUpdateBroadcaster.java</span></div><h1>OrderUpdateBroadcaster.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+import java.io.IOException;
+import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.function.BooleanSupplier;
+
+/**
+ * Pushes {@link OrderUpdate}s to the clients who have the order stream open, so a limit or stop
+ * order that fills in the background shows up on their screen at once rather than at the next poll.
+ *
+ * &lt;p&gt;Each connection belongs to one client and only ever receives that client's orders. A heartbeat
+ * every {@value #HEARTBEAT_SECONDS} seconds finds connections whose client has gone, and closes
+ * ones whose login has ended (without extending its activity), as the price stream does. Sends run
+ * on virtual threads, so a slow client can't hold up the trigger engine.
+ */
+@Component
+public class OrderUpdateBroadcaster {
+
+    static final int HEARTBEAT_SECONDS = 15;
+
+<span class="fc" id="L31">    private static final Logger log = LoggerFactory.getLogger(OrderUpdateBroadcaster.class);</span>
+
+<span class="fc" id="L33">    private final List&lt;Subscription&gt; subscriptions = new CopyOnWriteArrayList&lt;&gt;();</span>
+    private final Executor sender;
+
+    /** Constructs a broadcaster that sends on virtual threads. */
+    public OrderUpdateBroadcaster() {
+<span class="fc" id="L38">        this(Executors.newVirtualThreadPerTaskExecutor());</span>
+<span class="fc" id="L39">    }</span>
+
+<span class="fc" id="L41">    OrderUpdateBroadcaster(Executor sender) {</span>
+<span class="fc" id="L42">        this.sender = sender;</span>
+<span class="fc" id="L43">    }</span>
+
+    /**
+     * Opens a stream of one client's order updates.
+     * @param clientId the client
+     * @param sessionActive whether the client's login is still live, checked on every heartbeat
+     * @return the emitter streaming to the caller
+     */
+    public SseEmitter subscribe(UUID clientId, BooleanSupplier sessionActive) {
+<span class="fc" id="L52">        return register(new SseEmitter(0L), clientId, sessionActive);</span>
+    }
+
+    SseEmitter register(SseEmitter emitter, UUID clientId, BooleanSupplier sessionActive) {
+<span class="fc" id="L56">        Subscription subscription = new Subscription(emitter, clientId, sessionActive);</span>
+<span class="fc" id="L57">        subscriptions.add(subscription);</span>
+<span class="fc" id="L58">        emitter.onCompletion(subscription::close);</span>
+<span class="fc" id="L59">        emitter.onTimeout(subscription::close);</span>
+<span class="pc" id="L60">        emitter.onError(ex -&gt; subscription.close());</span>
+        // Tells the browser the stream is up, so it can stop polling as hard.
+<span class="fc" id="L62">        sender.execute(() -&gt; subscription.send(&quot;ready&quot;, &quot;{}&quot;));</span>
+<span class="fc" id="L63">        return emitter;</span>
+    }
+
+    /**
+     * Sends an update to the client's open streams, if they have any.
+     * @param clientId the order's owner
+     * @param update what happened
+     */
+    public void publish(UUID clientId, OrderUpdate update) {
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        for (Subscription subscription : subscriptions) {</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">            if (subscription.clientId.equals(clientId)) {</span>
+<span class="fc" id="L74">                sender.execute(() -&gt; subscription.send(&quot;order&quot;, update));</span>
+            }
+<span class="fc" id="L76">        }</span>
+<span class="fc" id="L77">    }</span>
+
+    /**
+     * Sends a heartbeat on every stream, which drops those whose client has gone and ends those
+     * whose login has expired.
+     */
+    @Scheduled(fixedDelay = HEARTBEAT_SECONDS * 1000L, initialDelay = HEARTBEAT_SECONDS * 1000L)
+    public void heartbeat() {
+<span class="fc bfc" id="L85" title="All 2 branches covered.">        for (Subscription subscription : subscriptions) {</span>
+<span class="fc" id="L86">            sender.execute(subscription::beat);</span>
+<span class="fc" id="L87">        }</span>
+<span class="fc" id="L88">    }</span>
+
+    /**
+     * Returns how many streams are open.
+     * @return the number of open connections
+     */
+    int openStreams() {
+<span class="fc" id="L95">        return subscriptions.size();</span>
+    }
+
+    private final class Subscription {
+        private final SseEmitter emitter;
+        private final UUID clientId;
+        private final BooleanSupplier sessionActive;
+        private volatile boolean closed;
+
+<span class="fc" id="L104">        private Subscription(SseEmitter emitter, UUID clientId, BooleanSupplier sessionActive) {</span>
+<span class="fc" id="L105">            this.emitter = emitter;</span>
+<span class="fc" id="L106">            this.clientId = clientId;</span>
+<span class="fc" id="L107">            this.sessionActive = sessionActive;</span>
+<span class="fc" id="L108">        }</span>
+
+        void send(String event, Object data) {
+<span class="pc bpc" id="L111" title="1 of 2 branches missed.">            if (closed) {</span>
+<span class="nc" id="L112">                return;</span>
+            }
+            try {
+<span class="fc" id="L115">                emitter.send(SseEmitter.event().name(event).data(data));</span>
+<span class="fc" id="L116">            } catch (IOException | RuntimeException ex) {</span>
+                // The client went away. The container handles the request's own error path;
+                // completing the emitter here can touch a destroyed async context.
+<span class="fc" id="L119">                close();</span>
+<span class="fc" id="L120">            }</span>
+<span class="fc" id="L121">        }</span>
+
+        void beat() {
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">            if (closed) {</span>
+<span class="nc" id="L125">                return;</span>
+            }
+            boolean active;
+            try {
+<span class="fc" id="L129">                active = sessionActive.getAsBoolean();</span>
+<span class="fc" id="L130">            } catch (RuntimeException ex) {</span>
+                // A session store failure must close an otherwise healthy connection too.
+<span class="fc" id="L132">                active = false;</span>
+<span class="fc" id="L133">            }</span>
+<span class="fc bfc" id="L134" title="All 2 branches covered.">            if (!active) {</span>
+<span class="fc" id="L135">                close();</span>
+                try {
+<span class="fc" id="L137">                    emitter.complete();</span>
+<span class="nc" id="L138">                } catch (RuntimeException ex) {</span>
+<span class="nc" id="L139">                    log.debug(&quot;Order stream for client {} already closed: {}&quot;, clientId, ex.getMessage());</span>
+<span class="fc" id="L140">                }</span>
+<span class="fc" id="L141">                return;</span>
+            }
+<span class="fc" id="L143">            send(&quot;ping&quot;, &quot;{}&quot;);</span>
+<span class="fc" id="L144">        }</span>
+
+        void close() {
+<span class="fc" id="L147">            closed = true;</span>
+<span class="fc" id="L148">            subscriptions.remove(this);</span>
+<span class="fc" id="L149">        }</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

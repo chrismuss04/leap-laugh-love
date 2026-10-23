@@ -30,6 +30,7 @@ public class AccountSecurityConfig {
      * @param http the HttpSecurity object to configure
      * @param jwtService the service for handling JWT operations
      * @param objectMapper the ObjectMapper for JSON serialization
+     * @param sessions checks that the session behind each token is still live
      * @return the configured SecurityFilterChain
      * @throws Exception if an error occurs during configuration
      */

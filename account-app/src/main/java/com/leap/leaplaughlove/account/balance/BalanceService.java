@@ -58,8 +58,8 @@ public class BalanceService {
     /**
      * Overloaded BalanceService constructor without auth service
      * 
-     * @param accountRepository
-     * @param cashLedgerRepository
+     * @param accountRepository the account repository
+     * @param cashLedgerRepository the cash ledger repository
      */
     public BalanceService(AccountRepository accountRepository, CashLedgerRepository cashLedgerRepository) {
         this(accountRepository, cashLedgerRepository, new AccountAuthorizationService(accountRepository));

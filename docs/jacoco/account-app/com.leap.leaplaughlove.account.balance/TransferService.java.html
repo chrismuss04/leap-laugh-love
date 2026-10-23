@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TransferService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.balance</a> &gt; <span class="el_source">TransferService.java</span></div><h1>TransferService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.balance;
+
+import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.account.AccountAuthorizationService;
+import com.leap.leaplaughlove.account.ledger.CashLedgerEntry;
+import com.leap.leaplaughlove.account.ledger.CashLedgerRepository;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Moves cash between two accounts owned by the authenticated client. A transfer is booked as a
+ * WITHDRAWAL on the source account and a DEPOSIT on the destination in a single transaction.
+ */
+@Service
+public class TransferService {
+
+    private static final String ENTRY_TYPE_DEPOSIT = &quot;DEPOSIT&quot;;
+    private static final String ENTRY_TYPE_WITHDRAWAL = &quot;WITHDRAWAL&quot;;
+
+    private final AccountAuthorizationService accountAuthorizationService;
+    private final CashLedgerRepository cashLedgerRepository;
+    private final BalanceService balanceService;
+
+    /**
+     * Constructs a TransferService.
+     * @param accountAuthorizationService resolves, locks and authorizes the two accounts
+     * @param cashLedgerRepository the repository the two ledger legs are written to
+     * @param balanceService used to read each account's current balance
+     */
+    public TransferService(AccountAuthorizationService accountAuthorizationService,
+            CashLedgerRepository cashLedgerRepository,
+<span class="fc" id="L38">            BalanceService balanceService) {</span>
+<span class="fc" id="L39">        this.accountAuthorizationService = accountAuthorizationService;</span>
+<span class="fc" id="L40">        this.cashLedgerRepository = cashLedgerRepository;</span>
+<span class="fc" id="L41">        this.balanceService = balanceService;</span>
+<span class="fc" id="L42">    }</span>
+
+    /**
+     * Transfers cash between two of the authenticated client's accounts.
+     * @param request the transfer request
+     * @return a response carrying both accounts' balances after the transfer
+     * @throws ResponseStatusException 400 for an invalid amount, identical accounts, inactive
+     *         accounts, mismatched currencies or insufficient funds; 404 for an unowned account
+     */
+    @Transactional
+    public CashTransferResponse transfer(CashTransferRequest request) {
+<span class="fc" id="L53">        BigDecimal amount = BalanceService.normalizeAmount(request.amount());</span>
+
+<span class="fc" id="L55">        UUID fromId = request.fromAccountId();</span>
+<span class="fc" id="L56">        UUID toId = request.toAccountId();</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        if (fromId.equals(toId)) {</span>
+<span class="fc" id="L58">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;Cannot transfer to the same account&quot;);</span>
+        }
+
+        // Always lock in a fixed order so two opposing transfers cannot deadlock.
+        Account from;
+        Account to;
+<span class="fc bfc" id="L64" title="All 2 branches covered.">        if (fromId.compareTo(toId) &lt; 0) {</span>
+<span class="fc" id="L65">            from = accountAuthorizationService.getAuthorizedAccountForUpdate(fromId);</span>
+<span class="fc" id="L66">            to = accountAuthorizationService.getAuthorizedAccountForUpdate(toId);</span>
+        } else {
+<span class="fc" id="L68">            to = accountAuthorizationService.getAuthorizedAccountForUpdate(toId);</span>
+<span class="fc" id="L69">            from = accountAuthorizationService.getAuthorizedAccountForUpdate(fromId);</span>
+        }
+
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (!from.getBaseCurrency().equals(to.getBaseCurrency())) {</span>
+<span class="fc" id="L73">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+                    &quot;Accounts must share the same currency&quot;);
+        }
+
+<span class="fc" id="L77">        BigDecimal fromBalance = balanceService.getCurrentBalance(from);</span>
+<span class="fc" id="L78">        BigDecimal toBalance = balanceService.getCurrentBalance(to);</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (amount.compareTo(fromBalance) &gt; 0) {</span>
+<span class="fc" id="L80">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+                    &quot;Transfer amount cannot exceed available account balance&quot;);
+        }
+
+<span class="fc" id="L84">        OffsetDateTime now = OffsetDateTime.now();</span>
+<span class="fc" id="L85">        CashLedgerEntry withdrawal = cashLedgerRepository.save(new CashLedgerEntry(</span>
+<span class="fc" id="L86">                from.getAccountId(),</span>
+                ENTRY_TYPE_WITHDRAWAL,
+<span class="fc" id="L88">                amount.negate(),</span>
+<span class="fc" id="L89">                from.getBaseCurrency(),</span>
+                now,
+<span class="fc" id="L91">                describe(&quot;Transfer to &quot; + to.getAccountNumber(), request.description())));</span>
+<span class="fc" id="L92">        cashLedgerRepository.save(new CashLedgerEntry(</span>
+<span class="fc" id="L93">                to.getAccountId(),</span>
+                ENTRY_TYPE_DEPOSIT,
+                amount,
+<span class="fc" id="L96">                to.getBaseCurrency(),</span>
+                now,
+<span class="fc" id="L98">                describe(&quot;Transfer from &quot; + from.getAccountNumber(), request.description())));</span>
+
+<span class="fc" id="L100">        return new CashTransferResponse(</span>
+<span class="fc" id="L101">                withdrawal.getCashLedgerId(),</span>
+<span class="fc" id="L102">                from.getAccountId(),</span>
+<span class="fc" id="L103">                to.getAccountId(),</span>
+                amount,
+<span class="fc" id="L105">                from.getBaseCurrency(),</span>
+<span class="fc" id="L106">                fromBalance.subtract(amount),</span>
+<span class="fc" id="L107">                toBalance.add(amount),</span>
+                now);
+    }
+
+    private String describe(String base, String note) {
+<span class="pc bpc" id="L112" title="1 of 4 branches missed.">        return note == null || note.isBlank() ? base : base + &quot; - &quot; + note.trim();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -36,7 +36,12 @@ public class InactiveAccountDetector {
     private final int thresholdDays;
     private final Clock clock;
 
-    /** Creates the detector on the system clock. */
+    /**
+     * Creates the detector on the system clock.
+     * @param accountRepository finds and flags empty accounts
+     * @param eventPublisher publishes an event for each newly flagged account
+     * @param thresholdDays how many days an account must be empty before it is flagged
+     */
     @Autowired
     public InactiveAccountDetector(AccountRepository accountRepository, ApplicationEventPublisher eventPublisher,
                                    @Value("${account.inactivity.threshold-days:30}") int thresholdDays) {

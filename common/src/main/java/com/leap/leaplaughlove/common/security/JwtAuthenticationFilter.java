@@ -37,14 +37,21 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final Set<String> allowedServicePurposes;
 
     /**
-     * Constructs a new JwtAuthenticationFilter with the specified JwtService.
+     * Constructs a new JwtAuthenticationFilter that accepts no background service tokens.
      * @param jwtService the JwtService used to parse and validate JWT tokens
+     * @param sessions checks that the session behind each token is still live
      */
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions) {
         this(jwtService, sessions, new String[0]);
     }
 
-    // Session Timeout & Revocation: each service explicitly allows only its own background token purposes.
+    /**
+     * Constructs a new JwtAuthenticationFilter. Each service explicitly allows only its own
+     * background token purposes.
+     * @param jwtService the JwtService used to parse and validate JWT tokens
+     * @param sessions checks that the session behind each token is still live
+     * @param allowedServicePurposes the service token purposes this service accepts
+     */
     public JwtAuthenticationFilter(JwtService jwtService, ClientSessionValidator sessions,
                                    String... allowedServicePurposes) {
         this.jwtService = jwtService;

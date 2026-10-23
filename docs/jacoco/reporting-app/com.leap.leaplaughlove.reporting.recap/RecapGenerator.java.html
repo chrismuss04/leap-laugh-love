@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapGenerator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapGenerator.java</span></div><h1>RecapGenerator.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.UUID;
+
+/**
+ * Builds and stores every client's recap of a month: each client who had a fill before the month
+ * ended, since they may have held something through it. Prices are fetched once for the whole
+ * month, then every recap is worked out, ranked against the rest, and stored in one transaction.
+ *
+ * &lt;p&gt;All or nothing: if market data fails, nothing is stored and the month is tried again later
+ * (see {@link RecapJob}). Synchronized, so the monthly run and a catch-up run never build the same
+ * month at once.
+ */
+@Component
+public class RecapGenerator {
+
+<span class="fc" id="L30">    private static final Logger log = LoggerFactory.getLogger(RecapGenerator.class);</span>
+
+    private final RecapFillRepository fills;
+    private final RecapSnapshotRepository snapshots;
+    private final RecapPrices prices;
+    private final RecapCalculator calculator;
+    private final Clock clock;
+
+    /**
+     * Creates the generator.
+     * @param fills reads clients' fills and the sectors
+     * @param snapshots stores the recaps
+     * @param prices fetches daily closes
+     * @param calculator works out each recap and the rankings
+     * @param clock stamps when the recaps were built
+     */
+    public RecapGenerator(RecapFillRepository fills, RecapSnapshotRepository snapshots, RecapPrices prices,
+<span class="fc" id="L47">                          RecapCalculator calculator, Clock clock) {</span>
+<span class="fc" id="L48">        this.fills = fills;</span>
+<span class="fc" id="L49">        this.snapshots = snapshots;</span>
+<span class="fc" id="L50">        this.prices = prices;</span>
+<span class="fc" id="L51">        this.calculator = calculator;</span>
+<span class="fc" id="L52">        this.clock = clock;</span>
+<span class="fc" id="L53">    }</span>
+
+    /**
+     * Builds and stores every client's recap of a month, replacing any stored before.
+     * @param month the month to recap
+     * @return how many recaps were stored
+     * @throws RecapPricesUnavailableException when market data fails; nothing is stored
+     */
+    public synchronized int generate(YearMonth month) {
+        // Stamped before the fills are read, not after pricing: a fill loaded in between isn't in
+        // these recaps, and has to show as loaded after them for the catch-up run to rebuild.
+<span class="fc" id="L64">        OffsetDateTime generatedAt = OffsetDateTime.now(clock);</span>
+<span class="fc" id="L65">        Map&lt;UUID, List&lt;RecapFill&gt;&gt; fillsByClient = fills.fillsThrough(month);</span>
+<span class="fc bfc" id="L66" title="All 2 branches covered.">        if (fillsByClient.isEmpty()) {</span>
+<span class="fc" id="L67">            log.info(&quot;No client had traded by the end of {}: no recaps to build&quot;, month);</span>
+<span class="fc" id="L68">            return 0;</span>
+        }
+
+<span class="fc" id="L71">        Set&lt;String&gt; symbols = new TreeSet&lt;&gt;();</span>
+<span class="fc" id="L72">        fillsByClient.values().forEach(clientFills -&gt; symbols.addAll(calculator.symbolsToPrice(month, clientFills)));</span>
+<span class="fc" id="L73">        PriceBook priceBook = prices.load(month, symbols);</span>
+<span class="fc" id="L74">        Map&lt;String, String&gt; sectors = fills.sectors();</span>
+
+<span class="fc" id="L76">        Map&lt;UUID, RecapPayload&gt; recaps = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L77">        Map&lt;UUID, BigDecimal&gt; tradingReturns = new HashMap&lt;&gt;();</span>
+<span class="fc" id="L78">        fillsByClient.forEach((clientId, clientFills) -&gt; {</span>
+<span class="fc" id="L79">            RecapPayload recap = calculator.calculate(month, clientFills, priceBook, sectors);</span>
+<span class="fc" id="L80">            recaps.put(clientId, recap);</span>
+<span class="fc" id="L81">            tradingReturns.put(clientId, recap.tradingReturn().returnPct());</span>
+<span class="fc" id="L82">        });</span>
+<span class="fc" id="L83">        Map&lt;UUID, Integer&gt; topPercents = calculator.topPercents(tradingReturns);</span>
+<span class="fc" id="L84">        topPercents.forEach((clientId, topPercent) -&gt; recaps.compute(clientId,</span>
+<span class="fc" id="L85">                (id, recap) -&gt; recap.withTopPercent(topPercent)));</span>
+
+<span class="fc" id="L87">        snapshots.saveMonth(month, recaps, generatedAt);</span>
+<span class="fc" id="L88">        log.info(&quot;Stored {} recaps of {}, priced from {} symbols&quot;, recaps.size(), month, symbols.size());</span>
+<span class="fc" id="L89">        return recaps.size();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderCounts.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">OrderCounts.java</span></div><h1>OrderCounts.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+/**
+ * How many orders a search matches, in total and by outcome. awaitingExecution counts the orders
+ * not yet final: SUBMITTED, ACCEPTED, or OPEN waiting for their price. Cancelled and expired
+ * orders count only towards submitted.
+ * @param submitted every matching order
+ * @param filled the orders filled
+ * @param rejected the orders rejected
+ * @param awaitingExecution the orders not yet final
+ */
+<span class="fc" id="L12">public record OrderCounts(</span>
+        long submitted,
+        long filled,
+        long rejected,
+        long awaitingExecution
+) {
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

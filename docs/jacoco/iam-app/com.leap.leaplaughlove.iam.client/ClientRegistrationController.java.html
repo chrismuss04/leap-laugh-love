@@ -1,0 +1,258 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ClientRegistrationController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.client</a> &gt; <span class="el_source">ClientRegistrationController.java</span></div><h1>ClientRegistrationController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.client;
+
+import jakarta.validation.Constraint;
+import jakarta.validation.ConstraintValidator;
+import jakarta.validation.ConstraintValidatorContext;
+import jakarta.validation.Payload;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.Period;
+
+/**
+ * Controller responsible for handling client registration requests and managing
+ * related exceptions.
+ * maps to the /api/iam/v1/clients endpoint.
+ */
+@RestController
+@RequestMapping(&quot;/api/iam/v1/clients&quot;)
+public class ClientRegistrationController {
+
+    static final String ACCEPTED_MESSAGE = &quot;Thanks for applying. Check your email for the next step.&quot;;
+
+    private final ClientRegistrationService registrationService;
+
+    /**
+     * Constructs a new ClientRegistrationController with the specified
+     * dependencies.
+     *
+     * @param registrationService the service that takes applications and opens the
+     *                            client once their email is confirmed
+     */
+<span class="fc" id="L50">    public ClientRegistrationController(ClientRegistrationService registrationService) {</span>
+<span class="fc" id="L51">        this.registrationService = registrationService;</span>
+<span class="fc" id="L52">    }</span>
+
+    /**
+     * Handles client registration requests. The response is the same whether or not
+     * the email, phone number or SSN already belongs to a client, so this cannot be
+     * used to find out which ones are registered; the applicant is told the outcome
+     * by email instead.
+     * 
+     * @param request the client registration request containing all necessary
+     *                client details
+     * @return a 202 response telling the applicant to check their email
+     */
+    @PostMapping(&quot;/register&quot;)
+    public ResponseEntity&lt;RegistrationResponse&gt; register(@Valid @RequestBody RegistrationRequest request) {
+<span class="fc" id="L66">        registrationService.submit(request);</span>
+<span class="fc" id="L67">        return accepted();</span>
+    }
+
+    /**
+     * Opens the client an application was for, using the token from the emailed
+     * link. The token travels in the body to keep it out of request logs.
+     * 
+     * @param request the request containing the token
+     * @return an empty 204 response, or 400 if the link is no longer usable
+     */
+    @PostMapping(&quot;/register/verify&quot;)
+    public ResponseEntity&lt;Void&gt; verify(@Valid @RequestBody VerifyRegistrationRequest request) {
+<span class="fc" id="L79">        registrationService.verify(request.token());</span>
+<span class="fc" id="L80">        return ResponseEntity.noContent().build();</span>
+    }
+
+    private static ResponseEntity&lt;RegistrationResponse&gt; accepted() {
+<span class="fc" id="L84">        return ResponseEntity.status(HttpStatus.ACCEPTED).body(new RegistrationResponse(ACCEPTED_MESSAGE));</span>
+    }
+
+    /**
+     * Normalizes a phone number into &quot;(XXX) XXX-XXXX&quot; for US numbers, with or
+     * without the leading country code 1, or the digits alone otherwise. Phone
+     * numbers have to be unique across clients, and clients that bypass the
+     * frontend's live formatting (e.g. calling the API directly) would otherwise
+     * store the same number in different formats.
+     * 
+     * @param phone the raw phone number as submitted
+     * @return the normalized phone number, or null if it has no digits
+     */
+    static String normalizePhone(String phone) {
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (phone == null) {</span>
+<span class="fc" id="L99">            return null;</span>
+        }
+<span class="fc" id="L101">        String digits = phone.replaceAll(&quot;\\D&quot;, &quot;&quot;);</span>
+<span class="pc bpc" id="L102" title="1 of 4 branches missed.">        if (digits.length() == 11 &amp;&amp; digits.startsWith(&quot;1&quot;)) {</span>
+<span class="fc" id="L103">            digits = digits.substring(1);</span>
+        }
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        if (digits.length() == 10) {</span>
+<span class="fc" id="L106">            return &quot;(%s) %s-%s&quot;.formatted(digits.substring(0, 3), digits.substring(3, 6), digits.substring(6));</span>
+        }
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        return digits.isEmpty() ? null : digits;</span>
+    }
+
+    /**
+     * Handles two applications for the same email arriving at the same moment, the
+     * only way storing one can violate a constraint. The loser is answered exactly
+     * like the winner.
+     * 
+     * @param ex the exception thrown when a data integrity violation occurs
+     * @return the same 202 response a stored application gets
+     */
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity&lt;RegistrationResponse&gt; handleDataIntegrity(
+            org.springframework.dao.DataIntegrityViolationException ex) {
+<span class="fc" id="L122">        return accepted();</span>
+    }
+
+    /**
+     * Represents the client registration request containing all necessary client
+     * details for registering a new client in the IAM system.
+     * 
+     * @param email                applicant email address
+     * @param phone                applicant phone number
+     * @param fullName             applicant full name
+     * @param dateOfBirth          applicant date of birth (must be at least 21)
+     * @param ssn                  applicant Social Security Number in XXX-XX-XXXX
+     *                             format
+     * @param addressLine1         primary address line
+     * @param addressLine2         secondary address line (optional)
+     * @param city                 address city
+     * @param stateRegion          address state or region
+     * @param postalCode           address postal code
+     * @param countryCode          two-letter ISO country code
+     * @param experienceLevel      investment experience level (NOVICE,
+     *                             INTERMEDIATE, ADVANCED)
+     * @param initialDepositAmount initial deposit amount (minimum 5000.00)
+     * @param password             the applicant's chosen sign-in password (must be
+     *                             at least 8 characters)
+     */
+<span class="fc" id="L147">    public record RegistrationRequest(</span>
+            @NotBlank @Email String email,
+            String phone,
+            @NotBlank String fullName,
+            // LLL-117: registration must fail if the applicant isn't at least 21 yet.
+            @NotNull @MinimumAge(21) LocalDate dateOfBirth,
+            // LLL-117: registration must fail if no SSN is provided, since that's what we
+            // use to identify the applicant.
+            @NotBlank @Pattern(regexp = &quot;\\d{3}-\\d{2}-\\d{4}&quot;, message = &quot;ssn must be in format XXX-XX-XXXX&quot;) String ssn,
+            @NotBlank String addressLine1,
+            String addressLine2,
+            @NotBlank String city,
+            String stateRegion,
+            @NotBlank String postalCode,
+            @NotBlank @Size(min = 2, max = 2) String countryCode,
+            @NotBlank @Pattern(regexp = &quot;NOVICE|INTERMEDIATE|ADVANCED&quot;) String experienceLevel,
+            @NotNull @DecimalMin(&quot;5000.00&quot;) BigDecimal initialDepositAmount,
+            @NotBlank @Size(min = 8, message = &quot;password must be at least 8 characters&quot;) String password) {
+    }
+
+    /**
+     * Represents the response returned for every accepted registration request.
+     * It carries nothing about the applicant, because it must not differ between
+     * an application that was stored and one that was not.
+     * 
+     * @param message what the applicant should do next
+     */
+<span class="fc" id="L174">    public record RegistrationResponse(String message) {</span>
+    }
+
+    /**
+     * Represents the request made by the page the emailed link opens.
+     * 
+     * @param token the token from the emailed link
+     */
+<span class="fc" id="L182">    public record VerifyRegistrationRequest(@NotBlank String token) {</span>
+    }
+
+    /**
+     * Custom validation annotation that checks someone is old enough to register
+     */
+    @Target({ ElementType.FIELD, ElementType.PARAMETER })
+    @Retention(RetentionPolicy.RUNTIME)
+    @Constraint(validatedBy = MinimumAge.Validator.class)
+    @interface MinimumAge {
+
+        /**
+         * Returns the minimum age
+         * 
+         * @return min age
+         */
+        int value();
+
+        /**
+         * Returns the error message
+         * 
+         * @return error message
+         */
+        String message() default &quot;must be at least {value} years old&quot;;
+
+        /**
+         * Returns the groups
+         * 
+         * @return groups
+         */
+        Class&lt;?&gt;[] groups() default {};
+
+        /**
+         * Returns the payload
+         * 
+         * @return payload
+         */
+        Class&lt;? extends Payload&gt;[] payload() default {};
+
+        /**
+         * Compares the DOB to today's date to validate minimum age requirement
+         */
+<span class="fc" id="L224">        class Validator implements ConstraintValidator&lt;MinimumAge, LocalDate&gt; {</span>
+
+            private int minimumAge;
+
+            /**
+             * Initializes the validator with the minimum age specified in the annotation.
+             * 
+             * @param annotation the annotation containing the minimum age
+             */
+            @Override
+            public void initialize(MinimumAge annotation) {
+<span class="fc" id="L235">                this.minimumAge = annotation.value();</span>
+<span class="fc" id="L236">            }</span>
+
+            /**
+             * Checks if the given DOB meets minimum age requirement
+             * 
+             * @param dateOfBirth the date of birth to validate
+             * @param context     the context in which the constraint is evaluated
+             * @return true if the date of birth meets the minimum age requirement, false
+             *         otherwise
+             */
+            @Override
+            public boolean isValid(LocalDate dateOfBirth, ConstraintValidatorContext context) {
+                // Let @NotNull handle a missing date of birth - we only judge dates that are
+                // actually present.
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">                if (dateOfBirth == null) {</span>
+<span class="nc" id="L251">                    return true;</span>
+                }
+<span class="fc bfc" id="L253" title="All 2 branches covered.">                return Period.between(dateOfBirth, LocalDate.now()).getYears() &gt;= minimumAge;</span>
+            }
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

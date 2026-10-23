@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderTemplateRequest.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.template</a> &gt; <span class="el_source">OrderTemplateRequest.java</span></div><h1>OrderTemplateRequest.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.template;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.leap.leaplaughlove.order.order.Order;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Digits;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
+
+/**
+ * A ticket setup to save. Offsets are signed percent from the price the side fills at (the ask for
+ * a buy, the bid for a sell); a bracket's two percents are measured from the entry price.
+ *
+ * @param name what the client calls it, up to 40 characters
+ * @param side BUY or SELL
+ * @param orderType the order type to set up
+ * @param timeInForce DAY (when null) or GTC, for orders other than MARKET
+ * @param limitOffsetPercent for LIMIT and STOP_LIMIT: the limit price as percent from the market
+ * @param stopOffsetPercent for STOP and STOP_LIMIT: the stop price as percent from the market
+ * @param trailPercent for TRAILING_STOP: how many percent the stop trails
+ * @param takeProfitPercent for a BUY bracket: percent above the entry price to take profit at
+ * @param stopLossPercent for a BUY bracket: percent below the entry price to cut losses at
+ */
+<span class="fc" id="L29">public record OrderTemplateRequest(</span>
+        @NotBlank(message = &quot;name is required&quot;)
+        @Size(max = 40, message = &quot;name may have at most 40 characters&quot;)
+        String name,
+
+        @NotNull(message = &quot;side is required (BUY or SELL)&quot;)
+        Order.Side side,
+
+        @NotNull(message = &quot;orderType is required&quot;)
+        Order.OrderType orderType,
+
+        Order.TimeInForce timeInForce,
+
+        @DecimalMin(value = &quot;-99.00&quot;, message = &quot;limitOffsetPercent must be between -99 and 1000&quot;)
+        @DecimalMax(value = &quot;1000.00&quot;, message = &quot;limitOffsetPercent must be between -99 and 1000&quot;)
+        @Digits(integer = 4, fraction = 2, message = &quot;limitOffsetPercent may have at most two decimal places&quot;)
+        BigDecimal limitOffsetPercent,
+
+        @DecimalMin(value = &quot;-99.00&quot;, message = &quot;stopOffsetPercent must be between -99 and 1000&quot;)
+        @DecimalMax(value = &quot;1000.00&quot;, message = &quot;stopOffsetPercent must be between -99 and 1000&quot;)
+        @Digits(integer = 4, fraction = 2, message = &quot;stopOffsetPercent may have at most two decimal places&quot;)
+        BigDecimal stopOffsetPercent,
+
+        @DecimalMin(value = &quot;0.10&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @DecimalMax(value = &quot;50.00&quot;, message = &quot;trailPercent must be between 0.1 and 50&quot;)
+        @Digits(integer = 2, fraction = 2, message = &quot;trailPercent may have at most two decimal places&quot;)
+        BigDecimal trailPercent,
+
+        @DecimalMin(value = &quot;0.01&quot;, message = &quot;takeProfitPercent must be between 0.01 and 1000&quot;)
+        @DecimalMax(value = &quot;1000.00&quot;, message = &quot;takeProfitPercent must be between 0.01 and 1000&quot;)
+        @Digits(integer = 4, fraction = 2, message = &quot;takeProfitPercent may have at most two decimal places&quot;)
+        BigDecimal takeProfitPercent,
+
+        @DecimalMin(value = &quot;0.01&quot;, message = &quot;stopLossPercent must be between 0.01 and 99&quot;)
+        @DecimalMax(value = &quot;99.00&quot;, message = &quot;stopLossPercent must be between 0.01 and 99&quot;)
+        @Digits(integer = 2, fraction = 2, message = &quot;stopLossPercent may have at most two decimal places&quot;)
+        BigDecimal stopLossPercent
+) {
+
+    /**
+     * LIMIT and STOP_LIMIT templates need a limit offset, and no other type takes one.
+     * @return false when the limit offset doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;limitOffsetPercent is required for LIMIT and STOP_LIMIT templates, and only for them&quot;)
+    public boolean isLimitMatchingType() {
+<span class="pc bpc" id="L75" title="1 of 6 branches missed.">        return orderType == null || orderType.hasLimit() == (limitOffsetPercent != null);</span>
+    }
+
+    /**
+     * STOP and STOP_LIMIT templates need a stop offset, and no other type takes one.
+     * @return false when the stop offset doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;stopOffsetPercent is required for STOP and STOP_LIMIT templates, and only for them&quot;)
+    public boolean isStopMatchingType() {
+<span class="pc bpc" id="L85" title="1 of 6 branches missed.">        return orderType == null || orderType.takesStopPrice() == (stopOffsetPercent != null);</span>
+    }
+
+    /**
+     * TRAILING_STOP templates need a trail, and no other type takes one.
+     * @return false when the trail doesn't match the order type
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;trailPercent is required for TRAILING_STOP templates, and only for them&quot;)
+    public boolean isTrailMatchingType() {
+<span class="pc bpc" id="L95" title="1 of 6 branches missed.">        return orderType == null || orderType.hasTrail() == (trailPercent != null);</span>
+    }
+
+    /**
+     * A bracket needs both percents, and only a buy can have one.
+     * @return false when only one percent is given, or a sell has a bracket
+     */
+    @JsonIgnore
+    @AssertTrue(message = &quot;A bracket needs both takeProfitPercent and stopLossPercent, and only a BUY can have one&quot;)
+    public boolean isBracketValid() {
+<span class="fc bfc" id="L105" title="All 2 branches covered.">        boolean take = takeProfitPercent != null;</span>
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        boolean stop = stopLossPercent != null;</span>
+<span class="fc bfc" id="L107" title="All 6 branches covered.">        return take == stop &amp;&amp; (!take || side == Order.Side.BUY);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

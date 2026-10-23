@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InstrumentOverviewService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.instrument</a> &gt; <span class="el_source">InstrumentOverviewService.java</span></div><h1>InstrumentOverviewService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.instrument;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.marketdata.api.InstrumentOverviewResponse;
+import com.leap.leaplaughlove.marketdata.api.InstrumentOverviewResponse.Instrument;
+import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
+import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/** Combines latest simulation prices with shared UTC period baselines. */
+@Service
+public class InstrumentOverviewService {
+    private final InstrumentOverviewRepository repository;
+    private final MarketSimulationEngine simulation;
+
+    /**
+     * Constructs a new InstrumentOverviewService.
+     * @param repository loads instrument metadata and period baselines
+     * @param simulation supplies the latest prices
+     */
+<span class="fc" id="L31">    public InstrumentOverviewService(InstrumentOverviewRepository repository, MarketSimulationEngine simulation) {</span>
+<span class="fc" id="L32">        this.repository = repository;</span>
+<span class="fc" id="L33">        this.simulation = simulation;</span>
+<span class="fc" id="L34">    }</span>
+
+    /**
+     * Builds the overview for a period. An instrument with no usable baseline is still listed,
+     * with its change left null.
+     * @param period {@code today}, {@code week} or {@code month}. Today starts at the previous
+     *     trading day's regular close, like every other day change in the app (see
+     *     {@link MarketCalendar#previousClose}); a week or month starts at UTC midnight that many
+     *     days ago
+     * @return the latest prices with their changes since the period start
+     * @throws ResponseStatusException 400 if the period isn't one of the three
+     */
+    public InstrumentOverviewResponse getOverview(String period) {
+<span class="fc bfc" id="L47" title="All 4 branches covered.">        int days = switch (period) {</span>
+<span class="fc" id="L48">            case &quot;today&quot; -&gt; 0;</span>
+<span class="fc" id="L49">            case &quot;week&quot; -&gt; 7;</span>
+<span class="fc" id="L50">            case &quot;month&quot; -&gt; 30;</span>
+<span class="fc" id="L51">            default -&gt; throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+                    &quot;period must be today, week, or month&quot;);
+        };
+<span class="fc" id="L54">        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        boolean today = days == 0;</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        OffsetDateTime start = today</span>
+<span class="fc" id="L57">                ? MarketCalendar.previousClose(now.toInstant()).atOffset(ZoneOffset.UTC)</span>
+<span class="fc" id="L58">                : now.toLocalDate().atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days);</span>
+<span class="fc" id="L59">        Map&lt;String, PriceState&gt; prices = simulation.latestAll().stream()</span>
+<span class="fc" id="L60">                .collect(Collectors.toMap(PriceState::symbol, Function.identity()));</span>
+        // Today's baseline is the 5-minute candle that ended on the close; a longer period's is a day's.
+<span class="fc bfc" id="L62" title="All 2 branches covered.">        var instruments = repository.findAll(start, today ? 300 : 86400).stream()</span>
+<span class="fc" id="L63">                .filter(metadata -&gt; prices.containsKey(metadata.symbol()))</span>
+<span class="fc" id="L64">                .map(metadata -&gt; {</span>
+<span class="fc" id="L65">                    PriceState price = prices.get(metadata.symbol());</span>
+<span class="fc" id="L66">                    BigDecimal baseline = metadata.baselinePrice();</span>
+<span class="fc bfc" id="L67" title="All 4 branches covered.">                    boolean available = baseline != null &amp;&amp; baseline.signum() &gt; 0;</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">                    BigDecimal change = available ? price.price().subtract(baseline) : null;</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">                    BigDecimal percent = available</span>
+<span class="fc" id="L70">                            ? change.multiply(BigDecimal.valueOf(100)).divide(baseline, 12, RoundingMode.HALF_UP)</span>
+<span class="fc" id="L71">                            : null;</span>
+<span class="fc" id="L72">                    return new Instrument(metadata.symbol(), metadata.name(), metadata.assetClass(),</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">                            metadata.currency(), price.price(), price.asOf(), available ? baseline : null,</span>
+                            change, percent);
+<span class="fc" id="L75">                }).toList();</span>
+<span class="fc" id="L76">        return new InstrumentOverviewResponse(period, start, now, instruments);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

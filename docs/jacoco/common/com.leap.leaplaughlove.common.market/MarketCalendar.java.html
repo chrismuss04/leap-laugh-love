@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>MarketCalendar.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">common</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.common.market</a> &gt; <span class="el_source">MarketCalendar.java</span></div><h1>MarketCalendar.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.common.market;
+
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.Month;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAdjusters;
+
+/**
+ * The NYSE trading calendar, worked out from the exchange's rules rather than a list of dates,
+ * so it never runs out. Pure functions with no state.
+ *
+ * &lt;p&gt;Holidays: New Year's Day, Martin Luther King Jr. Day, Washington's Birthday, Good Friday,
+ * Memorial Day, Juneteenth (from 2022), Independence Day, Labor Day, Thanksgiving and Christmas.
+ * A holiday on a Saturday is observed the Friday before and one on a Sunday the Monday after -
+ * except New Year's Day on a Saturday, which isn't observed (the exchange stays open on 31 December).
+ *
+ * &lt;p&gt;Early closes, at 13:00 with after-hours until 17:00: 3 July, the day after Thanksgiving and
+ * Christmas Eve, whenever each is a trading day.
+ *
+ * &lt;p&gt;Unscheduled closures (e.g. national days of mourning) are not modelled.
+ */
+public final class MarketCalendar {
+
+    /** The exchange's time zone; every session boundary is wall-clock time here. */
+<span class="fc" id="L29">    public static final ZoneId ZONE = ZoneId.of(&quot;America/New_York&quot;);</span>
+
+<span class="fc" id="L31">    static final LocalTime PRE_MARKET_OPEN = LocalTime.of(4, 0);</span>
+<span class="fc" id="L32">    static final LocalTime REGULAR_OPEN = LocalTime.of(9, 30);</span>
+<span class="fc" id="L33">    static final LocalTime REGULAR_CLOSE = LocalTime.of(16, 0);</span>
+<span class="fc" id="L34">    static final LocalTime AFTER_HOURS_CLOSE = LocalTime.of(20, 0);</span>
+<span class="fc" id="L35">    static final LocalTime EARLY_REGULAR_CLOSE = LocalTime.of(13, 0);</span>
+<span class="fc" id="L36">    static final LocalTime EARLY_AFTER_HOURS_CLOSE = LocalTime.of(17, 0);</span>
+
+    /** Far enough to cross any run of weekends and holidays. */
+    private static final int MAX_DAYS_AHEAD = 10;
+
+    /**
+     * One calendar day's sessions. Times are null on a day the market is closed.
+     * @param date the date, in US Eastern time
+     * @param holiday the holiday the market is closed for, or null
+     * @param earlyClose whether regular trading ends at 13:00
+     * @param preMarketOpen when pre-market starts
+     * @param regularOpen when regular trading starts
+     * @param regularClose when regular trading ends
+     * @param afterHoursClose when after-hours trading ends
+     */
+<span class="fc" id="L51">    public record TradingDay(LocalDate date, String holiday, boolean earlyClose,</span>
+                             ZonedDateTime preMarketOpen, ZonedDateTime regularOpen,
+                             ZonedDateTime regularClose, ZonedDateTime afterHoursClose) {
+        /**
+         * Returns whether the market trades on this day.
+         * @return false at weekends and on holidays
+         */
+        public boolean isOpen() {
+<span class="fc bfc" id="L59" title="All 2 branches covered.">            return regularOpen != null;</span>
+        }
+    }
+
+    /**
+     * The next change of session.
+     * @param at when it happens
+     * @param session the session that starts then
+     */
+<span class="fc" id="L68">    public record Transition(Instant at, MarketSession session) {}</span>
+
+    private MarketCalendar() {
+    }
+
+    /**
+     * Returns the sessions of one day.
+     * @param date the date, in US Eastern time
+     * @return its trading hours, or a closed day
+     */
+    public static TradingDay tradingDay(LocalDate date) {
+<span class="fc" id="L79">        String holiday = holidayName(date);</span>
+<span class="fc bfc" id="L80" title="All 4 branches covered.">        if (holiday != null || isWeekend(date)) {</span>
+<span class="fc" id="L81">            return new TradingDay(date, holiday, false, null, null, null, null);</span>
+        }
+<span class="fc" id="L83">        boolean early = isEarlyClose(date);</span>
+<span class="fc" id="L84">        return new TradingDay(date, null, early,</span>
+<span class="fc" id="L85">                date.atTime(PRE_MARKET_OPEN).atZone(ZONE),</span>
+<span class="fc" id="L86">                date.atTime(REGULAR_OPEN).atZone(ZONE),</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">                date.atTime(early ? EARLY_REGULAR_CLOSE : REGULAR_CLOSE).atZone(ZONE),</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">                date.atTime(early ? EARLY_AFTER_HOURS_CLOSE : AFTER_HOURS_CLOSE).atZone(ZONE));</span>
+    }
+
+    /**
+     * Returns whether the market trades on a date.
+     * @param date the date, in US Eastern time
+     * @return false at weekends and on holidays
+     */
+    public static boolean isTradingDay(LocalDate date) {
+<span class="fc bfc" id="L97" title="All 4 branches covered.">        return !isWeekend(date) &amp;&amp; holidayName(date) == null;</span>
+    }
+
+    /**
+     * Returns the session in force at an instant.
+     * @param instant the instant
+     * @return the session
+     */
+    public static MarketSession sessionAt(Instant instant) {
+<span class="fc" id="L106">        ZonedDateTime time = instant.atZone(ZONE);</span>
+<span class="fc" id="L107">        TradingDay day = tradingDay(time.toLocalDate());</span>
+<span class="fc bfc" id="L108" title="All 6 branches covered.">        if (!day.isOpen() || time.isBefore(day.preMarketOpen()) || !time.isBefore(day.afterHoursClose())) {</span>
+<span class="fc" id="L109">            return MarketSession.CLOSED;</span>
+        }
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        if (time.isBefore(day.regularOpen())) {</span>
+<span class="fc" id="L112">            return MarketSession.PRE_MARKET;</span>
+        }
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        return time.isBefore(day.regularClose()) ? MarketSession.REGULAR : MarketSession.AFTER_HOURS;</span>
+    }
+
+    /**
+     * Returns the next change of session after an instant.
+     * @param instant the instant
+     * @return when the session next changes, and to what
+     */
+    public static Transition nextTransition(Instant instant) {
+<span class="fc" id="L123">        LocalDate date = instant.atZone(ZONE).toLocalDate();</span>
+<span class="pc bpc" id="L124" title="1 of 2 branches missed.">        for (int i = 0; i &lt;= MAX_DAYS_AHEAD; i++) {</span>
+<span class="fc" id="L125">            TradingDay day = tradingDay(date.plusDays(i));</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">            if (!day.isOpen()) {</span>
+<span class="fc" id="L127">                continue;</span>
+            }
+<span class="fc" id="L129">            Transition[] boundaries = {</span>
+<span class="fc" id="L130">                    new Transition(day.preMarketOpen().toInstant(), MarketSession.PRE_MARKET),</span>
+<span class="fc" id="L131">                    new Transition(day.regularOpen().toInstant(), MarketSession.REGULAR),</span>
+<span class="fc" id="L132">                    new Transition(day.regularClose().toInstant(), MarketSession.AFTER_HOURS),</span>
+<span class="fc" id="L133">                    new Transition(day.afterHoursClose().toInstant(), MarketSession.CLOSED)</span>
+            };
+<span class="fc bfc" id="L135" title="All 2 branches covered.">            for (Transition boundary : boundaries) {</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">                if (boundary.at().isAfter(instant)) {</span>
+<span class="fc" id="L137">                    return boundary;</span>
+                }
+            }
+        }
+<span class="nc" id="L141">        throw new IllegalStateException(&quot;No trading day within &quot; + MAX_DAYS_AHEAD + &quot; days of &quot; + instant);</span>
+    }
+
+    /**
+     * Returns when regular trading next starts: now, if it is under way, or else the next open.
+     * @param instant the instant
+     * @return the start of the regular session in force or next to come
+     */
+    public static Instant nextRegularOpen(Instant instant) {
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (sessionAt(instant) == MarketSession.REGULAR) {</span>
+<span class="fc" id="L151">            return instant;</span>
+        }
+<span class="fc" id="L153">        LocalDate date = instant.atZone(ZONE).toLocalDate();</span>
+<span class="pc bpc" id="L154" title="1 of 2 branches missed.">        for (int i = 0; i &lt;= MAX_DAYS_AHEAD; i++) {</span>
+<span class="fc" id="L155">            TradingDay day = tradingDay(date.plusDays(i));</span>
+<span class="fc bfc" id="L156" title="All 4 branches covered.">            if (day.isOpen() &amp;&amp; day.regularOpen().toInstant().isAfter(instant)) {</span>
+<span class="fc" id="L157">                return day.regularOpen().toInstant();</span>
+            }
+        }
+<span class="nc" id="L160">        throw new IllegalStateException(&quot;No trading day within &quot; + MAX_DAYS_AHEAD + &quot; days of &quot; + instant);</span>
+    }
+
+    /**
+     * Returns the regular close that today's change is measured from: the close of the trading day
+     * before the one under way. A trading day is under way from its pre-market open until the next
+     * one's, so its after-hours, the night after and a weekend or holiday that follows all still
+     * count toward it - on a Saturday, &quot;today&quot; is Friday's move from Thursday's close.
+     * @param instant the instant
+     * @return when the previous trading day's regular session ended
+     */
+    public static Instant previousClose(Instant instant) {
+<span class="fc" id="L172">        LocalDate date = instant.atZone(ZONE).toLocalDate();</span>
+<span class="pc bpc" id="L173" title="1 of 2 branches missed.">        for (int i = 0; i &lt;= MAX_DAYS_AHEAD; i++) {</span>
+<span class="fc" id="L174">            TradingDay day = tradingDay(date.minusDays(i));</span>
+<span class="fc bfc" id="L175" title="All 4 branches covered.">            if (day.isOpen() &amp;&amp; !day.preMarketOpen().toInstant().isAfter(instant)) {</span>
+<span class="fc" id="L176">                return previousTradingDay(day.date()).regularClose().toInstant();</span>
+            }
+        }
+<span class="nc" id="L179">        throw new IllegalStateException(&quot;No trading day within &quot; + MAX_DAYS_AHEAD + &quot; days before &quot; + instant);</span>
+    }
+
+    /**
+     * Returns the last trading day before a date.
+     * @param date the date to look back from
+     * @return the first trading day before it
+     */
+    public static TradingDay previousTradingDay(LocalDate date) {
+<span class="pc bpc" id="L188" title="1 of 2 branches missed.">        for (int i = 1; i &lt;= MAX_DAYS_AHEAD; i++) {</span>
+<span class="fc" id="L189">            TradingDay day = tradingDay(date.minusDays(i));</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">            if (day.isOpen()) {</span>
+<span class="fc" id="L191">                return day;</span>
+            }
+        }
+<span class="nc" id="L194">        throw new IllegalStateException(&quot;No trading day within &quot; + MAX_DAYS_AHEAD + &quot; days before &quot; + date);</span>
+    }
+
+    /**
+     * Returns the next trading day on or after a date.
+     * @param date the date to start from
+     * @return the first trading day from it
+     */
+    public static TradingDay nextTradingDay(LocalDate date) {
+<span class="pc bpc" id="L203" title="1 of 2 branches missed.">        for (int i = 0; i &lt;= MAX_DAYS_AHEAD; i++) {</span>
+<span class="fc" id="L204">            TradingDay day = tradingDay(date.plusDays(i));</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">            if (day.isOpen()) {</span>
+<span class="fc" id="L206">                return day;</span>
+            }
+        }
+<span class="nc" id="L209">        throw new IllegalStateException(&quot;No trading day within &quot; + MAX_DAYS_AHEAD + &quot; days of &quot; + date);</span>
+    }
+
+    /**
+     * Returns the holiday the market is closed for on a date.
+     * @param date the date
+     * @return the holiday's name, or null if the date isn't an exchange holiday
+     */
+    public static String holidayName(LocalDate date) {
+<span class="fc" id="L218">        int year = date.getYear();</span>
+        // New Year's Day on a Sunday is observed on 2 January; on a Saturday it isn't observed.
+<span class="fc" id="L220">        LocalDate newYear = LocalDate.of(year, Month.JANUARY, 1);</span>
+<span class="fc bfc" id="L221" title="All 4 branches covered.">        if (date.equals(newYear.getDayOfWeek() == DayOfWeek.SUNDAY ? newYear.plusDays(1) : newYear)</span>
+<span class="fc bfc" id="L222" title="All 2 branches covered.">                &amp;&amp; !isWeekend(date)) {</span>
+<span class="fc" id="L223">            return &quot;New Year's Day&quot;;</span>
+        }
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        if (date.equals(nthWeekday(year, Month.JANUARY, DayOfWeek.MONDAY, 3))) {</span>
+<span class="fc" id="L226">            return &quot;Martin Luther King Jr. Day&quot;;</span>
+        }
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        if (date.equals(nthWeekday(year, Month.FEBRUARY, DayOfWeek.MONDAY, 3))) {</span>
+<span class="fc" id="L229">            return &quot;Washington's Birthday&quot;;</span>
+        }
+<span class="fc bfc" id="L231" title="All 2 branches covered.">        if (date.equals(easterSunday(year).minusDays(2))) {</span>
+<span class="fc" id="L232">            return &quot;Good Friday&quot;;</span>
+        }
+<span class="fc bfc" id="L234" title="All 2 branches covered.">        if (date.equals(LocalDate.of(year, Month.MAY, 31).with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)))) {</span>
+<span class="fc" id="L235">            return &quot;Memorial Day&quot;;</span>
+        }
+<span class="fc bfc" id="L237" title="All 4 branches covered.">        if (year &gt;= 2022 &amp;&amp; date.equals(observed(LocalDate.of(year, Month.JUNE, 19)))) {</span>
+<span class="fc" id="L238">            return &quot;Juneteenth&quot;;</span>
+        }
+<span class="fc bfc" id="L240" title="All 2 branches covered.">        if (date.equals(observed(LocalDate.of(year, Month.JULY, 4)))) {</span>
+<span class="fc" id="L241">            return &quot;Independence Day&quot;;</span>
+        }
+<span class="fc bfc" id="L243" title="All 2 branches covered.">        if (date.equals(nthWeekday(year, Month.SEPTEMBER, DayOfWeek.MONDAY, 1))) {</span>
+<span class="fc" id="L244">            return &quot;Labor Day&quot;;</span>
+        }
+<span class="fc bfc" id="L246" title="All 2 branches covered.">        if (date.equals(thanksgiving(year))) {</span>
+<span class="fc" id="L247">            return &quot;Thanksgiving Day&quot;;</span>
+        }
+<span class="fc bfc" id="L249" title="All 2 branches covered.">        if (date.equals(observed(LocalDate.of(year, Month.DECEMBER, 25)))) {</span>
+<span class="fc" id="L250">            return &quot;Christmas Day&quot;;</span>
+        }
+<span class="fc" id="L252">        return null;</span>
+    }
+
+    /**
+     * Returns whether regular trading ends at 13:00 on a date.
+     * @param date the date
+     * @return true on 3 July, the day after Thanksgiving and Christmas Eve, when each is a trading day
+     */
+    public static boolean isEarlyClose(LocalDate date) {
+<span class="pc bpc" id="L261" title="1 of 4 branches missed.">        if (isWeekend(date) || holidayName(date) != null) {</span>
+<span class="fc" id="L262">            return false;</span>
+        }
+<span class="fc" id="L264">        int year = date.getYear();</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">        return date.equals(LocalDate.of(year, Month.JULY, 3))</span>
+<span class="fc bfc" id="L266" title="All 2 branches covered.">                || date.equals(thanksgiving(year).plusDays(1))</span>
+<span class="fc bfc" id="L267" title="All 2 branches covered.">                || date.equals(LocalDate.of(year, Month.DECEMBER, 24));</span>
+    }
+
+    private static boolean isWeekend(LocalDate date) {
+<span class="fc" id="L271">        DayOfWeek day = date.getDayOfWeek();</span>
+<span class="fc bfc" id="L272" title="All 4 branches covered.">        return day == DayOfWeek.SATURDAY || day == DayOfWeek.SUNDAY;</span>
+    }
+
+    /** A fixed-date holiday moved off the weekend: Saturday to Friday, Sunday to Monday. */
+    private static LocalDate observed(LocalDate holiday) {
+<span class="fc bfc" id="L277" title="All 3 branches covered.">        return switch (holiday.getDayOfWeek()) {</span>
+<span class="fc" id="L278">            case SATURDAY -&gt; holiday.minusDays(1);</span>
+<span class="fc" id="L279">            case SUNDAY -&gt; holiday.plusDays(1);</span>
+<span class="fc" id="L280">            default -&gt; holiday;</span>
+        };
+    }
+
+    private static LocalDate nthWeekday(int year, Month month, DayOfWeek weekday, int n) {
+<span class="fc" id="L285">        return LocalDate.of(year, month, 1).with(TemporalAdjusters.dayOfWeekInMonth(n, weekday));</span>
+    }
+
+    private static LocalDate thanksgiving(int year) {
+<span class="fc" id="L289">        return nthWeekday(year, Month.NOVEMBER, DayOfWeek.THURSDAY, 4);</span>
+    }
+
+    /** Easter Sunday in the Gregorian calendar (the anonymous Gregorian algorithm). */
+    static LocalDate easterSunday(int year) {
+<span class="fc" id="L294">        int a = year % 19;</span>
+<span class="fc" id="L295">        int b = year / 100;</span>
+<span class="fc" id="L296">        int c = year % 100;</span>
+<span class="fc" id="L297">        int d = b / 4;</span>
+<span class="fc" id="L298">        int e = b % 4;</span>
+<span class="fc" id="L299">        int f = (b + 8) / 25;</span>
+<span class="fc" id="L300">        int g = (b - f + 1) / 3;</span>
+<span class="fc" id="L301">        int h = (19 * a + b - d - g + 15) % 30;</span>
+<span class="fc" id="L302">        int i = c / 4;</span>
+<span class="fc" id="L303">        int k = c % 4;</span>
+<span class="fc" id="L304">        int l = (32 + 2 * e + 2 * i - h - k) % 7;</span>
+<span class="fc" id="L305">        int m = (a + 11 * h + 22 * l) / 451;</span>
+<span class="fc" id="L306">        int month = (h + l - 7 * m + 114) / 31;</span>
+<span class="fc" id="L307">        int day = ((h + l - 7 * m + 114) % 31) + 1;</span>
+<span class="fc" id="L308">        return LocalDate.of(year, month, day);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

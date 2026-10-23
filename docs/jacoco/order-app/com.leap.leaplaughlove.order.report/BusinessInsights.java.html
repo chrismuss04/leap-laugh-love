@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BusinessInsights.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.report</a> &gt; <span class="el_source">BusinessInsights.java</span></div><h1>BusinessInsights.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.report;
+
+import java.time.LocalDate;
+import java.util.List;
+
+/**
+ * Response for GET /api/order/reports/insights: the headline figures on a commercial analyst's
+ * dashboard, read from reporting.orders and reporting.clients. The previous period is the same
+ * number of days immediately before the requested one, so each figure can be shown with its
+ * change. A period with no activity is not an error: its figures are zero.
+ * @param from the first UTC day of the period, inclusive
+ * @param to the last UTC day of the period, inclusive
+ * @param previousFrom the first UTC day of the previous period, inclusive
+ * @param previousTo the last UTC day of the previous period, inclusive
+ * @param current the figures for the period
+ * @param previous the figures for the previous period
+ * @param topInstruments the period's most active instruments, most trades first
+ */
+public record BusinessInsights(
+        LocalDate from,
+        LocalDate to,
+        LocalDate previousFrom,
+        LocalDate previousTo,
+        InsightFigures current,
+        InsightFigures previous,
+        List&lt;InstrumentActivity&gt; topInstruments
+) {
+    /**
+     * Compact constructor ensuring an unmodifiable list of instruments.
+     */
+<span class="fc" id="L31">    public BusinessInsights {</span>
+<span class="pc bpc" id="L32" title="1 of 2 branches missed.">        topInstruments = topInstruments != null ? List.copyOf(topInstruments) : List.of();</span>
+<span class="fc" id="L33">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

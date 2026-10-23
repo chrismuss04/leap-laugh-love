@@ -74,7 +74,14 @@ public class OrderFillMailer {
     private final String historyUrl;
     private final Clock clock;
 
-    /** Creates the mailer on the system clock. */
+    /**
+     * Creates the mailer on the system clock.
+     * @param jdbc finds filled orders still to be emailed and records each email
+     * @param mailSender sends the emails
+     * @param transactionManager runs each order's notification in its own transaction
+     * @param from the address the emails come from
+     * @param historyUrl the link to the client's order history, included in each email
+     */
     @Autowired
     public OrderFillMailer(JdbcTemplate jdbc,
                            JavaMailSender mailSender,

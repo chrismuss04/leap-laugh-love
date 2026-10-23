@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ReportWindow.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">ReportWindow.java</span></div><h1>ReportWindow.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import java.time.Clock;
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.stream.Stream;
+
+/**
+ * The run of whole UTC months a report covers, first to last inclusive.
+ * @param firstMonth the first month in the window
+ * @param lastMonth the last month in the window
+ */
+<span class="fc" id="L18">public record ReportWindow(YearMonth firstMonth, YearMonth lastMonth) {</span>
+
+    /** How many months the analyst reports look back over. */
+    static final int TRAILING_MONTHS = 12;
+
+    /**
+     * The last {@value #TRAILING_MONTHS} complete UTC months before today. The current month is
+     * left out: half a month of activity would read as a drop in every report.
+     * @param clock the clock giving today's date
+     * @return the window ending with last month
+     */
+    public static ReportWindow trailingMonths(Clock clock) {
+<span class="fc" id="L30">        YearMonth current = YearMonth.now(clock.withZone(ZoneOffset.UTC));</span>
+<span class="fc" id="L31">        return new ReportWindow(current.minusMonths(TRAILING_MONTHS), current.minusMonths(1));</span>
+    }
+
+    /**
+     * The same window started earlier, for reports that compare against months before it.
+     * @param months how many months earlier to start
+     * @return the widened window
+     */
+    public ReportWindow startingEarlier(int months) {
+<span class="fc" id="L40">        return new ReportWindow(firstMonth.minusMonths(months), lastMonth);</span>
+    }
+
+    /**
+     * Every month in the window, oldest first.
+     * @return the months from first to last
+     */
+    @JsonIgnore
+    public List&lt;YearMonth&gt; months() {
+<span class="fc bfc" id="L49" title="All 2 branches covered.">        return Stream.iterate(firstMonth, month -&gt; !month.isAfter(lastMonth), month -&gt; month.plusMonths(1)).toList();</span>
+    }
+
+    /**
+     * The window's first day.
+     * @return the first day of the first month, inclusive
+     */
+    @JsonIgnore
+    public LocalDate startDate() {
+<span class="fc" id="L58">        return firstMonth.atDay(1);</span>
+    }
+
+    /**
+     * The day after the window, so ranges can be half-open.
+     * @return the first day of the month after the last, exclusive
+     */
+    @JsonIgnore
+    public LocalDate endDate() {
+<span class="fc" id="L67">        return lastMonth.plusMonths(1).atDay(1);</span>
+    }
+
+    /**
+     * The window's first instant, for querying timestamps.
+     * @return midnight UTC on the first day, inclusive
+     */
+    @JsonIgnore
+    public OffsetDateTime startInstant() {
+<span class="fc" id="L76">        return startDate().atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+    }
+
+    /**
+     * The instant the window ends, for querying timestamps.
+     * @return midnight UTC on the day after the window, exclusive
+     */
+    @JsonIgnore
+    public OffsetDateTime endInstant() {
+<span class="fc" id="L85">        return endDate().atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

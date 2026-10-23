@@ -28,7 +28,12 @@ import java.util.Locale;
 public class MarketClock {
 
     /** How the clock decides the session. */
-    public enum Mode { REAL, ALWAYS_OPEN }
+    public enum Mode {
+        /** Follows the NYSE calendar and clock. */
+        REAL,
+        /** Always the regular session, whatever the hour. */
+        ALWAYS_OPEN
+    }
 
     /**
      * The market's state at one instant.

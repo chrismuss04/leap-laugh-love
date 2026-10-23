@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ActivityReportService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.report</a> &gt; <span class="el_source">ActivityReportService.java</span></div><h1>ActivityReportService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.report;
+
+import com.leap.leaplaughlove.order.instrument.Instrument;
+import com.leap.leaplaughlove.order.instrument.InstrumentRepository;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalAdjusters;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.UUID;
+
+/**
+ * Builds commercial analysts' activity reports: trade counts, buy/sell totals and volume over a
+ * period, broken down by UTC day or ISO week. Only FILLED orders count.
+ */
+@Service
+public class ActivityReportService {
+
+    /** The longest period one report may cover, in days. */
+    static final int MAX_PERIOD_DAYS = 366;
+
+    private final ActivityReportRepository activityReportRepository;
+    private final InstrumentRepository instrumentRepository;
+
+    /**
+     * Constructs an instance of ActivityReportService.
+     * @param activityReportRepository the repository the fills are read from
+     * @param instrumentRepository the repository used to resolve the instrument filter
+     */
+    public ActivityReportService(ActivityReportRepository activityReportRepository,
+<span class="fc" id="L38">                                 InstrumentRepository instrumentRepository) {</span>
+<span class="fc" id="L39">        this.activityReportRepository = activityReportRepository;</span>
+<span class="fc" id="L40">        this.instrumentRepository = instrumentRepository;</span>
+<span class="fc" id="L41">    }</span>
+
+    /**
+     * Builds the activity report for a period.
+     * @param from the first UTC day of the period, inclusive
+     * @param to the last UTC day of the period, inclusive
+     * @param granularity whether to break the period down by day or by ISO week
+     * @param instrumentId the instrument to report on, or null for all instruments
+     * @return the report; its buckets are empty when nothing traded in the period
+     * @throws IllegalArgumentException if the period or instrument is invalid
+     */
+    public ActivityReport getActivityReport(LocalDate from, LocalDate to,
+                                            ReportGranularity granularity, UUID instrumentId) {
+<span class="fc" id="L54">        requireValidPeriod(from, to);</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (granularity == null) {</span>
+<span class="fc" id="L56">            throw new IllegalArgumentException(&quot;granularity is required&quot;);</span>
+        }
+<span class="fc bfc" id="L58" title="All 2 branches covered.">        ReportInstrument instrument = instrumentId == null ? null : instrumentRepository.findById(instrumentId)</span>
+<span class="fc" id="L59">                .map(ActivityReportService::toReportInstrument)</span>
+<span class="fc" id="L60">                .orElseThrow(() -&gt; new IllegalArgumentException(&quot;Unknown instrument: &quot; + instrumentId));</span>
+
+<span class="fc" id="L62">        List&lt;ReportedFill&gt; fills = activityReportRepository.findFills(</span>
+<span class="fc" id="L63">                from.atStartOfDay().atOffset(ZoneOffset.UTC),</span>
+<span class="fc" id="L64">                to.plusDays(1).atStartOfDay().atOffset(ZoneOffset.UTC),</span>
+                instrumentId);
+
+<span class="fc" id="L67">        Accumulator total = new Accumulator();</span>
+<span class="fc" id="L68">        Map&lt;LocalDate, Accumulator&gt; byPeriod = new TreeMap&lt;&gt;();</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        for (ReportedFill fill : fills) {</span>
+<span class="fc" id="L70">            LocalDate day = fill.completedAt().withOffsetSameInstant(ZoneOffset.UTC).toLocalDate();</span>
+<span class="fc" id="L71">            total.add(fill);</span>
+<span class="fc" id="L72">            byPeriod.computeIfAbsent(periodStart(day, granularity), d -&gt; new Accumulator()).add(fill);</span>
+<span class="fc" id="L73">        }</span>
+
+<span class="fc" id="L75">        List&lt;ActivityBucket&gt; buckets = byPeriod.entrySet().stream()</span>
+<span class="fc" id="L76">                .map(e -&gt; new ActivityBucket(e.getKey(), e.getValue().toTotals()))</span>
+<span class="fc" id="L77">                .toList();</span>
+<span class="fc" id="L78">        return new ActivityReport(from, to, granularity, instrument, total.toTotals(), buckets);</span>
+    }
+
+    /**
+     * Lists the instruments a report can be filtered by.
+     * @return every instrument, ordered by symbol
+     */
+    public List&lt;ReportInstrument&gt; getInstruments() {
+<span class="fc" id="L86">        return instrumentRepository.findAll(Sort.by(&quot;symbol&quot;)).stream()</span>
+<span class="fc" id="L87">                .map(ActivityReportService::toReportInstrument)</span>
+<span class="fc" id="L88">                .toList();</span>
+    }
+
+    /**
+     * Checks a report period, which every report in this package shares the rules for.
+     * @param from the first UTC day of the period, inclusive
+     * @param to the last UTC day of the period, inclusive
+     * @throws IllegalArgumentException if a day is missing, they run backwards, or the period is too long
+     */
+    static void requireValidPeriod(LocalDate from, LocalDate to) {
+<span class="fc bfc" id="L98" title="All 4 branches covered.">        if (from == null || to == null) {</span>
+<span class="fc" id="L99">            throw new IllegalArgumentException(&quot;from and to are required&quot;);</span>
+        }
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (from.isAfter(to)) {</span>
+<span class="fc" id="L102">            throw new IllegalArgumentException(&quot;from must be on or before to&quot;);</span>
+        }
+<span class="fc bfc" id="L104" title="All 2 branches covered.">        if (ChronoUnit.DAYS.between(from, to) + 1 &gt; MAX_PERIOD_DAYS) {</span>
+<span class="fc" id="L105">            throw new IllegalArgumentException(&quot;A report can cover at most &quot; + MAX_PERIOD_DAYS + &quot; days&quot;);</span>
+        }
+<span class="fc" id="L107">    }</span>
+
+    // ISO weeks start on Monday, even when the report period starts mid-week.
+    private static LocalDate periodStart(LocalDate day, ReportGranularity granularity) {
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        return granularity == ReportGranularity.WEEKLY</span>
+<span class="fc" id="L112">                ? day.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))</span>
+<span class="fc" id="L113">                : day;</span>
+    }
+
+    private static ReportInstrument toReportInstrument(Instrument instrument) {
+<span class="fc" id="L117">        return new ReportInstrument(instrument.getInstrumentId(), instrument.getSymbol());</span>
+    }
+
+<span class="fc" id="L120">    private static final class Accumulator {</span>
+        private long buyCount;
+        private long sellCount;
+<span class="fc" id="L123">        private BigDecimal buyValue = BigDecimal.ZERO;</span>
+<span class="fc" id="L124">        private BigDecimal sellValue = BigDecimal.ZERO;</span>
+        private long volume;
+
+        void add(ReportedFill fill) {
+<span class="fc" id="L128">            BigDecimal value = fill.fillPrice().multiply(BigDecimal.valueOf(fill.quantity()));</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">            if (&quot;BUY&quot;.equals(fill.side())) {</span>
+<span class="fc" id="L130">                buyCount++;</span>
+<span class="fc" id="L131">                buyValue = buyValue.add(value);</span>
+            } else {
+<span class="fc" id="L133">                sellCount++;</span>
+<span class="fc" id="L134">                sellValue = sellValue.add(value);</span>
+            }
+<span class="fc" id="L136">            volume += fill.quantity();</span>
+<span class="fc" id="L137">        }</span>
+
+        ActivityTotals toTotals() {
+<span class="fc" id="L140">            return new ActivityTotals(buyCount + sellCount, buyCount, sellCount, buyValue, sellValue, volume);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>
