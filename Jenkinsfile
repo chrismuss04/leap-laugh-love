@@ -14,6 +14,20 @@ def hostSnapshot(String label) {
 
 pipeline {
     agent any
+    // TEAM3_AWS_DEPLOY_V1 — AWS deployment is OFF by default.
+    parameters {
+        booleanParam(name: 'DEPLOY_TO_AWS', defaultValue: false,
+                     description: 'Enable manual production deployment after successful CI stages')
+    }
+    environment {
+        TEAM_ID = 'team3'
+        AWS_ACCOUNT_ID = '760144414473'
+        AWS_DEPLOY_ROLE = 'hww-team3-deploy'
+        AWS_REGION = 'us-east-1'
+        ECS_CLUSTER = 'leapfolio-cluster'
+        ECR_REPOSITORY = 'leapfolio-svc'
+        ECR_REGISTRY = '760144414473.dkr.ecr.us-east-1.amazonaws.com'
+    }
 
     tools {
         nodejs 'NodeJS'
@@ -724,6 +738,130 @@ pipeline {
                 }
             }
         }
+        // Instructor deployment stages, adapted to Team 3's existing ECS resources.
+        // The original CI tests, Compose smoke tests and E2E stages remain unchanged.
+        stage('AWS - Validate Deployment Prerequisites') {
+            when { expression { return params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: env.AWS_DEPLOY_ROLE, roleAccount: env.AWS_ACCOUNT_ID,
+                        region: env.AWS_REGION, useNode: true) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        export AWS_DEFAULT_REGION="$AWS_REGION"
+                        ACTUAL="$(aws sts get-caller-identity --query Account --output text)"
+                        [ "$ACTUAL" = "$AWS_ACCOUNT_ID" ] || { echo 'Wrong AWS account'; exit 1; }
+                        aws ecr describe-images --repository-name "$ECR_REPOSITORY" --max-results 1 >/dev/null
+                        for component in iam-app account-app order-app market-data-app reporting-app reporting-etl; do
+                            docker image inspect "${component}:${IMAGE_TAG}" >/dev/null
+                            aws ecs describe-services --cluster "$ECS_CLUSTER" \
+                                --services "team-3-${component}" \
+                                --query 'services[0].status' --output text | grep -qx ACTIVE
+                        done
+                        aws ecs describe-services --cluster "$ECS_CLUSTER" \
+                            --services team-3-user-etl --query 'services[0].status' \
+                            --output text | grep -qx ACTIVE
+                        echo 'AWS account, ECR repository, ECS services and 6 local CI images verified.'
+                    '''
+                }
+            }
+        }
+        stage('AWS - Instructor Deployment Approval') {
+            when { expression { return params.DEPLOY_TO_AWS } }
+            steps {
+                timeout(time: 30, unit: 'MINUTES') {
+                    input message: "Approve publishing build ${env.IMAGE_TAG} to Team 3 ECR and deploying 7 ECS services?",
+                          ok: 'Approve AWS deployment'
+                }
+            }
+        }
+        stage('AWS - Publish Backend Images to ECR') {
+            when { expression { return params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: env.AWS_DEPLOY_ROLE, roleAccount: env.AWS_ACCOUNT_ID,
+                        region: env.AWS_REGION, useNode: true) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        export AWS_DEFAULT_REGION="$AWS_REGION"
+                        aws ecr get-login-password --region "$AWS_REGION" | \
+                            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+                        for component in iam-app account-app order-app market-data-app reporting-app reporting-etl; do
+                            LOCAL="${component}:${IMAGE_TAG}"
+                            REMOTE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${component}-${IMAGE_TAG}"
+                            docker tag "$LOCAL" "$REMOTE"
+                            docker push "$REMOTE"
+                            echo "Published $REMOTE"
+                        done
+                        # user-etl intentionally shares reporting-etl's Docker image.
+                    '''
+                }
+            }
+        }
+        stage('AWS - Deploy Existing Team 3 ECS Services') {
+            when { expression { return params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: env.AWS_DEPLOY_ROLE, roleAccount: env.AWS_ACCOUNT_ID,
+                        region: env.AWS_REGION, useNode: true) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        export AWS_DEFAULT_REGION="$AWS_REGION"
+                        for component in iam-app account-app order-app market-data-app reporting-app reporting-etl user-etl; do
+                            SERVICE="team-3-${component}"
+                            IMAGE_COMPONENT="$component"
+                            [ "$component" = user-etl ] && IMAGE_COMPONENT=reporting-etl
+                            REMOTE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_COMPONENT}-${IMAGE_TAG}"
+
+                            CURRENT="$(aws ecs describe-services --cluster "$ECS_CLUSTER" \
+                                --services "$SERVICE" --query 'services[0].taskDefinition' --output text)"
+                            [ -n "$CURRENT" ] && [ "$CURRENT" != None ] || { echo "Missing $SERVICE"; exit 1; }
+                            aws ecs describe-task-definition --task-definition "$CURRENT" \
+                                --query taskDefinition --output json > current-task.json
+                            jq -e --arg name "$component" \
+                                '.containerDefinitions | any(.name == $name)' current-task.json >/dev/null
+                            # Preserve existing secrets, env vars, ports, CPU/memory, IAM and logging.
+                            # Only update the one intended container image. Retain keys accepted by
+                            # RegisterTaskDefinition, not read-only DescribeTaskDefinition metadata.
+                            jq --arg name "$component" --arg image "$REMOTE" '
+                                .containerDefinitions |= map(if .name == $name then .image = $image else . end)
+                                | with_entries(select(.key as $k |
+                                   ["family","taskRoleArn","executionRoleArn","networkMode",
+                                    "containerDefinitions","volumes","placementConstraints",
+                                    "requiresCompatibilities","cpu","memory","tags","pidMode",
+                                    "ipcMode","proxyConfiguration","inferenceAccelerators",
+                                    "ephemeralStorage","runtimePlatform","enableFaultInjection"] | index($k)))
+                            ' current-task.json > next-task.json
+                            NEXT="$(aws ecs register-task-definition --cli-input-json file://next-task.json \
+                                --query 'taskDefinition.taskDefinitionArn' --output text)"
+                            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$SERVICE" \
+                                --task-definition "$NEXT" --force-new-deployment >/dev/null
+                            echo "Updated $SERVICE -> $REMOTE ($NEXT)"
+                        done
+                    '''
+                }
+            }
+        }
+        stage('AWS - Verify ECS Services Stable') {
+            when { expression { return params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: env.AWS_DEPLOY_ROLE, roleAccount: env.AWS_ACCOUNT_ID,
+                        region: env.AWS_REGION, useNode: true) {
+                    sh '''#!/usr/bin/env bash
+                        set -euo pipefail
+                        export AWS_DEFAULT_REGION="$AWS_REGION"
+                        aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services \
+                            team-3-reporting-app team-3-reporting-etl team-3-user-etl \
+                            team-3-market-data-app team-3-account-app team-3-order-app team-3-iam-app
+                        aws ecs describe-services --cluster "$ECS_CLUSTER" --services \
+                            team-3-reporting-app team-3-reporting-etl team-3-user-etl \
+                            team-3-market-data-app team-3-account-app team-3-order-app team-3-iam-app \
+                            --query 'services[].{Name:serviceName,Desired:desiredCount,Running:runningCount,Task:taskDefinition}' \
+                            --output table
+                        echo 'ECS scheduler reports all services stable; application route checks still required.'
+                    '''
+                }
+            }
+        }
+        // Instructor's Angular/S3/CloudFront and ALB route-check stages are NOT
+        // enabled: Team 3 bucket/distribution IDs and route URLs are not verified.
     }
 
     post {
