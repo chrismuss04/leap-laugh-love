@@ -5,6 +5,7 @@ import com.leap.leaplaughlove.order.account.Account;
 import com.leap.leaplaughlove.order.account.AccountRepository;
 import com.leap.leaplaughlove.order.events.OrderEventPublisher;
 import com.leap.leaplaughlove.order.execution.Execution;
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
 import com.leap.leaplaughlove.order.execution.ExecutionRepository;
 import com.leap.leaplaughlove.order.instrument.Instrument;
 import com.leap.leaplaughlove.order.order.Order;
@@ -125,7 +126,8 @@ class SeededFillServiceLoopTest {
         runLoop(service(2));
 
         verify(orderRepository, times(2)).findWithoutPositionMovementByStatus(Order.Status.FILLED);
-        verify(fillRecorder, never()).recordExecution(any(), any(), any());
+        verify(fillRecorder, never())
+                .recordExecution(any(), any(), any(ExecutionQuote.class), any(OffsetDateTime.class));
     }
 
     @Test
@@ -180,8 +182,9 @@ class SeededFillServiceLoopTest {
         when(movements.existsByOrderId(order.getOrderId())).thenReturn(false, true);
         when(executionRepository.findFirstByOrder_OrderIdAndStatus(order.getOrderId(), Execution.Status.FILLED))
                 .thenReturn(Optional.empty());
-        when(fillRecorder.recordExecution(any(), any(), any())).thenReturn(
-                new Execution(order, 10L, new BigDecimal("100"), Execution.Status.FILLED, "market", FILLED_AT));
+        when(fillRecorder.recordExecution(any(), any(), any(ExecutionQuote.class), any(OffsetDateTime.class)))
+                .thenReturn(new Execution(order, 10L, new BigDecimal("100"), Execution.Status.FILLED, "market",
+                        FILLED_AT));
 
         assertEquals(1, service(1).bookPendingFills());
 

@@ -30,6 +30,7 @@
         <div><dt>Order</dt><dd>{{ records.order.summary.side }} {{ records.order.summary.quantity }} {{ records.order.summary.symbol }}</dd></div>
         <div><dt>Type</dt><dd>{{ records.order.orderType | titlecase }}</dd></div>
         <div><dt>Submitted (UTC)</dt><dd class="num">{{ records.order.summary.submittedAt | date: 'yyyy-MM-dd HH:mm:ss' : 'UTC' }}</dd></div>
+        <div><dt>Quoted price</dt><dd class="num">{{ records.order.quotedPrice === null ? '—' : (records.order.quotedPrice | currency: 'USD' : 'symbol' : '1.2-6') }}</dd></div>
         <div><dt>Fill price</dt><dd class="num">{{ fillPrice() === null ? '—' : (fillPrice() | currency: 'USD') }}</dd></div>
         <div><dt>Status</dt><dd>{{ records.order.summary.status | titlecase }}</dd></div>
         <div *ngIf="records.order.rejectionReason"><dt>Rejection reason</dt><dd>{{ records.order.rejectionReason }}</dd></div>
