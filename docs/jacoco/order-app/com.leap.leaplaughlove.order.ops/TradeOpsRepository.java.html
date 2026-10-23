@@ -1,0 +1,334 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradeOpsRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">TradeOpsRepository.java</span></div><h1>TradeOpsRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+import com.leap.leaplaughlove.order.execution.ExecutionQuote;
+import com.leap.leaplaughlove.order.order.Order;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+import java.math.BigDecimal;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Read-only access to a trade's audit records across the trading tables and iam.clients.
+ */
+@Repository
+public class TradeOpsRepository {
+
+    static final int MAX_SEARCH_RESULTS = 100;
+
+    private static final String TRADE_FROM = &quot;&quot;&quot;
+            FROM trading.orders o
+            JOIN trading.accounts a ON a.account_id = o.account_id
+            JOIN trading.instruments i ON i.instrument_id = o.instrument_id
+            JOIN iam.clients c ON c.client_id = a.client_id
+            &quot;&quot;&quot;;
+
+    private static final String TRADE_SELECT = &quot;&quot;&quot;
+            SELECT o.order_id, o.submitted_at, c.email, a.account_number, i.symbol, o.side, o.quantity,
+                   o.status, o.accepted_at, o.rejected_at, o.filled_at, o.rejection_reason,
+                   o.quoted_price, o.max_slippage_pct, o.order_type
+            &quot;&quot;&quot; + TRADE_FROM;
+
+    private final NamedParameterJdbcTemplate jdbc;
+
+    /**
+     * Null fields aren't filtered on. Email and symbol ignore case; from is inclusive, to exclusive.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     */
+<span class="fc" id="L54">    public record TradeSearch(UUID orderId, UUID clientId, String clientEmail, UUID accountId, String accountNumber,</span>
+                              String symbol, Order.Side side, Order.Status status,
+                              OffsetDateTime from, OffsetDateTime to) {}
+
+    /**
+     * An order as it was recorded.
+     * @param summary the order's headline fields
+     * @param orderType the order type
+     * @param acceptedAt when the order was accepted, or null
+     * @param rejectedAt when the order was rejected, or null
+     * @param filledAt when the order was filled, or null
+     * @param rejectionReason why it was rejected, or null
+     * @param quotedPrice the price quoted at submission, or null
+     * @param maxSlippagePercent the slippage the client allowed, or null
+     */
+<span class="fc" id="L69">    public record OrderRecord(TradeSummary summary, String orderType, OffsetDateTime acceptedAt,</span>
+                              OffsetDateTime rejectedAt, OffsetDateTime filledAt, String rejectionReason,
+                              BigDecimal quotedPrice, BigDecimal maxSlippagePercent) {}
+
+    /**
+     * One execution attempt on an order.
+     * @param executionId the execution's ID
+     * @param status the execution's status
+     * @param fillQuantity the quantity filled, or null if nothing was
+     * @param fillPrice the price filled at, or null if nothing was
+     * @param executedAt when the execution happened
+     * @param reason why it failed, or null
+     * @param quote the market quote it was priced from
+     */
+<span class="fc" id="L83">    public record ExecutionRecord(UUID executionId, String status, Long fillQuantity, BigDecimal fillPrice,</span>
+                                  OffsetDateTime executedAt, String reason, ExecutionQuote quote) {}
+
+    /**
+     * A cash ledger entry made for an order.
+     * @param entryType the kind of entry
+     * @param amount the amount
+     * @param currency the currency
+     * @param createdAt when the entry was made
+     */
+<span class="fc" id="L93">    public record CashEntryRecord(String entryType, BigDecimal amount, String currency, OffsetDateTime createdAt) {}</span>
+
+    /**
+     * A change to a holding made for an order.
+     * @param movementType the kind of movement
+     * @param quantityDelta the change in shares held
+     * @param costDelta the change in cost basis
+     * @param createdAt when the movement was made
+     */
+<span class="fc" id="L102">    public record PositionMovementRecord(String movementType, long quantityDelta, BigDecimal costDelta,</span>
+                                         OffsetDateTime createdAt) {}
+
+    /**
+     * Constructs a new TradeOpsRepository.
+     * @param jdbc access to the trading schema
+     */
+<span class="fc" id="L109">    public TradeOpsRepository(NamedParameterJdbcTemplate jdbc) {</span>
+<span class="fc" id="L110">        this.jdbc = jdbc;</span>
+<span class="fc" id="L111">    }</span>
+
+    /**
+     * Finds the trades a search matches, newest first, up to {@link #MAX_SEARCH_RESULTS}.
+     * @param search the criteria
+     * @return the matching trades
+     */
+    public List&lt;TradeSummary&gt; search(TradeSearch search) {
+<span class="fc" id="L119">        var params = new MapSqlParameterSource();</span>
+<span class="fc" id="L120">        String sql = TRADE_SELECT + where(search, params)</span>
+                + &quot;ORDER BY o.submitted_at DESC, o.order_id DESC\nLIMIT &quot; + MAX_SEARCH_RESULTS;
+<span class="fc" id="L122">        return jdbc.query(sql, params, (rs, rowNum) -&gt; toSummary(rs));</span>
+    }
+
+    /**
+     * Counts every order the search matches, not only the first {@link #MAX_SEARCH_RESULTS}.
+     * @param search the criteria
+     * @return the counts by outcome
+     */
+    public OrderCounts countByStatus(TradeSearch search) {
+<span class="fc" id="L131">        var params = new MapSqlParameterSource();</span>
+<span class="fc" id="L132">        String sql = &quot;&quot;&quot;</span>
+                SELECT COUNT(*) AS submitted,
+                       COUNT(CASE WHEN o.status = 'FILLED' THEN 1 END) AS filled,
+                       COUNT(CASE WHEN o.status = 'REJECTED' THEN 1 END) AS rejected,
+                       COUNT(CASE WHEN o.status IN ('SUBMITTED', 'ACCEPTED', 'OPEN') THEN 1 END) AS awaiting
+<span class="fc" id="L137">                &quot;&quot;&quot; + TRADE_FROM + where(search, params);</span>
+<span class="fc" id="L138">        return jdbc.queryForObject(sql, params, (rs, rowNum) -&gt; new OrderCounts(</span>
+<span class="fc" id="L139">                rs.getLong(&quot;submitted&quot;), rs.getLong(&quot;filled&quot;), rs.getLong(&quot;rejected&quot;), rs.getLong(&quot;awaiting&quot;)));</span>
+    }
+
+    /**
+     * Orders submitted in the period (from inclusive, to exclusive) and rejected, by reason: the
+     * most frequent first, then by reason, with rejections recorded without one last.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @return the rejection counts
+     */
+    public List&lt;RejectionCount&gt; countRejectionsByReason(OffsetDateTime from, OffsetDateTime to) {
+<span class="fc" id="L150">        return jdbc.query(&quot;&quot;&quot;</span>
+                        SELECT rejection_reason, COUNT(*) AS rejections, MAX(rejected_at) AS last_rejected_at
+                        FROM trading.orders
+                        WHERE status = 'REJECTED' AND submitted_at &gt;= :from AND submitted_at &lt; :to
+                        GROUP BY rejection_reason
+                        ORDER BY rejections DESC, rejection_reason NULLS LAST
+                        &quot;&quot;&quot;,
+<span class="fc" id="L157">                new MapSqlParameterSource().addValue(&quot;from&quot;, from).addValue(&quot;to&quot;, to),</span>
+<span class="fc" id="L158">                (rs, rowNum) -&gt; new RejectionCount(</span>
+<span class="fc" id="L159">                        rs.getString(&quot;rejection_reason&quot;),</span>
+<span class="fc" id="L160">                        rs.getLong(&quot;rejections&quot;),</span>
+<span class="fc" id="L161">                        rs.getObject(&quot;last_rejected_at&quot;, OffsetDateTime.class)));</span>
+    }
+
+    /**
+     * Orders still SUBMITTED or ACCEPTED that were submitted before the given time, across every
+     * client, oldest first, up to {@link #MAX_SEARCH_RESULTS}. OPEN orders are left out: they wait
+     * for their price by design.
+     * @param submittedBefore only orders submitted before this
+     * @return the orders awaiting execution
+     */
+    public List&lt;TradeSummary&gt; findAwaitingExecutionSince(OffsetDateTime submittedBefore) {
+<span class="fc" id="L172">        String sql = TRADE_SELECT + &quot;&quot;&quot;</span>
+                WHERE o.status IN ('SUBMITTED', 'ACCEPTED') AND o.submitted_at &lt; :submittedBefore
+                ORDER BY o.submitted_at, o.order_id
+                &quot;&quot;&quot; + &quot;LIMIT &quot; + MAX_SEARCH_RESULTS;
+<span class="fc" id="L176">        return jdbc.query(sql, new MapSqlParameterSource(&quot;submittedBefore&quot;, submittedBefore),</span>
+<span class="fc" id="L177">                (rs, rowNum) -&gt; toSummary(rs));</span>
+    }
+
+    /**
+     * Loads one order's recorded fields.
+     * @param orderId the order
+     * @return the order, or empty if it doesn't exist
+     */
+    public Optional&lt;OrderRecord&gt; findOrder(UUID orderId) {
+<span class="fc" id="L186">        List&lt;OrderRecord&gt; orders = jdbc.query(TRADE_SELECT + &quot;WHERE o.order_id = :orderId&quot;,</span>
+                new MapSqlParameterSource(&quot;orderId&quot;, orderId),
+<span class="fc" id="L188">                (rs, rowNum) -&gt; new OrderRecord(</span>
+<span class="fc" id="L189">                        toSummary(rs),</span>
+<span class="fc" id="L190">                        rs.getString(&quot;order_type&quot;),</span>
+<span class="fc" id="L191">                        rs.getObject(&quot;accepted_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L192">                        rs.getObject(&quot;rejected_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L193">                        rs.getObject(&quot;filled_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L194">                        rs.getString(&quot;rejection_reason&quot;),</span>
+<span class="fc" id="L195">                        rs.getBigDecimal(&quot;quoted_price&quot;),</span>
+<span class="fc" id="L196">                        rs.getBigDecimal(&quot;max_slippage_pct&quot;)));</span>
+<span class="fc" id="L197">        return orders.stream().findFirst();</span>
+    }
+
+    /**
+     * Loads an order's executions.
+     * @param orderId the order
+     * @return its executions, oldest first
+     */
+    public List&lt;ExecutionRecord&gt; findExecutions(UUID orderId) {
+<span class="fc" id="L206">        return jdbc.query(&quot;&quot;&quot;</span>
+                        SELECT execution_id, status, fill_quantity, fill_price, executed_at, reason,
+                               quote_bid, quote_ask, quote_last, quote_timestamp, quote_exchange
+                        FROM trading.executions
+                        WHERE order_id = :orderId
+                        ORDER BY executed_at, execution_id
+                        &quot;&quot;&quot;,
+                new MapSqlParameterSource(&quot;orderId&quot;, orderId),
+<span class="fc" id="L214">                (rs, rowNum) -&gt; new ExecutionRecord(</span>
+<span class="fc" id="L215">                        rs.getObject(&quot;execution_id&quot;, UUID.class),</span>
+<span class="fc" id="L216">                        rs.getString(&quot;status&quot;),</span>
+<span class="fc" id="L217">                        rs.getObject(&quot;fill_quantity&quot;, Long.class),</span>
+<span class="fc" id="L218">                        rs.getBigDecimal(&quot;fill_price&quot;),</span>
+<span class="fc" id="L219">                        rs.getObject(&quot;executed_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L220">                        rs.getString(&quot;reason&quot;),</span>
+<span class="fc" id="L221">                        toQuote(rs)));</span>
+    }
+
+    /**
+     * Loads the cash ledger entries an order made.
+     * @param orderId the order
+     * @return its entries, oldest first
+     */
+    public List&lt;CashEntryRecord&gt; findCashEntries(UUID orderId) {
+<span class="fc" id="L230">        return jdbc.query(&quot;&quot;&quot;</span>
+                        SELECT entry_type, amount, currency, created_at
+                        FROM trading.cash_ledger
+                        WHERE order_id = :orderId
+                        ORDER BY created_at, cash_ledger_id
+                        &quot;&quot;&quot;,
+                new MapSqlParameterSource(&quot;orderId&quot;, orderId),
+<span class="fc" id="L237">                (rs, rowNum) -&gt; new CashEntryRecord(</span>
+<span class="fc" id="L238">                        rs.getString(&quot;entry_type&quot;),</span>
+<span class="fc" id="L239">                        rs.getBigDecimal(&quot;amount&quot;),</span>
+<span class="fc" id="L240">                        rs.getString(&quot;currency&quot;),</span>
+<span class="fc" id="L241">                        rs.getObject(&quot;created_at&quot;, OffsetDateTime.class)));</span>
+    }
+
+    /**
+     * Loads the holding changes an order made.
+     * @param orderId the order
+     * @return its movements, oldest first
+     */
+    public List&lt;PositionMovementRecord&gt; findPositionMovements(UUID orderId) {
+<span class="fc" id="L250">        return jdbc.query(&quot;&quot;&quot;</span>
+                        SELECT movement_type, quantity_delta, cost_delta, created_at
+                        FROM trading.position_movements
+                        WHERE order_id = :orderId
+                        ORDER BY created_at, movement_id
+                        &quot;&quot;&quot;,
+                new MapSqlParameterSource(&quot;orderId&quot;, orderId),
+<span class="fc" id="L257">                (rs, rowNum) -&gt; new PositionMovementRecord(</span>
+<span class="fc" id="L258">                        rs.getString(&quot;movement_type&quot;),</span>
+<span class="fc" id="L259">                        rs.getLong(&quot;quantity_delta&quot;),</span>
+<span class="fc" id="L260">                        rs.getBigDecimal(&quot;cost_delta&quot;),</span>
+<span class="fc" id="L261">                        rs.getObject(&quot;created_at&quot;, OffsetDateTime.class)));</span>
+    }
+
+    // Null fields aren't filtered on; adds a parameter for each one that is.
+    private static String where(TradeSearch search, MapSqlParameterSource params) {
+<span class="fc" id="L266">        List&lt;String&gt; conditions = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L267" title="All 2 branches covered.">        if (search.orderId() != null) {</span>
+<span class="fc" id="L268">            conditions.add(&quot;o.order_id = :orderId&quot;);</span>
+<span class="fc" id="L269">            params.addValue(&quot;orderId&quot;, search.orderId());</span>
+        }
+<span class="fc bfc" id="L271" title="All 2 branches covered.">        if (search.clientId() != null) {</span>
+<span class="fc" id="L272">            conditions.add(&quot;a.client_id = :clientId&quot;);</span>
+<span class="fc" id="L273">            params.addValue(&quot;clientId&quot;, search.clientId());</span>
+        }
+<span class="fc bfc" id="L275" title="All 2 branches covered.">        if (search.clientEmail() != null) {</span>
+<span class="fc" id="L276">            conditions.add(&quot;LOWER(c.email) = LOWER(:clientEmail)&quot;);</span>
+<span class="fc" id="L277">            params.addValue(&quot;clientEmail&quot;, search.clientEmail());</span>
+        }
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (search.accountId() != null) {</span>
+<span class="fc" id="L280">            conditions.add(&quot;o.account_id = :accountId&quot;);</span>
+<span class="fc" id="L281">            params.addValue(&quot;accountId&quot;, search.accountId());</span>
+        }
+<span class="fc bfc" id="L283" title="All 2 branches covered.">        if (search.accountNumber() != null) {</span>
+<span class="fc" id="L284">            conditions.add(&quot;a.account_number = :accountNumber&quot;);</span>
+<span class="fc" id="L285">            params.addValue(&quot;accountNumber&quot;, search.accountNumber());</span>
+        }
+<span class="fc bfc" id="L287" title="All 2 branches covered.">        if (search.symbol() != null) {</span>
+<span class="fc" id="L288">            conditions.add(&quot;UPPER(i.symbol) = UPPER(:symbol)&quot;);</span>
+<span class="fc" id="L289">            params.addValue(&quot;symbol&quot;, search.symbol());</span>
+        }
+<span class="fc bfc" id="L291" title="All 2 branches covered.">        if (search.side() != null) {</span>
+<span class="fc" id="L292">            conditions.add(&quot;o.side = :side&quot;);</span>
+<span class="fc" id="L293">            params.addValue(&quot;side&quot;, search.side().name());</span>
+        }
+<span class="fc bfc" id="L295" title="All 2 branches covered.">        if (search.status() != null) {</span>
+<span class="fc" id="L296">            conditions.add(&quot;o.status = :status&quot;);</span>
+<span class="fc" id="L297">            params.addValue(&quot;status&quot;, search.status().name());</span>
+        }
+<span class="fc bfc" id="L299" title="All 2 branches covered.">        if (search.from() != null) {</span>
+<span class="fc" id="L300">            conditions.add(&quot;o.submitted_at &gt;= :from&quot;);</span>
+<span class="fc" id="L301">            params.addValue(&quot;from&quot;, search.from());</span>
+        }
+<span class="fc bfc" id="L303" title="All 2 branches covered.">        if (search.to() != null) {</span>
+<span class="fc" id="L304">            conditions.add(&quot;o.submitted_at &lt; :to&quot;);</span>
+<span class="fc" id="L305">            params.addValue(&quot;to&quot;, search.to());</span>
+        }
+<span class="fc bfc" id="L307" title="All 2 branches covered.">        return conditions.isEmpty() ? &quot;&quot; : &quot;WHERE &quot; + String.join(&quot; AND &quot;, conditions) + &quot;\n&quot;;</span>
+    }
+
+    private static TradeSummary toSummary(ResultSet rs) throws SQLException {
+<span class="fc" id="L311">        return new TradeSummary(</span>
+<span class="fc" id="L312">                rs.getObject(&quot;order_id&quot;, UUID.class),</span>
+<span class="fc" id="L313">                rs.getObject(&quot;submitted_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L314">                rs.getString(&quot;email&quot;),</span>
+<span class="fc" id="L315">                rs.getString(&quot;account_number&quot;),</span>
+<span class="fc" id="L316">                rs.getString(&quot;symbol&quot;),</span>
+<span class="fc" id="L317">                rs.getString(&quot;side&quot;),</span>
+<span class="fc" id="L318">                rs.getLong(&quot;quantity&quot;),</span>
+<span class="fc" id="L319">                rs.getString(&quot;status&quot;));</span>
+    }
+
+    // Null when no quote was stored.
+    private static ExecutionQuote toQuote(ResultSet rs) throws SQLException {
+<span class="fc" id="L324">        OffsetDateTime quotedAt = rs.getObject(&quot;quote_timestamp&quot;, OffsetDateTime.class);</span>
+<span class="fc" id="L325">        BigDecimal bid = rs.getBigDecimal(&quot;quote_bid&quot;);</span>
+<span class="fc" id="L326">        BigDecimal ask = rs.getBigDecimal(&quot;quote_ask&quot;);</span>
+<span class="fc" id="L327">        BigDecimal last = rs.getBigDecimal(&quot;quote_last&quot;);</span>
+<span class="pc bpc" id="L328" title="3 of 8 branches missed.">        if (quotedAt == null &amp;&amp; bid == null &amp;&amp; ask == null &amp;&amp; last == null) {</span>
+<span class="fc" id="L329">            return null;</span>
+        }
+<span class="fc" id="L331">        return new ExecutionQuote(bid, ask, last, quotedAt, rs.getString(&quot;quote_exchange&quot;));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

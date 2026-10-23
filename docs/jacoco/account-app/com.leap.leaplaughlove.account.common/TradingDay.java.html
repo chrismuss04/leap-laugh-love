@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradingDay.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.common</a> &gt; <span class="el_source">TradingDay.java</span></div><h1>TradingDay.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.common;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+
+/**
+ * Where &quot;today&quot; begins for day-change figures: the previous trading day's regular close (see
+ * {@link MarketCalendar#previousClose}). Market data serves each symbol's price at that close, so
+ * today's history, each position's activity today and each holding's previous close all count
+ * from the same moment.
+ */
+public final class TradingDay {
+
+    private TradingDay() {
+    }
+
+    /**
+     * The start of the trading day under way at a point in time.
+     * @param now the point in time
+     * @return the previous trading day's regular close, in UTC
+     */
+    public static OffsetDateTime startOf(OffsetDateTime now) {
+<span class="fc" id="L26">        return MarketCalendar.previousClose(now.toInstant()).atOffset(ZoneOffset.UTC);</span>
+    }
+
+    /**
+     * When the trading day under way began trading: its pre-market open, the first trading day
+     * after the previous close. On a Saturday that is Friday's, as for {@link #startOf}.
+     * @param now the point in time
+     * @return the pre-market open of the trading day under way, in UTC
+     */
+    public static OffsetDateTime openOf(OffsetDateTime now) {
+<span class="fc" id="L36">        return hoursOf(now).preMarketOpen().toOffsetDateTime().withOffsetSameInstant(ZoneOffset.UTC);</span>
+    }
+
+    /**
+     * The hours of the trading day under way: the first trading day after the previous close, so
+     * on a Saturday Friday's, and its early close if it had one.
+     * @param now the point in time
+     * @return that day's sessions
+     */
+    public static MarketCalendar.TradingDay hoursOf(OffsetDateTime now) {
+<span class="fc" id="L46">        LocalDate closed = MarketCalendar.previousClose(now.toInstant()).atZone(MarketCalendar.ZONE).toLocalDate();</span>
+<span class="fc" id="L47">        return MarketCalendar.nextTradingDay(closed.plusDays(1));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

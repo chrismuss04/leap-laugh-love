@@ -29,7 +29,10 @@ public class Execution {
      * Enum describing the status of an execution
      */
     public enum Status {
-        FILLED, REJECTED
+        /** The order was filled. */
+        FILLED,
+        /** The execution was refused, with a reason. */
+        REJECTED
     }
 
     @Id
@@ -105,6 +108,14 @@ public class Execution {
     }
 
     /**
+     * Constructs a new Execution that keeps the market quote it was priced from.
+     *
+     * @param order        the order associated with this execution
+     * @param fillQuantity the quantity filled in this execution
+     * @param fillPrice    the price at which the order was filled
+     * @param status       the status of the execution (FILLED or REJECTED)
+     * @param reason       the reason for rejection, if applicable
+     * @param executedAt   the timestamp when the execution occurred
      * @param quote the market quote the order was priced from, or null if none was used
      */
     public Execution(Order order, Long fillQuantity, BigDecimal fillPrice,
@@ -176,7 +187,10 @@ public class Execution {
         return reason;
     }
 
-    /** Null if no quote was used, or the execution predates quotes being stored. */
+    /**
+     * Returns the market quote the execution was priced from.
+     * @return the quote; null if no quote was used, or the execution predates quotes being stored
+     */
     public ExecutionQuote getQuote() {
         return quote;
     }

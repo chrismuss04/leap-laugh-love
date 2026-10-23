@@ -101,7 +101,14 @@ public class FillRecorder {
         return recordExecution(order, price, time, MARKET_PRICE_REASON, null);
     }
 
-    /** As {@link #recordExecution(Order, BigDecimal, OffsetDateTime)}, keeping the quote the price came from. */
+    /**
+     * As {@link #recordExecution(Order, BigDecimal, OffsetDateTime)}, keeping the quote the price came from.
+     * @param order the order being filled
+     * @param price the execution price per share
+     * @param quote the market quote the price came from
+     * @param time when the fill happened; stamped on every row the fill writes
+     * @return the saved FILLED execution
+     */
     public Execution recordExecution(Order order, BigDecimal price, ExecutionQuote quote, OffsetDateTime time) {
         return recordExecution(order, price, time, MARKET_PRICE_REASON, quote);
     }

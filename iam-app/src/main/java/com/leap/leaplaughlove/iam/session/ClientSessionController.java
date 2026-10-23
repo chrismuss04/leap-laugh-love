@@ -22,6 +22,11 @@ public class ClientSessionController {
     // Staff roles: staff sessions live in their own table; the token's role picks which.
     private final StaffSessionRepository staffSessions;
 
+    /**
+     * Constructs a new ClientSessionController.
+     * @param sessions client login sessions
+     * @param staffSessions staff login sessions
+     */
     public ClientSessionController(ClientSessionRepository sessions, StaffSessionRepository staffSessions) {
         this.sessions = sessions;
         this.staffSessions = staffSessions;

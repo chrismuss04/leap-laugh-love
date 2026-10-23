@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TriggerEvaluator.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">TriggerEvaluator.java</span></div><h1>TriggerEvaluator.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.quote.QuoteSnapshot;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+
+/**
+ * Decides, from the live price, whether an order's stop has been reached and whether it can fill
+ * now. Pure functions with no state, shared by order placement and {@link OrderTriggerEngine}.
+ *
+ * &lt;p&gt;Prices are the side's executable price: a buy fills at the ask, a sell at the bid.
+ * &lt;ul&gt;
+ *     &lt;li&gt;LIMIT: a buy fills when the ask is at or below the limit, a sell when the bid is at or
+ *     above it - always at the quote, which is then the limit or better.&lt;/li&gt;
+ *     &lt;li&gt;STOP: a buy triggers when the ask rises to the stop, a sell when the bid falls to it,
+ *     and then fills at the quote like a market order.&lt;/li&gt;
+ *     &lt;li&gt;STOP_LIMIT: triggers like a stop, then works as a limit order; it stays triggered even
+ *     if the price moves back.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+public final class TriggerEvaluator {
+
+    /**
+     * What the price means for an order.
+     * @param stopReached whether a stop order's stop price has now been reached (always false
+     *                    for types without a stop)
+     * @param fillPrice the price to fill at now, or null if the order must keep waiting
+     */
+<span class="fc" id="L31">    public record Evaluation(boolean stopReached, BigDecimal fillPrice) {</span>
+        /**
+         * Returns whether the order can fill now.
+         * @return true when there is a fill price
+         */
+        public boolean fills() {
+<span class="fc bfc" id="L37" title="All 2 branches covered.">            return fillPrice != null;</span>
+        }
+    }
+
+    private TriggerEvaluator() {
+    }
+
+    /**
+     * The price an order on this side would fill at: the ask for a buy, the bid for a sell,
+     * falling back to the last trade when that side of the quote is missing.
+     * @param side the order's side
+     * @param quote the live quote
+     * @return the price to 4 decimal places, or null if the quote has no usable price
+     */
+    public static BigDecimal executablePrice(Order.Side side, QuoteSnapshot quote) {
+<span class="fc bfc" id="L52" title="All 2 branches covered.">        if (quote == null) {</span>
+<span class="fc" id="L53">            return null;</span>
+        }
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        BigDecimal sidePrice = side == Order.Side.BUY ? quote.askPrice() : quote.bidPrice();</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        BigDecimal price = isPositive(sidePrice) ? sidePrice : quote.lastPrice();</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        return isPositive(price) ? price.setScale(4, RoundingMode.HALF_UP) : null;</span>
+    }
+
+    /**
+     * Evaluates a stored order against the price it would fill at.
+     * @param order the order
+     * @param price its side's executable price, see {@link #executablePrice}
+     * @return whether its stop was reached and whether it fills
+     */
+    public static Evaluation evaluate(Order order, BigDecimal price) {
+<span class="fc" id="L67">        return evaluate(order.getOrderType(), order.getSide(), order.getLimitPrice(), order.getStopPrice(),</span>
+<span class="fc bfc" id="L68" title="All 2 branches covered.">                order.getTriggeredAt() != null, price);</span>
+    }
+
+    /**
+     * Evaluates an order's conditions against the price it would fill at.
+     * @param type the order type
+     * @param side the order's side
+     * @param limitPrice the limit price, for LIMIT and STOP_LIMIT
+     * @param stopPrice the stop price, for STOP and STOP_LIMIT
+     * @param alreadyTriggered whether the stop was reached earlier
+     * @param price the side's executable price; null means there is no price to act on
+     * @return whether its stop was reached and whether it fills
+     */
+    public static Evaluation evaluate(Order.OrderType type, Order.Side side, BigDecimal limitPrice,
+                                      BigDecimal stopPrice, boolean alreadyTriggered, BigDecimal price) {
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        if (price == null) {</span>
+<span class="fc" id="L84">            return new Evaluation(false, null);</span>
+        }
+<span class="fc bfc" id="L86" title="All 6 branches covered.">        boolean stopReached = type.hasStop() &amp;&amp; (alreadyTriggered || stopReached(side, stopPrice, price));</span>
+<span class="fc bfc" id="L87" title="All 4 branches covered.">        if (type.hasStop() &amp;&amp; !stopReached) {</span>
+<span class="fc" id="L88">            return new Evaluation(false, null);</span>
+        }
+<span class="fc bfc" id="L90" title="All 4 branches covered.">        boolean marketable = !type.hasLimit() || limitReached(side, limitPrice, price);</span>
+<span class="fc bfc" id="L91" title="All 2 branches covered.">        return new Evaluation(stopReached, marketable ? price : null);</span>
+    }
+
+    /**
+     * Whether the price has reached a stop: risen to it for a buy, fallen to it for a sell.
+     * @param side the order's side
+     * @param stopPrice the stop price
+     * @param price the side's executable price
+     * @return true once the stop is reached
+     */
+    public static boolean stopReached(Order.Side side, BigDecimal stopPrice, BigDecimal price) {
+<span class="fc bfc" id="L102" title="All 6 branches covered.">        return side == Order.Side.BUY ? price.compareTo(stopPrice) &gt;= 0 : price.compareTo(stopPrice) &lt;= 0;</span>
+    }
+
+    /**
+     * Whether the price is at the limit or better: at or below it for a buy, at or above for a sell.
+     * @param side the order's side
+     * @param limitPrice the limit price
+     * @param price the side's executable price
+     * @return true when the order could fill at this price
+     */
+    public static boolean limitReached(Order.Side side, BigDecimal limitPrice, BigDecimal price) {
+<span class="fc bfc" id="L113" title="All 6 branches covered.">        return side == Order.Side.BUY ? price.compareTo(limitPrice) &lt;= 0 : price.compareTo(limitPrice) &gt;= 0;</span>
+    }
+
+    private static boolean isPositive(BigDecimal value) {
+<span class="fc bfc" id="L117" title="All 4 branches covered.">        return value != null &amp;&amp; value.compareTo(BigDecimal.ZERO) &gt; 0;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

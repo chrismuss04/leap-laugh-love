@@ -1,0 +1,129 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PortfolioRange.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.portfolio</a> &gt; <span class="el_source">PortfolioRange.java</span></div><h1>PortfolioRange.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.portfolio;
+
+import com.leap.leaplaughlove.account.common.TradingDay;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.Arrays;
+
+/**
+ * A chartable portfolio time range and the candle width used to value it. Each
+ * width is one the
+ * market data service both serves and retains for the whole range (5m for 7
+ * days, 1h for 90 days,
+ * 1d for 365 days), picked so a range comes back as a few hundred points at
+ * most.
+ */
+<span class="fc" id="L20">public enum PortfolioRange {</span>
+    /**
+     * Since the start of the trading day (see {@link TradingDay}), so the day's change is measured
+     * from the same close as each holding's day change.
+     */
+<span class="fc" id="L25">    ONE_DAY(&quot;1D&quot;, null, 300),</span>
+    /** The last 7 days, in hourly points. */
+<span class="fc" id="L27">    ONE_WEEK(&quot;1W&quot;, Duration.ofDays(7), 3600),</span>
+    /** The last 30 days, in hourly points. */
+<span class="fc" id="L29">    ONE_MONTH(&quot;1M&quot;, Duration.ofDays(30), 3600),</span>
+    /** The last 90 days, in daily points. */
+<span class="fc" id="L31">    THREE_MONTHS(&quot;3M&quot;, Duration.ofDays(90), 86400),</span>
+    /** The last 365 days, in daily points. */
+<span class="fc" id="L33">    ONE_YEAR(&quot;1Y&quot;, Duration.ofDays(365), 86400),</span>
+    /**
+     * Since the client's first account opened, capped at the daily candle
+     * retention.
+     */
+<span class="fc" id="L38">    ALL(&quot;ALL&quot;, null, 86400);</span>
+
+    /** The furthest back any candle width is retained. */
+<span class="fc" id="L41">    static final Duration MAX_LOOKBACK = Duration.ofDays(365);</span>
+
+    private final String code;
+    private final Duration span;
+    private final int intervalSeconds;
+
+    /**
+     * Construct a new PortfolioRange.
+     * 
+     * @param code            The code for the range.
+     * @param span            The span of the range.
+     * @param intervalSeconds The interval in seconds for the range.
+     */
+<span class="fc" id="L54">    PortfolioRange(String code, Duration span, int intervalSeconds) {</span>
+<span class="fc" id="L55">        this.code = code;</span>
+<span class="fc" id="L56">        this.span = span;</span>
+<span class="fc" id="L57">        this.intervalSeconds = intervalSeconds;</span>
+<span class="fc" id="L58">    }</span>
+
+    /**
+     * Gets the short code the API accepts and echoes back, e.g. &quot;1M&quot;.
+     * 
+     * @return the range code
+     */
+    public String code() {
+<span class="fc" id="L66">        return code;</span>
+    }
+
+    /**
+     * Resolves the start and candle width of this range. A range keeps its whole span even when the
+     * accounts it covers opened part way through, so a week is always a week; the time before then
+     * is noted as {@code opened}, for the chart to show apart. ALL is the accounts' lifetime, so it
+     * starts when the earliest opened.
+     * 
+     * @param now                 the end of the range, in UTC
+     * @param earliestAccountOpen when the earliest charted account opened, or null if unknown
+     * @return the resolved window
+     */
+    Window window(OffsetDateTime now, OffsetDateTime earliestAccountOpen) {
+<span class="fc bfc" id="L80" title="All 3 branches covered.">        OffsetDateTime from = switch (this) {</span>
+<span class="fc" id="L81">            case ONE_DAY -&gt; TradingDay.startOf(now);</span>
+<span class="fc" id="L82">            case ALL -&gt; now.minus(MAX_LOOKBACK);</span>
+<span class="fc" id="L83">            default -&gt; now.minus(span);</span>
+        };
+<span class="fc bfc" id="L85" title="All 4 branches covered.">        boolean openedLater = earliestAccountOpen != null &amp;&amp; earliestAccountOpen.isAfter(from);</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        OffsetDateTime opened = openedLater ? earliestAccountOpen.withOffsetSameInstant(ZoneOffset.UTC) : null;</span>
+<span class="fc bfc" id="L87" title="All 2 branches covered.">        if (this != ALL) {</span>
+<span class="fc" id="L88">            return new Window(from, intervalSeconds, opened);</span>
+        }
+<span class="fc bfc" id="L90" title="All 2 branches covered.">        if (openedLater) {</span>
+<span class="fc" id="L91">            from = opened;</span>
+        }
+        // A young account would chart as one or two daily points; use the finest width that
+        // still covers its whole life instead.
+<span class="fc" id="L95">        Duration life = Duration.between(from, now);</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">        int width = life.compareTo(Duration.ofDays(2)) &lt;= 0 ? 300</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                : life.compareTo(Duration.ofDays(30)) &lt;= 0 ? 3600</span>
+<span class="fc" id="L98">                        : 86400;</span>
+<span class="fc" id="L99">        return new Window(from, Math.min(width, intervalSeconds), null);</span>
+    }
+
+    /**
+     * Parses a range code case-insensitively.
+     * 
+     * @param code the code to parse, e.g. &quot;1m&quot;
+     * @return the matching range
+     * @throws ResponseStatusException with 400 BAD_REQUEST if the code is not
+     *                                 recognised
+     */
+    public static PortfolioRange fromCode(String code) {
+<span class="fc" id="L111">        return Arrays.stream(values())</span>
+<span class="fc" id="L112">                .filter(range -&gt; range.code.equalsIgnoreCase(code))</span>
+<span class="fc" id="L113">                .findFirst()</span>
+<span class="fc" id="L114">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc" id="L115">                        &quot;range must be one of &quot; + Arrays.stream(values()).map(PortfolioRange::code).toList()));</span>
+    }
+
+    /**
+     * A resolved range: where it starts and the candle width that values it.
+     * 
+     * @param from            the start of the range
+     * @param intervalSeconds the candle width, in seconds
+     * @param opened          when the earliest charted account opened, if that was after the
+     *                        range starts; null otherwise
+     */
+<span class="fc" id="L126">    record Window(OffsetDateTime from, int intervalSeconds, OffsetDateTime opened) {</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

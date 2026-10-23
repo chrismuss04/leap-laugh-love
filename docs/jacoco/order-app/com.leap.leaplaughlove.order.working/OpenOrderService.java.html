@@ -1,0 +1,161 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OpenOrderService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OpenOrderService.java</span></div><h1>OpenOrderService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.account.Account;
+import com.leap.leaplaughlove.order.account.AccountRepository;
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.order.OrderRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+/**
+ * Lists, cancels and expires a client's OPEN orders. Every status change is made under the
+ * order's row lock and only from OPEN, so a cancel and {@link OrderTriggerEngine} filling the
+ * same order can't both succeed: whichever locks it first wins.
+ */
+@Service
+public class OpenOrderService {
+
+<span class="fc" id="L30">    private static final Logger log = LoggerFactory.getLogger(OpenOrderService.class);</span>
+
+    private final OrderRepository orderRepository;
+    private final AccountRepository accountRepository;
+    private final TransactionTemplate transactionTemplate;
+    private final OrderUpdateBroadcaster broadcaster;
+    private final OrderEventPublisher orderEventPublisher;
+
+    /**
+     * Constructs an OpenOrderService.
+     * @param orderRepository loads and locks orders
+     * @param accountRepository checks an order's account belongs to the client
+     * @param transactionTemplate runs each expiry in its own transaction
+     * @param broadcaster tells clients, as it happens, that an order of theirs expired
+     * @param orderEventPublisher reports each cancelled or expired order to reporting
+     */
+    public OpenOrderService(OrderRepository orderRepository, AccountRepository accountRepository,
+                            TransactionTemplate transactionTemplate, OrderUpdateBroadcaster broadcaster,
+<span class="fc" id="L48">                            OrderEventPublisher orderEventPublisher) {</span>
+<span class="fc" id="L49">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L50">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L51">        this.transactionTemplate = transactionTemplate;</span>
+<span class="fc" id="L52">        this.broadcaster = broadcaster;</span>
+<span class="fc" id="L53">        this.orderEventPublisher = orderEventPublisher;</span>
+<span class="fc" id="L54">    }</span>
+
+    /**
+     * Lists the client's OPEN orders across their accounts, newest first.
+     * @param clientId the authenticated client
+     * @return the open orders
+     */
+    @Transactional(readOnly = true)
+    public List&lt;OpenOrderItem&gt; listOpen(UUID clientId) {
+<span class="fc" id="L63">        return orderRepository.findOpenByClientId(clientId).stream().map(OpenOrderItem::of).toList();</span>
+    }
+
+    /**
+     * Cancels one of the client's OPEN orders, releasing the cash or shares it held.
+     * @param clientId the authenticated client
+     * @param orderId the order to cancel
+     * @return the cancelled order
+     * @throws ResponseStatusException not found (404) if the client has no such order, conflict
+     *         (409) if it is no longer OPEN, e.g. it filled first
+     */
+    @Transactional
+    public OpenOrderItem cancel(UUID clientId, UUID orderId) {
+<span class="fc" id="L76">        Order order = lockOwned(clientId, orderId);</span>
+<span class="fc" id="L77">        requireOpen(order, &quot;cancelled&quot;);</span>
+<span class="fc" id="L78">        order.markCancelled(OffsetDateTime.now());</span>
+<span class="fc" id="L79">        orderEventPublisher.publishCancelled(order);</span>
+<span class="fc" id="L80">        return OpenOrderItem.of(order);</span>
+    }
+
+    /**
+     * Loads one of the client's orders with its row lock, in the caller's transaction.
+     * @param clientId the authenticated client
+     * @param orderId the order
+     * @return the locked order
+     * @throws ResponseStatusException not found (404) if the client has no such order
+     */
+    Order lockOwned(UUID clientId, UUID orderId) {
+<span class="fc" id="L91">        return orderRepository.findByIdForUpdate(orderId)</span>
+<span class="fc" id="L92">                .filter(found -&gt; accountRepository.findById(found.getAccountId())</span>
+<span class="fc" id="L93">                        .map(Account::getClientId)</span>
+<span class="fc" id="L94">                        .filter(clientId::equals)</span>
+<span class="fc" id="L95">                        .isPresent())</span>
+<span class="fc" id="L96">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;Order not found&quot;));</span>
+    }
+
+    /**
+     * Refuses an order that isn't working any more, saying where it went.
+     * @param order the locked order
+     * @param action what was asked of it, in the past tense: &quot;cancelled&quot; or &quot;changed&quot;
+     * @throws ResponseStatusException conflict (409) if the order is not OPEN
+     */
+    static void requireOpen(Order order, String action) {
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        if (order.getStatus() == Order.Status.OPEN) {</span>
+<span class="fc" id="L107">            return;</span>
+        }
+<span class="pc bpc" id="L109" title="3 of 4 branches missed.">        throw new ResponseStatusException(HttpStatus.CONFLICT, switch (order.getStatus()) {</span>
+<span class="nc" id="L110">            case ACCEPTED, FILLED -&gt; &quot;This order has already executed and can no longer be &quot; + action;</span>
+<span class="fc" id="L111">            case CANCELLED -&gt; &quot;This order is already cancelled&quot;;</span>
+<span class="nc" id="L112">            case EXPIRED -&gt; &quot;This order has already expired&quot;;</span>
+<span class="pc" id="L113">            default -&gt; &quot;This order is no longer open&quot;;</span>
+        });
+    }
+
+    /**
+     * Expires every OPEN order whose time in force has run out, each in its own transaction so
+     * one failure doesn't hold up the rest.
+     * @return how many orders were expired
+     */
+    public int expireDue() {
+<span class="fc" id="L123">        OffsetDateTime now = OffsetDateTime.now();</span>
+<span class="fc" id="L124">        int expired = 0;</span>
+<span class="fc" id="L125">        List&lt;Map.Entry&lt;UUID, OrderUpdate&gt;&gt; pending = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L126" title="All 2 branches covered.">        for (UUID orderId : orderRepository.findOpenExpiredBy(now)) {</span>
+            try {
+<span class="fc" id="L128">                OrderUpdate update = transactionTemplate.execute(status -&gt; orderRepository.findByIdForUpdate(orderId)</span>
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">                        .filter(order -&gt; order.getStatus() == Order.Status.OPEN)</span>
+<span class="fc" id="L130">                        .map(order -&gt; {</span>
+<span class="fc" id="L131">                            order.markExpired(now);</span>
+<span class="fc" id="L132">                            orderEventPublisher.publishExpired(order);</span>
+<span class="fc" id="L133">                            return new Expired(OrderUpdate.of(order, Order.Status.EXPIRED, null, null),</span>
+<span class="fc" id="L134">                                    order.getAccountId());</span>
+                        })
+<span class="fc" id="L136">                        .map(expiredOrder -&gt; {</span>
+<span class="fc" id="L137">                            accountRepository.findById(expiredOrder.accountId()).map(Account::getClientId)</span>
+<span class="fc" id="L138">                                    .ifPresent(client -&gt; pending.add(Map.entry(client, expiredOrder.update())));</span>
+<span class="fc" id="L139">                            return expiredOrder.update();</span>
+                        })
+<span class="fc" id="L141">                        .orElse(null));</span>
+<span class="pc bpc" id="L142" title="1 of 2 branches missed.">                if (update != null) {</span>
+<span class="fc" id="L143">                    expired++;</span>
+                }
+<span class="nc" id="L145">            } catch (RuntimeException ex) {</span>
+<span class="nc" id="L146">                log.warn(&quot;Could not expire order {}; will retry: {}&quot;, orderId, ex.getMessage());</span>
+<span class="fc" id="L147">            }</span>
+<span class="fc" id="L148">        }</span>
+        // Told after each expiry has committed, never from inside its transaction.
+<span class="fc" id="L150">        pending.forEach(entry -&gt; broadcaster.publish(entry.getKey(), entry.getValue()));</span>
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        if (expired &gt; 0) {</span>
+<span class="fc" id="L152">            log.info(&quot;Expired {} open order(s) past their time in force&quot;, expired);</span>
+        }
+<span class="fc" id="L154">        return expired;</span>
+    }
+
+    /** An order that has just expired, and the account it belongs to. */
+<span class="fc" id="L158">    private record Expired(OrderUpdate update, UUID accountId) {</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

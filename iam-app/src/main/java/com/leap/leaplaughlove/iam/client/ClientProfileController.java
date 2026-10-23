@@ -33,7 +33,13 @@ public class ClientProfileController {
     private final PasswordEncoder passwordEncoder;
     private final StaffCredentialsRepository staffCredentialsRepository;
 
-    /** Constructs a new ClientProfileController with the specified dependencies. */
+    /**
+     * Constructs a new ClientProfileController with the specified dependencies.
+     * @param clientRepository reads and saves client profiles
+     * @param credentialsRepository the clients' sign-in credentials
+     * @param passwordEncoder hashes and checks passwords
+     * @param staffCredentialsRepository staff sign-in credentials, so a client can't take a staff email
+     */
     public ClientProfileController(ClientRepository clientRepository,
                                    ClientCredentialsRepository credentialsRepository,
                                    PasswordEncoder passwordEncoder,
@@ -60,6 +66,8 @@ public class ClientProfileController {
      * Updates the authenticated client's settings. Changing the email or password needs the current
      * password (403 if wrong); a new email or phone number already in use is a 409 whose error
      * code (EMAIL_TAKEN or PHONE_TAKEN) says which, so the settings page can.
+     * @param request the new settings
+     * @return the updated profile
      */
     @PutMapping("/me")
     @Transactional
@@ -106,7 +114,24 @@ public class ClientProfileController {
                 client.isNotifyOrderFills(), client.isNotifyPriceAlerts());
     }
 
-    /** The client's display profile; leaves out SSN and date of birth. */
+    /**
+     * The client's display profile; leaves out SSN and date of birth.
+     * @param clientId the client's ID
+     * @param email the client's email address
+     * @param fullName the client's full name
+     * @param experienceLevel the trading experience the client gave at registration
+     * @param status the client's status
+     * @param createdAt when the client registered
+     * @param phone the client's phone number, or null
+     * @param addressLine1 the first line of the street address
+     * @param addressLine2 the second line of the street address, or null
+     * @param city the city
+     * @param stateRegion the state or region, or null
+     * @param postalCode the postal code
+     * @param countryCode the two-letter ISO country code
+     * @param notifyOrderFills whether the client wants order fill emails
+     * @param notifyPriceAlerts whether the client wants price alert emails
+     */
     public record ClientProfileResponse(UUID clientId, String email, String fullName,
                                         String experienceLevel, String status, OffsetDateTime createdAt,
                                         String phone, String addressLine1, String addressLine2, String city,
@@ -114,7 +139,22 @@ public class ClientProfileController {
                                         boolean notifyOrderFills, boolean notifyPriceAlerts) {
     }
 
-    /** The settings a client can change; currentPassword is needed to change email or password. */
+    /**
+     * The settings a client can change; currentPassword is needed to change email or password.
+     * @param fullName the client's full name
+     * @param email the client's email address
+     * @param phone the client's phone number, or null
+     * @param addressLine1 the first line of the street address
+     * @param addressLine2 the second line of the street address, or null
+     * @param city the city
+     * @param stateRegion the state or region, or null
+     * @param postalCode the postal code
+     * @param countryCode the two-letter ISO country code
+     * @param notifyOrderFills whether the client wants order fill emails
+     * @param notifyPriceAlerts whether the client wants price alert emails
+     * @param currentPassword the client's current password, needed to change email or password
+     * @param newPassword the new password, at least 8 characters, or null to keep the current one
+     */
     public record UpdateSettingsRequest(
             @NotBlank String fullName,
             @NotBlank @Email String email,

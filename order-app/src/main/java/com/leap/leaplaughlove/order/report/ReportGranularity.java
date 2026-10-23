@@ -5,6 +5,8 @@ package com.leap.leaplaughlove.order.report;
  * (Monday to Sunday, UTC).
  */
 public enum ReportGranularity {
+    /** One bucket per UTC day. */
     DAILY,
+    /** One bucket per ISO week, Monday to Sunday, UTC. */
     WEEKLY
 }

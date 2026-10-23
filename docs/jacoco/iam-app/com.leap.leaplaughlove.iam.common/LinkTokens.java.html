@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>LinkTokens.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.common</a> &gt; <span class="el_source">LinkTokens.java</span></div><h1>LinkTokens.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.common;
+
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
+import java.util.HexFormat;
+
+/**
+ * Creates and hashes the single-use tokens carried by emailed links (password reset, registration
+ * verification). Only the hash is ever stored.
+ */
+public final class LinkTokens {
+
+    private static final int TOKEN_BYTES = 32;
+<span class="fc" id="L17">    private static final SecureRandom RANDOM = new SecureRandom();</span>
+
+    private LinkTokens() {
+    }
+
+    /**
+     * Generates a new random, URL-safe token.
+     * @return the token
+     */
+    public static String newToken() {
+<span class="fc" id="L27">        byte[] bytes = new byte[TOKEN_BYTES];</span>
+<span class="fc" id="L28">        RANDOM.nextBytes(bytes);</span>
+<span class="fc" id="L29">        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);</span>
+    }
+
+    /**
+     * Hashes a token for storage. The token is long and random, so a fast unsalted hash is enough
+     * to keep the stored value unusable.
+     * @param token the raw token
+     * @return the hex-encoded SHA-256 of the token
+     */
+    public static String hash(String token) {
+        try {
+<span class="fc" id="L40">            MessageDigest digest = MessageDigest.getInstance(&quot;SHA-256&quot;);</span>
+<span class="fc" id="L41">            return HexFormat.of().formatHex(digest.digest(token.getBytes(StandardCharsets.UTF_8)));</span>
+<span class="fc" id="L42">        } catch (NoSuchAlgorithmException e) {</span>
+<span class="fc" id="L43">            throw new IllegalStateException(&quot;SHA-256 is not available&quot;, e);</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

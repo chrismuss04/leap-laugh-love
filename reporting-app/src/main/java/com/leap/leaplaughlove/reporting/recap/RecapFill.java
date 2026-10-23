@@ -18,7 +18,12 @@ public record RecapFill(UUID accountId, String symbol, Side side, long quantity,
                         OffsetDateTime filledAt) {
 
     /** The direction of a fill. */
-    public enum Side { BUY, SELL }
+    public enum Side {
+        /** Bought units. */
+        BUY,
+        /** Sold units. */
+        SELL
+    }
 
     /**
      * The fill's value.

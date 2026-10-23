@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CashTransferResponse.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.balance</a> &gt; <span class="el_source">CashTransferResponse.java</span></div><h1>CashTransferResponse.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.balance;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Result of a transfer between two accounts.
+ * @param transferId the ledger id of the withdrawal leg, which identifies the transfer
+ * @param fromAccountId the account the cash left
+ * @param toAccountId the account the cash arrived in
+ * @param amount the amount moved
+ * @param currency the currency of both accounts
+ * @param fromBalanceAfter the source account's balance after the transfer
+ * @param toBalanceAfter the destination account's balance after the transfer
+ * @param createdAt when the transfer was booked
+ */
+<span class="fc" id="L18">public record CashTransferResponse(</span>
+        UUID transferId,
+        UUID fromAccountId,
+        UUID toAccountId,
+        BigDecimal amount,
+        String currency,
+        BigDecimal fromBalanceAfter,
+        BigDecimal toBalanceAfter,
+        OffsetDateTime createdAt) {}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

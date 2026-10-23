@@ -35,13 +35,33 @@ public class Order {
     /**
      * Represents the side of the order, either BUY or SELL.
      */
-    public enum Side { BUY, SELL }
+    public enum Side {
+        /** Buys shares. */
+        BUY,
+        /** Sells shares. */
+        SELL
+    }
 
     /**
      * The status of the order matching the database check constraint. OPEN orders are waiting
      * for the market to reach their price; CANCELLED and EXPIRED ones never executed.
      */
-    public enum Status { SUBMITTED, OPEN, ACCEPTED, REJECTED, FILLED, CANCELLED, EXPIRED }
+    public enum Status {
+        /** Received, not yet validated. */
+        SUBMITTED,
+        /** Waiting for the market to reach its price, or for the market to open. */
+        OPEN,
+        /** Passed validation and is executing. */
+        ACCEPTED,
+        /** Failed validation or execution; never filled. */
+        REJECTED,
+        /** Executed in full. */
+        FILLED,
+        /** Cancelled before it executed, by the client or by its bracket's other leg filling. */
+        CANCELLED,
+        /** Ran out its time in force before it executed. */
+        EXPIRED
+    }
 
     /**
      * How the order is priced. MARKET fills at once at the live quote. LIMIT fills only at its
@@ -50,7 +70,16 @@ public class Order {
      * the market in the order's favour, a fixed amount or percent behind the best price seen.
      */
     public enum OrderType {
-        MARKET, LIMIT, STOP, STOP_LIMIT, TRAILING_STOP;
+        /** Fills at once at the live quote. */
+        MARKET,
+        /** Fills only at its limit price or better. */
+        LIMIT,
+        /** Becomes a market order once the price reaches its stop price. */
+        STOP,
+        /** Becomes a limit order once the price reaches its stop price. */
+        STOP_LIMIT,
+        /** A stop whose stop price follows the market in the order's favour. */
+        TRAILING_STOP;
 
         /**
          * Returns whether this type carries a limit price.
@@ -82,7 +111,12 @@ public class Order {
      * How long an order that hasn't filled keeps working: DAY until the end of the day it was
      * placed, GTC (good till cancelled) until cancelled, for at most 90 days.
      */
-    public enum TimeInForce { DAY, GTC }
+    public enum TimeInForce {
+        /** Works until the end of the day it was placed. */
+        DAY,
+        /** Good till cancelled, for at most 90 days. */
+        GTC
+    }
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -249,6 +283,17 @@ public class Order {
 
     /**
      * Constructor for Order entity with Account object reference.
+     * @param orderId the unique identifier of the order
+     * @param account the account placing the order
+     * @param instrument the instrument being traded
+     * @param side the side of the order (BUY or SELL)
+     * @param quantity the quantity of the instrument to trade
+     * @param status the current status of the order
+     * @param submittedAt the timestamp when the order was submitted
+     * @param acceptedAt the timestamp when the order was accepted
+     * @param rejectedAt the timestamp when the order was rejected
+     * @param filledAt the timestamp when the order was filled
+     * @param rejectionReason the reason for order rejection, if applicable
      */
     public Order(UUID orderId, Account account, Instrument instrument, Side side,
                  Long quantity, Status status, OffsetDateTime submittedAt,

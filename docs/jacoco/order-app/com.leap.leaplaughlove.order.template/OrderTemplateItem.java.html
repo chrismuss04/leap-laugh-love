@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderTemplateItem.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.template</a> &gt; <span class="el_source">OrderTemplateItem.java</span></div><h1>OrderTemplateItem.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.template;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * A saved ticket setup, as listed to its owner.
+ *
+ * @param templateId the template
+ * @param name its name
+ * @param side BUY or SELL
+ * @param orderType MARKET, LIMIT, STOP, STOP_LIMIT or TRAILING_STOP
+ * @param timeInForce DAY or GTC
+ * @param limitOffsetPercent the limit price as signed percent from the market, if the type has one
+ * @param stopOffsetPercent the stop price as signed percent from the market, if the type has one
+ * @param trailPercent a trailing stop's trail in percent
+ * @param takeProfitPercent a bracket's take-profit, percent above the entry price
+ * @param stopLossPercent a bracket's stop-loss, percent below the entry price
+ * @param createdAt when it was saved
+ */
+<span class="fc" id="L22">public record OrderTemplateItem(</span>
+        UUID templateId,
+        String name,
+        String side,
+        String orderType,
+        String timeInForce,
+        BigDecimal limitOffsetPercent,
+        BigDecimal stopOffsetPercent,
+        BigDecimal trailPercent,
+        BigDecimal takeProfitPercent,
+        BigDecimal stopLossPercent,
+        OffsetDateTime createdAt
+) {
+    /**
+     * Describes a template.
+     * @param template the template
+     * @return its item
+     */
+    public static OrderTemplateItem of(OrderTemplate template) {
+<span class="fc" id="L41">        return new OrderTemplateItem(</span>
+<span class="fc" id="L42">                template.getTemplateId(), template.getName(), template.getSide().name(),</span>
+<span class="fc" id="L43">                template.getOrderType().name(), template.getTimeInForce().name(),</span>
+<span class="fc" id="L44">                template.getLimitOffsetPercent(), template.getStopOffsetPercent(), template.getTrailPercent(),</span>
+<span class="fc" id="L45">                template.getTakeProfitPercent(), template.getStopLossPercent(), template.getCreatedAt());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -23,6 +23,11 @@ public class InstrumentOverviewService {
     private final InstrumentOverviewRepository repository;
     private final MarketSimulationEngine simulation;
 
+    /**
+     * Constructs a new InstrumentOverviewService.
+     * @param repository loads instrument metadata and period baselines
+     * @param simulation supplies the latest prices
+     */
     public InstrumentOverviewService(InstrumentOverviewRepository repository, MarketSimulationEngine simulation) {
         this.repository = repository;
         this.simulation = simulation;

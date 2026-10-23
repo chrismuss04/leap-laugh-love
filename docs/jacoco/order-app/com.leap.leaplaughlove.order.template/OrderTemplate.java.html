@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderTemplate.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.template</a> &gt; <span class="el_source">OrderTemplate.java</span></div><h1>OrderTemplate.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.template;
+
+import com.leap.leaplaughlove.order.order.Order;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
+
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * A client's saved ticket setup. Prices are stored as percent offsets from the price the side
+ * fills at, so the template fits whatever the market is on the day it is applied.
+ */
+@Entity
+@Table(name = &quot;order_templates&quot;, schema = &quot;trading&quot;)
+public class OrderTemplate {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    @Column(name = &quot;template_id&quot;)
+    private UUID templateId;
+
+    @Column(name = &quot;client_id&quot;, nullable = false)
+    private UUID clientId;
+
+    @Column(name = &quot;name&quot;, nullable = false)
+    private String name;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = &quot;side&quot;, nullable = false)
+    private Order.Side side;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = &quot;order_type&quot;, nullable = false)
+    private Order.OrderType orderType;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = &quot;time_in_force&quot;, nullable = false)
+    private Order.TimeInForce timeInForce;
+
+    @Column(name = &quot;limit_offset_pct&quot;, precision = 7, scale = 2)
+    private BigDecimal limitOffsetPercent;
+
+    @Column(name = &quot;stop_offset_pct&quot;, precision = 7, scale = 2)
+    private BigDecimal stopOffsetPercent;
+
+    @Column(name = &quot;trail_percent&quot;, precision = 5, scale = 2)
+    private BigDecimal trailPercent;
+
+    @Column(name = &quot;take_profit_pct&quot;, precision = 7, scale = 2)
+    private BigDecimal takeProfitPercent;
+
+    @Column(name = &quot;stop_loss_pct&quot;, precision = 5, scale = 2)
+    private BigDecimal stopLossPercent;
+
+    @Column(name = &quot;created_at&quot;, nullable = false)
+    private OffsetDateTime createdAt;
+
+    /** Protected no-argument constructor for JPA. */
+<span class="fc" id="L67">    protected OrderTemplate() {</span>
+<span class="fc" id="L68">    }</span>
+
+    /**
+     * Creates a template from an already validated request.
+     * @param clientId the owner
+     * @param request what to save
+     * @param createdAt when it is saved
+     */
+<span class="fc" id="L76">    OrderTemplate(UUID clientId, OrderTemplateRequest request, OffsetDateTime createdAt) {</span>
+<span class="fc" id="L77">        this.clientId = clientId;</span>
+<span class="fc" id="L78">        this.name = request.name().trim();</span>
+<span class="fc" id="L79">        this.side = request.side();</span>
+<span class="fc" id="L80">        this.orderType = request.orderType();</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        this.timeInForce = request.timeInForce() != null ? request.timeInForce() : Order.TimeInForce.DAY;</span>
+<span class="fc" id="L82">        this.limitOffsetPercent = request.limitOffsetPercent();</span>
+<span class="fc" id="L83">        this.stopOffsetPercent = request.stopOffsetPercent();</span>
+<span class="fc" id="L84">        this.trailPercent = request.trailPercent();</span>
+<span class="fc" id="L85">        this.takeProfitPercent = request.takeProfitPercent();</span>
+<span class="fc" id="L86">        this.stopLossPercent = request.stopLossPercent();</span>
+<span class="fc" id="L87">        this.createdAt = createdAt;</span>
+<span class="fc" id="L88">    }</span>
+
+    /**
+     * Returns the template's ID.
+     * @return the template's ID
+     */
+<span class="fc" id="L94">    public UUID getTemplateId() { return templateId; }</span>
+    /**
+     * Returns the client who owns it.
+     * @return the client who owns it
+     */
+<span class="nc" id="L99">    public UUID getClientId() { return clientId; }</span>
+    /**
+     * Returns its name, unique among the client's templates.
+     * @return its name, unique among the client's templates
+     */
+<span class="fc" id="L104">    public String getName() { return name; }</span>
+    /**
+     * Returns BUY or SELL.
+     * @return BUY or SELL
+     */
+<span class="fc" id="L109">    public Order.Side getSide() { return side; }</span>
+    /**
+     * Returns the order type to set up.
+     * @return the order type to set up
+     */
+<span class="fc" id="L114">    public Order.OrderType getOrderType() { return orderType; }</span>
+    /**
+     * Returns DAY or GTC.
+     * @return DAY or GTC
+     */
+<span class="fc" id="L119">    public Order.TimeInForce getTimeInForce() { return timeInForce; }</span>
+    /**
+     * Returns the limit price as a signed percent from the market, for LIMIT and STOP_LIMIT.
+     * @return the limit price as a signed percent from the market, for LIMIT and STOP_LIMIT
+     */
+<span class="fc" id="L124">    public BigDecimal getLimitOffsetPercent() { return limitOffsetPercent; }</span>
+    /**
+     * Returns the stop price as a signed percent from the market, for STOP and STOP_LIMIT.
+     * @return the stop price as a signed percent from the market, for STOP and STOP_LIMIT
+     */
+<span class="fc" id="L129">    public BigDecimal getStopOffsetPercent() { return stopOffsetPercent; }</span>
+    /**
+     * Returns the trail in percent, for TRAILING_STOP.
+     * @return the trail in percent, for TRAILING_STOP
+     */
+<span class="fc" id="L134">    public BigDecimal getTrailPercent() { return trailPercent; }</span>
+    /**
+     * Returns a bracket's take-profit, percent above the entry price.
+     * @return a bracket's take-profit, percent above the entry price
+     */
+<span class="fc" id="L139">    public BigDecimal getTakeProfitPercent() { return takeProfitPercent; }</span>
+    /**
+     * Returns a bracket's stop-loss, percent below the entry price.
+     * @return a bracket's stop-loss, percent below the entry price
+     */
+<span class="fc" id="L144">    public BigDecimal getStopLossPercent() { return stopLossPercent; }</span>
+    /**
+     * Returns when it was saved.
+     * @return when it was saved
+     */
+<span class="fc" id="L149">    public OffsetDateTime getCreatedAt() { return createdAt; }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

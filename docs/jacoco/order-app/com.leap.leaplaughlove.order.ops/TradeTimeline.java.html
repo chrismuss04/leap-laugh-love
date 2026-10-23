@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradeTimeline.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">TradeTimeline.java</span></div><h1>TradeTimeline.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+import java.math.BigDecimal;
+import java.util.List;
+
+/**
+ * A trade reconstructed step by step, oldest first. quotedPrice and maxSlippagePercent are null
+ * when the order carried none.
+ * @param trade the trade
+ * @param quotedPrice the price quoted at submission, or null
+ * @param maxSlippagePercent the slippage the client allowed, or null
+ * @param steps the steps, oldest first
+ */
+public record TradeTimeline(
+        TradeSummary trade,
+        BigDecimal quotedPrice,
+        BigDecimal maxSlippagePercent,
+        List&lt;TimelineStep&gt; steps
+) {
+    /**
+     * Copies the steps, treating null as none.
+     * @param trade the trade
+     * @param quotedPrice the price quoted at submission, or null
+     * @param maxSlippagePercent the slippage the client allowed, or null
+     * @param steps the steps, oldest first, or null for none
+     */
+<span class="fc" id="L27">    public TradeTimeline {</span>
+<span class="pc bpc" id="L28" title="1 of 2 branches missed.">        steps = steps != null ? List.copyOf(steps) : List.of();</span>
+<span class="fc" id="L29">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

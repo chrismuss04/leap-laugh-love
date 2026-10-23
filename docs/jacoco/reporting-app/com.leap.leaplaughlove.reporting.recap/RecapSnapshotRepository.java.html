@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapSnapshotRepository.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapSnapshotRepository.java</span></div><h1>RecapSnapshotRepository.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
+import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.springframework.stereotype.Repository;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import javax.sql.DataSource;
+import java.io.UncheckedIOException;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Stores and reads clients' recaps in reporting.client_recaps, through the recap write pool: the
+ * only place the reporting service writes. Each recap is one row of JSON, so opening a recap is
+ * one primary key lookup.
+ */
+@Repository
+public class RecapSnapshotRepository {
+
+    // A rerun of a month replaces its rows: the latest prices and rankings win.
+    private static final String UPSERT_SQL = &quot;&quot;&quot;
+            INSERT INTO reporting.client_recaps (client_id, month, schema_version, payload, generated_at)
+            VALUES (:clientId, :month, :schemaVersion, CAST(:payload AS JSONB), :generatedAt)
+            ON CONFLICT (client_id, month) DO UPDATE
+                SET schema_version = EXCLUDED.schema_version,
+                    payload = EXCLUDED.payload,
+                    generated_at = EXCLUDED.generated_at
+            &quot;&quot;&quot;;
+
+    private static final String FIND_SQL = &quot;&quot;&quot;
+            SELECT schema_version, payload::text AS payload, generated_at
+            FROM reporting.client_recaps
+            WHERE client_id = :clientId AND month = :month
+            &quot;&quot;&quot;;
+
+    // A month's recaps are out of date when any is in an older JSON shape (RecapService won't serve
+    // those), or when the ETL loaded a fill after they were built (it was down, or still catching
+    // up, when the job ran). The slack covers an ETL transaction that stamped loaded_at just before
+    // the build read the fills but committed just after.
+    private static final String IS_UP_TO_DATE_SQL = &quot;&quot;&quot;
+            WITH built AS (
+                SELECT MIN(generated_at) AS generated_at, BOOL_AND(schema_version = :schemaVersion) AS current
+                FROM reporting.client_recaps
+                WHERE month = :month
+            )
+            SELECT built.generated_at IS NOT NULL AND built.current AND NOT EXISTS (
+                SELECT 1 FROM reporting.orders
+                WHERE status = 'FILLED' AND completed_at &lt; :before
+                  AND loaded_at &gt; built.generated_at - INTERVAL '1 minute')
+            FROM built
+            &quot;&quot;&quot;;
+
+    private final NamedParameterJdbcTemplate jdbc;
+    private final TransactionTemplate transaction;
+    private final ObjectMapper objectMapper;
+
+    /**
+     * Creates the repository. Its JdbcTemplate and transactions are its own, not beans, so the
+     * reports keep Spring Boot's, on the read-only pool.
+     * @param recapWriteDataSource the recap write pool
+     * @param objectMapper writes and reads the recap JSON
+     */
+    public RecapSnapshotRepository(@Qualifier(&quot;recapWriteDataSource&quot;) DataSource recapWriteDataSource,
+<span class="fc" id="L74">                                   ObjectMapper objectMapper) {</span>
+<span class="fc" id="L75">        this.jdbc = new NamedParameterJdbcTemplate(recapWriteDataSource);</span>
+<span class="fc" id="L76">        this.transaction = new TransactionTemplate(new DataSourceTransactionManager(recapWriteDataSource));</span>
+<span class="fc" id="L77">        this.objectMapper = objectMapper;</span>
+<span class="fc" id="L78">    }</span>
+
+    /**
+     * Stores a month's recaps in one transaction, replacing any already stored for the same
+     * clients, so a reader never sees half a month.
+     * @param month the month the recaps cover
+     * @param recaps each client's recap
+     * @param generatedAt when they were built
+     */
+    public void saveMonth(YearMonth month, Map&lt;UUID, RecapPayload&gt; recaps, OffsetDateTime generatedAt) {
+<span class="nc" id="L88">        MapSqlParameterSource[] rows = recaps.entrySet().stream()</span>
+<span class="nc" id="L89">                .map(entry -&gt; new MapSqlParameterSource()</span>
+<span class="nc" id="L90">                        .addValue(&quot;clientId&quot;, entry.getKey())</span>
+<span class="nc" id="L91">                        .addValue(&quot;month&quot;, month.atDay(1))</span>
+<span class="nc" id="L92">                        .addValue(&quot;schemaVersion&quot;, RecapCalculator.SCHEMA_VERSION)</span>
+<span class="nc" id="L93">                        .addValue(&quot;payload&quot;, toJson(entry.getValue()))</span>
+<span class="nc" id="L94">                        .addValue(&quot;generatedAt&quot;, generatedAt))</span>
+<span class="nc" id="L95">                .toArray(MapSqlParameterSource[]::new);</span>
+<span class="nc" id="L96">        transaction.executeWithoutResult(status -&gt; jdbc.batchUpdate(UPSERT_SQL, rows));</span>
+<span class="nc" id="L97">    }</span>
+
+    /**
+     * A client's stored recap of a month.
+     * @param clientId the client
+     * @param month the month
+     * @return the recap, or empty when none is stored
+     */
+    public Optional&lt;StoredRecap&gt; find(UUID clientId, YearMonth month) {
+<span class="nc" id="L106">        List&lt;StoredRecap&gt; found = jdbc.query(FIND_SQL,</span>
+<span class="nc" id="L107">                new MapSqlParameterSource(&quot;clientId&quot;, clientId).addValue(&quot;month&quot;, month.atDay(1)),</span>
+<span class="nc" id="L108">                (rs, row) -&gt; new StoredRecap(month, rs.getInt(&quot;schema_version&quot;), rs.getString(&quot;payload&quot;),</span>
+<span class="nc" id="L109">                        rs.getObject(&quot;generated_at&quot;, OffsetDateTime.class)));</span>
+<span class="nc" id="L110">        return found.stream().findFirst();</span>
+    }
+
+    /**
+     * Whether a month's recaps are stored in the current JSON shape and no fill they cover has been
+     * loaded since they were built.
+     * @param month the month
+     * @return false when the month has no recaps, any is in an older shape, or a fill up to its end
+     *         arrived after them
+     */
+    public boolean isUpToDate(YearMonth month) {
+<span class="nc" id="L121">        return Boolean.TRUE.equals(jdbc.queryForObject(IS_UP_TO_DATE_SQL,</span>
+<span class="nc" id="L122">                new MapSqlParameterSource(&quot;month&quot;, month.atDay(1))</span>
+<span class="nc" id="L123">                        .addValue(&quot;schemaVersion&quot;, RecapCalculator.SCHEMA_VERSION)</span>
+<span class="nc" id="L124">                        .addValue(&quot;before&quot;, month.plusMonths(1).atDay(1).atStartOfDay().atOffset(ZoneOffset.UTC)),</span>
+                Boolean.class));
+    }
+
+    /**
+     * Reads a stored recap's JSON.
+     * @param stored the stored recap
+     * @return the recap
+     */
+    public RecapPayload payload(StoredRecap stored) {
+        try {
+<span class="nc" id="L135">            return objectMapper.readValue(stored.payloadJson(), RecapPayload.class);</span>
+<span class="nc" id="L136">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L137">            throw new UncheckedIOException(&quot;Stored recap of &quot; + stored.month() + &quot; can't be read&quot;, e);</span>
+        }
+    }
+
+    private String toJson(RecapPayload payload) {
+        try {
+<span class="nc" id="L143">            return objectMapper.writeValueAsString(payload);</span>
+<span class="nc" id="L144">        } catch (JsonProcessingException e) {</span>
+<span class="nc" id="L145">            throw new UncheckedIOException(&quot;Recap of &quot; + payload.month() + &quot; can't be written&quot;, e);</span>
+        }
+    }
+
+    /**
+     * A recap as stored.
+     * @param month the month it covers
+     * @param schemaVersion the version of the JSON's shape
+     * @param payloadJson the recap, as JSON
+     * @param generatedAt when it was built
+     */
+<span class="fc" id="L156">    public record StoredRecap(YearMonth month, int schemaVersion, String payloadJson, OffsetDateTime generatedAt) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

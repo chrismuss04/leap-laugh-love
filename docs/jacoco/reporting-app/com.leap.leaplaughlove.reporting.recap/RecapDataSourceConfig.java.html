@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapDataSourceConfig.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapDataSourceConfig.java</span></div><h1>RecapDataSourceConfig.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import com.zaxxer.hikari.HikariDataSource;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
+import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
+
+/**
+ * The reporting service's two connection pools. Every report reads through the main pool, which
+ * stays read-only so an accidental write fails loudly; recaps are the one thing this service
+ * writes, through a small pool of its own that only {@link RecapSnapshotRepository} uses.
+ *
+ * &lt;p&gt;Declaring a second DataSource turns off Spring Boot's own, so the main pool is declared here
+ * too, bound to the same spring.datasource properties as before: reports, JdbcTemplate and the
+ * session check see no difference.
+ */
+@Configuration
+<span class="fc" id="L21">public class RecapDataSourceConfig {</span>
+
+    /**
+     * The connection settings both pools share.
+     * @return spring.datasource's url, username and password
+     */
+    @Bean
+    @Primary
+    @ConfigurationProperties(&quot;spring.datasource&quot;)
+    public DataSourceProperties dataSourceProperties() {
+<span class="fc" id="L31">        return new DataSourceProperties();</span>
+    }
+
+    /**
+     * The main, read-only pool, with spring.datasource.hikari's settings.
+     * @param properties the shared connection settings
+     * @return the pool every report reads through
+     */
+    @Bean
+    @Primary
+    @ConfigurationProperties(&quot;spring.datasource.hikari&quot;)
+    public HikariDataSource dataSource(DataSourceProperties properties) {
+<span class="fc" id="L43">        return properties.initializeDataSourceBuilder().type(HikariDataSource.class).build();</span>
+    }
+
+    /**
+     * The pool recaps are written through: the same database, writable, and small, since only the
+     * monthly job writes.
+     * @param properties the shared connection settings
+     * @param maximumPoolSize the most connections it opens
+     * @return the recap write pool
+     */
+    @Bean
+    public HikariDataSource recapWriteDataSource(DataSourceProperties properties,
+                                                 @Value(&quot;${reporting.recap.write-pool-size:2}&quot;) int maximumPoolSize) {
+<span class="fc" id="L56">        HikariDataSource dataSource = properties.initializeDataSourceBuilder().type(HikariDataSource.class).build();</span>
+<span class="fc" id="L57">        dataSource.setPoolName(&quot;recap-write&quot;);</span>
+<span class="fc" id="L58">        dataSource.setReadOnly(false);</span>
+<span class="fc" id="L59">        dataSource.setMaximumPoolSize(maximumPoolSize);</span>
+<span class="fc" id="L60">        dataSource.setMinimumIdle(0);</span>
+<span class="fc" id="L61">        return dataSource;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

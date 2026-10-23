@@ -220,11 +220,6 @@ public class ClientRegistrationController {
 
         /**
          * Compares the DOB to today's date to validate minimum age requirement
-         * 
-         * @param dateOfBirth the date of birth to validate
-         * @param context     the context in which the constraint is evaluated
-         * @return true if the date of birth meets the minimum age requirement, false
-         *         otherwise
          */
         class Validator implements ConstraintValidator<MinimumAge, LocalDate> {
 

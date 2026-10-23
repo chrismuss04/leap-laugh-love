@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>SessionPolicy.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">SessionPolicy.java</span></div><h1>SessionPolicy.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.common.market.MarketClock;
+import com.leap.leaplaughlove.common.market.MarketSession;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.submission.OrderSubmissionService;
+
+import java.time.OffsetDateTime;
+import java.time.ZonedDateTime;
+
+/**
+ * Which orders may execute in which market session, and when a DAY order's day ends. Pure
+ * functions with no state, shared by order placement, {@link OrderTriggerEngine} and order edits.
+ *
+ * &lt;ul&gt;
+ *     &lt;li&gt;REGULAR (9:30-16:00 ET): every order.&lt;/li&gt;
+ *     &lt;li&gt;PRE_MARKET and AFTER_HOURS: only LIMIT orders placed for extended hours. Stops don't
+ *     trigger and trailing stops don't trail on thin extended-hours prices.&lt;/li&gt;
+ *     &lt;li&gt;CLOSED: nothing executes; orders wait for the next session they may trade in.&lt;/li&gt;
+ * &lt;/ul&gt;
+ */
+public final class SessionPolicy {
+
+    private SessionPolicy() {
+    }
+
+    /**
+     * Returns whether an order may execute in a session.
+     * @param order the order
+     * @param session the session in force
+     * @return true if it may fill (or trigger, or trail) now
+     */
+    public static boolean canExecute(Order order, MarketSession session) {
+<span class="fc" id="L35">        return canExecute(order.getOrderType(), order.isExtendedHours(), session);</span>
+    }
+
+    /**
+     * Returns whether an order on these terms may execute in a session.
+     * @param type the order type
+     * @param extendedHours whether it was placed for extended hours
+     * @param session the session in force
+     * @return true if it may fill (or trigger, or trail) now
+     */
+    public static boolean canExecute(Order.OrderType type, boolean extendedHours, MarketSession session) {
+<span class="fc bfc" id="L46" title="All 3 branches covered.">        return switch (session) {</span>
+<span class="fc" id="L47">            case REGULAR -&gt; true;</span>
+<span class="fc bfc" id="L48" title="All 4 branches covered.">            case PRE_MARKET, AFTER_HOURS -&gt; type == Order.OrderType.LIMIT &amp;&amp; extendedHours;</span>
+<span class="fc" id="L49">            case CLOSED -&gt; false;</span>
+        };
+    }
+
+    /**
+     * When a DAY order stops working: at the end of the trading day it can next trade in - the
+     * regular close, or the end of after-hours for an extended-hours order. An order placed after
+     * that time today (or on a weekend or holiday) is good for the next trading day.
+     * @param placedAt when the order is placed
+     * @param extendedHours whether it trades in extended hours
+     * @return its expiry
+     */
+    public static OffsetDateTime dayExpiry(OffsetDateTime placedAt, boolean extendedHours) {
+<span class="fc" id="L62">        MarketCalendar.TradingDay day = MarketCalendar.tradingDay(</span>
+<span class="fc" id="L63">                placedAt.atZoneSameInstant(MarketCalendar.ZONE).toLocalDate());</span>
+<span class="fc bfc" id="L64" title="All 4 branches covered.">        if (day.isOpen() &amp;&amp; placedAt.toInstant().isBefore(endOf(day, extendedHours).toInstant())) {</span>
+<span class="fc" id="L65">            return endOf(day, extendedHours).toOffsetDateTime();</span>
+        }
+<span class="fc" id="L67">        MarketCalendar.TradingDay next = MarketCalendar.nextTradingDay(day.date().plusDays(1));</span>
+<span class="fc" id="L68">        return endOf(next, extendedHours).toOffsetDateTime();</span>
+    }
+
+    /**
+     * When an order with this time in force stops working, if it hasn't filled.
+     * @param timeInForce DAY or GTC
+     * @param placedAt when it is placed (or its time in force changed)
+     * @param extendedHours whether it trades in extended hours
+     * @param marketClock the market clock; with market hours off, a DAY order lasts until midnight ET
+     * @return its expiry
+     */
+    public static OffsetDateTime expiryOf(Order.TimeInForce timeInForce, OffsetDateTime placedAt,
+                                          boolean extendedHours, MarketClock marketClock) {
+<span class="fc bfc" id="L81" title="All 4 branches covered.">        if (timeInForce == Order.TimeInForce.GTC || marketClock.mode() == MarketClock.Mode.ALWAYS_OPEN) {</span>
+<span class="fc" id="L82">            return OrderSubmissionService.expiryOf(timeInForce, placedAt);</span>
+        }
+<span class="fc" id="L84">        return dayExpiry(placedAt, extendedHours);</span>
+    }
+
+    private static ZonedDateTime endOf(MarketCalendar.TradingDay day, boolean extendedHours) {
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        return extendedHours ? day.afterHoursClose() : day.regularClose();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

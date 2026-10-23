@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>CurrentQuoteClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.quote</a> &gt; <span class="el_source">CurrentQuoteClient.java</span></div><h1>CurrentQuoteClient.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.quote;
+
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * HTTP Client that fetches the latest quote for an instrument from the market data service with caller JWT token forwarded.
+ */
+@Component
+public class CurrentQuoteClient {
+
+    private final RestClient restClient;
+    /**
+     * Constructs a new CurrentQuoteClient with the given market data REST client.
+     * @param marketDataRestClient the REST client pointed at the market data service
+     */
+<span class="fc" id="L26">    public CurrentQuoteClient(RestClient marketDataRestClient) {</span>
+<span class="fc" id="L27">        this.restClient = marketDataRestClient;</span>
+<span class="fc" id="L28">    }</span>
+
+    /**
+     * Fetches the latest quote for the given instrument symbol. Returns an empty Optional if the quote is not found.
+     * Hits the market data service endpoint to retrieve the latest quote for the specified instrument symbol.
+     * @param symbol the instrument symbol for which to fetch the latest quote
+     * @return an Optional containing the latest QuoteSnapshot if available, or an empty Optional if not found
+     */
+    public Optional&lt;QuoteSnapshot&gt; fetchLatest(String symbol) {
+        try {
+<span class="fc" id="L38">            return Optional.ofNullable(restClient.get()</span>
+<span class="fc" id="L39">                    .uri(&quot;/api/marketdata/quotes/{symbol}&quot;, symbol)</span>
+<span class="fc" id="L40">                    .headers(this::forwardCallerToken)</span>
+<span class="fc" id="L41">                    .retrieve()</span>
+<span class="fc" id="L42">                    .body(QuoteSnapshot.class));</span>
+<span class="fc" id="L43">        } catch (HttpClientErrorException.NotFound ex) {</span>
+<span class="fc" id="L44">            return Optional.empty();</span>
+<span class="fc" id="L45">        } catch (RestClientException ex) {</span>
+<span class="fc" id="L46">            throw new QuoteUnavailableException(</span>
+                    &quot;Failed to fetch current quote for symbol &quot; + symbol, ex);
+        }
+    }
+
+    /**
+     * Fetches the latest quote for every instrument in one call, authenticating with the given
+     * token - for work with no request behind it, such as watching open orders.
+     * @param bearerToken a market-quotes service token
+     * @return the latest quotes, empty if the market data service has none
+     * @throws QuoteUnavailableException if the market data service can't be reached
+     */
+    public List&lt;QuoteSnapshot&gt; fetchAllAs(String bearerToken) {
+        try {
+<span class="nc" id="L60">            List&lt;QuoteSnapshot&gt; quotes = restClient.get()</span>
+<span class="nc" id="L61">                    .uri(&quot;/api/marketdata/quotes&quot;)</span>
+<span class="nc" id="L62">                    .headers(headers -&gt; headers.setBearerAuth(bearerToken))</span>
+<span class="nc" id="L63">                    .retrieve()</span>
+<span class="nc" id="L64">                    .body(new ParameterizedTypeReference&lt;List&lt;QuoteSnapshot&gt;&gt;() {});</span>
+<span class="nc bnc" id="L65" title="All 2 branches missed.">            return quotes != null ? quotes : List.of();</span>
+<span class="nc" id="L66">        } catch (RestClientException ex) {</span>
+<span class="nc" id="L67">            throw new QuoteUnavailableException(&quot;Failed to fetch current quotes&quot;, ex);</span>
+        }
+    }
+
+    /**
+     * Forwards the caller's JWT token from the current HTTP request to the given headers for the market data service.
+     * @param headers the HTTP headers to which the caller's JWT token should be forwarded
+     */
+    private void forwardCallerToken(HttpHeaders headers) {
+<span class="fc bfc" id="L76" title="All 2 branches covered.">        if (RequestContextHolder.getRequestAttributes() instanceof ServletRequestAttributes attributes) {</span>
+<span class="fc" id="L77">            String authorization = attributes.getRequest().getHeader(HttpHeaders.AUTHORIZATION);</span>
+<span class="pc bpc" id="L78" title="1 of 2 branches missed.">            if (authorization != null) {</span>
+<span class="fc" id="L79">                headers.set(HttpHeaders.AUTHORIZATION, authorization);</span>
+            }
+        }
+<span class="fc" id="L82">    }</span>
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

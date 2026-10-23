@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ConcentrationReport.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.analyst</a> &gt; <span class="el_source">ConcentrationReport.java</span></div><h1>ConcentrationReport.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.analyst;
+
+import java.math.BigDecimal;
+import java.time.YearMonth;
+import java.util.List;
+
+/**
+ * How much of each month's traded volume comes from its biggest clients.
+ * @param window the months reported on
+ * @param months one entry per month in the window, oldest first
+ */
+<span class="fc" id="L12">public record ConcentrationReport(ReportWindow window, List&lt;Month&gt; months) {</span>
+
+    /**
+     * One month's volume and its top clients' share of it.
+     * @param month the month
+     * @param tradingClients clients with at least one filled order
+     * @param volume value of the orders filled in the month
+     * @param tiers the top 1, 10 and 20 percent of trading clients, in that order; empty in a
+     *              month nobody traded in
+     */
+<span class="fc" id="L22">    public record Month(YearMonth month, long tradingClients, BigDecimal volume, List&lt;Tier&gt; tiers) {}</span>
+
+    /**
+     * The top slice of a month's trading clients by volume.
+     * @param topPct the slice, as a percentage of the month's trading clients
+     * @param clients how many clients that is, rounded up to a whole client
+     * @param volume their combined volume
+     * @param sharePct their volume as a percentage of the month's
+     */
+<span class="fc" id="L31">    public record Tier(int topPct, long clients, BigDecimal volume, BigDecimal sharePct) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

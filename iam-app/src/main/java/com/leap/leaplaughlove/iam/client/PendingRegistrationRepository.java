@@ -35,6 +35,10 @@ public class PendingRegistrationRepository {
 
     private final JdbcTemplate jdbcTemplate;
 
+    /**
+     * Constructs a new PendingRegistrationRepository.
+     * @param jdbcTemplate access to the iam schema
+     */
     public PendingRegistrationRepository(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }

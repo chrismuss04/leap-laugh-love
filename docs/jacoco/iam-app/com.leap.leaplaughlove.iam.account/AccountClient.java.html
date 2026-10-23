@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>AccountClient.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.account</a> &gt; <span class="el_source">AccountClient.java</span></div><h1>AccountClient.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.account;
+
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+import java.math.BigDecimal;
+import java.util.UUID;
+
+/**
+ * Client for the account-app endpoints iam-app uses to set up a newly registered client's first
+ * account. Every call authenticates with a token issued to that client.
+ */
+@Component
+public class AccountClient {
+
+    private final RestClient restClient;
+
+    /**
+     * Constructs an AccountClient.
+     * @param accountRestClient the RestClient used to reach account-app
+     */
+<span class="fc" id="L23">    public AccountClient(RestClient accountRestClient) {</span>
+<span class="fc" id="L24">        this.restClient = accountRestClient;</span>
+<span class="fc" id="L25">    }</span>
+
+    /**
+     * Opens an account for the client the token was issued to.
+     * @param bearerToken a JWT issued to the account's owner
+     * @param baseCurrency the currency of the new account
+     * @return the id of the account account-app created
+     * @throws IllegalStateException if account-app answers without an account id
+     */
+    public UUID createAccount(String bearerToken, String baseCurrency) {
+<span class="fc" id="L35">        CreatedAccount created = restClient.post()</span>
+<span class="fc" id="L36">                .uri(&quot;/api/account/accounts&quot;)</span>
+<span class="fc" id="L37">                .headers(headers -&gt; headers.setBearerAuth(bearerToken))</span>
+<span class="fc" id="L38">                .body(new CreateAccountBody(baseCurrency))</span>
+<span class="fc" id="L39">                .retrieve()</span>
+<span class="fc" id="L40">                .body(CreatedAccount.class);</span>
+<span class="pc bpc" id="L41" title="1 of 4 branches missed.">        if (created == null || created.accountId() == null) {</span>
+<span class="fc" id="L42">            throw new IllegalStateException(&quot;account-app did not return an account id&quot;);</span>
+        }
+<span class="fc" id="L44">        return created.accountId();</span>
+    }
+
+    /**
+     * Deposits cash into an account owned by the client the token was issued to.
+     * @param bearerToken a JWT issued to the account's owner
+     * @param accountId the account to deposit into
+     * @param amount the amount to deposit
+     * @param description the note recorded on the ledger entry
+     */
+    public void deposit(String bearerToken, UUID accountId, BigDecimal amount, String description) {
+<span class="fc" id="L55">        restClient.post()</span>
+<span class="fc" id="L56">                .uri(&quot;/api/account/balance/accounts/{accountId}/deposit&quot;, accountId)</span>
+<span class="fc" id="L57">                .headers(headers -&gt; headers.setBearerAuth(bearerToken))</span>
+<span class="fc" id="L58">                .body(new DepositBody(amount, description))</span>
+<span class="fc" id="L59">                .retrieve()</span>
+<span class="fc" id="L60">                .toBodilessEntity();</span>
+<span class="fc" id="L61">    }</span>
+
+<span class="fc" id="L63">    record CreateAccountBody(String baseCurrency) {}</span>
+
+<span class="fc" id="L65">    record DepositBody(BigDecimal amount, String description) {}</span>
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+<span class="fc" id="L68">    record CreatedAccount(UUID accountId) {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

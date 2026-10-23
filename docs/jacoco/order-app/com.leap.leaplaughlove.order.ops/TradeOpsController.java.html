@@ -1,0 +1,182 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>TradeOpsController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.ops</a> &gt; <span class="el_source">TradeOpsController.java</span></div><h1>TradeOpsController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.ops;
+
+import com.leap.leaplaughlove.order.ops.TradeOpsRepository.TradeSearch;
+import com.leap.leaplaughlove.order.order.Order;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.ExceptionHandler;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+
+import java.nio.charset.StandardCharsets;
+import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Trade reconstruction for Trading Operations; OrderSecurityConfig limits it to that role.
+ * Every lookup is logged first, including ones that turn out invalid or find nothing.
+ */
+@RestController
+@RequestMapping(&quot;/api/order/ops/orders&quot;)
+public class TradeOpsController {
+
+<span class="fc" id="L36">    private static final MediaType TEXT_CSV = new MediaType(&quot;text&quot;, &quot;csv&quot;, StandardCharsets.UTF_8);</span>
+
+    private final TradeTimelineService tradeTimelineService;
+    private final OpsAccessLog accessLog;
+
+    /**
+     * Constructs a new TradeOpsController.
+     * @param tradeTimelineService finds and reconstructs trades
+     * @param accessLog records each lookup
+     */
+<span class="fc" id="L46">    public TradeOpsController(TradeTimelineService tradeTimelineService, OpsAccessLog accessLog) {</span>
+<span class="fc" id="L47">        this.tradeTimelineService = tradeTimelineService;</span>
+<span class="fc" id="L48">        this.accessLog = accessLog;</span>
+<span class="fc" id="L49">    }</span>
+
+    /**
+     * Needs a period and the client, by id or email; the other criteria narrow it further.
+     * from and to are ISO date-times; from is inclusive, to exclusive.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     * @return the matching trades, newest first
+     */
+    @GetMapping
+    public List&lt;TradeSummary&gt; search(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) UUID clientId,
+            @RequestParam(required = false) String clientEmail,
+            @RequestParam(required = false) UUID accountId,
+            @RequestParam(required = false) String accountNumber,
+            @RequestParam(required = false) String symbol,
+            @RequestParam(required = false) Order.Side side,
+            @RequestParam(required = false) Order.Status status,
+            @RequestParam(required = false) UUID orderId) {
+<span class="fc" id="L78">        TradeSearch search = new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,</span>
+                symbol, side, status, from, to);
+<span class="fc" id="L80">        accessLog.record(OpsAccessLog.Action.SEARCH, null, criteria(search));</span>
+<span class="fc" id="L81">        return tradeTimelineService.search(search);</span>
+    }
+
+    /**
+     * How many orders the same search matches, by outcome; takes the same criteria.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     * @return the counts by outcome
+     */
+    @GetMapping(&quot;/counts&quot;)
+    public OrderCounts countByStatus(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime to,
+            @RequestParam(required = false) UUID clientId,
+            @RequestParam(required = false) String clientEmail,
+            @RequestParam(required = false) UUID accountId,
+            @RequestParam(required = false) String accountNumber,
+            @RequestParam(required = false) String symbol,
+            @RequestParam(required = false) Order.Side side,
+            @RequestParam(required = false) Order.Status status,
+            @RequestParam(required = false) UUID orderId) {
+<span class="fc" id="L110">        TradeSearch search = new TradeSearch(orderId, clientId, clientEmail, accountId, accountNumber,</span>
+                symbol, side, status, from, to);
+<span class="fc" id="L112">        accessLog.record(OpsAccessLog.Action.VIEW_ORDER_COUNTS, null, criteria(search));</span>
+<span class="fc" id="L113">        return tradeTimelineService.countByStatus(search);</span>
+    }
+
+    /**
+     * The order's recorded fields, executions, cash entries and position movements.
+     * @param orderId the order
+     * @return everything recorded for the order
+     */
+    @GetMapping(&quot;/{orderId}&quot;)
+    public TradeRecords getRecords(@PathVariable UUID orderId) {
+<span class="fc" id="L123">        accessLog.record(OpsAccessLog.Action.VIEW_ORDER, orderId, null);</span>
+<span class="fc" id="L124">        return tradeTimelineService.getRecords(orderId);</span>
+    }
+
+    /**
+     * The order's records as one time-ordered sequence of steps.
+     * @param orderId the order
+     * @return the order's timeline
+     */
+    @GetMapping(&quot;/{orderId}/timeline&quot;)
+    public TradeTimeline getTimeline(@PathVariable UUID orderId) {
+<span class="fc" id="L134">        accessLog.record(OpsAccessLog.Action.VIEW_TIMELINE, orderId, null);</span>
+<span class="fc" id="L135">        return tradeTimelineService.getTimeline(orderId);</span>
+    }
+
+    /**
+     * The order's timeline as a CSV download.
+     * @param orderId the order
+     * @return the CSV, as an attachment named {@code trade-&lt;orderId&gt;.csv}
+     */
+    @GetMapping(&quot;/{orderId}/timeline.csv&quot;)
+    public ResponseEntity&lt;String&gt; downloadTimelineCsv(@PathVariable UUID orderId) {
+<span class="fc" id="L145">        accessLog.record(OpsAccessLog.Action.DOWNLOAD_CSV, orderId, null);</span>
+<span class="fc" id="L146">        String csv = TradeTimelineCsv.write(tradeTimelineService.getTimeline(orderId));</span>
+<span class="fc" id="L147">        return ResponseEntity.ok()</span>
+<span class="fc" id="L148">                .contentType(TEXT_CSV)</span>
+<span class="fc" id="L149">                .header(HttpHeaders.CONTENT_DISPOSITION,</span>
+<span class="fc" id="L150">                        ContentDisposition.attachment().filename(&quot;trade-&quot; + orderId + &quot;.csv&quot;).build().toString())</span>
+<span class="fc" id="L151">                .body(csv);</span>
+    }
+
+    // The criteria given, in a fixed order, for the access log.
+    private static String criteria(TradeSearch search) {
+<span class="fc" id="L156">        Map&lt;String, Object&gt; criteria = new LinkedHashMap&lt;&gt;();</span>
+<span class="fc" id="L157">        criteria.put(&quot;from&quot;, search.from());</span>
+<span class="fc" id="L158">        criteria.put(&quot;to&quot;, search.to());</span>
+<span class="fc" id="L159">        criteria.put(&quot;clientId&quot;, search.clientId());</span>
+<span class="fc" id="L160">        criteria.put(&quot;clientEmail&quot;, search.clientEmail());</span>
+<span class="fc" id="L161">        criteria.put(&quot;accountId&quot;, search.accountId());</span>
+<span class="fc" id="L162">        criteria.put(&quot;accountNumber&quot;, search.accountNumber());</span>
+<span class="fc" id="L163">        criteria.put(&quot;symbol&quot;, search.symbol());</span>
+<span class="fc" id="L164">        criteria.put(&quot;side&quot;, search.side());</span>
+<span class="fc" id="L165">        criteria.put(&quot;status&quot;, search.status());</span>
+<span class="fc" id="L166">        criteria.put(&quot;orderId&quot;, search.orderId());</span>
+<span class="fc" id="L167">        criteria.values().removeIf(Objects::isNull);</span>
+<span class="fc" id="L168">        return criteria.toString();</span>
+    }
+
+    /**
+     * Answers a parameter that can't be read, such as a malformed date or UUID, with a 400.
+     * @param ex the mismatch
+     * @return an error body naming the parameter
+     */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Map&lt;String, String&gt; handleMalformedParameter(MethodArgumentTypeMismatchException ex) {
+<span class="fc" id="L179">        return Map.of(&quot;error&quot;, &quot;BAD_REQUEST&quot;, &quot;message&quot;, ex.getName() + &quot; is not valid&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

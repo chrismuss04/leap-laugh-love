@@ -5,6 +5,7 @@ package com.leap.leaplaughlove.marketdata.ingestion;
  */
 public class QuoteParseException extends RuntimeException {
 
+    /** The feed line that couldn't be parsed. */
     private final String rawLine;
 
     /**

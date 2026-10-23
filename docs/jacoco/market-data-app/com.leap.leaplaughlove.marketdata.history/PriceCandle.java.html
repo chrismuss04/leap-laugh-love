@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceCandle.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.history</a> &gt; <span class="el_source">PriceCandle.java</span></div><h1>PriceCandle.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.history;
+
+import com.leap.leaplaughlove.marketdata.instrument.SimulatedInstrument;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.IdClass;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PostLoad;
+import jakarta.persistence.PostPersist;
+import jakarta.persistence.Table;
+import jakarta.persistence.Transient;
+import org.springframework.data.domain.Persistable;
+
+import java.io.Serializable;
+import java.math.BigDecimal;
+import java.time.OffsetDateTime;
+import java.util.Objects;
+import java.util.UUID;
+
+/**
+ * Represents one OHLC candle aggregated from the live simulation tick stream
+ * for an
+ * instrument, over a fixed-width time bucket.
+ *
+ * &lt;p&gt;
+ * Identified by its natural key - instrument, width and bucket start - rather
+ * than a
+ * surrogate id. The key is assigned, not generated, so the entity reports
+ * whether it is new
+ * itself: otherwise Spring Data's {@code saveAll} would treat every candle as
+ * possibly existing
+ * and merge it, issuing a SELECT per row and giving up the batched inserts the
+ * backfill and the
+ * accumulator's flush depend on. Candles are only ever inserted, never updated.
+ */
+@Entity
+@Table(name = &quot;price_candles&quot;, schema = &quot;marketdata&quot;)
+@IdClass(PriceCandle.Key.class)
+public class PriceCandle implements Persistable&lt;PriceCandle.Key&gt; {
+
+    @Id
+    @Column(name = &quot;instrument_id&quot;, nullable = false)
+    private UUID instrumentId;
+
+    // Read-only: instrument_id is written through the key column above. A
+    // @ManyToOne in the key
+    // itself makes Hibernate reject instruments loaded outside the saving
+    // transaction, which is
+    // how both the backfill and the accumulator hold them.
+    @ManyToOne
+    @JoinColumn(name = &quot;instrument_id&quot;, insertable = false, updatable = false)
+    private SimulatedInstrument instrument;
+
+    @Id
+    @Column(name = &quot;bucket_seconds&quot;, nullable = false)
+    private int bucketSeconds;
+
+    @Id
+    @Column(name = &quot;bucket_start&quot;, nullable = false)
+    private OffsetDateTime bucketStart;
+
+    @Column(name = &quot;open&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal open;
+
+    @Column(name = &quot;high&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal high;
+
+    @Column(name = &quot;low&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal low;
+
+    @Column(name = &quot;close&quot;, nullable = false, precision = 18, scale = 6)
+    private BigDecimal close;
+
+<span class="fc" id="L76">    @Transient</span>
+    private boolean isNew = true;
+
+    /**
+     * No argument constructor required by JPA
+     */
+<span class="fc" id="L82">    protected PriceCandle() {</span>
+<span class="fc" id="L83">    }</span>
+
+    /**
+     * Creates a new PriceCandle entity with the specified details.
+     * 
+     * @param instrument    the instrument this candle is for
+     * @param bucketStart   the start of the candle's time bucket
+     * @param bucketSeconds the width, in seconds, of the candle's time bucket
+     * @param open          the opening price of the bucket
+     * @param high          the highest price of the bucket
+     * @param low           the lowest price of the bucket
+     * @param close         the closing price of the bucket
+     */
+    public PriceCandle(SimulatedInstrument instrument, OffsetDateTime bucketStart, int bucketSeconds,
+<span class="fc" id="L97">            BigDecimal open, BigDecimal high, BigDecimal low, BigDecimal close) {</span>
+<span class="fc" id="L98">        this.instrumentId = instrument.getInstrumentId();</span>
+<span class="fc" id="L99">        this.instrument = instrument;</span>
+<span class="fc" id="L100">        this.bucketStart = bucketStart;</span>
+<span class="fc" id="L101">        this.bucketSeconds = bucketSeconds;</span>
+<span class="fc" id="L102">        this.open = open;</span>
+<span class="fc" id="L103">        this.high = high;</span>
+<span class="fc" id="L104">        this.low = low;</span>
+<span class="fc" id="L105">        this.close = close;</span>
+<span class="fc" id="L106">    }</span>
+
+    /**
+     * Gets the candle's primary key.
+     * 
+     * @return the instrument, width and bucket start identifying the candle
+     */
+    @Override
+    public Key getId() {
+<span class="fc" id="L115">        return new Key(instrumentId, bucketSeconds, bucketStart);</span>
+    }
+
+    /**
+     * Reports whether this candle has not been stored yet, so saving it inserts it
+     * directly.
+     * 
+     * @return true until the candle has been persisted or was loaded from the
+     *         database
+     */
+    @Override
+    public boolean isNew() {
+<span class="fc" id="L127">        return isNew;</span>
+    }
+
+    /**
+     * Marks this candle as no longer new, after it has been persisted or loaded
+     * from the database.
+     */
+    @PostPersist
+    @PostLoad
+    void markNotNew() {
+<span class="fc" id="L137">        this.isNew = false;</span>
+<span class="fc" id="L138">    }</span>
+
+    /**
+     * Gets the instrument this candle is for.
+     * 
+     * @return the instrument of the candle
+     */
+    public SimulatedInstrument getInstrument() {
+<span class="fc" id="L146">        return instrument;</span>
+    }
+
+    /**
+     * Gets the start of the candle's time bucket.
+     * 
+     * @return the bucketStart of the candle
+     */
+    public OffsetDateTime getBucketStart() {
+<span class="fc" id="L155">        return bucketStart;</span>
+    }
+
+    /**
+     * Gets the width, in seconds, of the candle's time bucket.
+     * 
+     * @return the bucketSeconds of the candle
+     */
+    public int getBucketSeconds() {
+<span class="fc" id="L164">        return bucketSeconds;</span>
+    }
+
+    /**
+     * Gets the opening price of the bucket.
+     * 
+     * @return the open price of the candle
+     */
+    public BigDecimal getOpen() {
+<span class="fc" id="L173">        return open;</span>
+    }
+
+    /**
+     * Gets the highest price of the bucket.
+     * 
+     * @return the high price of the candle
+     */
+    public BigDecimal getHigh() {
+<span class="fc" id="L182">        return high;</span>
+    }
+
+    /**
+     * Gets the lowest price of the bucket.
+     * 
+     * @return the low price of the candle
+     */
+    public BigDecimal getLow() {
+<span class="fc" id="L191">        return low;</span>
+    }
+
+    /**
+     * Gets the closing price of the bucket.
+     * 
+     * @return the close price of the candle
+     */
+    public BigDecimal getClose() {
+<span class="fc" id="L200">        return close;</span>
+    }
+
+    /**
+     * The composite primary key of a candle. Field names and types match the
+     * entity's
+     * {@code @Id} attributes, as {@code @IdClass} requires.
+     */
+    public static class Key implements Serializable {
+
+        /** The instrument the candle prices. */
+        private UUID instrumentId;
+        /** The candle's width in seconds. */
+        private int bucketSeconds;
+        /** When the candle's interval starts. */
+        private OffsetDateTime bucketStart;
+
+        /**
+         * No argument constructor required by JPA
+         */
+<span class="fc" id="L220">        protected Key() {</span>
+<span class="fc" id="L221">        }</span>
+
+        /**
+         * Creates a candle key.
+         * 
+         * @param instrumentId  the id of the candle's instrument
+         * @param bucketSeconds the width, in seconds, of the candle's time bucket
+         * @param bucketStart   the start of the candle's time bucket
+         */
+<span class="fc" id="L230">        public Key(UUID instrumentId, int bucketSeconds, OffsetDateTime bucketStart) {</span>
+<span class="fc" id="L231">            this.instrumentId = instrumentId;</span>
+<span class="fc" id="L232">            this.bucketSeconds = bucketSeconds;</span>
+<span class="fc" id="L233">            this.bucketStart = bucketStart;</span>
+<span class="fc" id="L234">        }</span>
+
+        /**
+         * Overrides the default equals method to compare candles by their natural
+         * key (instrumentId, bucketSeconds, and bucketStart)
+         * 
+         * @param other the object to compare to
+         * @return true if the other object is a key and has the same instrumentId,
+         *         bucketSeconds, and bucketStart
+         * @see java.lang.Object#equals(java.lang.Object)
+         */
+        @Override
+        public boolean equals(Object other) {
+<span class="fc bfc" id="L247" title="All 2 branches covered.">            if (this == other) {</span>
+<span class="fc" id="L248">                return true;</span>
+            }
+<span class="pc bpc" id="L250" title="1 of 2 branches missed.">            if (!(other instanceof Key key)) {</span>
+<span class="nc" id="L251">                return false;</span>
+            }
+            // Compared as instants: the same bucket can come back from the database at a
+            // different offset than it was built with.
+<span class="fc bfc" id="L255" title="All 2 branches covered.">            return bucketSeconds == key.bucketSeconds</span>
+<span class="fc bfc" id="L256" title="All 8 branches covered.">                    &amp;&amp; Objects.equals(instrumentId, key.instrumentId)</span>
+                    &amp;&amp; (bucketStart == null ? key.bucketStart == null
+<span class="fc bfc" id="L258" title="All 2 branches covered.">                            : key.bucketStart != null &amp;&amp; bucketStart.isEqual(key.bucketStart));</span>
+        }
+
+        /**
+         * Overrides the default hashCode method to generate a hash code based on the
+         * natural key (instrumentId, bucketSeconds, and bucketStart)
+         * 
+         * @return the hash code for this key
+         * @see java.lang.Object#hashCode()
+         */
+        @Override
+        public int hashCode() {
+<span class="fc bfc" id="L270" title="All 2 branches covered.">            return Objects.hash(instrumentId, bucketSeconds, bucketStart == null ? null : bucketStart.toInstant());</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

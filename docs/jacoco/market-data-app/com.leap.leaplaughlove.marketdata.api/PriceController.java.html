@@ -1,0 +1,207 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PriceController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">market-data-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.marketdata.api</a> &gt; <span class="el_source">PriceController.java</span></div><h1>PriceController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.marketdata.api;
+
+import com.leap.leaplaughlove.common.market.MarketCalendar;
+import com.leap.leaplaughlove.marketdata.history.PriceCandle;
+import com.leap.leaplaughlove.marketdata.history.PriceCandleRepository;
+import com.leap.leaplaughlove.marketdata.simulation.MarketSimulationEngine;
+import com.leap.leaplaughlove.marketdata.simulation.PriceState;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.Clock;
+import java.time.Duration;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.util.List;
+import java.util.Set;
+
+/**
+ * Exposes the simulated latest prices and OHLC candle history for instruments.
+ */
+@RestController
+@RequestMapping(&quot;/api/marketdata/prices&quot;)
+public class PriceController {
+
+    private static final int MAX_HISTORY_PAGE_SIZE = 1000;
+
+    /**
+     * Bucket widths a caller may request, in seconds: 1m, 5m, 1h, 1d. Restricted to
+     * the widths
+     * the accumulator and backfill actually write, so an unsupported interval fails
+     * loudly
+     * instead of returning an empty page that looks like &quot;no history here&quot;.
+     */
+<span class="fc" id="L42">    private static final Set&lt;Integer&gt; SUPPORTED_INTERVALS = Set.of(60, 300, 3600, 86400);</span>
+
+    /**
+     * Candle widths the previous close is read from, finest first: 5-minute candles end exactly on
+     * the close, and the coarser ones stand in for a symbol whose 5-minute history has gone.
+     */
+<span class="fc" id="L48">    private static final List&lt;Integer&gt; CLOSE_INTERVALS = List.of(300, 3600, 86400);</span>
+
+    /** How far before the previous close to look for a candle; covers a long holiday weekend. */
+<span class="fc" id="L51">    private static final Duration CLOSE_LOOKBACK = Duration.ofDays(10);</span>
+
+    private final MarketSimulationEngine simulationEngine;
+    private final PriceCandleRepository candleRepository;
+    private final Clock clock;
+
+    /**
+     * Constructs a PriceController with the injected market simulation engine and
+     * price candle repository.
+     * 
+     * @param simulationEngine the market simulation engine
+     * @param candleRepository the price candle repository
+     */
+    @Autowired
+    public PriceController(MarketSimulationEngine simulationEngine, PriceCandleRepository candleRepository) {
+<span class="fc" id="L66">        this(simulationEngine, candleRepository, Clock.systemUTC());</span>
+<span class="fc" id="L67">    }</span>
+
+    /**
+     * Constructs a PriceController on a given clock.
+     * 
+     * @param simulationEngine the market simulation engine
+     * @param candleRepository the price candle repository
+     * @param clock            the clock that says which close is the previous one
+     */
+<span class="fc" id="L76">    PriceController(MarketSimulationEngine simulationEngine, PriceCandleRepository candleRepository, Clock clock) {</span>
+<span class="fc" id="L77">        this.simulationEngine = simulationEngine;</span>
+<span class="fc" id="L78">        this.candleRepository = candleRepository;</span>
+<span class="fc" id="L79">        this.clock = clock;</span>
+<span class="fc" id="L80">    }</span>
+
+    /**
+     * Retrieves the latest simulated price for every active instrument.
+     * 
+     * @return the latest price for each active instrument
+     */
+    @GetMapping
+    public List&lt;PriceResponse&gt; getLatestPrices() {
+<span class="fc" id="L89">        return simulationEngine.latestAll().stream().map(this::toResponse).toList();</span>
+    }
+
+    /**
+     * Retrieves the latest simulated price for a single instrument symbol.
+     * 
+     * @param symbol the instrument symbol to look up
+     * @return the latest price for the symbol
+     * @throws ResponseStatusException with a 404 status if the symbol is unknown
+     */
+    @GetMapping(&quot;/{symbol}&quot;)
+    public PriceResponse getLatestPrice(@PathVariable String symbol) {
+<span class="fc" id="L101">        return simulationEngine.latest(symbol.toUpperCase())</span>
+<span class="fc" id="L102">                .map(this::toResponse)</span>
+<span class="fc" id="L103">                .orElseThrow(() -&gt; new ResponseStatusException(HttpStatus.NOT_FOUND,</span>
+                        &quot;Unknown instrument symbol: &quot; + symbol));
+    }
+
+    /**
+     * Retrieves a paginated, newest-first page of OHLC candle history for an
+     * instrument
+     * symbol within a time range.
+     * 
+     * @param symbol   the instrument symbol to look up
+     * @param from     the start of the time range (defaults to one day before
+     *                 {@code to})
+     * @param to       the end of the time range (defaults to now)
+     * @param interval the candle width, in seconds, to return: one of 60, 300, 3600
+     *                 or 86400.
+     *                 Pick the width from the range being charted - a day of 60s
+     *                 candles is 1440 points,
+     *                 the same day at 300s is 288, which is what a chart can
+     *                 actually resolve
+     * @param page     the zero-based page number to retrieve
+     * @param size     the page size, between 1 and {@value #MAX_HISTORY_PAGE_SIZE}
+     * @return the requested page of candle history
+     * @throws ResponseStatusException with a 400 status if the paging or range
+     *                                 parameters are invalid
+     */
+    @GetMapping(&quot;/{symbol}/history&quot;)
+    public Page&lt;PriceCandleResponse&gt; getHistory(
+            @PathVariable String symbol,
+            @RequestParam(required = false) OffsetDateTime from,
+            @RequestParam(required = false) OffsetDateTime to,
+            @RequestParam(defaultValue = &quot;60&quot;) int interval,
+            @RequestParam(defaultValue = &quot;0&quot;) int page,
+            @RequestParam(defaultValue = &quot;100&quot;) int size) {
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (page &lt; 0) {</span>
+<span class="fc" id="L137">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;page must not be negative&quot;);</span>
+        }
+<span class="fc bfc" id="L139" title="All 4 branches covered.">        if (size &lt; 1 || size &gt; MAX_HISTORY_PAGE_SIZE) {</span>
+<span class="fc" id="L140">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+                    &quot;size must be between 1 and &quot; + MAX_HISTORY_PAGE_SIZE);
+        }
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        if (!SUPPORTED_INTERVALS.contains(interval)) {</span>
+<span class="fc" id="L144">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,</span>
+<span class="fc" id="L145">                    &quot;interval must be one of &quot; + SUPPORTED_INTERVALS.stream().sorted().toList());</span>
+        }
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        OffsetDateTime rangeTo = to != null ? to : OffsetDateTime.now();</span>
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        OffsetDateTime rangeFrom = from != null ? from : rangeTo.minusDays(1);</span>
+<span class="fc bfc" id="L149" title="All 2 branches covered.">        if (rangeFrom.isAfter(rangeTo)) {</span>
+<span class="fc" id="L150">            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, &quot;from must not be after to&quot;);</span>
+        }
+<span class="fc" id="L152">        return candleRepository</span>
+<span class="fc" id="L153">                .findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(</span>
+<span class="fc" id="L154">                        symbol.toUpperCase(), interval, rangeFrom, rangeTo, PageRequest.of(page, size))</span>
+<span class="fc" id="L155">                .map(this::toResponse);</span>
+    }
+
+    /**
+     * Retrieves a symbol's price at the previous trading day's regular close (see
+     * {@link MarketCalendar#previousClose}): the close of the last candle that ended by then.
+     * 
+     * @param symbol the instrument symbol to look up
+     * @return the price at the previous close
+     * @throws ResponseStatusException with a 404 status if the symbol has no history before then
+     */
+    @GetMapping(&quot;/{symbol}/previous-close&quot;)
+    public PreviousCloseResponse getPreviousClose(@PathVariable String symbol) {
+<span class="fc" id="L168">        String upper = symbol.toUpperCase();</span>
+<span class="fc" id="L169">        OffsetDateTime close = MarketCalendar.previousClose(clock.instant()).atOffset(ZoneOffset.UTC);</span>
+<span class="fc bfc" id="L170" title="All 2 branches covered.">        for (int interval : CLOSE_INTERVALS) {</span>
+<span class="fc" id="L171">            List&lt;PriceCandle&gt; last = candleRepository</span>
+<span class="fc" id="L172">                    .findByInstrument_SymbolAndBucketSecondsAndBucketStartBetweenOrderByBucketStartDesc(</span>
+<span class="fc" id="L173">                            upper, interval, close.minus(CLOSE_LOOKBACK), close.minusSeconds(interval),</span>
+<span class="fc" id="L174">                            PageRequest.of(0, 1))</span>
+<span class="fc" id="L175">                    .getContent();</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">            if (!last.isEmpty()) {</span>
+<span class="fc" id="L177">                return new PreviousCloseResponse(upper, last.get(0).getClose(), close);</span>
+            }
+<span class="fc" id="L179">        }</span>
+<span class="fc" id="L180">        throw new ResponseStatusException(HttpStatus.NOT_FOUND, &quot;No price history before the previous close for &quot; + symbol);</span>
+    }
+
+    /**
+     * Converts a PriceState to a PriceResponse DTO
+     * 
+     * @param state the PriceState to convert
+     * @return the PriceResponse
+     */
+    private PriceResponse toResponse(PriceState state) {
+<span class="fc" id="L190">        return new PriceResponse(state.symbol(),</span>
+<span class="fc" id="L191">                simulationEngine.displayName(state.symbol()).orElse(null),</span>
+<span class="fc" id="L192">                state.price(), state.asOf());</span>
+    }
+
+    /**
+     * Converts a PriceCandle to a PriceCandleResponse DTO
+     * 
+     * @param candle the PriceCandle to convert
+     * @return the PriceCandleResponse
+     */
+    private PriceCandleResponse toResponse(PriceCandle candle) {
+<span class="fc" id="L202">        return new PriceCandleResponse(</span>
+<span class="fc" id="L203">                candle.getBucketStart(), candle.getBucketSeconds(),</span>
+<span class="fc" id="L204">                candle.getOpen(), candle.getHigh(), candle.getLow(), candle.getClose());</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

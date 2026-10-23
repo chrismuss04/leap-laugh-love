@@ -30,8 +30,11 @@ public record RegistrationEmailEvent(Kind kind, String to, String link, Instant 
 
     /** The details of an existing client an application can reuse, in the order an email lists them. */
     public enum Detail {
+        /** The email address. */
         EMAIL,
+        /** The phone number. */
         PHONE,
+        /** The Social Security number. */
         SSN
     }
 

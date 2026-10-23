@@ -12,6 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
 public class InstrumentController {
     private final InstrumentOverviewService service;
 
+    /**
+     * Constructs a new InstrumentController.
+     * @param service builds the overview
+     */
     public InstrumentController(InstrumentOverviewService service) {
         this.service = service;
     }

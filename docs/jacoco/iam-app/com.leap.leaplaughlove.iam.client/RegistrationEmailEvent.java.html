@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RegistrationEmailEvent.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">iam-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.iam.client</a> &gt; <span class="el_source">RegistrationEmailEvent.java</span></div><h1>RegistrationEmailEvent.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.iam.client;
+
+import java.time.Instant;
+import java.util.Set;
+
+/**
+ * Published when a registration request needs an email sent, so it goes out once the request has
+ * committed. Every request emails the address it was submitted with: the response never says how
+ * the application went, so the email is where the applicant finds out.
+ * @param kind which email to send
+ * @param to the address to send it to
+ * @param link the link that confirms the email and opens the account; only set for {@link Kind#VERIFY}
+ * @param expiresAt when that link stops working; only set for {@link Kind#VERIFY}
+ * @param details which of the recipient's details the application used; only set for
+ *                {@link Kind#DETAILS_REUSED}. Never the values themselves.
+ */
+<span class="fc" id="L17">public record RegistrationEmailEvent(Kind kind, String to, String link, Instant expiresAt, Set&lt;Detail&gt; details) {</span>
+
+    /** The emails a registration request can lead to. */
+<span class="fc" id="L20">    public enum Kind {</span>
+        /** The application was stored: here is the link that opens the account. */
+<span class="fc" id="L22">        VERIFY,</span>
+        /** The address already has an account, and nothing else of that client's was used. */
+<span class="fc" id="L24">        ALREADY_REGISTERED,</span>
+        /** The phone number or SSN belongs to another client, so nothing was opened. */
+<span class="fc" id="L26">        NOT_COMPLETED,</span>
+        /** Tells a client someone applied with their phone number or SSN, listing everything of theirs used. */
+<span class="fc" id="L28">        DETAILS_REUSED</span>
+    }
+
+    /** The details of an existing client an application can reuse, in the order an email lists them. */
+<span class="fc" id="L32">    public enum Detail {</span>
+        /** The email address. */
+<span class="fc" id="L34">        EMAIL,</span>
+        /** The phone number. */
+<span class="fc" id="L36">        PHONE,</span>
+        /** The Social Security number. */
+<span class="fc" id="L38">        SSN</span>
+    }
+
+    static RegistrationEmailEvent verify(String to, String link, Instant expiresAt) {
+<span class="fc" id="L42">        return new RegistrationEmailEvent(Kind.VERIFY, to, link, expiresAt, Set.of());</span>
+    }
+
+    static RegistrationEmailEvent of(Kind kind, String to) {
+<span class="fc" id="L46">        return new RegistrationEmailEvent(kind, to, null, null, Set.of());</span>
+    }
+
+    static RegistrationEmailEvent detailsReused(String to, Set&lt;Detail&gt; details) {
+<span class="fc" id="L50">        return new RegistrationEmailEvent(Kind.DETAILS_REUSED, to, null, null, Set.copyOf(details));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BusinessInsightsService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.report</a> &gt; <span class="el_source">BusinessInsightsService.java</span></div><h1>BusinessInsightsService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.report;
+
+import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+
+/**
+ * Builds commercial analysts' business insights: traded value, average order value, new
+ * registrations, active clients and the most active instruments over a period, alongside the
+ * same figures for the period before it.
+ */
+@Service
+public class BusinessInsightsService {
+
+    /** How many of the most active instruments the insights list. */
+    static final int TOP_INSTRUMENTS = 3;
+
+    private final BusinessInsightsRepository businessInsightsRepository;
+
+    /**
+     * Constructs an instance of BusinessInsightsService.
+     * @param businessInsightsRepository the repository the figures are read from
+     */
+<span class="fc" id="L27">    public BusinessInsightsService(BusinessInsightsRepository businessInsightsRepository) {</span>
+<span class="fc" id="L28">        this.businessInsightsRepository = businessInsightsRepository;</span>
+<span class="fc" id="L29">    }</span>
+
+    /**
+     * Builds the business insights for a period.
+     * @param from the first UTC day of the period, inclusive
+     * @param to the last UTC day of the period, inclusive
+     * @return the insights; their figures are zero when nothing happened in the period
+     * @throws IllegalArgumentException if the period is invalid
+     */
+    public BusinessInsights getInsights(LocalDate from, LocalDate to) {
+<span class="fc" id="L39">        ActivityReportService.requireValidPeriod(from, to);</span>
+
+        // The previous period is as long as this one and ends the day before it starts.
+<span class="fc" id="L42">        long days = ChronoUnit.DAYS.between(from, to) + 1;</span>
+<span class="fc" id="L43">        LocalDate previousFrom = from.minusDays(days);</span>
+<span class="fc" id="L44">        LocalDate previousTo = from.minusDays(1);</span>
+
+<span class="fc" id="L46">        OffsetDateTime start = startOfDay(from);</span>
+<span class="fc" id="L47">        OffsetDateTime end = startOfDay(to.plusDays(1));</span>
+<span class="fc" id="L48">        return new BusinessInsights(from, to, previousFrom, previousTo,</span>
+<span class="fc" id="L49">                businessInsightsRepository.findFigures(start, end),</span>
+<span class="fc" id="L50">                businessInsightsRepository.findFigures(startOfDay(previousFrom), start),</span>
+<span class="fc" id="L51">                businessInsightsRepository.findTopInstruments(start, end, TOP_INSTRUMENTS));</span>
+    }
+
+    private static OffsetDateTime startOfDay(LocalDate day) {
+<span class="fc" id="L55">        return day.atStartOfDay().atOffset(ZoneOffset.UTC);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -44,8 +44,8 @@ public class JwtService {
 
     /**
      * Generates a JSON Web Token for the given clientId and email.
-     * @param clientId
-     * @param email
+     * @param clientId the client the token identifies, used as its subject
+     * @param email the client's email, carried as a claim
      * @return serialized JWT token as a String
      */
     public String generateToken(UUID clientId, String email) {
@@ -145,7 +145,13 @@ public class JwtService {
      * @param role the role the token grants
      */
     public record TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose, Role role) {
-        /** A client's identity: tokens issued before roles existed, and every client token. */
+        /**
+         * A client's identity: tokens issued before roles existed, and every client token.
+         * @param clientId the client the token identifies
+         * @param sessionId the persisted login session, or null for service tokens
+         * @param expiresAt when the token expires
+         * @param purpose the scope of a service token, or null for session tokens
+         */
         public TokenIdentity(UUID clientId, UUID sessionId, Instant expiresAt, String purpose) {
             this(clientId, sessionId, expiresAt, purpose, Role.CLIENT);
         }

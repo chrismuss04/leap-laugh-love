@@ -30,12 +30,18 @@ public class TradeTimelineService {
 
     private final TradeOpsRepository tradeOpsRepository;
 
+    /**
+     * Constructs a new TradeTimelineService.
+     * @param tradeOpsRepository reads the trading audit records
+     */
     public TradeTimelineService(TradeOpsRepository tradeOpsRepository) {
         this.tradeOpsRepository = tradeOpsRepository;
     }
 
     /**
      * Needs a period (from inclusive, to exclusive) and the client, by id or email; the rest is optional.
+     * @param criteria the search criteria
+     * @return the matching trades, newest first
      * @throws IllegalArgumentException if the period or client is missing, or from is not before to
      */
     public List<TradeSummary> search(TradeSearch criteria) {
@@ -45,19 +51,31 @@ public class TradeTimelineService {
     /**
      * How many orders the same search finds, by outcome: every match, not only those
      * {@link #search} returns. Needs the same criteria.
+     * @param criteria the search criteria
+     * @return the counts by outcome
      * @throws IllegalArgumentException if the period or client is missing, or from is not before to
      */
     public OrderCounts countByStatus(TradeSearch criteria) {
         return tradeOpsRepository.countByStatus(validated(criteria));
     }
 
-    /** @throws ResponseStatusException 404 if there is no such order */
+    /**
+     * Loads everything recorded for an order.
+     * @param orderId the order
+     * @return the order, its executions, cash entries and position movements
+     * @throws ResponseStatusException 404 if there is no such order
+     */
     public TradeRecords getRecords(UUID orderId) {
         return new TradeRecords(findOrder(orderId), tradeOpsRepository.findExecutions(orderId),
                 tradeOpsRepository.findCashEntries(orderId), tradeOpsRepository.findPositionMovements(orderId));
     }
 
-    /** @throws ResponseStatusException 404 if there is no such order */
+    /**
+     * Reconstructs an order step by step from its records.
+     * @param orderId the order
+     * @return the order's timeline, oldest step first
+     * @throws ResponseStatusException 404 if there is no such order
+     */
     public TradeTimeline getTimeline(UUID orderId) {
         OrderRecord order = findOrder(orderId);
         TradeSummary trade = order.summary();

@@ -129,9 +129,10 @@
                         <artifactId>maven-javadoc-plugin</artifactId>
                         <configuration>
                             <!-- Dark theme matching the app, layered over the stock stylesheet. -->
+                            <!-- Stylesheets resolve against this directory, which must exist. -->
+                            <javadocDirectory>${maven.multiModuleProjectDirectory}/docs-theme/javadoc</javadocDirectory>
                             <addStylesheets>
-                                <!-- Resolved against src/main/javadoc. -->
-                                <addStylesheet>../../../docs-theme/javadoc/theme.css</addStylesheet>
+                                <addStylesheet>theme.css</addStylesheet>
                             </addStylesheets>
                         </configuration>
                         <executions>

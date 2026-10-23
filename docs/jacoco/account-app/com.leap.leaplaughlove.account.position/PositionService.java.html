@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>PositionService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.position</a> &gt; <span class="el_source">PositionService.java</span></div><h1>PositionService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.position;
+
+import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.account.AccountAuthorizationService;
+import com.leap.leaplaughlove.account.account.AccountRepository;
+import com.leap.leaplaughlove.account.common.TradingDay;
+import com.leap.leaplaughlove.account.instrument.Instrument;
+import com.leap.leaplaughlove.account.instrument.InstrumentRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+
+/**
+ * Service class for managing trading positions within client accounts.
+ * Provides methods to retrieve and transform position data for client accounts.
+ */
+@Service
+public class PositionService {
+
+    private final AccountRepository accountRepository;
+    private final PositionRepository positionRepository;
+    private final PositionMovementRepository positionMovementRepository;
+    private final InstrumentRepository instrumentRepository;
+    private final AccountAuthorizationService accountAuthorizationService;
+    private final Clock clock;
+
+    /**
+     * Constructs a new PositionService on the system clock.
+     * @param accountRepository the repository for accessing account data
+     * @param positionRepository the repository for accessing position data
+     * @param positionMovementRepository the repository for today's buys and sells
+     * @param instrumentRepository the repository for naming positions closed today
+     * @param accountAuthorizationService the service for authorizing account access
+     */
+    @Autowired
+    public PositionService(AccountRepository accountRepository,
+                           PositionRepository positionRepository,
+                           PositionMovementRepository positionMovementRepository,
+                           InstrumentRepository instrumentRepository,
+                           AccountAuthorizationService accountAuthorizationService) {
+<span class="fc" id="L52">        this(accountRepository, positionRepository, positionMovementRepository, instrumentRepository,</span>
+<span class="fc" id="L53">                accountAuthorizationService, Clock.systemUTC());</span>
+<span class="fc" id="L54">    }</span>
+
+    /**
+     * Constructs a new PositionService on a given clock.
+     * @param accountRepository the repository for accessing account data
+     * @param positionRepository the repository for accessing position data
+     * @param positionMovementRepository the repository for today's buys and sells
+     * @param instrumentRepository the repository for naming positions closed today
+     * @param accountAuthorizationService the service for authorizing account access, or null for a default one
+     * @param clock the clock that says when today began
+     */
+    PositionService(AccountRepository accountRepository,
+                    PositionRepository positionRepository,
+                    PositionMovementRepository positionMovementRepository,
+                    InstrumentRepository instrumentRepository,
+                    AccountAuthorizationService accountAuthorizationService,
+<span class="fc" id="L70">                    Clock clock) {</span>
+<span class="fc" id="L71">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L72">        this.positionRepository = positionRepository;</span>
+<span class="fc" id="L73">        this.positionMovementRepository = positionMovementRepository;</span>
+<span class="fc" id="L74">        this.instrumentRepository = instrumentRepository;</span>
+<span class="fc bfc" id="L75" title="All 2 branches covered.">        this.accountAuthorizationService = accountAuthorizationService != null</span>
+<span class="fc" id="L76">                ? accountAuthorizationService</span>
+<span class="fc" id="L77">                : new AccountAuthorizationService(accountRepository);</span>
+<span class="fc" id="L78">        this.clock = clock;</span>
+<span class="fc" id="L79">    }</span>
+
+    /**
+     * Retrieves current holdings for a specific authenticated client account.
+     * @param accountId the unique identifier of the authenticated client account
+     * @return a response object containing the positions for the account
+     */
+    public PositionsResponse getPositionsForAuthenticatedClientAccount(UUID accountId) {
+<span class="fc" id="L87">        Account account = accountAuthorizationService.getAuthorizedAccount(accountId);</span>
+<span class="fc" id="L88">        return toPositionsResponse(account);</span>
+    }
+
+    /**
+     * Converts an account Entity into a PositionsResponse DTO, with what each position did today.
+     * @param account the account entity to be converted
+     * @return a PositionsResponse DTO representing the account's positions
+     */
+    public PositionsResponse toPositionsResponse(Account account) {
+<span class="fc" id="L97">        Map&lt;UUID, Today&gt; today = today(account.getAccountId());</span>
+
+<span class="fc" id="L99">        Set&lt;UUID&gt; held = new HashSet&lt;&gt;();</span>
+<span class="fc" id="L100">        List&lt;PositionItem&gt; items = positionRepository.findPositionsByAccountId(account.getAccountId()).stream()</span>
+<span class="fc" id="L101">                .map(row -&gt; {</span>
+<span class="fc" id="L102">                    UUID instrumentId = UUID.fromString(row.getInstrumentId());</span>
+<span class="fc" id="L103">                    held.add(instrumentId);</span>
+<span class="fc" id="L104">                    Today moved = today.getOrDefault(instrumentId, Today.NONE);</span>
+<span class="fc" id="L105">                    return new PositionItem(</span>
+                            instrumentId,
+<span class="fc" id="L107">                            row.getSymbol(),</span>
+<span class="fc" id="L108">                            row.getInstrumentName(),</span>
+<span class="fc" id="L109">                            row.getAssetClass(),</span>
+<span class="fc" id="L110">                            row.getQuantity(),</span>
+<span class="fc" id="L111">                            row.getAvgCost(),</span>
+<span class="fc" id="L112">                            row.getQuantity() - moved.quantityDelta(),</span>
+<span class="fc" id="L113">                            moved.cashFlow());</span>
+                })
+<span class="fc" id="L115">                .toList();</span>
+
+<span class="fc" id="L117">        return new PositionsResponse(</span>
+<span class="fc" id="L118">                account.getAccountId(),</span>
+<span class="fc" id="L119">                account.getAccountNumber(),</span>
+<span class="fc" id="L120">                account.getBaseCurrency(),</span>
+                items,
+<span class="fc" id="L122">                closedToday(today, held));</span>
+    }
+
+    /** Net quantity and cash moved per instrument since the trading day began. */
+    private Map&lt;UUID, Today&gt; today(UUID accountId) {
+<span class="fc" id="L127">        OffsetDateTime start = TradingDay.startOf(OffsetDateTime.now(clock));</span>
+<span class="fc" id="L128">        Map&lt;UUID, Today&gt; today = new HashMap&lt;&gt;();</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        for (PositionMovement movement : positionMovementRepository.findByAccountIdInAndCreatedAtAfter(</span>
+<span class="fc" id="L130">                List.of(accountId), start)) {</span>
+            // A movement's cost is what the shares cost on a buy and what they fetched on a sell, as
+            // negative; the cash the position returned is the opposite.
+<span class="fc" id="L133">            today.merge(movement.getInstrumentId(),</span>
+<span class="fc" id="L134">                    new Today(movement.getQuantityDelta(), movement.getCostDelta().negate()), Today::plus);</span>
+<span class="fc" id="L135">        }</span>
+<span class="fc" id="L136">        return today;</span>
+    }
+
+    /** Instruments traded today that the account no longer holds, alphabetically like positions. */
+    private List&lt;PositionItem&gt; closedToday(Map&lt;UUID, Today&gt; today, Set&lt;UUID&gt; held) {
+<span class="fc" id="L141">        Set&lt;UUID&gt; closed = new HashSet&lt;&gt;(today.keySet());</span>
+<span class="fc" id="L142">        closed.removeAll(held);</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        if (closed.isEmpty()) {</span>
+<span class="fc" id="L144">            return List.of();</span>
+        }
+<span class="fc" id="L146">        List&lt;PositionItem&gt; items = new ArrayList&lt;&gt;();</span>
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        for (Instrument instrument : instrumentRepository.findAllById(closed)) {</span>
+<span class="fc" id="L148">            Today moved = today.get(instrument.getInstrumentId());</span>
+<span class="fc" id="L149">            items.add(new PositionItem(</span>
+<span class="fc" id="L150">                    instrument.getInstrumentId(),</span>
+<span class="fc" id="L151">                    instrument.getSymbol(),</span>
+<span class="fc" id="L152">                    instrument.getInstrumentName(),</span>
+<span class="fc" id="L153">                    instrument.getAssetClass(),</span>
+                    0L,
+                    BigDecimal.ZERO,
+<span class="fc" id="L156">                    -moved.quantityDelta(),</span>
+<span class="fc" id="L157">                    moved.cashFlow()));</span>
+<span class="fc" id="L158">        }</span>
+<span class="fc" id="L159">        items.sort(Comparator.comparing(PositionItem::symbol));</span>
+<span class="fc" id="L160">        return items;</span>
+    }
+
+    /** What one instrument did today: shares bought less sold, and cash in less cash out. */
+<span class="fc" id="L164">    private record Today(long quantityDelta, BigDecimal cashFlow) {</span>
+<span class="fc" id="L165">        static final Today NONE = new Today(0, BigDecimal.ZERO);</span>
+
+        Today plus(Today other) {
+<span class="fc" id="L168">            return new Today(quantityDelta + other.quantityDelta, cashFlow.add(other.cashFlow));</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

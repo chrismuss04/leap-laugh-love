@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>BracketService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">BracketService.java</span></div><h1>BracketService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.order.events.OrderEventPublisher;
+import com.leap.leaplaughlove.order.order.Order;
+import com.leap.leaplaughlove.order.order.OrderRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+/**
+ * Keeps the two exit orders a bracket opens from both executing. When one leg fills, the other,
+ * which sells the same shares, is cancelled.
+ *
+ * &lt;p&gt;Each cancel runs in a transaction of its own, after the fill's has committed, and locks the
+ * group through {@link OrderRepository#findGroupForUpdate} so legs are always locked lowest ID
+ * first. {@code OrderSubmissionService#acceptOpenOrder} will not execute a leg while its sibling
+ * is ACCEPTED or FILLED, so if this cancel fails the sibling still cannot execute, and the next
+ * attempt to fill it cancels it.
+ */
+@Service
+public class BracketService {
+
+<span class="fc" id="L29">    private static final Logger log = LoggerFactory.getLogger(BracketService.class);</span>
+
+    private final OrderRepository orderRepository;
+    private final TransactionTemplate newTransaction;
+    private final OrderEventPublisher orderEventPublisher;
+
+    /**
+     * Constructs a BracketService.
+     * @param orderRepository locks and cancels the group's orders
+     * @param transactionManager runs each cancel in a transaction of its own
+     * @param orderEventPublisher reports each cancelled order to reporting
+     */
+    public BracketService(OrderRepository orderRepository, PlatformTransactionManager transactionManager,
+<span class="fc" id="L42">                          OrderEventPublisher orderEventPublisher) {</span>
+<span class="fc" id="L43">        this.orderRepository = orderRepository;</span>
+<span class="fc" id="L44">        this.orderEventPublisher = orderEventPublisher;</span>
+<span class="fc" id="L45">        this.newTransaction = new TransactionTemplate(transactionManager);</span>
+<span class="fc" id="L46">        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);</span>
+<span class="fc" id="L47">    }</span>
+
+    /**
+     * Cancels every other OPEN order in the filled order's group. Never throws: the fill is
+     * already booked, and a failed cancel is made good the next time the sibling is looked at.
+     * @param filledOrderId the leg that executed
+     * @param ocoGroupId its group
+     * @return how many orders were cancelled
+     */
+    public int cancelSiblings(UUID filledOrderId, UUID ocoGroupId) {
+<span class="pc bpc" id="L57" title="1 of 2 branches missed.">        if (ocoGroupId == null) {</span>
+<span class="nc" id="L58">            return 0;</span>
+        }
+        try {
+<span class="fc" id="L61">            Integer cancelled = newTransaction.execute(status -&gt; {</span>
+<span class="fc" id="L62">                OffsetDateTime now = OffsetDateTime.now();</span>
+<span class="fc" id="L63">                int count = 0;</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">                for (Order leg : orderRepository.findGroupForUpdate(ocoGroupId)) {</span>
+<span class="fc bfc" id="L65" title="All 4 branches covered.">                    if (!leg.getOrderId().equals(filledOrderId) &amp;&amp; leg.getStatus() == Order.Status.OPEN) {</span>
+<span class="fc" id="L66">                        leg.markCancelled(now);</span>
+<span class="fc" id="L67">                        orderEventPublisher.publishCancelled(leg);</span>
+<span class="fc" id="L68">                        count++;</span>
+                    }
+<span class="fc" id="L70">                }</span>
+<span class="fc" id="L71">                return count;</span>
+            });
+<span class="pc bpc" id="L73" title="1 of 4 branches missed.">            if (cancelled != null &amp;&amp; cancelled &gt; 0) {</span>
+<span class="fc" id="L74">                log.info(&quot;Order {} executed; cancelled {} linked exit order(s)&quot;, filledOrderId, cancelled);</span>
+            }
+<span class="pc bpc" id="L76" title="1 of 2 branches missed.">            return cancelled != null ? cancelled : 0;</span>
+<span class="nc" id="L77">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L78">            log.warn(&quot;Could not cancel the exit orders linked to {}; they cannot execute meanwhile: {}&quot;,</span>
+<span class="nc" id="L79">                    filledOrderId, ex.getMessage());</span>
+<span class="nc" id="L80">            return 0;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

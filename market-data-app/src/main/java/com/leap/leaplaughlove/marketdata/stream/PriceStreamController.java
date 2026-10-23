@@ -22,6 +22,11 @@ public class PriceStreamController {
     private final PriceStreamBroadcaster broadcaster;
     private final ClientSessionValidator sessions;
 
+    /**
+     * Constructs a new PriceStreamController.
+     * @param broadcaster fans simulation ticks out to subscribers
+     * @param sessions checks that the subscriber's session is still live
+     */
     public PriceStreamController(PriceStreamBroadcaster broadcaster, ClientSessionValidator sessions) {
         this.broadcaster = broadcaster;
         this.sessions = sessions;

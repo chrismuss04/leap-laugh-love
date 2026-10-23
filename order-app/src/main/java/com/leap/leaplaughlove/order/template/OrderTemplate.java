@@ -87,28 +87,64 @@ public class OrderTemplate {
         this.createdAt = createdAt;
     }
 
-    /** @return the template's ID */
+    /**
+     * Returns the template's ID.
+     * @return the template's ID
+     */
     public UUID getTemplateId() { return templateId; }
-    /** @return the client who owns it */
+    /**
+     * Returns the client who owns it.
+     * @return the client who owns it
+     */
     public UUID getClientId() { return clientId; }
-    /** @return its name, unique among the client's templates */
+    /**
+     * Returns its name, unique among the client's templates.
+     * @return its name, unique among the client's templates
+     */
     public String getName() { return name; }
-    /** @return BUY or SELL */
+    /**
+     * Returns BUY or SELL.
+     * @return BUY or SELL
+     */
     public Order.Side getSide() { return side; }
-    /** @return the order type to set up */
+    /**
+     * Returns the order type to set up.
+     * @return the order type to set up
+     */
     public Order.OrderType getOrderType() { return orderType; }
-    /** @return DAY or GTC */
+    /**
+     * Returns DAY or GTC.
+     * @return DAY or GTC
+     */
     public Order.TimeInForce getTimeInForce() { return timeInForce; }
-    /** @return the limit price as a signed percent from the market, for LIMIT and STOP_LIMIT */
+    /**
+     * Returns the limit price as a signed percent from the market, for LIMIT and STOP_LIMIT.
+     * @return the limit price as a signed percent from the market, for LIMIT and STOP_LIMIT
+     */
     public BigDecimal getLimitOffsetPercent() { return limitOffsetPercent; }
-    /** @return the stop price as a signed percent from the market, for STOP and STOP_LIMIT */
+    /**
+     * Returns the stop price as a signed percent from the market, for STOP and STOP_LIMIT.
+     * @return the stop price as a signed percent from the market, for STOP and STOP_LIMIT
+     */
     public BigDecimal getStopOffsetPercent() { return stopOffsetPercent; }
-    /** @return the trail in percent, for TRAILING_STOP */
+    /**
+     * Returns the trail in percent, for TRAILING_STOP.
+     * @return the trail in percent, for TRAILING_STOP
+     */
     public BigDecimal getTrailPercent() { return trailPercent; }
-    /** @return a bracket's take-profit, percent above the entry price */
+    /**
+     * Returns a bracket's take-profit, percent above the entry price.
+     * @return a bracket's take-profit, percent above the entry price
+     */
     public BigDecimal getTakeProfitPercent() { return takeProfitPercent; }
-    /** @return a bracket's stop-loss, percent below the entry price */
+    /**
+     * Returns a bracket's stop-loss, percent below the entry price.
+     * @return a bracket's stop-loss, percent below the entry price
+     */
     public BigDecimal getStopLossPercent() { return stopLossPercent; }
-    /** @return when it was saved */
+    /**
+     * Returns when it was saved.
+     * @return when it was saved
+     */
     public OffsetDateTime getCreatedAt() { return createdAt; }
 }

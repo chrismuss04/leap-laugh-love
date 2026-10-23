@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>ActivityTotals.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.report</a> &gt; <span class="el_source">ActivityTotals.java</span></div><h1>ActivityTotals.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.report;
+
+import java.math.BigDecimal;
+
+/**
+ * Trading activity totals over a report period or one of its buckets. Only FILLED orders count:
+ * a rejected order never traded.
+ * @param tradeCount the number of filled orders, buys and sells together
+ * @param buyCount the number of filled buy orders
+ * @param sellCount the number of filled sell orders
+ * @param buyValue the total value bought, the sum of quantity times fill price
+ * @param sellValue the total value sold, the sum of quantity times fill price
+ * @param volume the total quantity traded, buys and sells together
+ */
+<span class="fc" id="L15">public record ActivityTotals(</span>
+        long tradeCount,
+        long buyCount,
+        long sellCount,
+        BigDecimal buyValue,
+        BigDecimal sellValue,
+        long volume
+) {
+    /** Totals for a period with no trading activity. */
+<span class="fc" id="L24">    public static final ActivityTotals EMPTY =</span>
+            new ActivityTotals(0, 0, 0, BigDecimal.ZERO, BigDecimal.ZERO, 0);
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

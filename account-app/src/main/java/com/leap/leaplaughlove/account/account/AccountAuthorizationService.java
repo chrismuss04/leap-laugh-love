@@ -16,6 +16,7 @@ import java.util.UUID;
 @Service
 public class AccountAuthorizationService {
 
+    /** The status of an account that can be used. */
     public static final String ACTIVE_STATUS = "ACTIVE";
 
     private final AccountRepository accountRepository;
@@ -50,6 +51,9 @@ public class AccountAuthorizationService {
     /**
      * Locks and authorizes the account within the caller's existing transaction.
      * The caller must acquire this lock before checking cash or holdings.
+     * @param accountId the account to lock
+     * @return the locked account
+     * @throws ResponseStatusException 404 if the client doesn't own the account, 400 if it isn't active
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Account getAuthorizedAccountForUpdate(UUID accountId) {
@@ -67,6 +71,9 @@ public class AccountAuthorizationService {
     // LLL-133
     /**
      * Locks and authorizes a trading account until the caller commits or rolls back.
+     * @param accountId the account to lock
+     * @return the locked account
+     * @throws ResponseStatusException if the account can't be used, or can't trade
      */
     @Transactional(propagation = Propagation.MANDATORY)
     public Account getAuthorizedTradingAccountForUpdate(UUID accountId) {

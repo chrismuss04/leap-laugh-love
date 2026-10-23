@@ -30,9 +30,18 @@ public class ExecutionQuote {
     @Column(name = "quote_exchange")
     private String exchange;
 
+    /** Default constructor for JPA. */
     protected ExecutionQuote() {
     }
 
+    /**
+     * Constructs a new ExecutionQuote.
+     * @param bid the best bid, or null
+     * @param ask the best ask, or null
+     * @param last the last traded price, or null
+     * @param quotedAt when the market data provider produced the quote
+     * @param exchange the exchange the quote came from
+     */
     public ExecutionQuote(BigDecimal bid, BigDecimal ask, BigDecimal last, OffsetDateTime quotedAt, String exchange) {
         this.bid = bid;
         this.ask = ask;
@@ -53,6 +62,7 @@ public class ExecutionQuote {
 
     /**
      * A BUY executes at the ask and a SELL at the bid, falling back to the last trade.
+     * @param side the side of the order being priced
      * @return the price to 4 decimal places, or null if the quote has no positive price
      */
     public BigDecimal executablePrice(Order.Side side) {
@@ -65,18 +75,33 @@ public class ExecutionQuote {
         return price != null && price.compareTo(BigDecimal.ZERO) > 0;
     }
 
-    /** @return the best bid at the time of the quote, or null if the quote had none */
+    /**
+     * Returns the best bid at the time of the quote, or null if the quote had none.
+     * @return the best bid at the time of the quote, or null if the quote had none
+     */
     public BigDecimal getBid() { return bid; }
 
-    /** @return the best ask at the time of the quote, or null if the quote had none */
+    /**
+     * Returns the best ask at the time of the quote, or null if the quote had none.
+     * @return the best ask at the time of the quote, or null if the quote had none
+     */
     public BigDecimal getAsk() { return ask; }
 
-    /** @return the last traded price at the time of the quote, or null if the quote had none */
+    /**
+     * Returns the last traded price at the time of the quote, or null if the quote had none.
+     * @return the last traded price at the time of the quote, or null if the quote had none
+     */
     public BigDecimal getLast() { return last; }
 
-    /** @return when the market data provider produced the quote */
+    /**
+     * Returns when the market data provider produced the quote.
+     * @return when the market data provider produced the quote
+     */
     public OffsetDateTime getQuotedAt() { return quotedAt; }
 
-    /** @return the exchange the quote came from */
+    /**
+     * Returns the exchange the quote came from.
+     * @return the exchange the quote came from
+     */
     public String getExchange() { return exchange; }
 }

@@ -9,7 +9,9 @@ import java.util.UUID;
  */
 public class PositionId implements Serializable {
 
+    /** The account holding the position. */
     private UUID accountId;
+    /** The instrument held. */
     private UUID instrumentId;
 
     /**

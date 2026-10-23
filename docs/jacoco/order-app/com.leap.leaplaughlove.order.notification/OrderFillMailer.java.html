@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderFillMailer.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.notification</a> &gt; <span class="el_source">OrderFillMailer.java</span></div><h1>OrderFillMailer.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.notification;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mail.SimpleMailMessage;
+import org.springframework.mail.javamail.JavaMailSender;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
+
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
+
+/**
+ * Emails a client how an order that waited ended: filled, refused when its price was reached, or
+ * expired. A cancelled order gets nothing, since the client did it, and an order that executed the
+ * moment it was placed never waited, so it never owes an email.
+ *
+ * &lt;p&gt;A sweep finds every order flagged {@code notice_pending} (set when it went OPEN) that has
+ * since reached one of those outcomes. Working from the database rather than from events means it
+ * also covers fills that PendingFillRecovery finishes later, needs no Kafka, and retries after a
+ * mail outage. The client's address and {@code notify_order_fills} choice are read straight from
+ * the shared {@code iam.clients} and {@code iam.client_profile} tables. An order is marked notified, in a transaction of its own,
+ * only after the mail server accepts the email, so it is never mailed twice apart from a crash in
+ * between. A client who opted out, or is not ACTIVE, just has the flag cleared. Nothing here
+ * throws: the order is already decided, so a mail failure is logged and retried next sweep.
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;order.notifications.email&quot;, name = &quot;enabled&quot;, havingValue = &quot;true&quot;,
+        matchIfMissing = true)
+public class OrderFillMailer {
+
+<span class="fc" id="L48">    private static final Logger log = LoggerFactory.getLogger(OrderFillMailer.class);</span>
+    private static final String ACTIVE = &quot;ACTIVE&quot;;
+    private static final int BATCH_SIZE = 100;
+<span class="fc" id="L51">    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern(&quot;MMM d, yyyy HH:mm 'UTC'&quot;, Locale.US);</span>
+
+    private static final String PENDING_SQL = &quot;&quot;&quot;
+            SELECT o.order_id, o.side, o.order_type, o.quantity, o.status, o.rejection_reason,
+                   o.filled_at, o.rejected_at, o.expired_at,
+                   i.symbol, a.account_number, c.email, c.status AS client_status,
+                   COALESCE(p.notify_order_fills, TRUE) AS notify_order_fills,
+                   (SELECT e.fill_price FROM trading.executions e
+                     WHERE e.order_id = o.order_id AND e.status = 'FILLED'
+                     ORDER BY e.executed_at DESC LIMIT 1) AS fill_price
+              FROM trading.orders o
+              JOIN trading.instruments i ON i.instrument_id = o.instrument_id
+              JOIN trading.accounts a ON a.account_id = o.account_id
+              JOIN iam.clients c ON c.client_id = a.client_id
+              LEFT JOIN iam.client_profile p ON p.client_id = c.client_id
+             WHERE o.notice_pending AND o.status IN ('FILLED', 'REJECTED', 'EXPIRED')
+             ORDER BY o.submitted_at
+             LIMIT\s&quot;&quot;&quot; + BATCH_SIZE;
+
+    private final JdbcTemplate jdbc;
+    private final JavaMailSender mailSender;
+    private final TransactionTemplate newTransaction;
+    private final String from;
+    private final String historyUrl;
+    private final Clock clock;
+
+    /**
+     * Creates the mailer on the system clock.
+     * @param jdbc finds filled orders still to be emailed and records each email
+     * @param mailSender sends the emails
+     * @param transactionManager runs each order's notification in its own transaction
+     * @param from the address the emails come from
+     * @param historyUrl the link to the client's order history, included in each email
+     */
+    @Autowired
+    public OrderFillMailer(JdbcTemplate jdbc,
+                           JavaMailSender mailSender,
+                           PlatformTransactionManager transactionManager,
+                           @Value(&quot;${order.notifications.email.from:no-reply@example.com}&quot;) String from,
+                           @Value(&quot;${order.notifications.email.history-url:http://localhost:4200/orders}&quot;)
+                           String historyUrl) {
+<span class="fc" id="L92">        this(jdbc, mailSender, transactionManager, from, historyUrl, Clock.systemUTC());</span>
+<span class="fc" id="L93">    }</span>
+
+    OrderFillMailer(JdbcTemplate jdbc, JavaMailSender mailSender, PlatformTransactionManager transactionManager,
+<span class="fc" id="L96">                    String from, String historyUrl, Clock clock) {</span>
+<span class="fc" id="L97">        this.jdbc = jdbc;</span>
+<span class="fc" id="L98">        this.mailSender = mailSender;</span>
+        // Each mark commits on its own, so a crash part-way through re-sends nothing already sent.
+<span class="fc" id="L100">        this.newTransaction = new TransactionTemplate(transactionManager);</span>
+<span class="fc" id="L101">        this.newTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);</span>
+<span class="fc" id="L102">        this.from = from;</span>
+<span class="fc" id="L103">        this.historyUrl = historyUrl;</span>
+<span class="fc" id="L104">        this.clock = clock;</span>
+<span class="fc" id="L105">    }</span>
+
+    /** Scheduled entry point: emails every outcome still owed. */
+    @Scheduled(initialDelayString = &quot;${order.notifications.email.initial-delay-ms:20000}&quot;,
+               fixedDelayString = &quot;${order.notifications.email.interval-ms:15000}&quot;)
+    public void run() {
+        try {
+<span class="nc" id="L112">            notifyClients();</span>
+<span class="nc" id="L113">        } catch (RuntimeException ex) {</span>
+<span class="nc" id="L114">            log.warn(&quot;Sweeping for order outcome emails failed: {}&quot;, ex.getMessage());</span>
+<span class="nc" id="L115">        }</span>
+<span class="nc" id="L116">    }</span>
+
+    /**
+     * Emails the client of every finished order that still owes one, and marks each one done.
+     * @return the number of emails sent
+     */
+    public int notifyClients() {
+<span class="fc" id="L123">        List&lt;Notice&gt; pending = jdbc.query(PENDING_SQL, OrderFillMailer::notice);</span>
+<span class="fc" id="L124">        int sent = 0;</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        for (Notice notice : pending) {</span>
+<span class="pc bpc" id="L126" title="1 of 4 branches missed.">            if (!notice.notifyOrderFills() || !ACTIVE.equals(notice.clientStatus())) {</span>
+<span class="fc" id="L127">                markDone(notice.orderId(), null);</span>
+<span class="fc" id="L128">                continue;</span>
+            }
+            try {
+<span class="fc" id="L131">                mailSender.send(message(notice));</span>
+<span class="fc" id="L132">                markDone(notice.orderId(), OffsetDateTime.now(clock));</span>
+<span class="fc" id="L133">                sent++;</span>
+<span class="fc" id="L134">            } catch (RuntimeException e) {</span>
+<span class="fc" id="L135">                log.warn(&quot;Could not email about order {}; retrying next sweep: {}&quot;, notice.orderId(), e.getMessage());</span>
+<span class="fc" id="L136">            }</span>
+<span class="fc" id="L137">        }</span>
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        if (!pending.isEmpty()) {</span>
+<span class="fc" id="L139">            log.info(&quot;Order outcome emails sent for {} of {} pending order(s)&quot;, sent, pending.size());</span>
+        }
+<span class="fc" id="L141">        return sent;</span>
+    }
+
+    private void markDone(UUID orderId, OffsetDateTime notifiedAt) {
+<span class="fc" id="L145">        newTransaction.executeWithoutResult(status -&gt; jdbc.update(</span>
+                &quot;UPDATE trading.orders SET notice_pending = FALSE, notified_at = ? WHERE order_id = ? AND notice_pending&quot;,
+                notifiedAt, orderId));
+<span class="fc" id="L148">    }</span>
+
+    private static Notice notice(ResultSet rs, int row) throws SQLException {
+<span class="fc" id="L151">        return new Notice(rs.getObject(&quot;order_id&quot;, UUID.class), rs.getString(&quot;side&quot;), rs.getString(&quot;order_type&quot;),</span>
+<span class="fc" id="L152">                rs.getLong(&quot;quantity&quot;), rs.getString(&quot;status&quot;), rs.getString(&quot;rejection_reason&quot;),</span>
+<span class="fc" id="L153">                rs.getObject(&quot;filled_at&quot;, OffsetDateTime.class), rs.getObject(&quot;rejected_at&quot;, OffsetDateTime.class),</span>
+<span class="fc" id="L154">                rs.getObject(&quot;expired_at&quot;, OffsetDateTime.class), rs.getString(&quot;symbol&quot;),</span>
+<span class="fc" id="L155">                rs.getString(&quot;account_number&quot;), rs.getString(&quot;email&quot;), rs.getString(&quot;client_status&quot;),</span>
+<span class="fc" id="L156">                rs.getBoolean(&quot;notify_order_fills&quot;), rs.getBigDecimal(&quot;fill_price&quot;));</span>
+    }
+
+    private SimpleMailMessage message(Notice n) {
+<span class="fc" id="L160">        String what = typeLabel(n.orderType()) + &quot; &quot; + n.side().toLowerCase(Locale.ROOT) + &quot; of &quot; + n.quantity()</span>
+<span class="fc" id="L161">                + &quot; &quot; + n.symbol();</span>
+        String subject;
+        String lead;
+        OffsetDateTime when;
+<span class="fc" id="L165">        StringBuilder details = new StringBuilder();</span>
+<span class="fc" id="L166">        details.append(&quot;Order:    &quot;).append(capitalize(what)).append('\n');</span>
+<span class="fc bfc" id="L167" title="All 3 branches covered.">        switch (n.status()) {</span>
+            case &quot;FILLED&quot; -&gt; {
+<span class="fc" id="L169">                String price = money(n.fillPrice());</span>
+<span class="fc" id="L170">                subject = &quot;Your &quot; + what + &quot; filled at &quot; + price;</span>
+<span class="fc" id="L171">                lead = &quot;Your &quot; + what + &quot; filled at &quot; + price + &quot;.&quot;;</span>
+<span class="fc" id="L172">                when = n.filledAt();</span>
+<span class="fc" id="L173">                details.append(&quot;Price:    &quot;).append(price).append(&quot; per share\n&quot;);</span>
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">                if (n.fillPrice() != null) {</span>
+<span class="fc" id="L175">                    details.append(&quot;Total:    &quot;).append(money(n.fillPrice().multiply(BigDecimal.valueOf(n.quantity()))))</span>
+<span class="fc" id="L176">                            .append('\n');</span>
+                }
+<span class="fc" id="L178">            }</span>
+            case &quot;REJECTED&quot; -&gt; {
+<span class="fc" id="L180">                subject = &quot;Your &quot; + what + &quot; was refused&quot;;</span>
+<span class="fc" id="L181">                lead = &quot;The market reached your price, but your &quot; + what + &quot; was refused&quot;</span>
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">                        + (n.rejectionReason() != null ? &quot;: &quot; + n.rejectionReason() : &quot;.&quot;);</span>
+<span class="fc" id="L183">                when = n.rejectedAt();</span>
+<span class="fc" id="L184">            }</span>
+            default -&gt; {
+<span class="fc" id="L186">                subject = &quot;Your &quot; + what + &quot; expired&quot;;</span>
+<span class="fc" id="L187">                lead = &quot;Your &quot; + what + &quot; expired before the market reached its price, so it did not execute.&quot;;</span>
+<span class="fc" id="L188">                when = n.expiredAt();</span>
+            }
+        }
+<span class="pc bpc" id="L191" title="1 of 2 branches missed.">        if (when != null) {</span>
+<span class="fc" id="L192">            details.append(&quot;When:     &quot;).append(when.atZoneSameInstant(ZoneOffset.UTC).format(TIME)).append('\n');</span>
+        }
+<span class="fc" id="L194">        details.append(&quot;Account:  &quot;).append(maskedName(n.accountNumber())).append('\n');</span>
+
+<span class="fc" id="L196">        SimpleMailMessage message = new SimpleMailMessage();</span>
+<span class="fc" id="L197">        message.setFrom(from);</span>
+<span class="fc" id="L198">        message.setTo(n.email());</span>
+<span class="fc" id="L199">        message.setSubject(subject);</span>
+<span class="fc" id="L200">        message.setText(&quot;Hello,\n\n&quot; + lead + &quot;\n\n&quot; + details + &quot;\n&quot;</span>
+                + &quot;See your order history: &quot; + historyUrl + &quot;\n\n&quot;
+                + &quot;You can turn these emails off in Settings.\n\n&quot;
+                + &quot;Leapfolio\n&quot;);
+<span class="fc" id="L204">        return message;</span>
+    }
+
+    private static String typeLabel(String orderType) {
+<span class="pc bpc" id="L208" title="2 of 3 branches missed.">        return switch (orderType) {</span>
+<span class="nc" id="L209">            case &quot;STOP_LIMIT&quot; -&gt; &quot;stop-limit&quot;;</span>
+<span class="nc" id="L210">            case &quot;TRAILING_STOP&quot; -&gt; &quot;trailing stop&quot;;</span>
+<span class="fc" id="L211">            default -&gt; orderType.toLowerCase(Locale.ROOT);</span>
+        };
+    }
+
+    private static String capitalize(String text) {
+<span class="fc" id="L216">        return Character.toUpperCase(text.charAt(0)) + text.substring(1);</span>
+    }
+
+    private static String money(BigDecimal amount) {
+<span class="pc bpc" id="L220" title="1 of 2 branches missed.">        return amount == null ? &quot;market price&quot; : &quot;$&quot; + String.format(Locale.US, &quot;%,.2f&quot;,</span>
+<span class="fc" id="L221">                amount.setScale(2, RoundingMode.HALF_UP));</span>
+    }
+
+    /**
+     * Names the account the way the dashboard does, showing only its last four characters, so the
+     * full account number never goes out by email.
+     */
+    static String maskedName(String accountNumber) {
+<span class="fc" id="L229">        return &quot;Brokerage ··&quot; + accountNumber.substring(Math.max(0, accountNumber.length() - 4));</span>
+    }
+
+<span class="fc" id="L232">    private record Notice(UUID orderId, String side, String orderType, long quantity, String status,</span>
+                          String rejectionReason, OffsetDateTime filledAt, OffsetDateTime rejectedAt,
+                          OffsetDateTime expiredAt, String symbol, String accountNumber, String email,
+                          String clientStatus, boolean notifyOrderFills, BigDecimal fillPrice) {
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

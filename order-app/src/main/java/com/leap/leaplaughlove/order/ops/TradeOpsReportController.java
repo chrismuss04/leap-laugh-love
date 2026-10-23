@@ -27,12 +27,23 @@ public class TradeOpsReportController {
     private final TradeOpsReportService tradeOpsReportService;
     private final OpsAccessLog accessLog;
 
+    /**
+     * Constructs a new TradeOpsReportController.
+     * @param tradeOpsReportService builds the reports
+     * @param accessLog records each request
+     */
     public TradeOpsReportController(TradeOpsReportService tradeOpsReportService, OpsAccessLog accessLog) {
         this.tradeOpsReportService = tradeOpsReportService;
         this.accessLog = accessLog;
     }
 
-    /** from and to are ISO date-times bounding when the orders were submitted; from is inclusive, to exclusive. */
+    /**
+     * Rejected orders by reason. from and to are ISO date-times bounding when the orders were
+     * submitted; from is inclusive, to exclusive.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @return the rejection counts, most frequent first
+     */
     @GetMapping("/rejections")
     public List<RejectionCount> rejectionsByReason(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,

@@ -38,6 +38,11 @@ public class TradeOpsController {
     private final TradeTimelineService tradeTimelineService;
     private final OpsAccessLog accessLog;
 
+    /**
+     * Constructs a new TradeOpsController.
+     * @param tradeTimelineService finds and reconstructs trades
+     * @param accessLog records each lookup
+     */
     public TradeOpsController(TradeTimelineService tradeTimelineService, OpsAccessLog accessLog) {
         this.tradeTimelineService = tradeTimelineService;
         this.accessLog = accessLog;
@@ -46,6 +51,17 @@ public class TradeOpsController {
     /**
      * Needs a period and the client, by id or email; the other criteria narrow it further.
      * from and to are ISO date-times; from is inclusive, to exclusive.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     * @return the matching trades, newest first
      */
     @GetMapping
     public List<TradeSummary> search(
@@ -65,7 +81,20 @@ public class TradeOpsController {
         return tradeTimelineService.search(search);
     }
 
-    /** How many orders the same search matches, by outcome; takes the same criteria. */
+    /**
+     * How many orders the same search matches, by outcome; takes the same criteria.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     * @return the counts by outcome
+     */
     @GetMapping("/counts")
     public OrderCounts countByStatus(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime from,

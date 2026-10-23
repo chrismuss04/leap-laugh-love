@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapService.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapService.java</span></div><h1>RecapService.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+import com.leap.leaplaughlove.reporting.recap.RecapSnapshotRepository.StoredRecap;
+import org.springframework.stereotype.Service;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.time.YearMonth;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
+/**
+ * Serves a client's recap of last month: the stored one when the month's job has built it, or one
+ * worked out for this request when it hasn't yet, as in the half hour after a month ends. A recap
+ * worked out on request has no ranking, since that needs every client's, and isn't stored, so it
+ * never stands in for the job's.
+ */
+@Service
+public class RecapService {
+
+    private final RecapSnapshotRepository snapshots;
+    private final RecapFillRepository fills;
+    private final RecapPrices prices;
+    private final RecapCalculator calculator;
+    private final Clock clock;
+
+    /**
+     * Creates the service.
+     * @param snapshots reads stored recaps
+     * @param fills reads the client's fills and the sectors
+     * @param prices fetches daily closes
+     * @param calculator works out a recap
+     * @param clock the UTC clock months are measured on
+     */
+    public RecapService(RecapSnapshotRepository snapshots, RecapFillRepository fills, RecapPrices prices,
+<span class="fc" id="L37">                        RecapCalculator calculator, Clock clock) {</span>
+<span class="fc" id="L38">        this.snapshots = snapshots;</span>
+<span class="fc" id="L39">        this.fills = fills;</span>
+<span class="fc" id="L40">        this.prices = prices;</span>
+<span class="fc" id="L41">        this.calculator = calculator;</span>
+<span class="fc" id="L42">        this.clock = clock;</span>
+<span class="fc" id="L43">    }</span>
+
+    /**
+     * The client's recap of last month. A client who has never traded gets a quiet recap.
+     * @param clientId the client
+     * @return the recap
+     * @throws RecapPricesUnavailableException when it has to be worked out and market data fails
+     */
+    public RecapResponse latest(UUID clientId) {
+<span class="fc" id="L52">        YearMonth month = YearMonth.now(clock).minusMonths(1);</span>
+        // A recap stored in an older JSON shape is worked out again rather than misread.
+<span class="fc" id="L54">        Optional&lt;StoredRecap&gt; stored = snapshots.find(clientId, month)</span>
+<span class="fc bfc" id="L55" title="All 2 branches covered.">                .filter(recap -&gt; recap.schemaVersion() == RecapCalculator.SCHEMA_VERSION);</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        if (stored.isPresent()) {</span>
+<span class="fc" id="L57">            return new RecapResponse(month, stored.get().generatedAt(), true, snapshots.payload(stored.get()));</span>
+        }
+
+<span class="fc" id="L60">        List&lt;RecapFill&gt; clientFills = fills.fillsThrough(clientId, month);</span>
+<span class="fc" id="L61">        PriceBook priceBook = prices.load(month, calculator.symbolsToPrice(month, clientFills));</span>
+<span class="fc" id="L62">        RecapPayload recap = calculator.calculate(month, clientFills, priceBook, fills.sectors());</span>
+<span class="fc" id="L63">        return new RecapResponse(month, OffsetDateTime.now(clock), false, recap);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>OrderStreamController.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">order-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.order.working</a> &gt; <span class="el_source">OrderStreamController.java</span></div><h1>OrderStreamController.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.order.working;
+
+import com.leap.leaplaughlove.common.security.ClientSessionValidator;
+import com.leap.leaplaughlove.common.security.JwtService;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+
+/**
+ * Server-Sent Events stream of the authenticated client's open orders ending: filled, refused when
+ * their price was reached, or expired. The browser reads it with fetch(), since EventSource can't
+ * send the Authorization header.
+ */
+@RestController
+public class OrderStreamController {
+
+    private final OrderUpdateBroadcaster broadcaster;
+    private final ClientSessionValidator sessions;
+
+    /**
+     * Constructs an OrderStreamController.
+     * @param broadcaster pushes updates to open streams
+     * @param sessions checks the client's login is still live while the stream is open
+     */
+<span class="fc" id="L26">    public OrderStreamController(OrderUpdateBroadcaster broadcaster, ClientSessionValidator sessions) {</span>
+<span class="fc" id="L27">        this.broadcaster = broadcaster;</span>
+<span class="fc" id="L28">        this.sessions = sessions;</span>
+<span class="fc" id="L29">    }</span>
+
+    /**
+     * Subscribes the caller to updates on their own orders.
+     * @return the SSE emitter streaming updates to the caller
+     */
+    @GetMapping(&quot;/api/order/orders/stream&quot;)
+    public SseEmitter stream() {
+        // Capture the verified identity before leaving the request thread.
+<span class="fc" id="L38">        var identity = (JwtService.TokenIdentity) SecurityContextHolder.getContext()</span>
+<span class="fc" id="L39">                .getAuthentication().getDetails();</span>
+<span class="pc" id="L40">        return broadcaster.subscribe(identity.clientId(), () -&gt; sessions.isActive(</span>
+<span class="nc" id="L41">                identity.sessionId(), identity.clientId(), identity.expiresAt()));</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

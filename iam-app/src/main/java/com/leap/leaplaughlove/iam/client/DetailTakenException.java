@@ -7,6 +7,7 @@ package com.leap.leaplaughlove.iam.client;
  */
 public class DetailTakenException extends RuntimeException {
 
+    /** The code naming which detail is taken (EMAIL_TAKEN or PHONE_TAKEN). */
     private final String error;
 
     /**

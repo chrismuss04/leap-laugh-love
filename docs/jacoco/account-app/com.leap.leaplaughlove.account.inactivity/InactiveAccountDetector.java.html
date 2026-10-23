@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>InactiveAccountDetector.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">account-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.account.inactivity</a> &gt; <span class="el_source">InactiveAccountDetector.java</span></div><h1>InactiveAccountDetector.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.account.inactivity;
+
+import com.leap.leaplaughlove.account.account.Account;
+import com.leap.leaplaughlove.account.account.AccountRepository;
+import com.leap.leaplaughlove.account.account.AccountRepository.EmptyAccount;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Clock;
+import java.time.OffsetDateTime;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
+/**
+ * Nightly job that flags accounts empty for longer than the threshold and clears accounts that no
+ * longer are. Each run then publishes an {@link InactivityCheckedEvent}, delivered after it commits,
+ * which {@link InactiveAccountNotifier} uses to email the clients of newly flagged accounts.
+ */
+@Component
+@ConditionalOnProperty(prefix = &quot;account.inactivity&quot;, name = &quot;enabled&quot;, havingValue = &quot;true&quot;, matchIfMissing = true)
+public class InactiveAccountDetector {
+
+<span class="fc" id="L32">    private static final Logger log = LoggerFactory.getLogger(InactiveAccountDetector.class);</span>
+
+    private final AccountRepository accountRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final int thresholdDays;
+    private final Clock clock;
+
+    /**
+     * Creates the detector on the system clock.
+     * @param accountRepository finds and flags empty accounts
+     * @param eventPublisher publishes an event for each newly flagged account
+     * @param thresholdDays how many days an account must be empty before it is flagged
+     */
+    @Autowired
+    public InactiveAccountDetector(AccountRepository accountRepository, ApplicationEventPublisher eventPublisher,
+                                   @Value(&quot;${account.inactivity.threshold-days:30}&quot;) int thresholdDays) {
+<span class="fc" id="L48">        this(accountRepository, eventPublisher, thresholdDays, Clock.systemUTC());</span>
+<span class="fc" id="L49">    }</span>
+
+    InactiveAccountDetector(AccountRepository accountRepository, ApplicationEventPublisher eventPublisher,
+<span class="fc" id="L52">                            int thresholdDays, Clock clock) {</span>
+<span class="fc" id="L53">        this.accountRepository = accountRepository;</span>
+<span class="fc" id="L54">        this.eventPublisher = eventPublisher;</span>
+<span class="fc" id="L55">        this.thresholdDays = thresholdDays;</span>
+<span class="fc" id="L56">        this.clock = clock;</span>
+<span class="fc" id="L57">    }</span>
+
+    /**
+     * Runs the inactivity check: flags accounts that have been empty for at least the threshold,
+     * clears the flag (and the notification record) on accounts that are no longer empty, then
+     * publishes an {@link InactivityCheckedEvent}. Scheduled at 02:00 UTC by default.
+     */
+    @Scheduled(cron = &quot;${account.inactivity.cron:0 0 2 * * *}&quot;, zone = &quot;UTC&quot;)
+    @Transactional
+    public void detect() {
+<span class="fc" id="L67">        Map&lt;UUID, OffsetDateTime&gt; empty = accountRepository</span>
+<span class="fc" id="L68">                .findEmptySince(OffsetDateTime.now(clock).minusDays(thresholdDays)).stream()</span>
+<span class="fc" id="L69">                .collect(Collectors.toMap(EmptyAccount::getAccountId, EmptyAccount::getEmptySince));</span>
+
+<span class="fc" id="L71">        List&lt;Account&gt; cleared = accountRepository.findByInactiveSinceIsNotNull().stream()</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">                .filter(a -&gt; !empty.containsKey(a.getAccountId())).toList();</span>
+        // A reactivated account's next inactive period gets an email of its own.
+<span class="fc" id="L74">        cleared.forEach(a -&gt; {</span>
+<span class="fc" id="L75">            a.setInactiveSince(null);</span>
+<span class="fc" id="L76">            a.setInactiveNotifiedAt(null);</span>
+<span class="fc" id="L77">        });</span>
+<span class="fc" id="L78">        List&lt;Account&gt; flagged = accountRepository.findAllById(empty.keySet()).stream()</span>
+<span class="fc bfc" id="L79" title="All 2 branches covered.">                .filter(a -&gt; a.getInactiveSince() == null).toList();</span>
+<span class="fc" id="L80">        flagged.forEach(a -&gt; a.setInactiveSince(empty.get(a.getAccountId())));</span>
+<span class="fc" id="L81">        log.info(&quot;Inactive account check flagged {} and cleared {} account(s)&quot;, flagged.size(), cleared.size());</span>
+<span class="fc" id="L82">        eventPublisher.publishEvent(new InactivityCheckedEvent());</span>
+<span class="fc" id="L83">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

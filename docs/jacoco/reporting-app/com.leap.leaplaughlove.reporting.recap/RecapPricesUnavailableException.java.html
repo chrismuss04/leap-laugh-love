@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../jacoco-resources/report.css" type="text/css"/><link rel="shortcut icon" href="../jacoco-resources/report.gif" type="image/gif"/><title>RecapPricesUnavailableException.java</title><link rel="stylesheet" href="../jacoco-resources/prettify.css" type="text/css"/><script type="text/javascript" src="../jacoco-resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../jacoco-sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">reporting-app</a> &gt; <a href="index.source.html" class="el_package">com.leap.leaplaughlove.reporting.recap</a> &gt; <span class="el_source">RecapPricesUnavailableException.java</span></div><h1>RecapPricesUnavailableException.java</h1><pre class="source lang-java linenums">package com.leap.leaplaughlove.reporting.recap;
+
+/**
+ * Thrown when the market data service can't be reached, or answers with an error, while a recap's
+ * daily closes are being fetched. A recap is never built from partial prices: the month is retried
+ * later instead.
+ */
+public class RecapPricesUnavailableException extends RuntimeException {
+
+    /**
+     * Creates the exception.
+     * @param message the detail message
+     * @param cause the underlying client failure
+     */
+    public RecapPricesUnavailableException(String message, Throwable cause) {
+<span class="fc" id="L16">        super(message, cause);</span>
+<span class="fc" id="L17">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.jacoco.org/jacoco">JaCoCo</a> 0.8.14.202510111229</span></div></body></html>

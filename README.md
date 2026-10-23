@@ -21,6 +21,8 @@ Trunk-based development.
   - [order-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/order-app/)
   - [reporting-app](https://chrismuss04.github.io/leap-laugh-love/jacoco/reporting-app/)
 
+The same site is committed under [`docs/`](docs/). After cloning, open `docs/index.html` in a browser to view the Javadoc and coverage reports offline.
+
 ## Contents
 
 - [Running the app](#running-the-app)
@@ -1457,16 +1459,23 @@ sonar-scanner -Dsonar.host.url=http://localhost:9000 -Dsonar.token=<your token>
 
 `mvn test` writes JaCoCo reports to each module's `target/site/jacoco`. For Javadoc locally, run `mvn compile javadoc:javadoc` (add `-pl iam-app -am` for one module).
 
-To publish the [GitHub Pages site](https://chrismuss04.github.io/leap-laugh-love/) from the `gh-pages` branch:
+The generated site is committed to `main` under `docs/`, so it can be opened locally from a clone (`docs/index.html`). To regenerate it:
+
+```bash
+mvn clean test prepare-package -Pdocs    # writes docs/index.html, docs/jacoco/<module>/ and docs/javadoc/
+git add docs/
+git commit -m "docs: update javadoc and jacoco coverage reports"
+```
+
+The [GitHub Pages site](https://chrismuss04.github.io/leap-laugh-love/) is still served from the `gh-pages` branch, so bring it up to date after regenerating:
 
 ```bash
 git switch gh-pages
-git merge main
-mvn clean test prepare-package -Pdocs    # writes docs/jacoco/<module>/ and docs/javadoc/
-git add docs/
-git commit -m "docs: update javadoc and jacoco coverage reports"
+git merge -X theirs main    # main's docs/ wins
 git push origin gh-pages
 ```
+
+Once Pages is set to deploy from `main` and `/docs` (Settings → Pages), the `gh-pages` branch and the second step are no longer needed.
 
 The `-Pdocs` build applies the dark theme from `docs-theme/` (landing page, JaCoCo and Javadoc stylesheets), using the same tokens as `frontend/src/styles.css`. Edit the files there rather than the generated output, and add a section to `docs-theme/site/jacoco/index.html` when a module is added.
 

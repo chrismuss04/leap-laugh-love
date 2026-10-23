@@ -45,6 +45,7 @@ import com.leap.leaplaughlove.order.order.Order;
  *                               once the buy fills; give this with bracketStopLossPrice
  * @param bracketStopLossPrice for a BUY: the stop price of the sell order opened to cut losses
  *                             once the buy fills; whichever sell executes first cancels the other
+ * @param extendedHours whether the order may also trade in pre-market and after-hours; null means no
  */
 public record OrderSubmissionRequest(
         @NotNull(message = "accountId is required")

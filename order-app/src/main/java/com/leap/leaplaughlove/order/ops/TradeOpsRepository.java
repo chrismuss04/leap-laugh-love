@@ -38,7 +38,19 @@ public class TradeOpsRepository {
 
     private final NamedParameterJdbcTemplate jdbc;
 
-    /** Null fields aren't filtered on. Email and symbol ignore case; from is inclusive, to exclusive. */
+    /**
+     * Null fields aren't filtered on. Email and symbol ignore case; from is inclusive, to exclusive.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @param clientId the client, or null to give their email instead
+     * @param clientEmail the client's email, ignoring case, or null to give their ID instead
+     * @param accountId only this account, or null
+     * @param accountNumber only the account with this number, or null
+     * @param symbol only this instrument, ignoring case, or null
+     * @param side only buys or only sells, or null
+     * @param status only orders with this status, or null
+     * @param orderId only this order, or null
+     */
     public record TradeSearch(UUID orderId, UUID clientId, String clientEmail, UUID accountId, String accountNumber,
                               String symbol, Order.Side side, Order.Status status,
                               OffsetDateTime from, OffsetDateTime to) {}
@@ -90,11 +102,19 @@ public class TradeOpsRepository {
     public record PositionMovementRecord(String movementType, long quantityDelta, BigDecimal costDelta,
                                          OffsetDateTime createdAt) {}
 
+    /**
+     * Constructs a new TradeOpsRepository.
+     * @param jdbc access to the trading schema
+     */
     public TradeOpsRepository(NamedParameterJdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** Newest first, up to {@link #MAX_SEARCH_RESULTS}. */
+    /**
+     * Finds the trades a search matches, newest first, up to {@link #MAX_SEARCH_RESULTS}.
+     * @param search the criteria
+     * @return the matching trades
+     */
     public List<TradeSummary> search(TradeSearch search) {
         var params = new MapSqlParameterSource();
         String sql = TRADE_SELECT + where(search, params)
@@ -102,7 +122,11 @@ public class TradeOpsRepository {
         return jdbc.query(sql, params, (rs, rowNum) -> toSummary(rs));
     }
 
-    /** Every order the search matches, not only the first {@link #MAX_SEARCH_RESULTS}. */
+    /**
+     * Counts every order the search matches, not only the first {@link #MAX_SEARCH_RESULTS}.
+     * @param search the criteria
+     * @return the counts by outcome
+     */
     public OrderCounts countByStatus(TradeSearch search) {
         var params = new MapSqlParameterSource();
         String sql = """
@@ -118,6 +142,9 @@ public class TradeOpsRepository {
     /**
      * Orders submitted in the period (from inclusive, to exclusive) and rejected, by reason: the
      * most frequent first, then by reason, with rejections recorded without one last.
+     * @param from the start of the period, inclusive
+     * @param to the end of the period, exclusive
+     * @return the rejection counts
      */
     public List<RejectionCount> countRejectionsByReason(OffsetDateTime from, OffsetDateTime to) {
         return jdbc.query("""
@@ -138,6 +165,8 @@ public class TradeOpsRepository {
      * Orders still SUBMITTED or ACCEPTED that were submitted before the given time, across every
      * client, oldest first, up to {@link #MAX_SEARCH_RESULTS}. OPEN orders are left out: they wait
      * for their price by design.
+     * @param submittedBefore only orders submitted before this
+     * @return the orders awaiting execution
      */
     public List<TradeSummary> findAwaitingExecutionSince(OffsetDateTime submittedBefore) {
         String sql = TRADE_SELECT + """

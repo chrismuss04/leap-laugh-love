@@ -15,16 +15,39 @@ public class OpsAccessLog {
 
     /** The kind of lookup being recorded. */
     public enum Action {
-        SEARCH, VIEW_TIMELINE, DOWNLOAD_CSV, VIEW_ORDER, VIEW_ORDER_COUNTS, VIEW_REJECTIONS, VIEW_STUCK_ORDERS
+        /** Searched for trades. */
+        SEARCH,
+        /** Viewed an order's timeline. */
+        VIEW_TIMELINE,
+        /** Downloaded an order's timeline as CSV. */
+        DOWNLOAD_CSV,
+        /** Viewed an order's records. */
+        VIEW_ORDER,
+        /** Viewed how many orders a search matches, by outcome. */
+        VIEW_ORDER_COUNTS,
+        /** Viewed the rejections-by-reason report. */
+        VIEW_REJECTIONS,
+        /** Viewed the stuck-orders report. */
+        VIEW_STUCK_ORDERS
     }
 
     private final JdbcTemplate jdbc;
 
+    /**
+     * Constructs a new OpsAccessLog.
+     * @param jdbc access to the trading schema
+     */
     public OpsAccessLog(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
 
-    /** The staff member is the signed-in principal: a staff token's subject is its service_id. */
+    /**
+     * Records a lookup. The staff member is the signed-in principal: a staff token's subject is
+     * its service_id.
+     * @param action the kind of lookup
+     * @param orderId the order looked up, or null for searches and reports
+     * @param searchCriteria the criteria searched or reported on, or null
+     */
     public void record(Action action, UUID orderId, String searchCriteria) {
         UUID staffId = (UUID) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         jdbc.update("""

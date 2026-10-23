@@ -13,6 +13,10 @@ import java.util.List;
 public class InstrumentOverviewRepository {
     private final JdbcTemplate jdbc;
 
+    /**
+     * Constructs a new InstrumentOverviewRepository.
+     * @param jdbc access to the market data schema
+     */
     public InstrumentOverviewRepository(JdbcTemplate jdbc) {
         this.jdbc = jdbc;
     }
