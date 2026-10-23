@@ -15,7 +15,8 @@ describe('LifecycleTimelineComponent', () => {
   it('lists every step in order, each awaiting data until the trace is loaded', () => {
     const el = render(emptyLifecycle());
     expect(rows(el).map(r => r.querySelector('.stage-label')!.textContent)).toEqual(
-      ['Submitted', 'Price reached', 'Accepted', 'Executed', 'Filled or rejected', 'Cash settled', 'Holdings updated', 'Reported']);
+      ['Submitted', 'Price reached', 'Accepted', 'Priced', 'Executed', 'Filled or rejected', 'Cash settled', 'Holdings updated',
+        'Reported']);
     expect(rows(el).every(r => r.dataset['state'] === 'awaiting')).toBe(true);
     expect(el.querySelector('time')).toBeNull();
     expect(el.querySelector('.total')).toBeNull();
@@ -62,7 +63,7 @@ describe('LifecycleTimelineComponent', () => {
   it('marks the steps a cancelled order never reached as not applicable', () => {
     const el = render(withOutcome(emptyLifecycle(), 'CANCELLED'));
     expect(row(el, 'COMPLETED').querySelector('.stage-label')!.textContent).toBe('Cancelled');
-    for (const key of ['ACCEPTED', 'EXECUTED', 'CASH_SETTLED', 'HOLDINGS_UPDATED']) {
+    for (const key of ['ACCEPTED', 'PRICED', 'EXECUTED', 'CASH_SETTLED', 'HOLDINGS_UPDATED']) {
       expect(row(el, key).dataset['state']).toBe('skipped');
     }
     expect(row(el, 'TRIGGERED').dataset['state']).toBe('awaiting');

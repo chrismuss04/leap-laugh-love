@@ -1,10 +1,13 @@
+import { TimelineStep } from '../../services/trade-ops';
+
 /**
  * Staff Dashboards: the steps an order goes through, from submission to the reporting store, each
  * stamped by the table that records it. Trading operations retraces an order by reading these in
  * order; the time between steps shows where an order waited.
  */
 export type StageKey =
-  | 'SUBMITTED' | 'TRIGGERED' | 'ACCEPTED' | 'EXECUTED' | 'COMPLETED' | 'CASH_SETTLED' | 'HOLDINGS_UPDATED' | 'REPORTED';
+  | 'SUBMITTED' | 'TRIGGERED' | 'ACCEPTED' | 'PRICED' | 'EXECUTED' | 'COMPLETED' | 'CASH_SETTLED' | 'HOLDINGS_UPDATED'
+  | 'REPORTED';
 
 export interface LifecycleStage {
   key: StageKey;
@@ -23,7 +26,7 @@ export interface LifecycleStage {
 
 export type OrderOutcome = 'FILLED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED';
 
-// [key, label, description, source] - a table rather than object literals, so the eight
+// [key, label, description, source] - a table rather than object literals, so the nine
 // stages read as one block.
 const STAGE_ROWS: readonly (readonly [StageKey, string, string, string])[] = [
   ['SUBMITTED', 'Submitted',
@@ -35,6 +38,9 @@ const STAGE_ROWS: readonly (readonly [StageKey, string, string, string])[] = [
   ['ACCEPTED', 'Accepted',
     'The order passed validation and was queued for execution.',
     'trading.orders.accepted_at'],
+  ['PRICED', 'Priced',
+    'The market quote the order was priced from: its bid, ask and last price, and the price this side fills at.',
+    'trading.executions.quote_bid / quote_ask / quote_last / quote_timestamp'],
   ['EXECUTED', 'Executed',
     'The execution engine filled or rejected the order.',
     'trading.executions.executed_at'],
@@ -58,6 +64,34 @@ const STAGES: readonly Pick<LifecycleStage, 'key' | 'label' | 'description' | 's
 /** Every stage with nothing recorded yet: the trace's shape before its data is loaded. */
 export function emptyLifecycle(): LifecycleStage[] {
   return STAGES.map(stage => ({ ...stage, at: null, detail: null, skipped: false }));
+}
+
+/** The stage each of order-app's timeline steps stamps. */
+const STEP_STAGES: Record<string, StageKey> = {
+  SUBMITTED: 'SUBMITTED',
+  ACCEPTED: 'ACCEPTED',
+  PRICED: 'PRICED',
+  EXECUTED: 'EXECUTED',
+  EXECUTION_REJECTED: 'EXECUTED',
+  FILLED: 'COMPLETED',
+  REJECTED: 'COMPLETED',
+  CASH_SETTLED: 'CASH_SETTLED',
+  POSITION_UPDATED: 'HOLDINGS_UPDATED'
+};
+
+/**
+ * The stages stamped from order-app's timeline. A stage takes its earliest step's time, and the
+ * details of every step that stamps it, one per line - an order filled in parts is priced and
+ * executed more than once. Steps for stages order-app doesn't record (price reached, reported)
+ * leave them awaiting data, and steps of unknown types are ignored.
+ */
+export function fromTimeline(steps: TimelineStep[]): LifecycleStage[] {
+  return emptyLifecycle().map(stage => {
+    const stamped = steps.filter(step => STEP_STAGES[step.type] === stage.key);
+    if (!stamped.length) { return stage; }
+    const earliest = stamped.reduce((first, step) => Date.parse(step.at) < Date.parse(first.at) ? step : first);
+    return { ...stage, at: earliest.at, detail: stamped.map(step => step.description).join('\n') };
+  });
 }
 
 const COMPLETED_LABELS: Record<OrderOutcome, { label: string; source: string }> = {
@@ -87,7 +121,7 @@ export function withOutcome(stages: LifecycleStage[], outcome: OrderOutcome | nu
     if (outcome === 'REJECTED' && (stage.key === 'CASH_SETTLED' || stage.key === 'HOLDINGS_UPDATED')) {
       return { ...stage, skipped: true };
     }
-    if (!executed && ['ACCEPTED', 'EXECUTED', 'CASH_SETTLED', 'HOLDINGS_UPDATED'].includes(stage.key)) {
+    if (!executed && ['ACCEPTED', 'PRICED', 'EXECUTED', 'CASH_SETTLED', 'HOLDINGS_UPDATED'].includes(stage.key)) {
       return { ...stage, skipped: true };
     }
     return stage;

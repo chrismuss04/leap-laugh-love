@@ -11,7 +11,7 @@ import { TradingOpsDashboardComponent } from './trading-ops/trading-ops';
 import { OrderLifecycleComponent } from './trading-ops/order-lifecycle';
 import { AnalystDashboardComponent } from './analyst/analyst';
 import { BusinessInsights } from '../services/reports';
-import { TradeRecords } from '../services/trade-ops';
+import { TradeRecords, TradeTimeline } from '../services/trade-ops';
 
 // Staff Dashboards: each role's dashboard, reached through the app's real routes and staff shell.
 const ORDER_ID = '3f2b8c1e-9a4d-4c2e-8f1a-6b7d5e0c9a21';
@@ -80,6 +80,7 @@ const STUCK_URL = '/api/order/ops/reports/stuck-orders';
 const REJECTIONS_URL = '/api/order/ops/reports/rejections';
 const COUNTS_URL = '/api/order/ops/orders/counts';
 const RECORDS_URL = `/api/order/ops/orders/${ORDER_ID}`;
+const TIMELINE_URL = `/api/order/ops/orders/${ORDER_ID}/timeline`;
 const FILTERED = '/reporting?from=2026-10-01T09:00&to=2026-10-08T17:30&clientEmail=alice%40leap.com';
 
 /** The text in the body of the panel with this title as rendered, so separate blocks don't run together. */
@@ -109,6 +110,10 @@ function records(): TradeRecords {
     cashEntries: [{ entryType: 'BUY_SETTLEMENT', amount: -1500.5, currency: 'USD', createdAt: '2026-10-02T10:00:01.600Z' }],
     positionMovements: [{ movementType: 'BUY_FILL', quantityDelta: 10, costDelta: 1500.5, createdAt: '2026-10-02T10:00:01.700Z' }]
   };
+}
+
+function timeline(steps: TradeTimeline['steps']): TradeTimeline {
+  return { trade: records().order.summary, quotedPrice: 150, maxSlippagePercent: 1, steps };
 }
 
 describe('Trading operations dashboard', () => {
@@ -178,16 +183,17 @@ describe('Trading operations dashboard', () => {
     expect(trace.querySelector('.back-link')!.getAttribute('href')).toBe('/reporting?symbol=AAPL');
   });
 
-  it('retraces an order through every step, loading its records once', async () => {
+  it('retraces an order through every step, loading its records and timeline once each', async () => {
     const { el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
 
     expect(el.querySelector('[data-testid="lifecycle-order-id"]')!.textContent).toContain(ORDER_ID);
-    expect(el.querySelectorAll('[data-testid="lifecycle-stage"]').length).toBe(8);
+    expect(el.querySelectorAll('[data-testid="lifecycle-stage"]').length).toBe(9);
     expect(panelTitles(el)).toEqual(['Order summary', 'Lifecycle timeline', 'Executions', 'Cash entries', 'Position movements']);
     expect(el.querySelectorAll('[data-testid="report-pending"]').length).toBe(0);
     expect(el.querySelectorAll('.panel-body .loading').length).toBe(4);
     expect(el.querySelector('[role="alert"]')).toBeNull();
     http.expectOne(RECORDS_URL);
+    http.expectOne(TIMELINE_URL);
     http.expectNone(() => true);
   });
 
@@ -234,13 +240,60 @@ describe('Trading operations dashboard', () => {
 
     expect(orderSummary(el)).toBe(
       'Client alice@leap.com Account ACC-1001 Order BUY 10 AAPL Type Market Submitted (UTC) 2026-10-02 10:00:00 '
-      + 'Fill price $150.05 Status Filled');
+      + 'Quoted price $150.00 Fill price $150.05 Status Filled');
     expect(rowCells(el, 'execution-row')).toEqual([
       ['2026-10-02 10:00:01.500', 'Filled', '10', '$150.05', 'Executed at market price']
     ]);
     expect(rowCells(el, 'cash-entry-row')).toEqual([['2026-10-02 10:00:01.600', 'BUY_SETTLEMENT', '-$1,500.50']]);
     expect(el.querySelector('[data-testid="cash-entry-row"] .amount')!.classList.contains('text-loss')).toBe(true);
     expect(rowCells(el, 'position-movement-row')).toEqual([['2026-10-02 10:00:01.700', 'BUY_FILL', '+10', '+$1,500.50']]);
+  });
+
+  it('stamps each lifecycle step from the timeline, showing the quote the order was priced from', async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+    const step = (type: string, at: string, description: string) => ({ type, at, description });
+
+    http.expectOne(RECORDS_URL).flush(records());
+    http.expectOne(TIMELINE_URL).flush(timeline([
+      step('SUBMITTED', '2026-10-02T10:00:00Z', 'BUY 10 AAPL placed in account ACC-1001 by alice@leap.com'),
+      step('ACCEPTED', '2026-10-02T10:00:01Z', 'Order accepted after validation'),
+      step('PRICED', '2026-10-02T10:00:01.200Z',
+        'Market quote from NASDAQ: bid $149.95, ask $150.05, last $150.00; a BUY prices at $150.05'),
+      step('EXECUTED', '2026-10-02T10:00:01.500Z', 'Executed 10 at $150.05 (execution e-1)'),
+      step('CASH_SETTLED', '2026-10-02T10:00:01.600Z', 'Cash ledger BUY_SETTLEMENT: -$1500.50 USD'),
+      step('POSITION_UPDATED', '2026-10-02T10:00:01.700Z', 'Holding BUY_FILL: +10 AAPL, cost +$1500.50'),
+      step('FILLED', '2026-10-02T10:00:02Z', 'Order filled')
+    ]));
+    harness.detectChanges();
+
+    const stage = (key: string) => el.querySelector(`[data-testid="lifecycle-stage"][data-stage="${key}"]`) as HTMLElement;
+    expect(stage('PRICED').dataset['state']).toBe('done');
+    expect(stage('PRICED').querySelector('.stage-detail')!.textContent).toContain('bid $149.95, ask $150.05, last $150.00');
+    for (const key of ['SUBMITTED', 'ACCEPTED', 'EXECUTED', 'COMPLETED', 'CASH_SETTLED', 'HOLDINGS_UPDATED']) {
+      expect(stage(key).dataset['state'], key).toBe('done');
+    }
+    expect(stage('COMPLETED').querySelector('.stage-label')!.textContent).toBe('Filled');
+    // A market order never waits for its price; the reporting store's load time isn't in the timeline.
+    expect(stage('TRIGGERED').dataset['state']).toBe('skipped');
+    expect(stage('REPORTED').dataset['state']).toBe('awaiting');
+  });
+
+  it("leaves the lifecycle steps awaiting data when the timeline fails, and retries it with the order's records", async () => {
+    const { harness, el } = await open(`/reporting/orders/${ORDER_ID}`, OrderLifecycleComponent);
+    const stamped = () => el.querySelectorAll('[data-testid="lifecycle-stage"][data-state="done"]').length;
+
+    http.expectOne(TIMELINE_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    http.expectOne(RECORDS_URL).flush(null, { status: 500, statusText: 'Server Error' });
+    harness.detectChanges();
+    expect(stamped()).toBe(0);
+
+    (el.querySelector('[role="alert"] button') as HTMLButtonElement).click();
+    http.expectOne(RECORDS_URL).flush(records());
+    http.expectOne(TIMELINE_URL).flush(timeline([
+      { type: 'SUBMITTED', at: '2026-10-02T10:00:00Z', description: 'BUY 10 AAPL placed' }
+    ]));
+    harness.detectChanges();
+    expect(stamped()).toBe(1);
   });
 
   it('says "No data available" in each ledger the order left nothing in, and names a rejection', async () => {

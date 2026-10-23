@@ -7,16 +7,18 @@ import { ExecutionRecord, TradeOpsService, TradeRecords } from '../../services/t
 import { isOrderId } from '../filters/audit';
 import { ReportPanelComponent, ReportState } from '../shared/report-panel';
 import { LifecycleTimelineComponent } from './lifecycle-timeline';
-import { LifecycleStage, OrderOutcome, emptyLifecycle, withOutcome } from './lifecycle';
+import { LifecycleStage, OrderOutcome, emptyLifecycle, fromTimeline, withOutcome } from './lifecycle';
 
 const NO_DATA = 'No data available';
+const OUTCOMES: readonly string[] = ['FILLED', 'REJECTED', 'CANCELLED', 'EXPIRED'] satisfies OrderOutcome[];
 
 /**
  * Staff Dashboards: one order retraced end to end - every step from submission to the reporting
  * store with its timestamp, then the execution, cash ledger and position records behind them. The
- * order and its records load in one request, which order-app logs; the lifecycle timeline doesn't
- * load yet: `recorded` and `outcome` are where its report will put its data. The order's steps can
- * be downloaded as CSV from order-app, which logs each download.
+ * order and its records load in one request and its timeline in another, both logged by order-app;
+ * the timeline stamps the stages, with the market quote the order was priced from, and the records
+ * give the outcome and order type that decide which stages apply. The order's steps can be
+ * downloaded as CSV from order-app, which logs each download.
  */
 @Component({
   selector: 'app-order-lifecycle',
@@ -29,8 +31,10 @@ export class OrderLifecycleComponent {
     { requireSync: true });
   readonly validId = computed(() => isOrderId(this.orderId()));
 
-  /** The stages with their recorded timestamps; every stage awaits data until the report is built. */
+  /** The stages with their recorded timestamps; every stage awaits data until the timeline loads. */
   readonly recorded = signal<LifecycleStage[]>(emptyLifecycle());
+  /** True when the timeline failed to load, so retrying the records retries it too. */
+  private readonly timelineFailed = signal(false);
   /** The order's final status, once known; it decides which stages apply. */
   readonly outcome = signal<OrderOutcome | null>(null);
   /** The order's type, once known: a market order never waits for its price. */
@@ -60,13 +64,19 @@ export class OrderLifecycleComponent {
     effect(() => {
       const orderId = this.orderId();
       if (this.validId()) {
-        untracked(() => this.loadRecords(orderId));
+        untracked(() => {
+          this.loadRecords(orderId);
+          this.loadTimeline(orderId);
+        });
       }
     });
   }
 
   retryRecords(): void {
     this.loadRecords(this.orderId());
+    if (this.timelineFailed()) {
+      this.loadTimeline(this.orderId());
+    }
   }
 
   downloadCsv(): void {
@@ -96,11 +106,27 @@ export class OrderLifecycleComponent {
       next: records => {
         this.records.set(records);
         this.recordsState.set('ready');
+        const status = records.order.summary.status;
+        this.outcome.set(OUTCOMES.includes(status) ? status as OrderOutcome : null);
+        this.orderType.set(records.order.orderType);
       },
       error: err => {
         // Retrying can't find an order that isn't there, so a 404 is a message, not an error.
         this.recordsState.set(err.status === 404 ? 'empty' : 'error');
         this.recordsMessage.set(err.status === 404 ? 'No order has this id.' : "Couldn't load this order's records.");
+      }
+    });
+  }
+
+  // The timeline panel has no error state of its own: if this fails its stages stay awaiting data,
+  // and the records panels, which load separately, say what went wrong.
+  private loadTimeline(orderId: string): void {
+    this.timelineFailed.set(false);
+    this.tradeOps.timeline(orderId).subscribe({
+      next: timeline => this.recorded.set(fromTimeline(timeline.steps)),
+      error: () => {
+        this.recorded.set(emptyLifecycle());
+        this.timelineFailed.set(true);
       }
     });
   }

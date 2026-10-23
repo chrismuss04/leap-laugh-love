@@ -84,7 +84,7 @@ import { LifecycleStage, elapsedSince, totalDuration } from './lifecycle';
       font-weight: 500;
     }
     .stage-description { font-size: 13px; color: var(--muted-foreground); margin-top: 2px; }
-    .stage-detail { font-size: 13px; color: var(--foreground); margin-top: 4px; }
+    .stage-detail { font-size: 13px; color: var(--foreground); margin-top: 4px; white-space: pre-line; }
     .stage-source { margin-top: 4px; }
     code {
       font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
