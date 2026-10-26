@@ -193,14 +193,23 @@ pipeline {
                             # To prevent modifying the wrong container in a multi-container task, fail closed.
                             count=$(jq '.containerDefinitions | length' task-old.json)
                             test "$count" -eq 1 || { echo "$service has $count containers; explicit image mapping required"; exit 1; }
-                            jq --arg image "$image" '
+                            jq --arg image "$image" --arg service "$service" '
                                 {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
                                  volumes, placementConstraints, requiresCompatibilities, cpu, memory,
                                  tags, pidMode, ipcMode, proxyConfiguration, inferenceAccelerators,
                                  ephemeralStorage, runtimePlatform}
                                 | with_entries(select(.value != null))
                                 | .containerDefinitions[0].image = $image
+                                | if $service == "team-3-market-data-app" then
+                                    .cpu = "512" | .memory = "2048"
+                                  else . end
                             ' task-old.json > task-new.json
+                            if [ "$service" = 'team-3-market-data-app' ]; then
+                                jq -e '.cpu == "512" and .memory == "2048"' task-new.json >/dev/null || {
+                                    echo 'ERROR: Market-data task CPU/memory validation failed'; exit 1;
+                                }
+                                echo 'Market-data resources: 512 CPU units, 2048 MiB memory'
+                            fi
                             jq -e '.runtimePlatform.cpuArchitecture == "X86_64"' task-new.json >/dev/null || {
                                 echo "ERROR: Refusing to register a non-X86_64 task for $service"
                                 exit 1
