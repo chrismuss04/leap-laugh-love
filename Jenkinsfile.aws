@@ -1,0 +1,224 @@
+// Team 3 AWS deployment-only pipeline. Save at repository root as Jenkinsfile.aws.
+// No unit tests, SonarQube, Compose, Kafka, DB, or E2E stages.
+// Requires Jenkins Pipeline: AWS Steps, Docker/Buildx, AWS CLI v2, jq, and Git.
+pipeline {
+    agent any
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        skipDefaultCheckout(true)
+    }
+    parameters {
+        booleanParam(name: 'DEPLOY_TO_AWS', defaultValue: false,
+            description: 'Unchecked = validate configuration only. Checked = require approval, build, publish and deploy.')
+        booleanParam(name: 'DEPLOY_FRONTEND', defaultValue: false,
+            description: 'Also build Angular and publish it to the configured S3 bucket; requires DEPLOY_TO_AWS.')
+        string(name: 'FRONTEND_S3_BUCKET', defaultValue: '',
+            description: 'Existing Team 3 frontend S3 bucket name (required only for DEPLOY_FRONTEND).')
+        string(name: 'CLOUDFRONT_DISTRIBUTION_ID', defaultValue: '',
+            description: 'Existing frontend CloudFront distribution ID; blank means no invalidation.')
+    }
+    environment {
+        AWS_REGION = 'us-east-1'
+        AWS_ACCOUNT_ID = '760144414473'
+        AWS_DEPLOY_ROLE = 'hww-team3-deploy'
+        ECS_CLUSTER = 'leapfolio-cluster'
+        ECR_REPOSITORY = 'leapfolio-svc'
+        ECR_REGISTRY = '760144414473.dkr.ecr.us-east-1.amazonaws.com'
+        // Set after Git checkout. Unique per run and never overwritten as 'latest'.
+        IMAGE_TAG = ''
+    }
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.IMAGE_TAG = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(12)}"
+                    echo "Deployable revision: ${env.GIT_COMMIT}; image tag: ${env.IMAGE_TAG}"
+                }
+            }
+        }
+        stage('Inspect deployment prerequisites') {
+            steps {
+                sh '''
+                    set -eu
+                    docker version --format '{{.Client.Version}}'
+                    docker buildx version
+                    aws --version
+                    jq --version
+                    for app in iam-app account-app order-app market-data-app reporting-app reporting-etl; do
+                        test -f "$app/Dockerfile"
+                    done
+                    if [ "$DEPLOY_FRONTEND" = 'true' ]; then
+                        test "$DEPLOY_TO_AWS" = 'true' || { echo 'Frontend deployment requires DEPLOY_TO_AWS=true'; exit 1; }
+                        test -n "$FRONTEND_S3_BUCKET" || { echo 'Set FRONTEND_S3_BUCKET'; exit 1; }
+                        test -f frontend/package-lock.json || { echo 'Missing frontend/package-lock.json'; exit 1; }
+                    fi
+                '''
+                script {
+                    if (!params.DEPLOY_TO_AWS) {
+                        echo 'PREVIEW ONLY. No AWS resources will be changed. Set DEPLOY_TO_AWS=true for deployment.'
+                    }
+                }
+            }
+        }
+        stage('Validate Team 3 AWS resources') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
+                    sh '''
+                        set -eu
+                        test "$(aws sts get-caller-identity --query Account --output text)" = "$AWS_ACCOUNT_ID"
+                        aws ecr describe-repositories --repository-names "$ECR_REPOSITORY" --region "$AWS_REGION" >/dev/null
+                        for svc in team-3-iam-app team-3-account-app team-3-order-app \
+                                   team-3-market-data-app team-3-reporting-app team-3-reporting-etl team-3-user-etl; do
+                            aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" --region "$AWS_REGION" \
+                                --query 'services[0].status' --output text | grep -qx ACTIVE || {
+                                echo "ECS service missing/inactive: $svc"; exit 1;
+                            }
+                        done
+                        if [ "$DEPLOY_FRONTEND" = 'true' ]; then
+                            aws s3api head-bucket --bucket "$FRONTEND_S3_BUCKET"
+                            if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+                                aws cloudfront get-distribution --id "$CLOUDFRONT_DISTRIBUTION_ID" >/dev/null
+                            fi
+                        fi
+                    '''
+                }
+            }
+        }
+        stage('Instructor deployment approval') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                timeout(time: 30, unit: 'MINUTES') {
+                    input message: "Approve deploying ${env.GIT_COMMIT} to Team 3 ECS in us-east-1?", ok: 'Approve deployment'
+                }
+            }
+        }
+        stage('Build six backend images') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                sh '''
+                    set -eu
+                    export DOCKER_BUILDKIT=1
+                    for app in iam-app account-app order-app market-data-app reporting-app reporting-etl; do
+                        echo "Building $app"
+                        if [ "$app" = reporting-etl ]; then
+                            docker build --platform linux/amd64 -f "$app/Dockerfile" \
+                                -t "$ECR_REGISTRY/$ECR_REPOSITORY:$app-$IMAGE_TAG" "$app"
+                        else
+                            docker build --platform linux/amd64 -f "$app/Dockerfile" \
+                                -t "$ECR_REGISTRY/$ECR_REPOSITORY:$app-$IMAGE_TAG" .
+                        fi
+                    done
+                '''
+            }
+        }
+        stage('Push backend images to ECR') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
+                    sh '''
+                        set -eu
+                        aws ecr get-login-password --region "$AWS_REGION" | \
+                            docker login --username AWS --password-stdin "$ECR_REGISTRY"
+                        for app in iam-app account-app order-app market-data-app reporting-app reporting-etl; do
+                            docker push "$ECR_REGISTRY/$ECR_REPOSITORY:$app-$IMAGE_TAG"
+                        done
+                        docker logout "$ECR_REGISTRY" || true
+                    '''
+                }
+            }
+        }
+        stage('Register ECS tasks and update seven services') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
+                    sh '''
+                        set -eu
+                        # The user ETL service currently shares the reporting-etl image.
+                        for mapping in \
+                            team-3-iam-app:iam-app \
+                            team-3-account-app:account-app \
+                            team-3-order-app:order-app \
+                            team-3-market-data-app:market-data-app \
+                            team-3-reporting-app:reporting-app \
+                            team-3-reporting-etl:reporting-etl \
+                            team-3-user-etl:reporting-etl; do
+                            service="${mapping%%:*}"
+                            app="${mapping#*:}"
+                            image="$ECR_REGISTRY/$ECR_REPOSITORY:$app-$IMAGE_TAG"
+                            old_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$service" \
+                                --region "$AWS_REGION" --query 'services[0].taskDefinition' --output text)
+                            test "$old_task" != None && test -n "$old_task"
+                            aws ecs describe-task-definition --task-definition "$old_task" --region "$AWS_REGION" \
+                                --query taskDefinition --output json > task-old.json
+                            # To prevent modifying the wrong container in a multi-container task, fail closed.
+                            count=$(jq '.containerDefinitions | length' task-old.json)
+                            test "$count" -eq 1 || { echo "$service has $count containers; explicit image mapping required"; exit 1; }
+                            jq --arg image "$image" '
+                                {family, taskRoleArn, executionRoleArn, networkMode, containerDefinitions,
+                                 volumes, placementConstraints, requiresCompatibilities, cpu, memory,
+                                 tags, pidMode, ipcMode, proxyConfiguration, inferenceAccelerators,
+                                 ephemeralStorage, runtimePlatform}
+                                | with_entries(select(.value != null))
+                                | .containerDefinitions[0].image = $image
+                            ' task-old.json > task-new.json
+                            new_task=$(aws ecs register-task-definition --cli-input-json file://task-new.json \
+                                --region "$AWS_REGION" --query 'taskDefinition.taskDefinitionArn' --output text)
+                            echo "Updating $service to $new_task ($image)"
+                            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$service" \
+                                --task-definition "$new_task" --region "$AWS_REGION" >/dev/null
+                        done
+                        rm -f task-old.json task-new.json
+                    '''
+                }
+            }
+        }
+        stage('Wait for ECS services') {
+            when { expression { params.DEPLOY_TO_AWS } }
+            steps {
+                withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
+                    timeout(time: 25, unit: 'MINUTES') {
+                        sh '''
+                            set -eu
+                            for svc in team-3-iam-app team-3-account-app team-3-order-app \
+                                       team-3-market-data-app team-3-reporting-app team-3-reporting-etl team-3-user-etl; do
+                                echo "Waiting for $svc"
+                                aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$svc" --region "$AWS_REGION"
+                            done
+                        '''
+                    }
+                }
+            }
+        }
+        stage('Build and upload Angular frontend (optional)') {
+            when { expression { params.DEPLOY_TO_AWS && params.DEPLOY_FRONTEND } }
+            steps {
+                sh '''
+                    set -eu
+                    docker run --rm --user "$(id -u):$(id -g)" \
+                        -v "$WORKSPACE/frontend:/app" -w /app \
+                        -e HOME=/tmp node:24-bookworm-slim sh -c 'npm ci && npm run build -- --configuration production'
+                    test -f frontend/dist/leap-laugh-love-frontend/browser/index.html
+                '''
+                withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
+                    sh '''
+                        set -eu
+                        aws s3 sync frontend/dist/leap-laugh-love-frontend/browser/ \
+                            "s3://$FRONTEND_S3_BUCKET/" --delete --region "$AWS_REGION"
+                        if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+                            aws cloudfront create-invalidation --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+                                --paths '/*' >/dev/null
+                        fi
+                    '''
+                }
+            }
+        }
+    }
+    post {
+        success { echo 'Team 3 deployment pipeline completed. For DEPLOY_TO_AWS=false, this was preview-only.' }
+        failure { echo 'Deployment pipeline failed. Check ECS events/task logs before retrying; any earlier service updates are NOT automatically rolled back.' }
+        cleanup { sh 'rm -f task-old.json task-new.json || true' }
+    }
+}
