@@ -149,6 +149,7 @@ pipeline {
                 withAWS(role: 'hww-team3-deploy', roleAccount: '760144414473', region: 'us-east-1') {
                     sh '''
                         set -eu
+                        rm -f expected-task-definitions.txt
                         # The user ETL service currently shares the reporting-etl image.
                         for mapping in \
                             team-3-iam-app:iam-app \
@@ -161,11 +162,34 @@ pipeline {
                             service="${mapping%%:*}"
                             app="${mapping#*:}"
                             image="$ECR_REGISTRY/$ECR_REPOSITORY:$app-$IMAGE_TAG"
-                            old_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$service" \
+                            # Read the service to learn its task-definition family, but
+                            # do NOT copy its current revision (it may still be ARM64).
+                            current_task=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$service" \
                                 --region "$AWS_REGION" --query 'services[0].taskDefinition' --output text)
-                            test "$old_task" != None && test -n "$old_task"
-                            aws ecs describe-task-definition --task-definition "$old_task" --region "$AWS_REGION" \
-                                --query taskDefinition --output json > task-old.json
+                            test "$current_task" != None && test -n "$current_task"
+                            family=$(aws ecs describe-task-definition --task-definition "$current_task" \
+                                --region "$AWS_REGION" --query 'taskDefinition.family' --output text)
+
+                            # Choose the most recent ACTIVE X86_64 revision in that exact family.
+                            # This preserves the manually corrected AMD64 configuration.
+                            base_task=''
+                            for candidate in $(aws ecs list-task-definitions \
+                                --family-prefix "$family" --status ACTIVE --sort DESC \
+                                --region "$AWS_REGION" --query 'taskDefinitionArns' --output text); do
+                                aws ecs describe-task-definition --task-definition "$candidate" \
+                                    --region "$AWS_REGION" --query taskDefinition --output json > task-old.json
+                                if jq -e --arg family "$family" \
+                                    '.family == $family and .runtimePlatform.cpuArchitecture == "X86_64"' \
+                                    task-old.json >/dev/null; then
+                                    base_task="$candidate"
+                                    break
+                                fi
+                            done
+                            test -n "$base_task" || {
+                                echo "ERROR: No ACTIVE X86_64 task revision found for $service ($family)"
+                                exit 1
+                            }
+                            echo "Using AMD64 base for $service: $base_task"
                             # To prevent modifying the wrong container in a multi-container task, fail closed.
                             count=$(jq '.containerDefinitions | length' task-old.json)
                             test "$count" -eq 1 || { echo "$service has $count containers; explicit image mapping required"; exit 1; }
@@ -177,11 +201,16 @@ pipeline {
                                 | with_entries(select(.value != null))
                                 | .containerDefinitions[0].image = $image
                             ' task-old.json > task-new.json
+                            jq -e '.runtimePlatform.cpuArchitecture == "X86_64"' task-new.json >/dev/null || {
+                                echo "ERROR: Refusing to register a non-X86_64 task for $service"
+                                exit 1
+                            }
                             new_task=$(aws ecs register-task-definition --cli-input-json file://task-new.json \
                                 --region "$AWS_REGION" --query 'taskDefinition.taskDefinitionArn' --output text)
                             echo "Updating $service to $new_task ($image)"
                             aws ecs update-service --cluster "$ECS_CLUSTER" --service "$service" \
                                 --task-definition "$new_task" --region "$AWS_REGION" >/dev/null
+                            printf '%s %s\n' "$service" "$new_task" >> expected-task-definitions.txt
                         done
                         rm -f task-old.json task-new.json
                     '''
@@ -199,6 +228,23 @@ pipeline {
                                        team-3-market-data-app team-3-reporting-app team-3-reporting-etl team-3-user-etl; do
                                 echo "Waiting for $svc"
                                 aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$svc" --region "$AWS_REGION"
+                                expected=$(awk -v svc="$svc" '$1 == svc {print $2}' expected-task-definitions.txt)
+                                actual=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+                                    --region "$AWS_REGION" --query 'services[0].taskDefinition' --output text)
+                                if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
+                                    echo "ERROR: $svc is stable but not running the expected deployment."
+                                    echo "Expected: $expected"
+                                    echo "Actual:   $actual (possible ECS rollback)"
+                                    exit 1
+                                fi
+                                rollout=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+                                    --region "$AWS_REGION" \
+                                    --query 'services[0].deployments[?status==`PRIMARY`].rolloutState | [0]' --output text)
+                                test "$rollout" = COMPLETED || {
+                                    echo "ERROR: $svc deployment did not complete: $rollout"
+                                    exit 1
+                                }
+                                echo "Verified successful deployment: $svc -> $actual"
                             done
                         '''
                     }
@@ -232,6 +278,6 @@ pipeline {
     post {
         success { echo 'Team 3 deployment pipeline completed. For DEPLOY_TO_AWS=false, this was preview-only.' }
         failure { echo 'Deployment pipeline failed. Check ECS events/task logs before retrying; any earlier service updates are NOT automatically rolled back.' }
-        cleanup { sh 'rm -f task-old.json task-new.json || true' }
+        cleanup { sh 'rm -f task-old.json task-new.json expected-task-definitions.txt || true' }
     }
 }
