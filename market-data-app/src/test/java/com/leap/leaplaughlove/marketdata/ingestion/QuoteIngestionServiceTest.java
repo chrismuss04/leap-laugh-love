@@ -15,15 +15,20 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.math.BigDecimal;
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -34,7 +39,7 @@ class QuoteIngestionServiceTest {
     @Test
     void rejectsFutureQuote() {
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now().plusHours(1)));
-        verify(quoteRepository, never()).save(any());
+        assertTrue(stored().isEmpty());
         verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
         assertTrue(service.latestAll().isEmpty());
     }
@@ -43,7 +48,7 @@ class QuoteIngestionServiceTest {
     @Test
     void rejectsMalformedQuote() {
         service.ingest("invalid|message");
-        verify(quoteRepository, never()).save(any());
+        assertTrue(stored().isEmpty());
         verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
         assertTrue(service.latestAll().isEmpty());
     }
@@ -54,7 +59,7 @@ class QuoteIngestionServiceTest {
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
         service.ingest(line("AAPL", "160.20", "160.30", "160.25", 4, OffsetDateTime.now()));
         assertEquals(0, new BigDecimal("150.25").compareTo(service.latest("AAPL").orElseThrow().lastPrice()));
-        verify(quoteRepository, times(1)).save(any(Quote.class));
+        assertEquals(1, stored().size());
         verify(eventPublisher, times(1)).publishEvent(any(QuoteIngestedEvent.class));
     }
 
@@ -64,7 +69,7 @@ class QuoteIngestionServiceTest {
         service.ingest(line("AAPL", "151.00", "150.00", "150.25", 5, OffsetDateTime.now()));
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
         assertTrue(service.latest("AAPL").isPresent());
-        verify(quoteRepository, times(1)).save(any(Quote.class));
+        assertEquals(1, stored().size());
         verify(eventPublisher, times(1)).publishEvent(any(QuoteIngestedEvent.class));
     }
 
@@ -72,7 +77,7 @@ class QuoteIngestionServiceTest {
     private SimulatedInstrumentRepository instrumentRepository;
 
     @Mock
-    private QuoteRepository quoteRepository;
+    private LatestQuoteWriter quoteWriter;
 
     @Mock
     private SimulatedQuoteFeedFormatter feedFormatter;
@@ -89,9 +94,18 @@ class QuoteIngestionServiceTest {
                 new BigDecimal("150.00"), new BigDecimal("0.07"), new BigDecimal("0.25"), 42L, true);
         when(instrumentRepository.findByActiveTrue()).thenReturn(List.of(aapl));
 
-        service = new QuoteIngestionService(instrumentRepository, quoteRepository, feedFormatter,
+        service = new QuoteIngestionService(instrumentRepository, quoteWriter, feedFormatter,
                 eventPublisher, 5, 30);
         service.initialize();
+    }
+
+    /** Runs a quote flush and returns what it stored. */
+    @SuppressWarnings("unchecked")
+    private List<Quote> stored() {
+        service.flushLatestQuotes();
+        ArgumentCaptor<Collection<Quote>> batch = ArgumentCaptor.forClass(Collection.class);
+        verify(quoteWriter).upsert(batch.capture());
+        return List.copyOf(batch.getValue());
     }
 
     private static String line(String symbol, String bid, String ask, String last, long seq, OffsetDateTime ts) {
@@ -108,7 +122,7 @@ class QuoteIngestionServiceTest {
 
         service.onPriceTick(new PriceTickEvent(state));
 
-        verify(quoteRepository).save(any(Quote.class));
+        assertEquals(1, stored().size());
         ArgumentCaptor<QuoteIngestedEvent> captor = ArgumentCaptor.forClass(QuoteIngestedEvent.class);
         verify(eventPublisher).publishEvent(captor.capture());
         assertEquals("AAPL", captor.getValue().quoteState().symbol());
@@ -122,7 +136,7 @@ class QuoteIngestionServiceTest {
     void testRejectsUnknownInstrument() {
         service.ingest(line("ZZZZ", "10.00", "10.10", "10.05", 1, OffsetDateTime.now()));
 
-        verify(quoteRepository, never()).save(any());
+        assertTrue(stored().isEmpty());
         verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
         assertTrue(service.latest("ZZZZ").isEmpty());
     }
@@ -132,7 +146,7 @@ class QuoteIngestionServiceTest {
     void testRejectsCrossedQuote() {
         service.ingest(line("AAPL", "150.30", "150.20", "150.25", 1, OffsetDateTime.now()));
 
-        verify(quoteRepository, never()).save(any());
+        assertTrue(stored().isEmpty());
         verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
     }
 
@@ -141,7 +155,7 @@ class QuoteIngestionServiceTest {
     void testRejectsStaleTimestamp() {
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now().minusSeconds(1000)));
 
-        verify(quoteRepository, never()).save(any());
+        assertTrue(stored().isEmpty());
         verify(eventPublisher, never()).publishEvent(any(QuoteIngestedEvent.class));
     }
 
@@ -151,7 +165,50 @@ class QuoteIngestionServiceTest {
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
         service.ingest(line("AAPL", "150.20", "150.30", "150.25", 5, OffsetDateTime.now()));
 
-        verify(quoteRepository, times(1)).save(any(Quote.class));
+        assertEquals(1, stored().size());
         verify(eventPublisher, times(1)).publishEvent(any(QuoteIngestedEvent.class));
+    }
+
+    @Test
+    @DisplayName("never writes to the database from the tick itself")
+    void tickDoesNotWrite() {
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now()));
+
+        verifyNoInteractions(quoteWriter);
+        assertTrue(service.latest("AAPL").isPresent());
+    }
+
+    @Test
+    @DisplayName("stores only the latest of several quotes accepted between flushes")
+    void flushStoresOnlyTheLatestQuotePerSymbol() {
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now()));
+        service.ingest(line("AAPL", "151.20", "151.30", "151.25", 2, OffsetDateTime.now()));
+
+        List<Quote> stored = stored();
+        assertEquals(1, stored.size());
+        assertEquals(2, stored.get(0).getSequenceNumber());
+    }
+
+    @Test
+    @DisplayName("keeps quotes a failed flush couldn't store for the next one, unless newer arrived")
+    void failedFlushRetriesUnlessSuperseded() {
+        service.ingest(line("AAPL", "150.20", "150.30", "150.25", 1, OffsetDateTime.now()));
+        doThrow(new org.springframework.dao.DataAccessResourceFailureException("offline"))
+                .when(quoteWriter).upsert(any());
+        service.flushLatestQuotes();
+        reset(quoteWriter);
+
+        assertEquals(1, stored().get(0).getSequenceNumber());
+
+        // A newer quote arrives while the failing write is in flight.
+        doAnswer(invocation -> {
+            service.ingest(line("AAPL", "152.20", "152.30", "152.25", 3, OffsetDateTime.now()));
+            throw new org.springframework.dao.DataAccessResourceFailureException("offline");
+        }).when(quoteWriter).upsert(any());
+        service.ingest(line("AAPL", "151.20", "151.30", "151.25", 2, OffsetDateTime.now()));
+        service.flushLatestQuotes();
+        reset(quoteWriter);
+
+        assertEquals(3, stored().get(0).getSequenceNumber());
     }
 }

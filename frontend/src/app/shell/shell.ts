@@ -1,6 +1,7 @@
 import { Component, OnDestroy, OnInit, computed, inject, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AuthService } from '../services/auth.service';
 import { ClientProfile, ProfileService } from '../services/profile';
 import { PriceStreamService } from '../services/price-stream';
@@ -9,7 +10,7 @@ import { MarketStatusComponent } from './market-status/market-status';
 // Session Timeout & Revocation: track activity only while the signed-in shell is mounted.
 import { SessionActivityService } from '../services/session-activity';
 // Session Timeout & Revocation
-import { Subscription, asapScheduler, observeOn } from 'rxjs';
+import { Subscription, asapScheduler, filter, observeOn } from 'rxjs';
 
 const EXPERIENCE_LABELS: Record<ClientProfile['experienceLevel'], string> = {
   NOVICE: 'Novice investor',
@@ -66,6 +67,14 @@ export class ShellComponent implements OnInit, OnDestroy {
   // is still mounted, hidden, when someone signs in - and the sign-in redirect lands only after it
   // renders. Staff tokens can't load any of its data, so it renders and loads nothing for them.
   readonly staff = this.auth.isStaff();
+
+  constructor() {
+    // Moving to another page retries a dropped price stream at once instead of waiting out the backoff.
+    inject(Router).events.pipe(
+      filter(event => event instanceof NavigationEnd),
+      takeUntilDestroyed()
+    ).subscribe(() => this.stream.retryNow());
+  }
 
   ngOnInit(): void {
     if (this.staff) { return; }

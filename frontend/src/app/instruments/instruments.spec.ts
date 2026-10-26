@@ -16,13 +16,13 @@ const overview = (): InstrumentOverview => ({ period: 'today', periodStart: '202
 describe('Instruments page integration', () => {
  let fixture: ComponentFixture<InstrumentsComponent>;
  let http: HttpTestingController;
- let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; status: ReturnType<typeof signal<string>>; watch: ReturnType<typeof vi.fn> };
+ let stream: { prices: ReturnType<typeof signal<Record<string, number>>>; status: ReturnType<typeof signal<string>>; watch: ReturnType<typeof vi.fn>; release: ReturnType<typeof vi.fn> };
  const url = '/api/marketdata/instruments?period=';
  const render = () => fixture.detectChanges();
  const text = () => fixture.nativeElement.textContent as string;
  const load = (data = overview()) => { http.expectOne(url + 'today').flush(data); render(); };
  beforeEach(() => {
-  stream = { prices: signal<Record<string, number>>({}), status: signal('live'), watch: vi.fn() };
+  stream = { prices: signal<Record<string, number>>({}), status: signal('live'), watch: vi.fn(), release: vi.fn() };
   TestBed.configureTestingModule({ imports: [InstrumentsComponent], providers: [provideHttpClient(),
    provideHttpClientTesting(), { provide: PriceStreamService, useValue: stream }] });
   http = TestBed.inject(HttpTestingController);
@@ -79,7 +79,7 @@ describe('Instruments page integration', () => {
   expect(text()).toContain('+5.00%');
   expect(fixture.componentInstance.gainers().map(r => r.symbol)).toEqual(['AAPL']);
   expect(fixture.componentInstance.losers().map(r => r.symbol)).toEqual(['BTCUSD']);
-  expect(stream.watch).toHaveBeenCalledWith(['AAPL', 'BTCUSD']);
+  expect(stream.watch).toHaveBeenCalledWith(['AAPL', 'BTCUSD'], 'instruments');
  });
  it('combines actual search and asset controls without filtering movers', () => {
   load();

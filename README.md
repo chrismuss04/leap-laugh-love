@@ -131,6 +131,7 @@ docker compose exec -T db psql -U paysprint -d paysprint -v ON_ERROR_STOP=1 < sc
 | `migrate-reporting-client-months.sql` | `reporting.client_months`, rebuilt from `reporting.orders` (rerun any time to rebuild) |
 | `migrate-price-candles-key.sql` | New primary key on `marketdata.price_candles` (stop market-data-app first) |
 | `migrate-market-hours.sql` | `extended_hours` and `collar_price` on orders (market hours) |
+| `migrate-latest-quotes.sql` | One row per instrument in `marketdata.quotes`, keeping only the latest (stop market-data-app first) |
 
 `reporting.orders` has no migration; it needs `docker compose down -v` once.
 
@@ -468,6 +469,7 @@ classDiagram
     }
     class ClientSessionValidator {
         +isActive(Role, UUID, UUID, Instant) boolean
+        +activeClientSessions(Collection~UUID~) Map~UUID,UUID~
     }
     class JwtAuthenticationFilter {
         +doFilterInternal(...)
@@ -708,9 +710,8 @@ classDiagram
         +findFirstByInstrument_SymbolOrderByBucketStartDesc(...) Optional~PriceCandle~
         +existsByInstrument_InstrumentId(UUID) boolean
     }
-    class QuoteRepository {
-        <<interface>>
-        +findFirstByInstrument_SymbolOrderByQuoteTimestampDesc(String) Optional~Quote~
+    class LatestQuoteWriter {
+        +upsert(Collection~Quote~)
     }
     class PriceHistoryBackfill {
         <<ApplicationRunner>>
@@ -761,9 +762,14 @@ classDiagram
     class PriceStreamBroadcaster {
         +subscribe(Set~String~) SseEmitter
         +onPriceTick(PriceTickEvent)
+        +openSessions() Set~StreamSession~
+        +closeSessions(Predicate~StreamSession~)
     }
     class PriceStreamController {
         +stream(String) SseEmitter
+    }
+    class PriceStreamSessionSweep {
+        +sweep()
     }
     class PriceController {
         +getLatestPrices() List~PriceResponse~
@@ -788,7 +794,7 @@ classDiagram
     Quote "many" --> "1" SimulatedInstrument : instrument
     SimulatedInstrumentRepository ..> SimulatedInstrument : manages
     PriceCandleRepository ..> PriceCandle : manages
-    QuoteRepository ..> Quote : manages
+    LatestQuoteWriter ..> Quote : upserts latest per instrument
     MarketSimulationEngine --> SimulatedInstrumentRepository : uses
     MarketSimulationEngine --> PriceCandleRepository : resumes last close from
     PriceHistoryBackfill --> SimulatedInstrumentRepository : uses
@@ -800,7 +806,7 @@ classDiagram
     MarketSimulationEngine ..> PriceState : produces
     MarketSimulationEngine ..> PriceTickEvent : publishes
     QuoteIngestionService --> SimulatedInstrumentRepository : uses
-    QuoteIngestionService --> QuoteRepository : stores
+    QuoteIngestionService --> LatestQuoteWriter : flushes latest quotes via
     QuoteIngestionService --> SimulatedQuoteFeedFormatter : formats tick
     QuoteIngestionService --> QuoteFeedMessageParser : parses and validates
     QuoteIngestionService ..> PriceTickEvent : listens
@@ -810,6 +816,7 @@ classDiagram
     PriceCandleAccumulator ..> PriceCandle : creates
     PriceStreamBroadcaster ..> PriceTickEvent : listens
     PriceStreamController --> PriceStreamBroadcaster : uses
+    PriceStreamSessionSweep --> PriceStreamBroadcaster : closes ended sessions
     PriceController --> MarketSimulationEngine : uses
     PriceController --> PriceCandleRepository : uses
     PriceController ..> PriceResponse : returns

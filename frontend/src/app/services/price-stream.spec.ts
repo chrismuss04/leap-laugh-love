@@ -163,6 +163,63 @@ describe('PriceStreamService', () => {
     expect(service.status()).toBe('reconnecting');
   });
 
+  it('retries at once on request while waiting out a backoff, starting the backoff over', async () => {
+    vi.useFakeTimers();
+    serveStream(500);
+    service.watch(['AAPL']);
+    await vi.advanceTimersByTimeAsync(1_000);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    serveStream();
+
+    service.retryNow();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(4);
+    expect(service.status()).toBe('connecting');
+  });
+
+  it('does not reconnect on request while the stream is fine', async () => {
+    service.watch(['AAPL']);
+    await settle();
+
+    service.retryNow();
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(service.status()).toBe('live');
+  });
+
+  it('drops a released owner\'s symbols, keeping those another owner still watches', async () => {
+    service.watch(['AAPL']);
+    service.watch(['AAPL', 'MSFT', 'NVDA'], 'instruments');
+    expect(fetchSpy.mock.lastCall![0]).toBe('/api/marketdata/stream?symbols=AAPL%2CMSFT%2CNVDA');
+
+    service.release('instruments');
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.lastCall![0]).toBe('/api/marketdata/stream?symbols=AAPL');
+    service.release('instruments');
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    await settle();
+  });
+
+  it('does not reconnect when a release leaves the same symbols', async () => {
+    service.watch(['AAPL']);
+    service.watch(['aapl'], 'instruments');
+    service.release('instruments');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    await settle();
+  });
+
+  it('closes the connection when the last owner is released', async () => {
+    service.watch(['AAPL'], 'instruments');
+    await settle();
+
+    service.release('instruments');
+
+    expect(service.status()).toBe('idle');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
   it('has nothing to stream without symbols', () => {
     (service as unknown as { connect(): void }).connect();
     expect(fetchSpy).not.toHaveBeenCalled();

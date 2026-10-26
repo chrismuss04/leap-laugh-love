@@ -9,9 +9,11 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -66,8 +68,9 @@ class PriceStreamBroadcasterEdgeCaseTest {
                 throw new IllegalStateException("client disconnected during expiry");
             }
         };
-        broadcaster.register(emitter, Set.of(), () -> false);
-        broadcaster.onPriceTick(tick("AAPL", "100"));
+        broadcaster.register(emitter, Set.of(), session());
+        broadcaster.closeSessions(session -> true);
+        broadcaster.closeSessions(session -> true);
         broadcaster.onPriceTick(tick("AAPL", "101"));
         assertEquals(1, completions.get());
     }
@@ -77,25 +80,41 @@ class PriceStreamBroadcasterEdgeCaseTest {
     void stopsSendingWhenSessionIsRevoked() {
         var broadcaster = new PriceStreamBroadcaster(Runnable::run);
         var emitter = new CollectingEmitter();
-        var active = new AtomicBoolean(true);
-        broadcaster.register(emitter, Set.of(), active::get);
+        broadcaster.register(emitter, Set.of(), session());
         broadcaster.onPriceTick(tick("AAPL", "100"));
         assertEquals(1, emitter.receivedPayloads.size());
-        active.set(false);
+        broadcaster.closeSessions(session -> true);
         broadcaster.onPriceTick(tick("AAPL", "101"));
         broadcaster.onPriceTick(tick("AAPL", "102"));
         assertEquals(1, emitter.receivedPayloads.size());
+        assertTrue(broadcaster.openSessions().isEmpty());
     }
 
     @Test
-    void stopsSendingWhenSessionStoreIsUnavailable() {
+    void closesOnlyTheStreamsWhoseSessionEnded() {
         var broadcaster = new PriceStreamBroadcaster(Runnable::run);
-        var emitter = new CollectingEmitter();
-        broadcaster.register(emitter, Set.of(), () -> {
-            throw new org.springframework.dao.DataAccessResourceFailureException("offline");
-        });
+        var ended = session();
+        var live = session();
+        var endedEmitter = new CollectingEmitter();
+        var liveEmitter = new CollectingEmitter();
+        var anonymousEmitter = new CollectingEmitter();
+        broadcaster.register(endedEmitter, Set.of(), ended);
+        broadcaster.register(liveEmitter, Set.of(), live);
+        broadcaster.register(anonymousEmitter, Set.of());
+        assertEquals(Set.of(ended, live), broadcaster.openSessions());
+
+        broadcaster.closeSessions(ended::equals);
         broadcaster.onPriceTick(tick("AAPL", "100"));
-        assertTrue(emitter.receivedPayloads.isEmpty());
+
+        assertTrue(endedEmitter.receivedPayloads.isEmpty());
+        assertEquals(List.of("AAPL=100"), liveEmitter.receivedPayloads);
+        assertEquals(List.of("AAPL=100"), anonymousEmitter.receivedPayloads);
+        assertEquals(Set.of(live), broadcaster.openSessions());
+    }
+
+    private static PriceStreamBroadcaster.StreamSession session() {
+        return new PriceStreamBroadcaster.StreamSession(UUID.randomUUID(), UUID.randomUUID(),
+                Instant.now().plusSeconds(600));
     }
 
     private static PriceTickEvent tick(String symbol, String price) {

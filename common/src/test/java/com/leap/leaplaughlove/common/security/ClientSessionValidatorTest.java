@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import java.time.*;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -121,5 +123,29 @@ class ClientSessionValidatorTest {
 
     @Test void rejectsMissingRole() {
         assertFalse(validator.isActive(null, sid, client, now.plusSeconds(3600)));
+    }
+
+    // Bulk lookup for the price stream's session sweep: one query, same rules as isActive.
+
+    @Test void bulkLookupReturnsOnlyLiveSessionsWithTheirClients() {
+        UUID idle = UUID.randomUUID(), revoked = UUID.randomUUID();
+        jdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, NULL)", idle, client,
+                now.minusSeconds(600).atOffset(ZoneOffset.UTC), now.plusSeconds(3600).atOffset(ZoneOffset.UTC));
+        jdbc.update("INSERT INTO iam.client_sessions VALUES (?, ?, ?, ?, ?)", revoked, client,
+                now.atOffset(ZoneOffset.UTC), now.plusSeconds(3600).atOffset(ZoneOffset.UTC), now.atOffset(ZoneOffset.UTC));
+
+        assertEquals(Map.of(sid, client),
+                validator.activeClientSessions(List.of(sid, idle, revoked, UUID.randomUUID())));
+    }
+
+    @Test void bulkLookupOfNothingSkipsTheDatabase() {
+        jdbc.execute("DROP TABLE iam.client_sessions");
+        assertTrue(validator.activeClientSessions(List.of()).isEmpty());
+    }
+
+    @Test void bulkLookupFailureIsNotMistakenForEndedSessions() {
+        jdbc.execute("DROP TABLE iam.client_sessions");
+        assertThrows(org.springframework.dao.DataAccessException.class,
+                () -> validator.activeClientSessions(List.of(sid)));
     }
 }

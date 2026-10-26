@@ -9,8 +9,8 @@ import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
 // Session Timeout & Revocation: open streams must also stop serving expired sessions.
-import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.marketdata.stream.PriceStreamBroadcaster.StreamSession;
 import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
@@ -20,16 +20,13 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class PriceStreamController {
 
     private final PriceStreamBroadcaster broadcaster;
-    private final ClientSessionValidator sessions;
 
     /**
      * Constructs a new PriceStreamController.
      * @param broadcaster fans simulation ticks out to subscribers
-     * @param sessions checks that the subscriber's session is still live
      */
-    public PriceStreamController(PriceStreamBroadcaster broadcaster, ClientSessionValidator sessions) {
+    public PriceStreamController(PriceStreamBroadcaster broadcaster) {
         this.broadcaster = broadcaster;
-        this.sessions = sessions;
     }
 
     /**
@@ -50,10 +47,11 @@ public class PriceStreamController {
                         .map(String::toUpperCase)
                         .filter(s -> !s.isEmpty())
                         .collect(Collectors.toSet());
-        // Capture the verified identity before leaving the request thread.
+        // Capture the verified identity before leaving the request thread; the session sweep
+        // closes the stream once this session ends.
         var identity = (JwtService.TokenIdentity) SecurityContextHolder.getContext()
                 .getAuthentication().getDetails();
-        return broadcaster.subscribe(symbolFilter, () -> sessions.isActive(
-                identity.sessionId(), identity.clientId(), identity.expiresAt()));
+        return broadcaster.subscribe(symbolFilter,
+                new StreamSession(identity.sessionId(), identity.clientId(), identity.expiresAt()));
     }
 }

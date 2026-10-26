@@ -11,9 +11,11 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -24,6 +26,11 @@ import java.util.concurrent.ConcurrentHashMap;
  * SimulatedQuoteFeedFormatter - swappable for a real feed later): parses, validates,
  * persists, and republishes each accepted quote. Invalid, unknown-symbol, or out-of-order
  * messages are logged and dropped rather than allowed to interrupt the pipeline.
+ *
+ * <p>
+ * Accepted quotes are served from memory and published straight away; only the latest per
+ * symbol is stored, written for every symbol at once by a separate flush. The tick thread never
+ * waits on the database, so a slow write can't delay ticks until they're rejected as stale.
  */
 @Component
 public class QuoteIngestionService {
@@ -31,7 +38,7 @@ public class QuoteIngestionService {
     private static final Logger log = LoggerFactory.getLogger(QuoteIngestionService.class);
 
     private final SimulatedInstrumentRepository instrumentRepository;
-    private final QuoteRepository quoteRepository;
+    private final LatestQuoteWriter quoteWriter;
     private final SimulatedQuoteFeedFormatter feedFormatter;
     private final ApplicationEventPublisher eventPublisher;
     private final long maxClockSkewSeconds;
@@ -40,12 +47,14 @@ public class QuoteIngestionService {
     private final Map<String, SimulatedInstrument> instrumentsBySymbol = new ConcurrentHashMap<>();
     private final Map<String, QuoteState> latestBySymbol = new ConcurrentHashMap<>();
     private final Map<String, Long> lastSequenceBySymbol = new ConcurrentHashMap<>();
+    /** Accepted quotes not yet stored, the latest per symbol. */
+    private final Map<String, Quote> unstoredBySymbol = new ConcurrentHashMap<>();
 
     /**
      * Creates a new QuoteIngestionService with the given collaborators and validation
      * thresholds.
      * @param instrumentRepository repository used to look up active instruments at startup
-     * @param quoteRepository repository used to persist accepted quotes
+     * @param quoteWriter stores the latest accepted quote per instrument
      * @param feedFormatter formatter used to turn simulation ticks into raw feed lines
      * @param eventPublisher publisher used to broadcast {@link QuoteIngestedEvent}s
      * @param maxClockSkewSeconds how far into the future a quote's timestamp may be before
@@ -54,13 +63,13 @@ public class QuoteIngestionService {
      *     rejected as stale
      */
     public QuoteIngestionService(SimulatedInstrumentRepository instrumentRepository,
-                                  QuoteRepository quoteRepository,
+                                  LatestQuoteWriter quoteWriter,
                                   SimulatedQuoteFeedFormatter feedFormatter,
                                   ApplicationEventPublisher eventPublisher,
                                   @Value("${marketdata.ingestion.max-clock-skew-seconds:5}") long maxClockSkewSeconds,
                                   @Value("${marketdata.ingestion.stale-after-seconds:30}") long staleAfterSeconds) {
         this.instrumentRepository = instrumentRepository;
-        this.quoteRepository = quoteRepository;
+        this.quoteWriter = quoteWriter;
         this.feedFormatter = feedFormatter;
         this.eventPublisher = eventPublisher;
         this.maxClockSkewSeconds = maxClockSkewSeconds;
@@ -116,7 +125,7 @@ public class QuoteIngestionService {
         }
 
         OffsetDateTime receivedAt = OffsetDateTime.now();
-        quoteRepository.save(new Quote(instrument, message.bidPrice(), message.bidSize(),
+        unstoredBySymbol.put(message.symbol(), new Quote(instrument, message.bidPrice(), message.bidSize(),
                 message.askPrice(), message.askSize(), message.lastPrice(), message.lastSize(),
                 message.exchange(), message.sequenceNumber(), message.quoteTimestamp(), receivedAt));
 
@@ -126,6 +135,29 @@ public class QuoteIngestionService {
                 message.exchange(), message.sequenceNumber(), message.quoteTimestamp(), receivedAt);
         latestBySymbol.put(message.symbol(), quoteState);
         eventPublisher.publishEvent(new QuoteIngestedEvent(quoteState));
+    }
+
+    /**
+     * Stores the latest accepted quote of every symbol that has ticked since the last flush, in
+     * one batch. A failed write keeps those quotes for the next flush, unless a newer one has
+     * arrived for the symbol meanwhile.
+     */
+    @Scheduled(fixedDelayString = "${marketdata.ingestion.quote-flush-interval-ms:1000}")
+    public void flushLatestQuotes() {
+        List<Quote> batch = new ArrayList<>();
+        for (String symbol : unstoredBySymbol.keySet()) {
+            Quote quote = unstoredBySymbol.remove(symbol);
+            if (quote != null) {
+                batch.add(quote);
+            }
+        }
+        try {
+            quoteWriter.upsert(batch);
+        } catch (RuntimeException ex) {
+            log.warn("Could not store {} latest quotes; retrying on the next flush: {}",
+                    batch.size(), ex.getMessage());
+            batch.forEach(quote -> unstoredBySymbol.putIfAbsent(quote.getInstrument().getSymbol(), quote));
+        }
     }
 
     /**

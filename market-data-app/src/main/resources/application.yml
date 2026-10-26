@@ -26,9 +26,10 @@ spring:
         order_inserts: true
   task:
     scheduling:
-      # The simulation tick and the candle flush are both @Scheduled. On the default pool of 1
-      # they share a thread, so a slow flush delays every instrument's next tick.
-      pool-size: 4
+      # The simulation tick, candle flush, candle retention, quote flush and stream session sweep
+      # are all @Scheduled. On the default pool of 1 they share a thread, so a slow flush delays
+      # every instrument's next tick.
+      pool-size: 6
 
 app:
   jwt:
@@ -77,6 +78,13 @@ marketdata:
     exchange: SIMULATED
     max-clock-skew-seconds: 5
     stale-after-seconds: 30
+    # Only the latest quote per symbol is stored, written for every symbol that ticked in one
+    # batch this often - never from the tick itself.
+    quote-flush-interval-ms: 1000
+  stream:
+    # How often every open price stream's login session is checked, all in one query. A stream
+    # whose session has ended stops within this long.
+    session-sweep-interval-ms: 20000
 
 market:
   hours:
