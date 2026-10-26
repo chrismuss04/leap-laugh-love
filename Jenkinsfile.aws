@@ -25,8 +25,7 @@ pipeline {
         ECS_CLUSTER = 'leapfolio-cluster'
         ECR_REPOSITORY = 'leapfolio-svc'
         ECR_REGISTRY = '760144414473.dkr.ecr.us-east-1.amazonaws.com'
-        // Set after Git checkout. Unique per run and never overwritten as 'latest'.
-        IMAGE_TAG = ''
+        // IMAGE_TAG is assigned in the Checkout stage, not declared here.
     }
     stages {
         stage('Checkout') {
@@ -35,7 +34,7 @@ pipeline {
                 script {
                     // checkout scm does not always populate GIT_COMMIT in env.
                     env.GIT_COMMIT = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
-                    def shortCommit = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
+                    def shortCommit = env.GIT_COMMIT.take(12)
                     env.IMAGE_TAG = "${env.BUILD_NUMBER}-${shortCommit}"
                     echo "Deployable revision: ${env.GIT_COMMIT}; image tag: ${env.IMAGE_TAG}"
                 }
