@@ -13,9 +13,9 @@ pipeline {
             description: 'Unchecked = validate configuration only. Checked = require approval, build, publish and deploy.')
         booleanParam(name: 'DEPLOY_FRONTEND', defaultValue: false,
             description: 'Also build Angular and publish it to the configured S3 bucket; requires DEPLOY_TO_AWS.')
-        string(name: 'FRONTEND_S3_BUCKET', defaultValue: '',
+        string(name: 'FRONTEND_S3_BUCKET', defaultValue: 'team-3-leapfolio-frontend',
             description: 'Existing Team 3 frontend S3 bucket name (required only for DEPLOY_FRONTEND).')
-        string(name: 'CLOUDFRONT_DISTRIBUTION_ID', defaultValue: '',
+        string(name: 'CLOUDFRONT_DISTRIBUTION_ID', defaultValue: 'E3MNI67OG0XPJ2',
             description: 'Existing frontend CloudFront distribution ID; blank means no invalidation.')
     }
     environment {
@@ -25,11 +25,11 @@ pipeline {
         ECS_CLUSTER = 'leapfolio-cluster'
         ECR_REPOSITORY = 'leapfolio-svc'
         ECR_REGISTRY = '760144414473.dkr.ecr.us-east-1.amazonaws.com'
-        // Set after Git checkout. Unique per run and never overwritten as 'latest'.
-        IMAGE_TAG = ''
+        // IMAGE_TAG is assigned after checkout, not declared here.
     }
-    stage('Checkout') {
-    steps {
+    stages {
+        stage('Checkout') {
+            steps {
         checkout scm
         script {
             def fullCommit = sh(
@@ -44,9 +44,9 @@ pipeline {
 
             echo "Deployable revision: ${fullCommit}"
             echo "Image tag: ${env.IMAGE_TAG}"
+                }
+            }
         }
-    }
-}
         stage('Inspect deployment prerequisites') {
             steps {
                 sh '''
@@ -61,6 +61,10 @@ pipeline {
                     if [ "$DEPLOY_FRONTEND" = 'true' ]; then
                         test "$DEPLOY_TO_AWS" = 'true' || { echo 'Frontend deployment requires DEPLOY_TO_AWS=true'; exit 1; }
                         test -n "$FRONTEND_S3_BUCKET" || { echo 'Set FRONTEND_S3_BUCKET'; exit 1; }
+                        test "$FRONTEND_S3_BUCKET" = 'team-3-leapfolio-frontend' || { echo 'Unexpected Team 3 S3 bucket'; exit 1; }
+                        if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
+                            test "$CLOUDFRONT_DISTRIBUTION_ID" = 'E3MNI67OG0XPJ2' || { echo 'Unexpected Team 3 CloudFront distribution ID'; exit 1; }
+                        fi
                         test -f frontend/package-lock.json || { echo 'Missing frontend/package-lock.json'; exit 1; }
                     fi
                 '''
