@@ -1,17 +1,5 @@
-/* Narrow: the year runs up the left edge beside the chart; lists below. It's the body face at
-   its heaviest, stretched along its baseline with the digits pulled together, teal on a white
-   outline. The outline is a copy behind (::before), so it merges where the digits overlap. */
-.year {
-  top: 0; left: 1.6%; height: 43.5%;
-  writing-mode: vertical-rl; transform: rotate(180deg); text-align: center;
-  font: 600 14.5cqw/0.8 var(--recap-font-card); letter-spacing: -0.07em; scale: 1 1.5;
-  color: var(--recap-lime); isolation: isolate;
-}
-.year::before {
-  content: attr(data-year);
-  position: absolute; inset: 0; z-index: -1;
-  color: var(--recap-paper); -webkit-text-stroke: 0.8cqw var(--recap-paper);
-}
+/* Narrow: the year runs up the left edge beside the chart, slim enough to clear it; lists below. */
+.year { top: 0; left: 1.6%; height: 43.5%; font-size: 14.5cqw; line-height: 0.8; scale: 1 1.5; }
 .square { top: 3%; left: 13.6%; width: 72.9%; height: 41%; background: var(--recap-panel); border: 1px solid var(--recap-line); border-radius: var(--radius-lg); overflow: hidden; }
 .square svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .sq-head { position: absolute; left: 5%; top: 5%; display: flex; flex-direction: column; align-items: flex-start; gap: 1.6cqw; }
@@ -33,13 +21,8 @@ li { animation: rise 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; animation-delay: 
 
 /* Desktop: the year across the top right, the chart under it, the lists on the left. */
 @container viewer (min-width: 640px) {
-  .year {
-    /* Right-aligned with the chart's edge; stretched from that edge so it stays put. */
-    top: 3%; left: auto; right: 5cqw; height: auto;
-    writing-mode: horizontal-tb; transform: none; white-space: nowrap; scale: 1.18 1; transform-origin: right top;
-    font-size: 13.6cqw; line-height: 1;
-  }
-  .year::before { -webkit-text-stroke-width: 0.6cqw; }
+  /* Right-aligned with the chart's edge. */
+  .year { top: 3%; left: auto; right: 5cqw; height: auto; font-size: 13.6cqw; line-height: 1; scale: 1.18 1; }
   .square { left: auto; right: 5cqw; top: 31%; width: auto; height: 60%; aspect-ratio: 1; }
   .sq-head { gap: 0.8cqw; }
   .sq-label { font-size: max(12px, 1.3cqw); }

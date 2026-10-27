@@ -62,6 +62,31 @@
   white-space: nowrap;
 }
 
+/* The year on the intro and closing cards: the body face at its heaviest, stretched along its
+   baseline with the digits pulled together, teal on a white outline. The outline is a copy
+   behind (::before, from data-year), so it merges where the digits overlap. Narrow, it runs up
+   the card's left edge; each card sets its place, size and stretch. */
+.year {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--recap-font-card);
+  font-weight: 600;
+  letter-spacing: -0.07em;
+  color: var(--recap-lime);
+  isolation: isolate;
+}
+
+.year::before {
+  content: attr(data-year);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: var(--recap-paper);
+  -webkit-text-stroke: 0.8cqw var(--recap-paper);
+}
+
 /* The brand footer (app-recap-foot); cards move it where their art leaves room. */
 .foot {
   position: absolute;
@@ -116,6 +141,15 @@
 
 @container viewer (min-width: 640px) {
   .empty-note { font-size: 2.1cqw; }
+
+  /* Across the top right, stretched from its right edge so it stays put. */
+  .year {
+    writing-mode: horizontal-tb;
+    transform: none;
+    transform-origin: right top;
+  }
+
+  .year::before { -webkit-text-stroke-width: 0.6cqw; }
 
   .foot {
     left: 3cqw;
