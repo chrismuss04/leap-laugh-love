@@ -5,8 +5,8 @@
 h2 { margin: 0; font-size: 8.4cqw; line-height: 1.08; }
 h2 span { display: block; white-space: nowrap; }
 h2 .lime { color: var(--recap-lime); }
-.sub { margin: 0; font-size: 4.1cqw; line-height: 1.4; color: rgba(238, 239, 234, 0.82); max-width: 32em; }
-.tap { bottom: 5%; left: 8%; font: 600 3.3cqw/1 var(--recap-font-card); letter-spacing: 0.08em; text-transform: uppercase; color: rgba(238, 239, 234, 0.6); }
+.sub { margin: 0; font-size: 4.1cqw; line-height: 1.4; color: var(--recap-dim); max-width: 32em; }
+.tap { bottom: 5%; left: 8%; font: 600 3.3cqw/1 var(--recap-font-card); letter-spacing: 0.08em; text-transform: uppercase; color: var(--recap-dim); }
 
 /* Desktop: the art rotated, "2026" across the top right; copy on the empty left. */
 @container viewer (min-width: 640px) {

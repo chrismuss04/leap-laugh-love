@@ -4,7 +4,7 @@ import { of, throwError } from 'rxjs';
 import type { MockedObject } from 'vitest';
 import { createSpyObj } from '../../testing/create-spy-obj';
 import { RecapResponse, RecapService } from '../services/recap';
-import { RECAP_FONTS_URL, RecapComponent } from './recap';
+import { RecapComponent } from './recap';
 import { recapPayload } from '../../testing/recap-payload';
 
 describe('RecapComponent', () => {
@@ -54,13 +54,6 @@ describe('RecapComponent', () => {
     expect(recaps.markSeen).toHaveBeenCalledWith('2026-09');
   });
 
-  it('loads the cards’ fonts once, only on the recap page', () => {
-    recaps.latest.mockReturnValue(of(response()));
-    create();
-    create();
-    expect(document.head.querySelectorAll(`link[href="${RECAP_FONTS_URL}"]`)).toHaveLength(1);
-  });
-
   it('shows each card’s figures as the story moves on', () => {
     // Headline figures count up; run each count to its end.
     vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] });
@@ -92,7 +85,7 @@ describe('RecapComponent', () => {
     expect(text()).toContain('+$2,940');
     expect(text()).toContain('SBUX');
     expect(text()).toContain('Tech');
-    expect(query('.year')?.getAttribute('data-year')).toBe('2026');
+    expect(query('.year')?.textContent?.trim()).toBe('2026');
   });
 
   it('says when the market won, and leaves out a ranking the client doesn’t have', () => {

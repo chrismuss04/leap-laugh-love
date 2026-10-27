@@ -1,4 +1,4 @@
-import { Component, DOCUMENT, OnInit, computed, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink } from '@angular/router';
 import { RecapResponse, RecapService } from '../services/recap';
@@ -12,20 +12,6 @@ import { RecapTopsCardComponent } from './cards/tops-card';
 
 /** How long each card shows before the story moves on; recap.css's fill animation runs this long. */
 export const CARD_DURATION_MS = 7000;
-
-// The cards' fonts. Loaded when the recap opens rather than in styles.css: the build inlines
-// global font CSS, and these would add ~110 kB to every page's initial load.
-export const RECAP_FONTS_URL =
-  'https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Inter:wght@400;600;800&display=swap';
-
-function loadRecapFonts(doc: Document): void {
-  if (!doc.head.querySelector(`link[href="${RECAP_FONTS_URL}"]`)) {
-    const link = doc.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = RECAP_FONTS_URL;
-    doc.head.appendChild(link);
-  }
-}
 
 /**
  * The client's recap of last month, played as a story: one card at a time, moving on by itself
@@ -41,7 +27,6 @@ function loadRecapFonts(doc: Document): void {
 })
 export class RecapComponent implements OnInit {
   private readonly recapService = inject(RecapService);
-  private readonly document = inject(DOCUMENT);
 
   readonly response = signal<RecapResponse | null>(null);
   readonly loading = signal(true);
@@ -62,7 +47,6 @@ export class RecapComponent implements OnInit {
   readonly duration = `${CARD_DURATION_MS}ms`;
 
   ngOnInit(): void {
-    loadRecapFonts(this.document);
     this.load();
   }
 

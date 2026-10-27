@@ -1,7 +1,7 @@
 /* Shared by every recap card. The card is the host element and fills the stage; sizes are in cqw
    of the stage (see recap.css), so a card scales with it. The narrow 9:16 layout is the default;
-   the desktop 16:9 layout takes over once the viewer is 640px wide. Ported from
-   wrapped-reference/mockup/recap-mockup.html. */
+   the desktop 16:9 layout takes over once the viewer is 640px wide. Laid out after
+   wrapped-reference/mockup/recap-mockup.html, in the app's own palette and type (see recap.css). */
 
 :host {
   position: absolute;
@@ -36,15 +36,27 @@
 
 .display {
   font-family: var(--recap-font-display);
-  font-weight: 400;
-  line-height: 1;
+  font-weight: 600;
+  line-height: 1.05;
   letter-spacing: -0.01em;
 }
 
+/* Figures set like the dashboard's portfolio value: the body face, tight and tabular. */
+.figure {
+  font-family: var(--recap-font-card);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
 .chip {
-  background: var(--recap-paper);
-  color: var(--recap-ink);
-  font-family: var(--recap-font-display);
+  background: var(--recap-panel);
+  border: 1px solid var(--recap-line);
+  border-radius: 999px;
+  color: var(--recap-paper);
+  font-family: var(--recap-font-card);
+  font-weight: 600;
   line-height: 1;
   display: inline-block;
   white-space: nowrap;
@@ -56,15 +68,14 @@
   left: 5.8%;
   right: 4%;
   bottom: 2.4%;
-  justify-content: space-between;
-  gap: 2cqw;
+  gap: 1.9cqw;
 }
 
 /* What a card says in place of a figure the month has nothing for. */
 .empty-note {
   margin: 0;
-  font: 600 4.2cqw/1.3 var(--recap-font-card);
-  color: rgba(238, 239, 234, 0.75);
+  font: 500 4.2cqw/1.3 var(--recap-font-card);
+  color: var(--recap-dim);
 }
 
 /* Motion: transform and opacity only. --i staggers a card's pieces. */
@@ -110,7 +121,6 @@
     left: 3cqw;
     right: auto;
     bottom: 3.2%;
-    justify-content: flex-start;
-    gap: 1.4cqw;
+    gap: 0.85cqw;
   }
 }

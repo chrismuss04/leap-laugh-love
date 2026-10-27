@@ -10,7 +10,7 @@ import { CountUpDirective } from '../count-up';
     template: `
     <div class="abs copy">
       <h2 class="display" data-a style="--i:0">My Trading Volume</h2>
-      <div class="display big" data-a="pop" style="--i:1"
+      <div class="figure big" data-a="pop" style="--i:1"
            [appCountUp]="moneyMoved().total" [countUpFormat]="wholeMoney" [countUpDelay]="190"></div>
       @if (moneyMoved().filledOrders > 0) {
         <p class="sub" data-a style="--i:3"><b>{{ bought() }}</b> bought · <b>{{ sold() }}</b> sold</p>

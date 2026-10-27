@@ -8,19 +8,19 @@ import { RecapFootComponent } from './recap-foot';
     selector: 'app-recap-tickers-card',
     imports: [RecapFootComponent],
     template: `
-    <div class="abs chip display title" data-a style="--i:0">My Top Tickers</div>
+    <div class="abs display title" data-a style="--i:0">My Top Tickers</div>
     @for (row of rows(); track row.symbol; let k = $index, last = $last) {
       <div class="tk" data-a [style.--k]="k" [style.--i]="k + 1">
-        <div class="rk display">{{ k + 1 }}</div>
+        <div class="rk figure">{{ k + 1 }}</div>
         <div class="tile" [class.last]="last">
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
             @if (row.path) {
-              <path [attr.d]="row.path" fill="none" [attr.stroke]="k === 0 ? 'var(--recap-lime)' : 'var(--recap-ink)'"
+              <path [attr.d]="row.path" fill="none" [attr.stroke]="k === 0 ? 'var(--recap-lime)' : 'var(--recap-paper)'"
                     stroke-width="4" vector-effect="non-scaling-stroke" pathLength="1" class="spark" />
             }
           </svg>
         </div>
-        <div class="tx"><span class="chip display">{{ row.symbol }}</span><small>{{ row.traded }} traded</small></div>
+        <div class="tx"><span class="chip">{{ row.symbol }}</span><small>{{ row.traded }} traded</small></div>
       </div>
     } @empty {
       <p class="abs empty-note none" data-a style="--i:1">No trades in {{ name() }}, so no top tickers.</p>
