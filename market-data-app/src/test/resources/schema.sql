@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS marketdata.price_candles (
 
 CREATE TABLE IF NOT EXISTS marketdata.quotes (
     quote_id UUID PRIMARY KEY,
-    instrument_id UUID NOT NULL
+    instrument_id UUID NOT NULL UNIQUE
         REFERENCES marketdata.instruments (instrument_id) ON DELETE RESTRICT,
     bid_price NUMERIC(18,6) NOT NULL,
     bid_size BIGINT NOT NULL,

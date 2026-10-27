@@ -1,7 +1,7 @@
 package com.leap.leaplaughlove.marketdata.stream;
 
-import com.leap.leaplaughlove.common.security.ClientSessionValidator;
 import com.leap.leaplaughlove.common.security.JwtService;
+import com.leap.leaplaughlove.marketdata.stream.PriceStreamBroadcaster.StreamSession;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,13 +15,12 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.BooleanSupplier;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -30,8 +29,7 @@ import static org.mockito.Mockito.when;
 class PriceStreamControllerTest {
 
     private final PriceStreamBroadcaster broadcaster = mock(PriceStreamBroadcaster.class);
-    private final ClientSessionValidator sessions = mock(ClientSessionValidator.class);
-    private final PriceStreamController controller = new PriceStreamController(broadcaster, sessions);
+    private final PriceStreamController controller = new PriceStreamController(broadcaster);
     private final SseEmitter emitter = new SseEmitter();
     private final UUID clientId = UUID.randomUUID();
     private final UUID sessionId = UUID.randomUUID();
@@ -43,7 +41,7 @@ class PriceStreamControllerTest {
                 new UsernamePasswordAuthenticationToken(clientId.toString(), null, List.of());
         authentication.setDetails(new JwtService.TokenIdentity(clientId, sessionId, expiresAt, "access"));
         SecurityContextHolder.getContext().setAuthentication(authentication);
-        when(broadcaster.subscribe(any(), any(BooleanSupplier.class))).thenReturn(emitter);
+        when(broadcaster.subscribe(any(), any(StreamSession.class))).thenReturn(emitter);
     }
 
     @AfterEach
@@ -54,7 +52,7 @@ class PriceStreamControllerTest {
     @SuppressWarnings("unchecked")
     private Set<String> subscribedFilter() {
         ArgumentCaptor<Set<String>> filter = ArgumentCaptor.forClass(Set.class);
-        verify(broadcaster).subscribe(filter.capture(), any(BooleanSupplier.class));
+        verify(broadcaster).subscribe(filter.capture(), any(StreamSession.class));
         return filter.getValue();
     }
 
@@ -83,14 +81,10 @@ class PriceStreamControllerTest {
     }
 
     @Test
-    @DisplayName("keeps the stream open only while the caller's session is active")
-    void checksTheCallersSession() {
+    @DisplayName("opens the stream under the caller's session, so the session sweep can close it")
+    void recordsTheCallersSession() {
         controller.stream("AAPL");
-        ArgumentCaptor<BooleanSupplier> active = ArgumentCaptor.forClass(BooleanSupplier.class);
-        verify(broadcaster).subscribe(any(), active.capture());
 
-        when(sessions.isActive(sessionId, clientId, expiresAt)).thenReturn(true, false);
-        assertTrue(active.getValue().getAsBoolean());
-        assertFalse(active.getValue().getAsBoolean());
+        verify(broadcaster).subscribe(any(), eq(new StreamSession(sessionId, clientId, expiresAt)));
     }
 }

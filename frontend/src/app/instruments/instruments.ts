@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, linkedSignal, signal } from '@angular/core';
+import { Component, DestroyRef, computed, effect, inject, linkedSignal, signal } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { BehaviorSubject, catchError, EMPTY, interval, switchMap, tap } from 'rxjs';
@@ -50,6 +50,8 @@ export class InstrumentsComponent {
   readonly percent = formatSignedPercent;
   private readonly service = inject(InstrumentsService);
   private readonly requests = new BehaviorSubject<InstrumentPeriod>('today');
+  /** Owns this page's symbols on the shared stream, so they stop streaming when it closes. */
+  private static readonly STREAM_OWNER = 'instruments';
 
   constructor() {
     // Once a symbol receives a changed tick, allow all later ticks, including
@@ -85,9 +87,12 @@ export class InstrumentsComponent {
     ).subscribe(response => {
       this.initialPrices.set({ ...this.stream.prices() });
       this.overview.set(response);
-      this.stream.watch(response.instruments.map(row => row.symbol));
+      this.stream.watch(response.instruments.map(row => row.symbol), InstrumentsComponent.STREAM_OWNER);
       this.loading.set(false);
     });
+    // Every instrument is hundreds of symbols a second; stop streaming the ones no other page
+    // watches once this one closes.
+    inject(DestroyRef).onDestroy(() => this.stream.release(InstrumentsComponent.STREAM_OWNER));
     // RxJS tears down this timer with the component; the shared stream stays with the shell.
     interval(30_000).pipe(takeUntilDestroyed()).subscribe(() => {
       const snapshot = this.overview();

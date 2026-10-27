@@ -7,16 +7,18 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
-// Session Timeout & Revocation
-import java.util.function.BooleanSupplier;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 /**
  * Broadcasts live simulation ticks to subscribed clients over Server-Sent
@@ -38,6 +40,11 @@ import java.util.function.BooleanSupplier;
  * which is all a
  * live view needs and bounds a slow client's backlog to one entry per symbol it
  * watches.
+ *
+ * <p>
+ * Sending never touches the database. Whether each subscriber's login session is still live is
+ * checked for all of them at once by {@link PriceStreamSessionSweep}, which closes the streams
+ * whose session has ended.
  */
 @Component
 public class PriceStreamBroadcaster {
@@ -73,15 +80,15 @@ public class PriceStreamBroadcaster {
     }
 
     /**
-     * Registers a new SSE subscriber that is dropped once its login session ends. The session is
-     * validated on the sender thread, never on the market tick thread.
+     * Registers a new SSE subscriber that is dropped once its login session ends, as found by the
+     * next session sweep.
      *
-     * @param symbolFilter  the symbols to send to this subscriber, or empty to send all
-     * @param sessionActive whether the subscriber's session is still live
+     * @param symbolFilter the symbols to send to this subscriber, or empty to send all
+     * @param session      the subscriber's login session
      * @return the emitter to return to the client
      */
-    public SseEmitter subscribe(Set<String> symbolFilter, BooleanSupplier sessionActive) {
-        return register(new SseEmitter(0L), symbolFilter, sessionActive);
+    public SseEmitter subscribe(Set<String> symbolFilter, StreamSession session) {
+        return register(new SseEmitter(0L), symbolFilter, session);
     }
 
     /**
@@ -94,11 +101,11 @@ public class PriceStreamBroadcaster {
      * @return the emitter the subscriber should be returned to the client
      */
     SseEmitter register(SseEmitter emitter, Set<String> symbolFilter) {
-        return register(emitter, symbolFilter, () -> true);
+        return register(emitter, symbolFilter, null);
     }
 
-    SseEmitter register(SseEmitter emitter, Set<String> symbolFilter, BooleanSupplier sessionActive) {
-        Subscription subscription = new Subscription(emitter, symbolFilter, sessionActive);
+    SseEmitter register(SseEmitter emitter, Set<String> symbolFilter, StreamSession session) {
+        Subscription subscription = new Subscription(emitter, symbolFilter, session);
         subscriptions.add(subscription);
         emitter.onCompletion(subscription::close);
         emitter.onTimeout(subscription::close);
@@ -124,6 +131,41 @@ public class PriceStreamBroadcaster {
     }
 
     /**
+     * The login sessions of every open stream that has one.
+     *
+     * @return each open stream's session, once however many streams share it
+     */
+    public Set<StreamSession> openSessions() {
+        return subscriptions.stream()
+                .map(subscription -> subscription.session)
+                .filter(session -> session != null)
+                .collect(Collectors.toSet());
+    }
+
+    /**
+     * Closes every open stream whose session has ended.
+     *
+     * @param ended whether a stream's session has ended
+     */
+    public void closeSessions(Predicate<StreamSession> ended) {
+        for (Subscription subscription : subscriptions) {
+            if (subscription.session != null && ended.test(subscription.session)) {
+                subscription.end();
+            }
+        }
+    }
+
+    /**
+     * The login session a stream was opened under: what the session sweep checks it against.
+     *
+     * @param sessionId the token's session
+     * @param clientId  the token's client
+     * @param expiresAt the token's expiry
+     */
+    public record StreamSession(UUID sessionId, UUID clientId, Instant expiresAt) {
+    }
+
+    /**
      * One SSE subscriber: its symbol filter, the latest unsent price per symbol,
      * and whether a
      * sender is currently draining those to the client.
@@ -134,12 +176,12 @@ public class PriceStreamBroadcaster {
         private final Map<String, PriceState> unsent = new ConcurrentHashMap<>();
         private final AtomicBoolean draining = new AtomicBoolean();
         private volatile boolean closed;
-        private final BooleanSupplier sessionActive;
+        private final StreamSession session;
 
-        private Subscription(SseEmitter emitter, Set<String> symbolFilter, BooleanSupplier sessionActive) {
+        private Subscription(SseEmitter emitter, Set<String> symbolFilter, StreamSession session) {
             this.emitter = emitter;
             this.symbolFilter = symbolFilter;
-            this.sessionActive = sessionActive;
+            this.session = session;
         }
 
         /**
@@ -175,19 +217,6 @@ public class PriceStreamBroadcaster {
         private void drain() {
             try {
                 while (!closed) {
-                    // Session Timeout & Revocation: validate each outgoing batch, without extending activity.
-                    boolean active;
-                    try {
-                        active = sessionActive.getAsBoolean();
-                    } catch (RuntimeException ex) {
-                        // Session-store failures must close an otherwise healthy connection too.
-                        active = false;
-                    }
-                    if (!active) {
-                        close();
-                        emitter.complete();
-                        return;
-                    }
                     for (String symbol : unsent.keySet()) {
                         PriceState state = unsent.remove(symbol);
                         if (state != null) {
@@ -209,6 +238,19 @@ public class PriceStreamBroadcaster {
                 close();
                 // A failed send (or completion) already belongs to container error handling.
                 // Completing it again can access a destroyed Tomcat AsyncContext.
+            }
+        }
+
+        /**
+         * Ends the stream because its login session has ended.
+         */
+        void end() {
+            close();
+            try {
+                emitter.complete();
+            } catch (RuntimeException ex) {
+                // The client went away while this was closing it; the container is already
+                // cleaning up the request, so there's nothing left to complete.
             }
         }
 

@@ -42,10 +42,25 @@ export abstract class EventStream {
     this.controller?.abort();
     this.controller = undefined;
     clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+  }
+
+  /**
+   * Retries at once if a reconnect is waiting out its backoff, starting the backoff over. Called on
+   * navigation, so someone moving around the app isn't left on "Reconnecting…" for up to the
+   * maximum backoff after the server comes back.
+   */
+  retryNow(): void {
+    if (this.retryTimer === undefined) {
+      return;
+    }
+    this.attempt = 0;
+    this.connect();
   }
 
   protected connect(): void {
     clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
     this.controller?.abort();
     const token = this.auth.getToken();
     const url = this.streamUrl();

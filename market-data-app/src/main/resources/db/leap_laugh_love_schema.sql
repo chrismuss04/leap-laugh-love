@@ -349,9 +349,9 @@ CREATE TABLE IF NOT EXISTS marketdata.price_candles (
 CREATE INDEX IF NOT EXISTS idx_price_candles_width_bucket
     ON marketdata.price_candles (bucket_seconds, bucket_start);
 
--- Quote Feed Ingestion: one row per parsed+validated quote message accepted from the feed
--- (today, a simulated wire format derived from the GBM tick stream; swappable for a real
--- feed later without changing this table). quote_timestamp is the feed's own timestamp,
+-- Quote Feed Ingestion: the latest parsed+validated quote accepted from the feed for each
+-- instrument, replaced in place as new ones arrive (today, a simulated wire format derived from
+-- the GBM tick stream; swappable for a real feed later without changing this table). quote_timestamp is the feed's own timestamp,
 -- received_at is when this backend ingested it - kept separate so staleness can be judged
 -- against either.
 CREATE TABLE IF NOT EXISTS marketdata.quotes (
@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS marketdata.quotes (
     CHECK (ask_price >= bid_price)
 );
 
--- Backs the "latest quote for a symbol" lookup used by QuoteIngestionService/QuoteController.
-CREATE INDEX IF NOT EXISTS idx_quotes_instrument_quote_timestamp
-    ON marketdata.quotes (instrument_id, quote_timestamp DESC);
+-- One row per instrument: the key LatestQuoteWriter upserts on. See
+-- scripts/migrate-latest-quotes.sql for databases that still hold every past quote.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_instrument
+    ON marketdata.quotes (instrument_id);

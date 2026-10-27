@@ -44,6 +44,8 @@ export class PriceStreamService extends EventStream implements OnDestroy {
   /** `prices` as of the last settle: what account and portfolio totals are valued at. */
   readonly settledPrices = signal<Record<string, number>>({});
 
+  /** The symbols each view asked for, so one view leaving drops only what no other still needs. */
+  private readonly owners = new Map<string, Set<string>>();
   private symbols = new Set<string>();
   private flushTimer?: ReturnType<typeof setInterval>;
   /** Latest unpublished tick per symbol. */
@@ -52,24 +54,47 @@ export class PriceStreamService extends EventStream implements OnDestroy {
   private dueAt: Record<string, number> = {};
   private settledAt = 0;
 
-  /** Adds symbols to the stream. Reconnects only if the set actually grew. */
-  watch(symbols: Iterable<string>): void {
-    let changed = false;
+  /**
+   * Adds symbols to the stream on behalf of `owner`. Reconnects only if the set actually grew.
+   * Views that stream symbols only while they're open pass their own owner and release it when
+   * they close; everything else shares one owner that lasts until `stop()`.
+   */
+  watch(symbols: Iterable<string>, owner = 'shared'): void {
+    const wanted = this.owners.get(owner) ?? new Set<string>();
     for (const symbol of symbols) {
-      const upper = symbol.toUpperCase();
-      if (!this.symbols.has(upper)) {
-        this.symbols.add(upper);
-        changed = true;
-      }
+      wanted.add(symbol.toUpperCase());
     }
-    if (changed) {
-      this.attempt = 0;
-      this.connect();
+    this.owners.set(owner, wanted);
+    this.resubscribe();
+  }
+
+  /** Drops an owner's symbols, keeping any another owner still watches. */
+  release(owner: string): void {
+    if (this.owners.delete(owner)) {
+      this.resubscribe();
     }
+  }
+
+  /** Reconnects with the symbols every owner wants together, if that set changed. */
+  private resubscribe(): void {
+    const next = new Set([...this.owners.values()].flatMap(wanted => [...wanted]));
+    const changed = next.size !== this.symbols.size || [...next].some(symbol => !this.symbols.has(symbol));
+    this.symbols = next;
+    if (!changed) {
+      return;
+    }
+    if (next.size === 0) {
+      this.disconnect();
+      this.status.set('idle');
+      return;
+    }
+    this.attempt = 0;
+    this.connect();
   }
 
   /** Closes the connection and forgets every symbol, e.g. on logout. */
   stop(): void {
+    this.owners.clear();
     this.symbols.clear();
     this.disconnect();
     clearInterval(this.flushTimer);

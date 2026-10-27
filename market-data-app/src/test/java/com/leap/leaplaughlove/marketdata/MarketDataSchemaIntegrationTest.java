@@ -81,8 +81,9 @@ class MarketDataSchemaIntegrationTest {
                 "quotes should track a sequence number for ordering/dedup");
         assertTrue(quotesSection.contains("CHECK (ask_price >= bid_price)"),
                 "quotes should reject crossed quotes at the database level");
-        assertTrue(schema.contains("idx_quotes_instrument_quote_timestamp"),
-                "Schema should index quotes by instrument and quote_timestamp");
+        assertTrue(schema.contains("CREATE UNIQUE INDEX IF NOT EXISTS uq_quotes_instrument")
+                        && schema.contains("ON marketdata.quotes (instrument_id);"),
+                "Schema should keep one quote per instrument");
     }
 
     @Test

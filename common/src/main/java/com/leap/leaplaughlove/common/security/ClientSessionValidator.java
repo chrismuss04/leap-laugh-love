@@ -5,10 +5,14 @@ package com.leap.leaplaughlove.common.security;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import java.sql.PreparedStatement;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -88,5 +92,38 @@ public class ClientSessionValidator {
         Integer count = jdbc.queryForObject(sql, Integer.class, sessionId, subjectId, now.atOffset(ZoneOffset.UTC),
                 now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC), now.plus(CLOCK_SKEW).atOffset(ZoneOffset.UTC));
         return count != null && count == 1;
+    }
+
+    /**
+     * Which of the given client sessions are still live, in one query however many there are. Like
+     * {@link #isActive}, never extends a session's activity. Token expiry isn't stored here, so the
+     * caller checks that itself.
+     * @param sessionIds the client sessions to look up
+     * @return the client each live session belongs to, keyed by session; ended or unknown
+     *     sessions are left out
+     */
+    public Map<UUID, UUID> activeClientSessions(Collection<UUID> sessionIds) {
+        if (sessionIds.isEmpty()) {
+            return Map.of();
+        }
+        Instant now = clock.instant();
+        String sql = """
+                SELECT session_id, client_id FROM iam.client_sessions
+                WHERE session_id = ANY (?) AND revoked_at IS NULL
+                  AND expires_at > ? AND last_activity_at > ?
+                  AND last_activity_at <= ?
+                """;
+        Map<UUID, UUID> active = new HashMap<>();
+        jdbc.query(connection -> {
+            PreparedStatement statement = connection.prepareStatement(sql);
+            statement.setArray(1, connection.createArrayOf("uuid", sessionIds.toArray()));
+            statement.setObject(2, now.atOffset(ZoneOffset.UTC));
+            statement.setObject(3, now.minus(IDLE_TIMEOUT).atOffset(ZoneOffset.UTC));
+            statement.setObject(4, now.plus(CLOCK_SKEW).atOffset(ZoneOffset.UTC));
+            return statement;
+        }, row -> {
+            active.put(row.getObject("session_id", UUID.class), row.getObject("client_id", UUID.class));
+        });
+        return active;
     }
 }
