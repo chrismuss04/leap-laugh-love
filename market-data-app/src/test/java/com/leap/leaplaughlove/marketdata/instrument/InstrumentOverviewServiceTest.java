@@ -15,6 +15,8 @@ import static org.assertj.core.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 
 class InstrumentOverviewServiceTest {
     private final InstrumentOverviewRepository repository = mock(InstrumentOverviewRepository.class);
@@ -26,21 +28,29 @@ class InstrumentOverviewServiceTest {
     void longerPeriodsUseUtcMidnight(String period, int days) {
         when(simulation.latestAll()).thenReturn(List.of());
         when(repository.findAll(any(), anyInt())).thenReturn(List.of());
+        when(repository.findPage(any(), anyInt(), anyInt(), anyInt(), anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> new InstrumentOverviewRepository.Page(repository.findAll(
+                        invocation.getArgument(0), invocation.getArgument(1)), 1));
+        when(repository.findMovers(any(), anyInt(), anyBoolean(), anyInt())).thenReturn(List.of());
         var response = service.getOverview(period);
         assertThat(response.period()).isEqualTo(period);
         assertThat(response.periodStart()).isEqualTo(response.asOf().toLocalDate()
                 .atStartOfDay().atOffset(ZoneOffset.UTC).minusDays(days));
-        verify(repository).findAll(response.periodStart(), 86400);
+        verify(repository).findPage(response.periodStart(), 86400, 0, 10, "", "", "name", "ascending");
     }
 
     @Test
     void todayStartsAtThePreviousCloseLikeTheDashboard() {
         when(simulation.latestAll()).thenReturn(List.of());
         when(repository.findAll(any(), anyInt())).thenReturn(List.of());
+        when(repository.findPage(any(), anyInt(), anyInt(), anyInt(), anyString(), anyString(), anyString(), anyString()))
+                .thenAnswer(invocation -> new InstrumentOverviewRepository.Page(repository.findAll(
+                        invocation.getArgument(0), invocation.getArgument(1)), 1));
+        when(repository.findMovers(any(), anyInt(), anyBoolean(), anyInt())).thenReturn(List.of());
         var response = service.getOverview("today");
         assertThat(response.periodStart().toInstant())
                 .isEqualTo(MarketCalendar.previousClose(response.asOf().toInstant()));
-        verify(repository).findAll(response.periodStart(), 300);
+        verify(repository).findPage(response.periodStart(), 300, 0, 10, "", "", "name", "ascending");
     }
 
     @ParameterizedTest
@@ -69,6 +79,10 @@ class InstrumentOverviewServiceTest {
         when(repository.findAll(any(), anyInt())).thenReturn(List.of(
                 new InstrumentOverviewRepository.Metadata("INDEX", "Index", null, null, null),
                 new InstrumentOverviewRepository.Metadata("ABSENT", "Absent", "EQUITY", "USD", null)));
+        when(repository.findPage(any(), anyInt(), anyInt(), anyInt(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(new InstrumentOverviewRepository.Page(List.of(
+                        new InstrumentOverviewRepository.Metadata("INDEX", "Index", null, null, null)), 1));
+        when(repository.findMovers(any(), anyInt(), anyBoolean(), anyInt())).thenReturn(List.of());
         when(simulation.latestAll()).thenReturn(List.of(
                 new PriceState("INDEX", BigDecimal.TEN, OffsetDateTime.now(ZoneOffset.UTC))));
         var rows = service.getOverview("today").instruments();
@@ -89,6 +103,10 @@ class InstrumentOverviewServiceTest {
     private void prepare(BigDecimal price, BigDecimal baseline) {
         when(repository.findAll(any(), anyInt())).thenReturn(List.of(
                 new InstrumentOverviewRepository.Metadata("AAPL", "Apple", "EQUITY", "USD", baseline)));
+        when(repository.findPage(any(), anyInt(), anyInt(), anyInt(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(new InstrumentOverviewRepository.Page(List.of(
+                        new InstrumentOverviewRepository.Metadata("AAPL", "Apple", "EQUITY", "USD", baseline)), 1));
+        when(repository.findMovers(any(), anyInt(), anyBoolean(), anyInt())).thenReturn(List.of());
         when(simulation.latestAll()).thenReturn(List.of(
                 new PriceState("AAPL", price, OffsetDateTime.now(ZoneOffset.UTC))));
     }

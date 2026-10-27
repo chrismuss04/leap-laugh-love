@@ -26,7 +26,11 @@ public class InstrumentController {
      * @return the overview, with the change computed against the period's baseline
      */
     @GetMapping
-    public InstrumentOverviewResponse getOverview(@RequestParam(defaultValue = "today") String period) {
-        return service.getOverview(period);
+    public InstrumentOverviewResponse getOverview(@RequestParam(defaultValue = "today") String period,
+            @RequestParam(defaultValue = "0") int page, @RequestParam(defaultValue = "10") int size,
+            @RequestParam(defaultValue = "") String query, @RequestParam(defaultValue = "") String asset,
+            @RequestParam(defaultValue = "name") String sort,
+            @RequestParam(defaultValue = "ascending") String direction) {
+        return service.getOverview(period, page, size, query, asset, sort, direction);
     }
 }

@@ -33,11 +33,12 @@ class InstrumentControllerTest {
     @WithMockUser(roles = "CLIENT")
     void defaultsToToday() throws Exception {
         var now = OffsetDateTime.parse("2026-10-12T00:00:00Z");
-        when(service.getOverview("today")).thenReturn(new InstrumentOverviewResponse("today", now, now, List.of()));
+        when(service.getOverview("today", 0, 10, "", "", "name", "ascending"))
+                .thenReturn(new InstrumentOverviewResponse("today", now, now, List.of()));
         mvc.perform(get("/api/marketdata/instruments"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.period").value("today"))
                 .andExpect(jsonPath("$.instruments").isArray());
-        verify(service).getOverview("today");
+        verify(service).getOverview("today", 0, 10, "", "", "name", "ascending");
     }
 
     @ParameterizedTest
@@ -45,15 +46,26 @@ class InstrumentControllerTest {
     @WithMockUser(roles = "CLIENT")
     void passesSelectedPeriod(String period) throws Exception {
         mvc.perform(get("/api/marketdata/instruments").param("period", period)).andExpect(status().isOk());
-        verify(service).getOverview(period);
+        verify(service).getOverview(period, 0, 10, "", "", "name", "ascending");
     }
 
     @Test
     @WithMockUser(roles = "CLIENT")
     void invalidPeriodReturnsBadRequest() throws Exception {
-        when(service.getOverview("year")).thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST));
+        when(service.getOverview("year", 0, 10, "", "", "name", "ascending"))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST));
         mvc.perform(get("/api/marketdata/instruments").param("period", "year"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(roles = "CLIENT")
+    void passesPaginationAndSearchOptions() throws Exception {
+        mvc.perform(get("/api/marketdata/instruments").param("period", "week")
+                        .param("page", "2").param("size", "20").param("query", "apple")
+                        .param("asset", "EQUITY").param("sort", "price").param("direction", "descending"))
+                .andExpect(status().isOk());
+        verify(service).getOverview("week", 2, 20, "apple", "EQUITY", "price", "descending");
     }
 
     @Test
