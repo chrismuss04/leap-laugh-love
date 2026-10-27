@@ -13,7 +13,7 @@ describe('InstrumentsService', () => {
       symbol: 'INDEX', name: 'Market Index', assetClass: null, currency: null,
       price: 100, asOf: '2026-10-12T11:59:59Z', baselinePrice: null,
       change: null, changePercent: null
-    }]
+    }], total: 1, page: 0, size: 10, gainers: [], losers: []
   };
 
   beforeEach(() => {
