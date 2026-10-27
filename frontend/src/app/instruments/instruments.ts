@@ -109,7 +109,7 @@ export class InstrumentsComponent {
     });
     effect(() => {
       const request = this.requestKey();
-      if (this.lastRequestKey !== '' && request !== this.lastRequestKey && !this.loading()) {
+      if (this.lastRequestKey !== '' && request !== this.lastRequestKey) {
         this.lastRequestKey = request;
         this.requests.next();
       } else if (this.lastRequestKey === '') {
@@ -118,12 +118,6 @@ export class InstrumentsComponent {
     });
     effect(() => {
       if (!this.loading()) this.maxPageIndex.set(Math.max(0, this.pageCount() - 1));
-    });
-    effect(() => {
-      const request = this.requestKey();
-      if (this.lastRequestKey !== '' && request !== this.lastRequestKey && this.loading()) {
-        this.lastRequestKey = request;
-      }
     });
   }
 

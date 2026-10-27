@@ -34,7 +34,7 @@ describe('Instruments page integration', () => {
  it('renders ten rows per page with a partial last page and disabled boundaries', () => {
   load({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${String(i).padStart(2, '0')}`, i)), total: 23 });
   const buttons = () => fixture.nativeElement.querySelectorAll('.pagination button') as NodeListOf<HTMLButtonElement>;
-  const count = () => fixture.nativeElement.querySelectorAll('tbody tr:not(:last-child)').length;
+  const count = () => fixture.nativeElement.querySelectorAll('tbody th[scope="row"]').length;
   expect(count()).toBe(10);
   expect(buttons()[0].disabled).toBe(true);
   buttons()[1].click(); render();
@@ -48,17 +48,24 @@ describe('Instruments page integration', () => {
   expect(buttons()[1].disabled).toBe(true);
   buttons()[0].click(); render();
   expect(fixture.componentInstance.page()).toBe(2);
+  http.expectOne(request => request.url === url && request.params.get('page') === '1').flush({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${String(i + 10).padStart(2, '0')}`, i + 10)), total: 23, page: 1 }); render();
  });
  it('resets pagination on search, filter, sorting and period changes', () => {
   load({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${i}`, i)), total: 21 });
   const component = fixture.componentInstance;
   component.nextPage(); component.query.set('S1'); render();
   expect(component.page()).toBe(1);
+  http.expectOne(request => request.url === url && request.params.get('query') === 'S1' && request.params.get('page') === '0')
+    .flush({ ...overview(), instruments: [row('S1', 1)], total: 1 }); render();
   component.clearFilters(); component.nextPage(); component.asset.set('EQUITY'); render();
   expect(component.page()).toBe(1);
+  http.expectOne(request => request.url === url && request.params.get('asset') === 'EQUITY' && request.params.get('page') === '0')
+    .flush({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${i}`, i)), total: 21 }); render();
   component.nextPage(); component.sortBy('price'); render();
   expect(component.page()).toBe(1);
-  component.nextPage(); component.selectPeriod('week');
+  http.expectOne(request => request.url === url && request.params.get('sort') === 'price' && request.params.get('page') === '0')
+    .flush({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${i}`, i)), total: 21 }); render();
+  component.nextPage(); component.selectPeriod('week'); render();
   http.expectOne(request => request.url === url && request.params.get('period') === 'week').flush({ ...overview(), period: 'week' }); render();
   expect(component.page()).toBe(1);
  });
@@ -71,8 +78,10 @@ describe('Instruments page integration', () => {
   component.nextPage(); render();
   http.expectOne(request => request.url === url && request.params.get('page') === '1').flush({ ...overview(), instruments: Array.from({ length: 10 }, (_, i) => row(`S${10-i}`, 10-i)), total: 21, page: 1 }); render();
   expect(component.pagedInstruments()[0].price).toBe(110);
-  expect(component.gainers()[0].price).toBe(120);
+  expect(component.gainers()[0].price).toBe(105);
   component.query.set('missing'); render();
+  http.expectOne(request => request.url === url && request.params.get('query') === 'missing')
+    .flush({ ...overview(), instruments: [], total: 0 }); render();
   expect(component.pagedInstruments()).toEqual([]);
  });
  it('loads today and displays instrument data and market-wide movers', () => {
@@ -104,18 +113,20 @@ describe('Instruments page integration', () => {
   load();
   const button = fixture.nativeElement.querySelector('thead th.numeric button') as HTMLButtonElement;
   button.click(); render();
+  http.expectOne(request => request.url === url && request.params.get('sort') === 'price').flush({ ...overview(), instruments: [row('BTCUSD', -10, 'CRYPTO'), row('AAPL', 5)], total: 2 }); render();
   expect(fixture.componentInstance.visibleInstruments()[0].symbol).toBe('BTCUSD');
   expect(button.parentElement?.getAttribute('aria-sort')).toBe('ascending');
   button.click(); render();
+  http.expectOne(request => request.url === url && request.params.get('sort') === 'price' && request.params.get('direction') === 'descending').flush(overview()); render();
   expect(fixture.componentInstance.visibleInstruments()[0].symbol).toBe('AAPL');
   expect(button.parentElement?.getAttribute('aria-sort')).toBe('descending');
  });
  it('cancels stale period requests and renders the selected period', () => {
   const initial = http.expectOne(request => request.url === url && request.params.get('period') === 'today');
-  fixture.componentInstance.selectPeriod('week');
+  fixture.componentInstance.selectPeriod('week'); render();
   expect(initial.cancelled).toBe(true);
   const week = http.expectOne(request => request.url === url && request.params.get('period') === 'week');
-  fixture.componentInstance.selectPeriod('month');
+  fixture.componentInstance.selectPeriod('month'); render();
   expect(week.cancelled).toBe(true);
   http.expectOne(request => request.url === url && request.params.get('period') === 'month').flush({ ...overview(), period: 'month' }); render();
   expect(fixture.componentInstance.overview()?.period).toBe('month');
@@ -129,13 +140,14 @@ describe('Instruments page integration', () => {
   expect(text()).toContain('Apple Inc.');
  });
  it('distinguishes an empty universe from search results', () => {
-  load({ ...overview(), instruments: [] });
+  load({ ...overview(), instruments: [], total: 0, gainers: [], losers: [] });
   expect(text()).toContain('No instruments match');
   expect(text()).toContain('No gainers');
  });
- it('updates rankings live and retains prices during disconnection', () => {
+ it('keeps page prices live and retains them during disconnection', () => {
   load(); stream.prices.set({ AAPL: 80 }); render();
-  expect(fixture.componentInstance.losers()[0].symbol).toBe('AAPL');
+  expect(fixture.componentInstance.gainers()[0].symbol).toBe('AAPL');
+  expect(fixture.componentInstance.gainers()[0].price).toBe(80);
   expect(fixture.componentInstance.instruments()[0].changePercent).toBe(-20);
   stream.status.set('reconnecting'); render();
   expect(fixture.componentInstance.instruments()[0].price).toBe(80);
