@@ -90,6 +90,19 @@ pipeline {
                                 echo "ECS service missing/inactive: $svc"; exit 1;
                             }
                         done
+                        # A completed ECS rollout with desiredCount=0 serves no API traffic.
+                        # Require the five HTTP application services to have running capacity
+                        # before approving a full deployment. ETL services may be scheduled at zero.
+                        for svc in team-3-iam-app team-3-account-app team-3-order-app \
+                                   team-3-market-data-app team-3-reporting-app; do
+                            desired=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+                                --region "$AWS_REGION" --query 'services[0].desiredCount' --output text)
+                            if [ "$desired" = None ] || [ "$desired" -lt 1 ]; then
+                                echo "ERROR: $svc has desiredCount=$desired. ECS will not start application tasks."
+                                echo 'Restore its intended desired count before deploying.'
+                                exit 1
+                            fi
+                        done
                         if [ "$DEPLOY_FRONTEND" = 'true' ]; then
                             aws s3api head-bucket --bucket "$FRONTEND_S3_BUCKET"
                             if [ -n "$CLOUDFRONT_DISTRIBUTION_ID" ]; then
@@ -238,22 +251,46 @@ pipeline {
                                 echo "Waiting for $svc"
                                 aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$svc" --region "$AWS_REGION"
                                 expected=$(awk -v svc="$svc" '$1 == svc {print $2}' expected-task-definitions.txt)
-                                actual=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
-                                    --region "$AWS_REGION" --query 'services[0].taskDefinition' --output text)
-                                if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
-                                    echo "ERROR: $svc is stable but not running the expected deployment."
-                                    echo "Expected: $expected"
-                                    echo "Actual:   $actual (possible ECS rollback)"
-                                    exit 1
-                                fi
-                                rollout=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
-                                    --region "$AWS_REGION" \
-                                    --query 'services[0].deployments[?status==`PRIMARY`].rolloutState | [0]' --output text)
-                                test "$rollout" = COMPLETED || {
-                                    echo "ERROR: $svc deployment did not complete: $rollout"
-                                    exit 1
-                                }
-                                echo "Verified successful deployment: $svc -> $actual"
+                                test -n "$expected" || { echo "ERROR: Missing expected task ARN for $svc"; exit 1; }
+
+                                # The AWS services-stable waiter can finish before rolloutState
+                                # changes from IN_PROGRESS to COMPLETED. Poll rather than fail immediately.
+                                attempts=0
+                                while true; do
+                                    aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$svc" \
+                                        --region "$AWS_REGION" --query 'services[0]' --output json > service-status.json
+                                    actual=$(jq -r '.taskDefinition // ""' service-status.json)
+                                    rollout=$(jq -r '[.deployments[] | select(.status == "PRIMARY") | .rolloutState][0] // "UNKNOWN"' service-status.json)
+                                    desired=$(jq -r '.desiredCount' service-status.json)
+                                    running=$(jq -r '.runningCount' service-status.json)
+
+                                    if [ "$actual" != "$expected" ]; then
+                                        echo "ERROR: $svc task definition changed (possibly rolled back)."
+                                        echo "Expected: $expected"
+                                        echo "Actual:   $actual"
+                                        exit 1
+                                    fi
+                                    if [ "$rollout" = FAILED ]; then
+                                        echo "ERROR: $svc ECS deployment FAILED."
+                                        exit 1
+                                    fi
+                                    if [ "$rollout" = COMPLETED ] && [ "$running" = "$desired" ]; then
+                                        # HTTP services must actually have running capacity.
+                                        case "$svc" in
+                                            team-3-iam-app|team-3-account-app|team-3-order-app|team-3-market-data-app|team-3-reporting-app)
+                                                test "$desired" -ge 1 || { echo "ERROR: $svc has zero desired tasks"; exit 1; } ;;
+                                        esac
+                                        break
+                                    fi
+                                    attempts=$((attempts + 1))
+                                    if [ "$attempts" -ge 90 ]; then
+                                        echo "ERROR: Timed out waiting for $svc rollout: $rollout ($running/$desired running)"
+                                        exit 1
+                                    fi
+                                    echo "$svc: rollout=$rollout, running=$running/$desired. Retrying in 10 seconds..."
+                                    sleep 10
+                                done
+                                echo "Verified successful deployment: $svc -> $actual (running=$running/$desired)"
                             done
                         '''
                     }
@@ -287,6 +324,6 @@ pipeline {
     post {
         success { echo 'Team 3 deployment pipeline completed. For DEPLOY_TO_AWS=false, this was preview-only.' }
         failure { echo 'Deployment pipeline failed. Check ECS events/task logs before retrying; any earlier service updates are NOT automatically rolled back.' }
-        cleanup { sh 'rm -f task-old.json task-new.json expected-task-definitions.txt || true' }
+        cleanup { sh 'rm -f task-old.json task-new.json service-status.json expected-task-definitions.txt || true' }
     }
 }
