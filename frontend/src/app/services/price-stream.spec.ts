@@ -36,6 +36,9 @@ describe('PriceStreamService', () => {
   const flush = () => (service as unknown as { flush(): void }).flush();
 
   beforeEach(() => {
+    // The unit-test builder shares one browser page across spec files. Reset explicitly so a
+    // previous suite that left TestBed instantiated cannot prevent this suite from configuring.
+    TestBed.resetTestingModule();
     token = 'jwt';
     streams = [];
     fetchSpy = vi.spyOn(window, 'fetch').mockReturnValue(undefined as never);
@@ -45,7 +48,7 @@ describe('PriceStreamService', () => {
   });
 
   afterEach(() => {
-    service.stop();
+    service?.stop();
     vi.useRealTimers();
   });
 
