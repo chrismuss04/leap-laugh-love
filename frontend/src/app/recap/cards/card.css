@@ -1,7 +1,7 @@
 /* Shared by every recap card. The card is the host element and fills the stage; sizes are in cqw
    of the stage (see recap.css), so a card scales with it. The narrow 9:16 layout is the default;
-   the desktop 16:9 layout takes over once the viewer is 640px wide. Ported from
-   wrapped-reference/mockup/recap-mockup.html. */
+   the desktop 16:9 layout takes over once the viewer is 640px wide. Laid out after
+   wrapped-reference/mockup/recap-mockup.html, in the app's own palette and type (see recap.css). */
 
 :host {
   position: absolute;
@@ -36,18 +36,55 @@
 
 .display {
   font-family: var(--recap-font-display);
-  font-weight: 400;
-  line-height: 1;
+  font-weight: 600;
+  line-height: 1.05;
   letter-spacing: -0.01em;
 }
 
+/* Figures set like the dashboard's portfolio value: the body face, tight and tabular. */
+.figure {
+  font-family: var(--recap-font-card);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
 .chip {
-  background: var(--recap-paper);
-  color: var(--recap-ink);
-  font-family: var(--recap-font-display);
+  background: var(--recap-panel);
+  border: 1px solid var(--recap-line);
+  border-radius: 999px;
+  color: var(--recap-paper);
+  font-family: var(--recap-font-card);
+  font-weight: 600;
   line-height: 1;
   display: inline-block;
   white-space: nowrap;
+}
+
+/* The year on the intro and closing cards: the body face at its heaviest, stretched along its
+   baseline with the digits pulled together, teal on a white outline. The outline is a copy
+   behind (::before, from data-year), so it merges where the digits overlap. Narrow, it runs up
+   the card's left edge; each card sets its place, size and stretch. */
+.year {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+  white-space: nowrap;
+  font-family: var(--recap-font-card);
+  font-weight: 600;
+  letter-spacing: -0.07em;
+  color: var(--recap-lime);
+  isolation: isolate;
+}
+
+.year::before {
+  content: attr(data-year);
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  color: var(--recap-paper);
+  -webkit-text-stroke: 0.8cqw var(--recap-paper);
 }
 
 /* The brand footer (app-recap-foot); cards move it where their art leaves room. */
@@ -56,15 +93,14 @@
   left: 5.8%;
   right: 4%;
   bottom: 2.4%;
-  justify-content: space-between;
-  gap: 2cqw;
+  gap: 1.9cqw;
 }
 
 /* What a card says in place of a figure the month has nothing for. */
 .empty-note {
   margin: 0;
-  font: 600 4.2cqw/1.3 var(--recap-font-card);
-  color: rgba(238, 239, 234, 0.75);
+  font: 500 4.2cqw/1.3 var(--recap-font-card);
+  color: var(--recap-dim);
 }
 
 /* Motion: transform and opacity only. --i staggers a card's pieces. */
@@ -106,11 +142,19 @@
 @container viewer (min-width: 640px) {
   .empty-note { font-size: 2.1cqw; }
 
+  /* Across the top right, stretched from its right edge so it stays put. */
+  .year {
+    writing-mode: horizontal-tb;
+    transform: none;
+    transform-origin: right top;
+  }
+
+  .year::before { -webkit-text-stroke-width: 0.6cqw; }
+
   .foot {
     left: 3cqw;
     right: auto;
     bottom: 3.2%;
-    justify-content: flex-start;
-    gap: 1.4cqw;
+    gap: 0.85cqw;
   }
 }

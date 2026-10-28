@@ -12,21 +12,21 @@ const GRID_LINES = [300, 405, 510, 615, 720];
     selector: 'app-recap-tops-card',
     imports: [CountUpDirective, RecapFootComponent],
     template: `
-    <div class="abs display year" data-a="drop" style="--i:0" [attr.data-year]="year()" aria-hidden="true">{{ year() }}</div>
+    <div class="abs year" data-a="drop" style="--i:0" [attr.data-year]="year()" aria-hidden="true">{{ year() }}</div>
     <div class="abs square" data-a="pop" style="--i:1">
       <svg viewBox="0 0 787 787" preserveAspectRatio="none" aria-hidden="true">
         @for (y of gridLines; track y; let g = $index) {
-          <line x1="40" x2="747" [attr.y1]="y" [attr.y2]="y" stroke="#262626" stroke-opacity=".08" stroke-width="2"
+          <line x1="40" x2="747" [attr.y1]="y" [attr.y2]="y" stroke="var(--recap-paper)" stroke-opacity=".06" stroke-width="2"
                 class="grid" [style.--g]="g" />
         }
         @if (line()) {
-          <path [attr.d]="line() + 'L747,760L40,760Z'" fill="var(--recap-lime)" opacity=".4" class="area" />
-          <path [attr.d]="line()" fill="none" stroke="#262626" stroke-width="7" stroke-linejoin="round" pathLength="1" class="spark" />
+          <path [attr.d]="line() + 'L747,760L40,760Z'" fill="var(--recap-lime)" opacity=".15" class="area" />
+          <path [attr.d]="line()" fill="none" stroke="var(--recap-lime)" stroke-width="7" stroke-linejoin="round" pathLength="1" class="spark" />
         }
       </svg>
       <div class="sq-head">
         <div class="sq-label">Trading P&amp;L, {{ name() }}</div>
-        <div class="sq-value display"
+        <div class="sq-value figure" [class.text-gain]="recap().tradingReturn.pnl > 0" [class.text-loss]="recap().tradingReturn.pnl < 0"
              [appCountUp]="recap().tradingReturn.pnl" [countUpFormat]="signedWholeMoney" [countUpDelay]="190"></div>
       </div>
     </div>
@@ -51,8 +51,8 @@ const GRID_LINES = [300, 405, 510, 615, 720];
           }
         </ol>
       </div>
-      <div class="stat" data-a style="--i:4"><div class="lbl">Instruments Traded</div><div class="v display">{{ recap().instrumentsTraded }}</div></div>
-      <div class="stat" data-a style="--i:5"><div class="lbl">Top Sector</div><div class="v display">{{ recap().topSector?.label ?? '—' }}</div></div>
+      <div class="stat" data-a style="--i:4"><div class="lbl">Instruments Traded</div><div class="v figure">{{ recap().instrumentsTraded }}</div></div>
+      <div class="stat" data-a style="--i:5"><div class="lbl">Top Sector</div><div class="v figure">{{ recap().topSector?.label ?? '—' }}</div></div>
     </div>
     <app-recap-foot class="foot" data-a style="--i:6" />`,
     styleUrls: ['./card.css', './tops-card.css']

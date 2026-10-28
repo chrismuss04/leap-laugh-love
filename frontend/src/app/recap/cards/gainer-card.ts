@@ -15,18 +15,18 @@ import { RecapFootComponent } from './recap-foot';
     template: `
     <svg class="rings" viewBox="180 -145 720 1120" aria-hidden="true">
       <defs><clipPath id="recap-disc"><circle cx="540" cy="615" r="355" /></clipPath></defs>
-      <g fill="#262626" stroke="#eeefea" stroke-width="6">
+      <g fill="var(--recap-ink)" stroke="var(--recap-dim)" stroke-width="4">
         <circle data-a="drop" style="--i:0" cx="540" cy="215" r="355" />
         <circle data-a="drop" style="--i:1" cx="540" cy="315" r="355" />
         <circle data-a="drop" style="--i:2" cx="540" cy="415" r="355" />
         <circle data-a="drop" style="--i:3" cx="540" cy="515" r="355" />
       </g>
       <g data-a="drop" style="--i:4">
-        <circle cx="540" cy="615" r="355" fill="#eeefea" stroke="#eeefea" stroke-width="6" />
+        <circle cx="540" cy="615" r="355" fill="var(--recap-panel)" stroke="var(--recap-dim)" stroke-width="4" />
         @if (line()) {
           <g clip-path="url(#recap-disc)">
-            <path [attr.d]="line() + 'L895,980L185,980Z'" fill="var(--recap-lime)" opacity=".35" class="area" />
-            <path [attr.d]="line()" fill="none" stroke="#262626" stroke-width="10" stroke-linejoin="round"
+            <path [attr.d]="line() + 'L895,980L185,980Z'" fill="var(--recap-lime)" opacity=".18" class="area" />
+            <path [attr.d]="line()" fill="none" stroke="var(--recap-lime)" stroke-width="10" stroke-linejoin="round"
                   stroke-linecap="round" pathLength="1" class="spark" />
           </g>
         }
@@ -34,12 +34,12 @@ import { RecapFootComponent } from './recap-foot';
     </svg>
     <div class="abs box" data-a style="--i:5">
       <div class="display box-title">My Top Gainer</div>
-      <div class="box-name">{{ gainer()?.symbol ?? '—' }}</div>
+      <div class="figure box-name">{{ gainer()?.symbol ?? '—' }}</div>
     </div>
     <div class="abs result">
       @if (gainer(); as top) {
         <div class="up" data-a style="--i:7">Up</div>
-        <div class="display pct" data-a="pop" style="--i:8"
+        <div class="figure pct text-gain" data-a="pop" style="--i:8"
              [appCountUp]="top.returnPct" [countUpFormat]="twoPlaces" [countUpDelay]="680"></div>
       } @else {
         <p class="empty-note" data-a style="--i:7">{{ emptyNote() }}</p>

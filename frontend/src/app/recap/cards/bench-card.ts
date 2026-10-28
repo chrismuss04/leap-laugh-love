@@ -13,16 +13,16 @@ import { CountUpDirective } from '../count-up';
       <div class="bench me" data-a style="--i:1">
         <span class="lbl">My trading return</span>
         @if (returnPct() !== null) {
-          <span class="display val" [appCountUp]="returnPct()!" [countUpFormat]="onePlace" [countUpDelay]="190"></span>
+          <span class="figure val" [class.text-gain]="returnPct()! > 0" [class.text-loss]="returnPct()! < 0" [appCountUp]="returnPct()!" [countUpFormat]="onePlace" [countUpDelay]="190"></span>
         } @else {
-          <span class="display val">—</span>
+          <span class="figure val">—</span>
         }
         <span class="bar"><i [style.width.%]="bars().mine" style="--i:1"></i></span>
       </div>
       @if (benchmark(); as index) {
         <div class="bench index" data-a style="--i:2">
           <span class="lbl">{{ index.name }}</span>
-          <span class="display val" [appCountUp]="index.returnPct" [countUpFormat]="onePlace" [countUpDelay]="260"></span>
+          <span class="figure val" [class.text-gain]="index.returnPct > 0" [class.text-loss]="index.returnPct < 0" [appCountUp]="index.returnPct" [countUpFormat]="onePlace" [countUpDelay]="260"></span>
           <span class="bar"><i [style.width.%]="bars().index" style="--i:2"></i></span>
         </div>
       }
