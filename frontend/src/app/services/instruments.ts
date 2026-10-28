@@ -23,7 +23,14 @@ export interface InstrumentOverview {
   periodStart: string;
   asOf: string;
   instruments: InstrumentOverviewRow[];
+  total: number;
+  page: number;
+  size: number;
+  gainers: InstrumentOverviewRow[];
+  losers: InstrumentOverviewRow[];
 }
+
+export type InstrumentPage = InstrumentOverview;
 
 @Injectable({ providedIn: 'root' })
 export class InstrumentsService {
@@ -33,6 +40,13 @@ export class InstrumentsService {
   getOverview(period: InstrumentPeriod = 'today'): Observable<InstrumentOverview> {
     return this.http.get<InstrumentOverview>('/api/marketdata/instruments', {
       params: { period }
+    });
+  }
+
+  getPage(period: InstrumentPeriod, page: number, size: number, query: string, asset: string,
+      sort: string, direction: string): Observable<InstrumentPage> {
+    return this.http.get<InstrumentPage>('/api/marketdata/instruments', {
+      params: { period, page, size, query, asset, sort, direction }
     });
   }
 }

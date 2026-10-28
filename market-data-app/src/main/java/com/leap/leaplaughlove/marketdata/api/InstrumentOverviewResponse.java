@@ -12,7 +12,13 @@ import java.util.List;
  * @param instruments every listed instrument
  */
 public record InstrumentOverviewResponse(String period, OffsetDateTime periodStart,
-        OffsetDateTime asOf, List<Instrument> instruments) {
+        OffsetDateTime asOf, List<Instrument> instruments, long total, int page, int size,
+        List<Instrument> gainers, List<Instrument> losers) {
+
+    public InstrumentOverviewResponse(String period, OffsetDateTime periodStart, OffsetDateTime asOf,
+            List<Instrument> instruments) {
+        this(period, periodStart, asOf, instruments, instruments.size(), 0, instruments.size(), List.of(), List.of());
+    }
 
     /**
      * Unknown metadata and unavailable performance are represented by null.
